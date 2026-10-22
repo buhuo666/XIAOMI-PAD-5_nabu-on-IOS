@@ -16,3 +16,13 @@ profile constraints and the collector's optional report-saving behavior.
 The 12 GiB physical RAM inventory is preserved separately from the 256 MiB
 diagnostic allocation. Full DRAM ownership, physical device boot, firmware
 integration, and an iPadOS filesystem/userland are still unverified.
+
+For an already connected and authorized Android device, the Windows helper
+`tools/collect-android-info.ps1` records selected hardware/boot properties and
+`/proc/meminfo` through read-only ADB queries. It omits the serial and personal
+data, refuses to overwrite reports, and never reboots or modifies the device.
+Android MemTotal and swap are separate observations, not UEFI/DRAM validation:
+
+```powershell
+pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
+```
