@@ -29,6 +29,8 @@ if observation.is_file():
             "environment", "handoff_checks_pass", "early_markers",
             "assembly_entry_white_marker_observed", "kernel_c_entry_observed",
             "kernel_vm_mapping_observed", "root_filesystem", "userland",
+            "kernel_early_startup_observed", "kernel_early_panic_observed",
+            "early_panic_rows", "emulator_watchdog_policy",
         )
     }
 for path in sorted(root.rglob("*")):

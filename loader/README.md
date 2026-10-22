@@ -40,6 +40,8 @@ apply only to the emulator and synthetic payload, never the physical tablet.
 `NabuProbe.efi` is a standalone UEFI application. It reports CPU ID registers,
 timer frequency, all UEFI memory descriptors, a possible low 256 MiB window,
 and GOP geometry. It stays in boot services and returns to firmware.
+Version-2 reports also record UEFI RNG protocol presence, without requesting
+random bytes. Presence is only a prerequisite; the loader checks GetRNG.
 Its memory candidate is a snapshot, not an allocation or proof of bootability.
 Conventional memory is not the total physical DRAM inventory.
 
@@ -78,6 +80,11 @@ markers. ACPI is disabled so the adapter can use the QEMU FDT. The experiment
 fails if the kernel's post-VM-mapping marker is not observed; raw evidence is
 still uploaded. These observations never establish physical nabu support or
 an iPadOS userspace boot.
+The emulator command line uses `wdt=-1` because host emulation latency can
+trip interrupt/preemption elapsed-time hygiene limits. This policy is
+reported in the observation and is not a physical-device recommendation.
+The report separately records an observed early panic even when the
+early-VM milestone was reached.
 
 `loader/scripts/decode-nabu-framebuffer.py` extracts the exact `_iso_font`
 from the supplied kernel's Mach-O symbol table and decodes matching 2x-scaled

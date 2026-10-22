@@ -8,13 +8,14 @@ spec = importlib.util.spec_from_file_location(
     "probe_analysis", Path(__file__).with_name("analyze-nabu-probe.py"))
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
-VALID = b"""NABU-PROBE: report-version=1
+VALID = b"""NABU-PROBE: report-version=2
 cpu currentel=0x4 midr=0x410fd050 mpidr=0x80000000
 cpu mmfr0=0x100005 pfr0=0x11 cntfrq=19200000
 memory descriptors=2 stride=48 version=1
 mem type=7 start=0xa0000000 pages=0x8000 attr=0x8
 mem type=7 start=0xa8000000 pages=0x18000 attr=0x8
 memory conventional_bytes=0x20000000 low256m_candidate=0xa1004000
+rng protocol_present=1 generation_attempted=0
 gop base=0x9c000000 display=1 row=6400 width=1600 height=2560 depth=32 nabu_match=1
 NABU-PROBE: complete truncated=0 exit_boot_services=0 nvram_writes=0
 """
@@ -34,6 +35,7 @@ class ProbeTests(unittest.TestCase):
             (b"mpidr=0x80000000", b"mpidr=0x80000100"),
             (b"cntfrq=19200000", b"cntfrq=24000000"),
             (b"mmfr0=0x100005", b"mmfr0=0x5"),
+            (b"protocol_present=1", b"protocol_present=0"),
             (b"base=0x9c000000", b"base=0x50000000"),
         ):
             data = VALID.replace(before, after)
@@ -70,6 +72,14 @@ class ProbeTests(unittest.TestCase):
         report = probe.analyze(data)
         self.assertTrue(report["diagnostic_contract_compatible"])
         self.assertEqual(report["memory"]["bootstrap_block_bytes"], 0x2000000)
+
+    def test_older_report_does_not_prove_rng_presence(self):
+        data = VALID.replace(b"report-version=2", b"report-version=1")
+        data = data.replace(b"rng protocol_present=1 generation_attempted=0\n", b"")
+        self.assertTrue(probe.analyze(data)["report_valid"])
+        self.assertFalse(probe.analyze(data)["diagnostic_contract_compatible"])
+        with self.assertRaises(ValueError):
+            probe.analyze(data.replace(b"report-version=1", b"report-version=2"))
 
 
 if __name__ == "__main__":

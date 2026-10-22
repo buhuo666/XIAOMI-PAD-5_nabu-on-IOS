@@ -460,10 +460,10 @@ index 8d11163..3a17ffb 100644
    add x7, x5, x7
 diff --git a/Test/NabuProbe.c b/Test/NabuProbe.c
 new file mode 100644
-index 0000000..604c950
+index 0000000..128ba20
 --- /dev/null
 +++ b/Test/NabuProbe.c
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,186 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
 +#include <Uefi.h>
 +#include <Library/BaseLib.h>
@@ -473,6 +473,7 @@ index 0000000..604c950
 +#include <Library/UefiBootServicesTableLib.h>
 +#include <Library/UefiLib.h>
 +#include <Protocol/LoadedImage.h>
++#include <Protocol/Rng.h>
 +#include <Protocol/SimpleFileSystem.h>
 +#include "../DarwinBootPkg/Driver/BootArgs.h"
 +#include "../DarwinBootPkg/Driver/BootVideo.h"
@@ -545,6 +546,7 @@ index 0000000..604c950
 +  EFI_STATUS Status;
 +  EFI_LOADED_IMAGE_PROTOCOL *Loaded;
 +  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
++  EFI_RNG_PROTOCOL *Rng;
 +  EFI_MEMORY_DESCRIPTOR *Map;
 +  EFI_MEMORY_DESCRIPTOR *Descriptor;
 +  UINTN Capacity = 0, Size = 0, Key, Stride = 0, Attempt, Offset;
@@ -583,7 +585,7 @@ index 0000000..604c950
 +    Status = EFI_COMPROMISED_DATA;
 +    goto Done;
 +  }
-+  Log ("NABU-PROBE: report-version=1\n");
++  Log ("NABU-PROBE: report-version=2\n");
 +  Log ("cpu currentel=0x%lx midr=0x%lx mpidr=0x%lx\n",
 +       READ_SYSREG (CurrentEL), READ_SYSREG (MIDR_EL1), READ_SYSREG (MPIDR_EL1));
 +  Granules = READ_SYSREG (ID_AA64MMFR0_EL1);
@@ -625,6 +627,8 @@ index 0000000..604c950
 +  }
 +  Log ("memory conventional_bytes=0x%lx low256m_candidate=0x%lx\n", Conventional, LowCandidate);
 +  Log ("memory candidate_is_snapshot_only=1 allocation_attempted=0 inventory_is_not_total_dram=1\n");
++  Status = gBS->LocateProtocol (&gEfiRngProtocolGuid, NULL, (VOID **)&Rng);
++  Log ("rng protocol_present=%u generation_attempted=0\n", EFI_ERROR (Status) ? 0 : 1);
 +  Status = gBS->HandleProtocol (gST->ConsoleOutHandle, &gEfiGraphicsOutputProtocolGuid, (VOID **)&Gop);
 +  if (EFI_ERROR (Status)) {
 +    Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
@@ -648,10 +652,10 @@ index 0000000..604c950
 +}
 diff --git a/Test/NabuProbe.inf b/Test/NabuProbe.inf
 new file mode 100644
-index 0000000..f6e071b
+index 0000000..721f894
 --- /dev/null
 +++ b/Test/NabuProbe.inf
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,29 @@
 +## SPDX-License-Identifier: BSD-2-Clause-Patent
 +[Defines]
 +  INF_VERSION = 0x00010019
@@ -680,6 +684,7 @@ index 0000000..f6e071b
 +  gEfiLoadedImageProtocolGuid
 +  gEfiSimpleFileSystemProtocolGuid
 +  gEfiGraphicsOutputProtocolGuid
++  gEfiRngProtocolGuid
 diff --git a/Test/NabuValidation.c b/Test/NabuValidation.c
 new file mode 100644
 index 0000000..c6e43a5

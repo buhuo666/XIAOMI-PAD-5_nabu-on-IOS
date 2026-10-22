@@ -8,6 +8,7 @@
 | Clock fallback kernel | 39762760559 | Adds patch 0085 and tests absent, supplied and zero clock properties |
 | DarwinBoot ABI profiles | 39762368133 | Darwin 22/23 compile, host parser/ABI checks, five QEMU tests |
 | UEFI observation collector | 39763299490 | Adds NabuProbe.efi and a sixth QEMU test; all pass |
+| Real kernel early VM/console startup | 39769172744 | Real xnu-8796 C entry, final TTBR1 mapping, pmap_bootstrap and kprintf startup; simulator only |
 
 Clock fallback kernel SHA-256:
 `768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e`
@@ -68,6 +69,18 @@ The QEMU GOP adapter also activated successfully with ACPI disabled.
 The next repair supplies `/chosen/random-seed` from UEFI RNG before handoff;
 it does not weaken the kernel's entropy requirement or bake a reusable seed
 into an artifact.
+
+Run 39769172744 passed the early-VM milestone. The actual kernel reached
+stages 1-16, 19 and 20, including `arm_vm_init returned`, `pmap_bootstrap done`
+and `kprintf startup complete`. Stages 17/18 are the optional framebuffer
+serial-console path, not missing sequential checkpoints in this setup.
+All 392 artifact file hashes were checked after download.
+
+The kernel subsequently panicked because an interrupt took 17.344 ms against
+a 13.631 ms elapsed-time hygiene threshold under QEMU. A passed observation
+milestone is not a stable running kernel. Later emulator experiments use
+the kernel's existing `wdt=-1` option and record that policy explicitly;
+physical-device diagnostic settings remain unchanged.
 
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.

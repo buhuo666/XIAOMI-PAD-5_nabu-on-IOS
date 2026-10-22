@@ -67,7 +67,7 @@ id = "xnu-experiment"
 title = "QEMU only: actual open-source XNU"
 type = "xnu"
 path = "Payloads/kernel.macho"
-args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e"
+args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1"
 ''', encoding="ascii")
 result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
@@ -88,6 +88,7 @@ report = {
     "handoff_checks_pass": result.returncode == 0,
     "early_markers": [],
     "root_filesystem": False, "userland": False,
+    "emulator_watchdog_policy": "wdt=-1: disable elapsed-time hygiene checks under emulation only",
 }
 raw = OUT / "framebuffer.raw"
 if raw.is_file() and raw.stat().st_size == 0xfa0000:
@@ -122,8 +123,14 @@ if raw.is_file() and raw.stat().st_size == 0xfa0000:
         "--framebuffer", raw, "--output", OUT / "console.json",
     ])
     report["console_decode_pass"] = decoded.returncode == 0
+    if decoded.returncode == 0:
+        console = json.loads((OUT / "console.json").read_text(encoding="utf-8"))
+        report["early_panic_rows"] = [
+            row for row in console["decoded_rows"] if "NABU EARLY PANIC:" in row["text"]]
 report["kernel_c_entry_observed"] = 1 in report["early_markers"]
 report["kernel_vm_mapping_observed"] = 9 in report["early_markers"]
+report["kernel_early_startup_observed"] = 20 in report["early_markers"]
+report["kernel_early_panic_observed"] = bool(report.get("early_panic_rows"))
 report["limits"] = [
     "The framebuffer and GIC configuration are emulator adapters, not a physical nabu test.",
     "Early markers only show those kernel checkpoints; they do not prove a userspace boot.",

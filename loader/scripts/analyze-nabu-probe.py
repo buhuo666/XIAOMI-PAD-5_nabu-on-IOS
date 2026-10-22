@@ -24,10 +24,12 @@ def fields(line):
 def analyze(raw):
     text = ANSI.sub("", raw.decode("utf-8", errors="replace")).replace("\r", "")
     lines = text.splitlines()
-    headers = [i for i, line in enumerate(lines) if line == "NABU-PROBE: report-version=1"]
+    headers = [i for i, line in enumerate(lines) if line in (
+        "NABU-PROBE: report-version=1", "NABU-PROBE: report-version=2")]
     ends = [i for i, line in enumerate(lines) if line.startswith("NABU-PROBE: complete ")]
     if len(headers) != 1 or len(ends) != 1 or headers[0] >= ends[0]:
-        raise ValueError("expected exactly one complete version-1 probe report")
+        raise ValueError("expected exactly one complete version-1 or version-2 probe report")
+    version = int(lines[headers[0]].rsplit("=", 1)[1])
     lines = lines[headers[0] + 1:ends[0] + 1]
 
     def one(prefix, required):
@@ -44,6 +46,10 @@ def analyze(raw):
     summary = one("memory descriptors=", ("descriptors", "stride", "version"))
     reported_memory = one("memory conventional_bytes=", ("conventional_bytes", "low256m_candidate"))
     complete = one("NABU-PROBE: complete ", ("truncated", "exit_boot_services", "nvram_writes"))
+    rng_lines = [line for line in lines if line.startswith("rng ")]
+    rng = one("rng ", ("protocol_present", "generation_attempted")) if version == 2 or rng_lines else {}
+    if rng and (rng["protocol_present"] not in (0, 1) or rng["generation_attempted"] != 0):
+        raise ValueError("invalid RNG observation")
     if complete != {"truncated": 0, "exit_boot_services": 0, "nvram_writes": 0}:
         raise ValueError("report is truncated or has unsupported handoff/write indicators")
     descriptors = [fields(line) for line in lines if line.startswith("mem ")]
@@ -93,6 +99,8 @@ def analyze(raw):
     if gop and gop.get("nabu_match") != int(gop_matches):
         raise ValueError("GOP compatibility marker disagrees with geometry")
     blockers = []
+    if rng.get("protocol_present") != 1:
+        blockers.append("UEFI RNG protocol presence is absent or unobserved; fresh boot seed supply is unverified.")
     if cpu["currentel"] != 4:
         blockers.append("The current loader requires EL1.")
     if cpu["mpidr"] & 0xffff:
@@ -111,8 +119,8 @@ def analyze(raw):
         blockers.append("GOP does not match the current kernel's fixed framebuffer contract.")
     return {
         "probe_sha256": hashlib.sha256(raw).hexdigest(),
-        "report_valid": True,
-        "cpu": cpu, "gop": gop, "memory": {
+        "report_valid": True, "report_version": version,
+        "cpu": cpu, "gop": gop, "rng": rng, "memory": {
             **summary, **reported_memory, "conventional_runs": runs,
             "kernel_base_assumption": "0xfffffe0007004000",
             "bootstrap_block_bytes": BOOTSTRAP_MASK + 1,
@@ -124,6 +132,7 @@ def analyze(raw):
         "limitations": [
             "This checks supplied observations, not device identity or hardware operation.",
             "Memory candidates are snapshots; no allocation or ExitBootServices was attempted.",
+            "RNG protocol presence does not establish that its GetRNG operation will succeed.",
             "This is not a complete system and contains no root filesystem or userland.",
         ],
     }

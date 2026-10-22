@@ -22,7 +22,7 @@ if args.profile == "probe":
     subprocess.run(["python3", FRAMEWORK / "package/Scripts/qemu-run.py", esp,
                     "--log", OUT / "qemu/probe/qemu.log", "--cpus", "1",
                     "--timeout", "50", "--finish-on-expect",
-                    "--expect", "NABU-PROBE: report-version=1",
+                    "--expect", "NABU-PROBE: report-version=2",
                     "--expect", r"memory conventional_bytes=0x[0-9A-Fa-f]+ low256m_candidate=0x[1-9A-Fa-f]",
                     "--expect", r"gop base=0x[0-9A-Fa-f]+.*nabu_match=0",
                     "--expect", "NABU-PROBE: complete truncated=0 exit_boot_services=0 nvram_writes=0",
