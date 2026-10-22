@@ -1,5 +1,5 @@
 diff --git a/DarwinBootPkg/DarwinBoot.dsc b/DarwinBootPkg/DarwinBoot.dsc
-index f437c4f..e6d27e8 100644
+index f437c4f..c66cbbc 100644
 --- a/DarwinBootPkg/DarwinBoot.dsc
 +++ b/DarwinBootPkg/DarwinBoot.dsc
 @@ -8,6 +8,12 @@
@@ -15,7 +15,7 @@ index f437c4f..e6d27e8 100644
  
  !include MdePkg/MdeLibs.dsc.inc
  
-@@ -29,6 +35,9 @@
+@@ -29,6 +35,13 @@
    gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x07
    gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000000
  
@@ -24,7 +24,11 @@ index f437c4f..e6d27e8 100644
 +
  [Components]
    DarwinBootPkg/Driver/DarwinBoot.inf
++!if $(DARWINBOOT_NABU_DIAGNOSTIC) == 1
++  Test/NabuValidation.inf
++!else
    Test/Validation.inf
++!endif
 diff --git a/DarwinBootPkg/Driver/BootArgs.h b/DarwinBootPkg/Driver/BootArgs.h
 index aefcd90..772de3c 100644
 --- a/DarwinBootPkg/Driver/BootArgs.h
@@ -288,6 +292,100 @@ index 8d11163..2ba85bf 100644
    cmp x6, x7
    b.ne failed
    add x7, x5, x7
+diff --git a/Test/NabuValidation.c b/Test/NabuValidation.c
+new file mode 100644
+index 0000000..c6e43a5
+--- /dev/null
++++ b/Test/NabuValidation.c
+@@ -0,0 +1,56 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#include <Uefi.h>
++#include <Library/BaseMemoryLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Protocol/LoadedImage.h>
++#include <Protocol/UniXNULoader.h>
++
++EFI_STATUS
++EFIAPI
++NabuValidationEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
++{
++  EFI_STATUS Status;
++  EFI_LOADED_IMAGE_PROTOCOL *Loaded;
++  UNIXNU_LOADER_PROTOCOL *Loader;
++  UNIXNU_LOADER_BOOT_REQUEST Request;
++  UINT8 Byte = 0;
++  UINTN Index;
++  CHAR16 *Paths[] = {
++    L"\\EFI\\UniXNU\\Payloads\\diagnostic.macho",
++    L"\\EFI\\UniXNU\\Payloads\\storage.macho",
++    L"\\EFI\\UniXNU\\Payloads\\psci.macho",
++    L"\\EFI\\UniXNU\\Payloads\\large-window.macho",
++    L"\\EFI\\UniXNU\\Payloads\\ramdisk.macho"
++  };
++  EFI_STATUS Expected[] = {
++    EFI_UNSUPPORTED, EFI_COMPROMISED_DATA, EFI_COMPROMISED_DATA,
++    EFI_UNSUPPORTED, EFI_UNSUPPORTED
++  };
++  (VOID)SystemTable;
++  Status = gBS->HandleProtocol (ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&Loaded);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = gBS->LocateProtocol (&gUniXNULoaderProtocolGuid, NULL, (VOID **)&Loader);
++  if (EFI_ERROR (Status)) { return Status; }
++  ZeroMem (&Request, sizeof (Request));
++  Request.Volume = Loaded->DeviceHandle;
++  Request.KernelPath = Paths[0];
++  if (Loader->Boot (Loader, &Request) != EFI_UNSUPPORTED) { goto Failed; }
++  Request.BootArgs = L"nabulog=0 ufsrw=1 cpus=1";
++  if (Loader->Boot (Loader, &Request) != EFI_UNSUPPORTED) { goto Failed; }
++  Request.BootArgs = L"nabulog=0 ufsrw=0 cpus=1";
++  Request.Ramdisk = &Byte;
++  Request.RamdiskSize = 1;
++  if (Loader->Boot (Loader, &Request) != EFI_UNSUPPORTED) { goto Failed; }
++  Request.Ramdisk = NULL;
++  Request.RamdiskSize = 0;
++  for (Index = 0; Index < sizeof (Paths) / sizeof (Paths[0]); Index++) {
++    Request.KernelPath = Paths[Index];
++    if (Loader->Boot (Loader, &Request) != Expected[Index]) { goto Failed; }
++  }
++  Print (L"NABU-DIAGNOSTIC-VALIDATION: 8 refused requests; firmware retained PASS\n");
++  return EFI_SUCCESS;
++Failed:
++  Print (L"NABU-DIAGNOSTIC-VALIDATION: FAIL\n");
++  return EFI_DEVICE_ERROR;
++}
+diff --git a/Test/NabuValidation.inf b/Test/NabuValidation.inf
+new file mode 100644
+index 0000000..f2e7c79
+--- /dev/null
++++ b/Test/NabuValidation.inf
+@@ -0,0 +1,26 @@
++## SPDX-License-Identifier: BSD-2-Clause-Patent
++[Defines]
++  INF_VERSION = 0x00010019
++  BASE_NAME = NabuDiagnosticValidation
++  FILE_GUID = C7A316F3-19A3-44ED-8552-1BB477FEA092
++  MODULE_TYPE = UEFI_DRIVER
++  VERSION_STRING = 0.1
++  ENTRY_POINT = NabuValidationEntry
++
++[Sources]
++  NabuValidation.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++  UniXNUPkg/UniXNUPkg.dec
++
++[LibraryClasses]
++  BaseMemoryLib
++  PrintLib
++  UefiBootServicesTableLib
++  UefiDriverEntryPoint
++  UefiLib
++
++[Protocols]
++  gUniXNULoaderProtocolGuid
++  gEfiLoadedImageProtocolGuid
 diff --git a/Test/make-fixtures.py b/Test/make-fixtures.py
 index 79d491a..9050050 100755
 --- a/Test/make-fixtures.py

@@ -29,7 +29,7 @@ jobs:
 
       - name: Install LLVM
         run: |
-          brew install llvm lld nasm
+          brew install llvm lld nasm qemu
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
           echo "CLANG_BIN=$(brew --prefix llvm)/bin/" >> "$GITHUB_ENV"
