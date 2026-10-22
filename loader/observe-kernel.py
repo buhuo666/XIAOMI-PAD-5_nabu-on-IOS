@@ -29,13 +29,22 @@ fb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fb)
 kernel_image = (ROOT / "verified-kernel/kernel.macho").read_bytes()
 stage_mask_offset = fb.kernel_symbol_offset(kernel_image, "_nabu_early_stage_mask")
+owned_memory_size = 0x20000000
+counter_names = (
+    "_vm_page_free_count", "_vm_page_free_reserved", "_vm_page_free_target",
+    "_vm_page_wire_count", "_vm_delayed_count",
+)
+counter_dumps = []
+for name in counter_names:
+    offset = fb.kernel_symbol_offset(kernel_image, name)
+    counter_dumps.extend(("--handoff-dump", hex(offset), "4", OUT / (name[1:] + ".raw")))
 u32 = lambda value: struct.pack("<I", value)
 u64 = lambda value: struct.pack("<Q", value)
 tree = adt.node("device-tree", [
     ("model", b"QEMU nabu kernel experiment\0"),
     ("compatible", b"xiaomi,nabu\0qcom,sm8150\0"),
 ], [
-    adt.node("chosen", [("darwinboot-memory-size", u64(0x10000000)),
+    adt.node("chosen", [("darwinboot-memory-size", u64(owned_memory_size)),
                        ("dram-base", u64(0x40000000)), ("dram-size", u64(0x80000000)),
                        ("random-seed", bytes(64)), *fixtures.nvram_proxy(FRAMEWORK)],
              [adt.node("memory-map")]),
@@ -91,10 +100,17 @@ result = subprocess.run([
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
     "--handoff-dump", hex(stage_mask_offset), "4", OUT / "early-stage-mask.raw",
+    *counter_dumps,
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
     "--expect", "DARWINBOOT: inputs validated; exiting boot services",
     "--expect", "DARWINBOOT: supplied 64 fresh UEFI RNG seed bytes",
     "--reject", "ASSERT",
+])
+register_symbols = subprocess.run([
+    sys.executable, ROOT / "loader/scripts/symbolize-registers.py",
+    "--kernel", ROOT / "verified-kernel/kernel.macho",
+    "--samples", OUT / "registers.samples.json", "--final", OUT / "registers.txt",
+    "--output", OUT / "registers.symbols.json",
 ])
 report = {
     "environment": "QEMU virt, max CPU, GICv3, 2 GiB",
@@ -106,8 +122,15 @@ report = {
     "nvram_policy": "empty volatile upstream CHRP snapshot; no persistence controller",
     "framebuffer_console": True,
     "development_kprintf_enabled": True,
+    "register_symbolization_pass": register_symbols.returncode == 0,
+    "requested_owned_memory_bytes": owned_memory_size,
     "persistent_checkpoint_capture_valid": False,
 }
+report["paused_vm_page_counters"] = {}
+for name in counter_names:
+    path = OUT / (name[1:] + ".raw")
+    if path.is_file() and path.stat().st_size == 4:
+        report["paused_vm_page_counters"][name[1:]] = struct.unpack("<I", path.read_bytes())[0]
 raw = OUT / "framebuffer.raw"
 if raw.is_file() and raw.stat().st_size == 0xfa0000:
     data = raw.read_bytes()

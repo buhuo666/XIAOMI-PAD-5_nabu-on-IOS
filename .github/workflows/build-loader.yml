@@ -64,6 +64,7 @@ jobs:
           python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
           python3 loader/scripts/test-probe-analysis.py
           python3 loader/scripts/test-framebuffer-decode.py
+          python3 loader/scripts/test-register-symbols.py
           python3 loader/scripts/test-qemu-upstream-fixtures.py --framework sources/framework
           python3 loader/scripts/test-handoff-dump.py --framework sources/framework
           python3 loader/scripts/make-nabu-diagnostic-adt.py \

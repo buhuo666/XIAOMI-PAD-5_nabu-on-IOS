@@ -95,6 +95,15 @@ by the physical ownership window logged by DarwinBoot.
 DEVELOPMENT kprintf is explicitly enabled only in the experiment. Periodic
 register snapshots help distinguish forward progress from one final address;
 the VM is paused before the final memory/display/register capture.
+The current emulator experiment allocates 512 MiB after a 256 MiB run repeatedly
+sampled the page-allocation wait path. It also captures five VM page counters
+from exact exported symbols within the loader-owned window. This allocation
+change applies only to the emulator experiment. The guarded nabu diagnostic
+profile continues to require exactly 256 MiB.
+
+`loader/scripts/symbolize-registers.py` resolves sampled PC/LR addresses with
+`llvm-symbolizer` against the exact kernel and records its SHA-256. The result
+is a set of observations, not a backtrace or an automatic progress verdict.
 
 `loader/scripts/decode-nabu-framebuffer.py` extracts the exact `_iso_font`
 from the supplied kernel's Mach-O symbol table and decodes matching 2x-scaled

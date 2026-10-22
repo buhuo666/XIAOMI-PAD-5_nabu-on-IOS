@@ -33,7 +33,8 @@ if observation.is_file():
             "early_panic_rows", "emulator_watchdog_policy",
             "kernel_panic_observed", "panic_rows", "persistent_early_stage_mask",
             "persistent_checkpoint_capture_valid", "nvram_policy", "framebuffer_console",
-            "development_kprintf_enabled",
+            "development_kprintf_enabled", "register_symbolization_pass",
+            "requested_owned_memory_bytes", "paused_vm_page_counters",
         )
     }
 for path in sorted(root.rglob("*")):

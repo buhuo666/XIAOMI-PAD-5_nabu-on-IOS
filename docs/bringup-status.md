@@ -19,7 +19,7 @@ Current checkpoint-mask kernel SHA-256:
 
 These are compiler and emulator results. No physical tablet test was
 performed by these runs, and none produces a complete iPadOS installation.
-The workflow now selects the clock-fallback kernel for subsequent contract
+The workflow now selects the checkpoint-mask kernel for subsequent contract
 checks; manifests identify the exact kernel run and source lock.
 
 ## Interfaces repaired
@@ -103,6 +103,16 @@ and a single register snapshot does not establish forward progress.
 The follow-up experiment explicitly enables verbose/development kprintf,
 samples registers every ten seconds, and pauses the VM for consistent final
 screen/memory/register capture.
+
+Run 39774060917 enabled DEVELOPMENT kprintf and captured nine periodic CPU
+snapshots plus a final paused snapshot. All twenty checkpoints still passed;
+all 394 artifact hashes were verified locally. LLVM symbolization against the
+exact kernel places every sample in `vm_page_grab_options`, `vm_page_wait`,
+or their lock/preemption helpers. This is evidence of a repeated page-allocation
+wait path, not successful post-startup progress. No new panic was decoded.
+The next emulator experiment increases only its allocated window from 256 to
+512 MiB and captures actual free/reserved/target/wired/delayed page counters.
+The physical-device diagnostic contract remains 256 MiB.
 
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.

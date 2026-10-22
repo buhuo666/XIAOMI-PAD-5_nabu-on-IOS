@@ -1,5 +1,5 @@
 diff --git a/package/Scripts/qemu-run.py b/package/Scripts/qemu-run.py
-index 54eb81f..d53bb03 100755
+index 54eb81f..8e32a4e 100755
 --- a/package/Scripts/qemu-run.py
 +++ b/package/Scripts/qemu-run.py
 @@ -32,6 +32,20 @@ FIRMWARE_CANDIDATES = [
@@ -23,7 +23,7 @@ index 54eb81f..d53bb03 100755
  def find_firmware(code):
      if code:
          return Path(code), None
-@@ -119,12 +133,49 @@ def main() -> int:
+@@ -119,12 +133,50 @@ def main() -> int:
      parser.add_argument("--disk", action="append", default=[], type=Path, help="extra raw disk image (read-only)")
      parser.add_argument("--timeout", type=float, default=90.0)
      parser.add_argument("--cpus", type=int, default=2, help="number of virtual CPUs (default: 2)")
@@ -35,7 +35,8 @@ index 54eb81f..d53bb03 100755
 +    parser.add_argument("--final-screenshot", type=Path, help="PNG captured before stopping QEMU")
 +    parser.add_argument("--memory-dump", nargs=3, metavar=("ADDRESS", "BYTES", "PATH"),
 +                        help="Capture guest physical memory through QMP before stopping")
-+    parser.add_argument("--handoff-dump", nargs=3, metavar=("OFFSET", "BYTES", "PATH"),
++    parser.add_argument("--handoff-dump", nargs=3, action="append", default=[],
++                        metavar=("OFFSET", "BYTES", "PATH"),
 +                        help="Capture inside the owned window reported by DarwinBoot")
 +    parser.add_argument("--register-dump", type=Path)
 +    parser.add_argument("--register-sample-interval", type=float, default=0,
@@ -53,7 +54,7 @@ index 54eb81f..d53bb03 100755
 +    if not 128 <= args.memory_mib <= 16384:
 +        parser.error("--memory-mib must be in 128..16384")
 +    dump = None
-+    handoff_dump = None
++    handoff_dumps = []
 +    if args.memory_dump:
 +        try:
 +            address, length = [int(item, 0) for item in args.memory_dump[:2]]
@@ -62,18 +63,18 @@ index 54eb81f..d53bb03 100755
 +        except ValueError:
 +            parser.error("invalid memory dump address or size (maximum 64 MiB)")
 +        dump = (address, length, Path(args.memory_dump[2]).resolve())
-+    if args.handoff_dump:
++    for requested_dump in args.handoff_dump:
 +        try:
-+            offset, length = [int(item, 0) for item in args.handoff_dump[:2]]
++            offset, length = [int(item, 0) for item in requested_dump[:2]]
 +            if offset < 0 or not 0 < length <= 64 * 1024 * 1024:
 +                raise ValueError()
 +        except ValueError:
 +            parser.error("invalid handoff-relative dump offset or length")
-+        handoff_dump = (offset, length, Path(args.handoff_dump[2]).resolve())
++        handoff_dumps.append((offset, length, Path(requested_dump[2]).resolve()))
      display = None
      if args.display_size:
          match = re.fullmatch(r"([0-9]+)x([0-9]+)", args.display_size)
-@@ -148,17 +199,26 @@ def main() -> int:
+@@ -148,17 +200,26 @@ def main() -> int:
          args.log.unlink()
  
      cmd = [
@@ -101,7 +102,7 @@ index 54eb81f..d53bb03 100755
      for index, disk in enumerate(args.disk):
          cmd += [
              "-drive", f"if=none,id=disk{index},format=raw,readonly=on,file={disk.resolve()}",
-@@ -180,11 +240,22 @@ def main() -> int:
+@@ -180,11 +241,22 @@ def main() -> int:
      menu_seen = False
      expectations_since = None
      expectations_complete = False
@@ -124,7 +125,7 @@ index 54eb81f..d53bb03 100755
              if args.finish_on_expect:
                  clean_text = ANSI.sub("", text)
                  if all(re.search(pattern, clean_text) for pattern in args.expect):
-@@ -211,6 +282,43 @@ def main() -> int:
+@@ -211,6 +283,42 @@ def main() -> int:
              time.sleep(0.2)
      finally:
          if proc.poll() is None:
@@ -155,8 +156,7 @@ index 54eb81f..d53bb03 100755
 +                        if args.register_sample_interval:
 +                            args.register_dump.with_suffix(".samples.json").write_text(
 +                                json.dumps(register_samples, indent=2) + "\n", encoding="utf-8")
-+                    if handoff_dump:
-+                        offset, length, target = handoff_dump
++                    for offset, length, target in handoff_dumps:
 +                        address = handoff_dump_address(args.log.read_text(errors="replace"), offset, length)
 +                        target.parent.mkdir(parents=True, exist_ok=True)
 +                        result = qmp.command("pmemsave", val=address, size=length, filename=str(target))
