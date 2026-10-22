@@ -38,6 +38,8 @@ pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
 
 用户已授权从 Android 空间规划 **64 GiB** 项目专用空间。真实设备的六个
 UFS LUN 的 GPT、两个启动槽位及 ESP 已离线备份并校验，平板已返回 Android。
-当前仅完成布局计算，尚未缩容或创建分区；加密 F2FS 的离线解密 / 缩容路径和
-完整 userdata 备份仍未验证。实测边界、候选布局及工具见
+用户随后已明确同意清除 Android userdata，当前候选改为 **4 GiB 引导 +
+60 GiB 系统**，无需保留旧 userdata 内容。尚未擦除或创建分区；
+执行前仍需验证与当前 F2FS / metadata encryption 匹配的重建流程。
+实测边界、容量预算、候选布局及工具见
 [64 GiB 项目空间](docs/project-space-64g.md)。

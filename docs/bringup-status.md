@@ -255,3 +255,15 @@ restorable backup. Its existing recovery tool advertises safe resize, but
 that does not verify compatibility or permit changing GPT boundaries first.
 See [project-space-64g.md](project-space-64g.md) for exact observations,
 candidate boundaries and remaining prerequisites.
+
+The owner subsequently authorized erasing Android userdata to avoid preserving
+and shrinking the encrypted filesystem. That removes the complete userdata
+backup and offline shrink prerequisites for this recreation route, not protection
+of Windows, Android system/vendor, boot slots or firmware. Actual file inventory
+is 16.48 MiB for kernel/loader/ADT/probe, or 308.91 MiB including optional UEFI
+and two boot archives plus two additional kernel-size budgets. A 512 MiB EFI
+area fits current materials but has no verified future ramdisk allowance.
+The candidate now reserves 4 GiB for project EFI and 60 GiB for system images,
+still 64 GiB total. No erase or partition edit has occurred. The installed
+Android fstab confirms F2FS with metadata encryption; the toolbox's ext4 format
+action is not a verified recreation path for this Android installation.

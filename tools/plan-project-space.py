@@ -8,7 +8,7 @@ GIB = 1 << 30
 MIB = 1 << 20
 
 
-def plan(report):
+def plan(report, esp_mib=4096, erase_android_data=False):
     if report.get("product") != "nabu" or report.get("complete") is not True:
         raise ValueError("requires a completed nabu backup report")
     if report.get("partition_edit_issued") is not False:
@@ -22,6 +22,8 @@ def plan(report):
     block = disk["logical_block_bytes"]
     if block != 4096:
         raise ValueError("unexpected logical sector size")
+    if not isinstance(esp_mib, int) or not 512 <= esp_mib < 64 * 1024:
+        raise ValueError("project EFI size must be 512..65535 MiB within the 64 GiB total")
     partitions = disk["partitions"]
     matches = [part for part in partitions if part["name"] == "userdata"]
     if len(matches) != 1:
@@ -48,7 +50,25 @@ def plan(report):
     slots = disk["primary_header"]["entry_count"] - len(partitions)
     if slots < 2:
         raise ValueError("insufficient GPT entry slots")
-    esp_blocks = 512 * MIB // block
+    esp_bytes = esp_mib * MIB
+    esp_blocks = esp_bytes // block
+    if erase_android_data:
+        blockers = [
+            "Re-read and compare the current GPT with the verified backup before editing.",
+            "Preserve Windows partitions, boot slots, firmware, GPT identity and userdata start.",
+            "Verify a factory-reset/reformat path compatible with the installed Android "
+            "F2FS and metadata encryption before destroying userdata.",
+            "Read back both GPT copies after the edit and verify the exact new boundaries.",
+        ]
+    else:
+        blockers = [
+            "A complete restorable userdata backup has not been captured.",
+            "The observed encrypted F2FS volume has no validated offline decrypted mapping.",
+            "The filesystem features, health, target size and resize tool compatibility "
+            "must be verified before any shrink.",
+            "Shrink and verify the filesystem before changing its GPT boundary; "
+            "re-read and verify the GPT before creating or formatting new partitions.",
+        ]
     return {
         "status": "proposal_only",
         "device_mutation_performed": False,
@@ -56,6 +76,10 @@ def plan(report):
         "requested_bytes": 64 * GIB,
         "logical_block_bytes": block,
         "alignment_bytes": MIB,
+        "android_userdata_mode": "erase_and_recreate" if erase_android_data else "preserve_and_shrink",
+        "android_data_erasure_authorized": erase_android_data,
+        "erasure_scope": (["Android userdata including apps, settings and internal shared storage"]
+                          if erase_android_data else []),
         "existing_userdata": userdata,
         "proposed_userdata": {
             "first_lba": userdata["first_lba"],
@@ -66,26 +90,20 @@ def plan(report):
                           "bytes": 64 * GIB},
         "proposed_project_partitions": [
             {"name": "nabu_esp", "first_lba": project_first,
-             "last_lba": project_first + esp_blocks - 1, "bytes": 512 * MIB,
+             "last_lba": project_first + esp_blocks - 1, "bytes": esp_bytes,
              "intended_role": "Future FAT32 EFI tools and boot payloads; no format performed"},
             {"name": "nabu_system", "first_lba": project_first + esp_blocks,
-             "last_lba": project_last, "bytes": 64 * GIB - 512 * MIB,
+             "last_lba": project_last, "bytes": 64 * GIB - esp_bytes,
              "intended_role": "Future root/system images; filesystem not selected or created"},
         ],
         "trailing_alignment_gap_bytes": (userdata["last_lba"] - project_last) * block,
         "preserved_windows": [part for part in partitions if part["name"] in {
             "mindowsesp", "mindowswin", "mindowsdat"}],
-        "blockers": [
-            "A complete restorable userdata backup has not been captured.",
-            "The observed encrypted F2FS volume has no validated offline decrypted mapping.",
-            "The filesystem features, health, target size and resize tool compatibility "
-            "must be verified before any shrink.",
-            "Shrink and verify the filesystem before changing its GPT boundary; "
-            "re-read and verify the GPT before creating or formatting new partitions.",
-        ],
+        "blockers": blockers,
         "limits": [
             "Partition capacity is not the exact F2FS resize target or crypto mapping size.",
-            "Existing Android and Windows partitions cannot be reformatted for this project.",
+            "Windows, existing boot slots and firmware remain protected regardless of userdata mode.",
+            "Wipe authorization applies to Android data, not Android system/vendor partitions.",
             "An allocated partition would not provide iPadOS or a validated XNU boot path.",
         ],
     }
@@ -95,10 +113,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("backup_report", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--esp-mib", type=int, default=4096,
+                        help="Project EFI capacity in MiB, within the unchanged 64 GiB total")
+    parser.add_argument("--erase-android-data-authorized", action="store_true",
+                        help="Record explicit owner authorization; never erases anything")
     args = parser.parse_args()
     if args.output.exists():
         raise SystemExit("refusing to overwrite an existing proposal")
-    result = plan(json.loads(args.backup_report.read_text(encoding="utf-8")))
+    result = plan(json.loads(args.backup_report.read_text(encoding="utf-8")),
+                  args.esp_mib, args.erase_android_data_authorized)
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2)
         stream.write("\n")
