@@ -27,8 +27,8 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      KERNEL_RUN: "39762760559"
-      KERNEL_SHA256: 768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e
+      KERNEL_RUN: "39771320855"
+      KERNEL_SHA256: cdb8e23ba56dcec2d8c2df5f69b1388dd96618759e8ed52e3b54d70bbbe572e6
     steps:
       - uses: actions/checkout@v4
 
@@ -64,6 +64,8 @@ jobs:
           python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
           python3 loader/scripts/test-probe-analysis.py
           python3 loader/scripts/test-framebuffer-decode.py
+          python3 loader/scripts/test-qemu-upstream-fixtures.py --framework sources/framework
+          python3 loader/scripts/test-handoff-dump.py --framework sources/framework
           python3 loader/scripts/make-nabu-diagnostic-adt.py \
             --dram-size 0x300000000 --output out/diagnostic/kernel.macho.adt
           python3 loader/scripts/check-boot-contract.py --framework sources/framework \

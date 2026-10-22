@@ -10,7 +10,7 @@ root = Path(sys.argv[1])
 manifest = {
     "hardware_tested": False,
     "ready_to_boot": False,
-    "kernel_run": os.environ.get("KERNEL_RUN", "39762760559"),
+    "kernel_run": os.environ.get("KERNEL_RUN", "39771320855"),
     "expected_kernel_sha256": os.environ.get("KERNEL_SHA256"),
     "workflow_run": os.environ.get("GITHUB_RUN_ID"),
     "source_commit": os.environ.get("GITHUB_SHA"),
@@ -31,6 +31,8 @@ if observation.is_file():
             "kernel_vm_mapping_observed", "root_filesystem", "userland",
             "kernel_early_startup_observed", "kernel_early_panic_observed",
             "early_panic_rows", "emulator_watchdog_policy",
+            "kernel_panic_observed", "panic_rows", "persistent_early_stage_mask",
+            "persistent_checkpoint_capture_valid", "nvram_policy", "framebuffer_console",
         )
     }
 for path in sorted(root.rglob("*")):

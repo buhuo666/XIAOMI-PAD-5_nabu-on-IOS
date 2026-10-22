@@ -26,7 +26,7 @@ The real-kernel QEMU experiment adds a host-backed virtio RNG.
 
 Host tests compile the actual loader parsers and check both ABI layouts
 against the real xnu-8796 header. The pinned kernel from Actions run
-39762760559 is parsed without booting it. No filesystem or Apple userland
+39771320855 is parsed without booting it. No filesystem or Apple userland
 is included. Compilation and host parser acceptance do not validate
 UEFI handoff, actual device memory maps, interrupts, or hardware boot.
 
@@ -85,6 +85,13 @@ trip interrupt/preemption elapsed-time hygiene limits. This policy is
 reported in the observation and is not a physical-device recommendation.
 The report separately records an observed early panic even when the
 early-VM milestone was reached.
+
+The real-kernel experiment enables the existing `nabu-fbcon` implementation
+and supplies the pinned UniXNU generator's empty volatile CHRP NVRAM snapshot.
+No NVRAM persistence controller is installed. Patch 0086 retains a RAM-only
+checkpoint mask when framebuffer console initialization clears the screen.
+The exact Mach-O symbol determines the mask offset; QMP capture is bounded
+by the physical ownership window logged by DarwinBoot.
 
 `loader/scripts/decode-nabu-framebuffer.py` extracts the exact `_iso_font`
 from the supplied kernel's Mach-O symbol table and decodes matching 2x-scaled

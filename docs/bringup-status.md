@@ -9,9 +9,13 @@
 | DarwinBoot ABI profiles | 39762368133 | Darwin 22/23 compile, host parser/ABI checks, five QEMU tests |
 | UEFI observation collector | 39763299490 | Adds NabuProbe.efi and a sixth QEMU test; all pass |
 | Real kernel early VM/console startup | 39769172744 | Real xnu-8796 C entry, final TTBR1 mapping, pmap_bootstrap and kprintf startup; simulator only |
+| Persistent early-stage mask kernel | 39771320855 | Patch 0086, actual-function mask tests, macOS compile/link and exported-symbol verification |
 
 Clock fallback kernel SHA-256:
 `768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e`
+
+Current checkpoint-mask kernel SHA-256:
+`cdb8e23ba56dcec2d8c2df5f69b1388dd96618759e8ed52e3b54d70bbbe572e6`
 
 These are compiler and emulator results. No physical tablet test was
 performed by these runs, and none produces a complete iPadOS installation.
@@ -81,6 +85,14 @@ a 13.631 ms elapsed-time hygiene threshold under QEMU. A passed observation
 milestone is not a stable running kernel. Later emulator experiments use
 the kernel's existing `wdt=-1` option and record that policy explicitly;
 physical-device diagnostic settings remain unchanged.
+
+Run 39770758940 also passed the VM milestone with the emulator watchdog
+policy and reached IOKit, then reported `IONVRAMCHRPHandler creation failed`
+because the minimal emulator ADT lacked a NVRAM startup snapshot.
+The next experiment reuses `empty_nvram_proxy` from the pinned UniXNU tree.
+It supplies only a fresh empty 8 KiB CHRP image in guest RAM, not a hardware
+NVRAM controller. Its partition bounds, CHRP checksums and Adler checksum
+are checked before use.
 
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.

@@ -29,9 +29,24 @@ def fixture():
 
 
 class FramebufferTests(unittest.TestCase):
+    def test_persistent_checkpoints(self):
+        mask = (1 << 1) | (1 << 9) | (1 << 20)
+        self.assertEqual(fb.checkpoint_stages(struct.pack("<I", mask)), (mask, [1, 9, 20]))
+        for raw in (b"", bytes(3), bytes(5), struct.pack("<I", 1 << 31)):
+            with self.assertRaises(ValueError):
+                fb.checkpoint_stages(raw)
+
     def test_font_comes_from_file_backed_symbol(self):
         image, font = fixture()
         self.assertEqual(fb.kernel_font(image), font)
+        self.assertEqual(fb.kernel_symbol_offset(image, "_iso_font"), 0)
+        with self.assertRaises(ValueError):
+            fb.kernel_symbol_offset(image, "_absent")
+        metadata = bytearray(image)
+        struct.pack_into("<II", metadata, 16, 3, 168)
+        struct.pack_into("<II16s4Q4I", metadata, 128, 0x19, 72, b"__CTF",
+                         0, 0, 0, 16, 0, 0, 0, 0)
+        self.assertEqual(fb.kernel_font(metadata), font)
         for broken in (b"", image[:31], image[:100], image[:-1]):
             with self.subTest(size=len(broken)), self.assertRaises(ValueError):
                 fb.kernel_font(broken)

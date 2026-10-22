@@ -12,8 +12,8 @@ WIDTH, HEIGHT, STRIDE, SCALE = 1600, 2560, 1600, 2
 WHITE, BLACK = 0xffffffff, 0xff000000
 
 
-def kernel_font(image):
-    """Resolve _iso_font through bounded LC_SYMTAB and LC_SEGMENT_64 records."""
+def kernel_layout(image, symbol):
+    """Resolve one defined symbol and bounded segments from the exact Mach-O."""
     if len(image) < 32:
         raise ValueError("truncated Mach-O")
     magic, cpu, _, _, count, length, _, _ = struct.unpack_from("<8I", image)
@@ -34,7 +34,7 @@ def kernel_font(image):
             if fileoff > len(image) or filesize > len(image) - fileoff:
                 raise ValueError("segment exceeds file")
             # XNU's __CTF can contain file-only metadata with vmsize zero.
-            segments.append((vmaddr, fileoff, min(vmsize, filesize)))
+            segments.append((vmaddr, vmsize, fileoff, min(vmsize, filesize)))
         elif command == 2:
             if size != 24 or symtab is not None:
                 raise ValueError("invalid or duplicate symbol table")
@@ -57,18 +57,39 @@ def kernel_font(image):
         nameend = image.find(b"\0", stroff + nameoff, stroff + strsize)
         if nameend == -1:
             raise ValueError("unterminated symbol name")
-        if image[stroff + nameoff:nameend] == b"_iso_font":
+        if image[stroff + nameoff:nameend] == symbol.encode("ascii"):
             matches.append(address)
     if len(matches) != 1:
-        raise ValueError("expected exactly one defined _iso_font")
-    for vmaddr, fileoff, filesize in segments:
-        relative = matches[0] - vmaddr
+        raise ValueError(f"expected exactly one defined {symbol}")
+    if not any(vmaddr <= matches[0] < vmaddr + vmsize for vmaddr, vmsize, _, _ in segments):
+        raise ValueError(f"{symbol} is outside mapped segments")
+    return segments, matches[0]
+
+
+def kernel_symbol_offset(image, symbol):
+    segments, address = kernel_layout(image, symbol)
+    return address - min(vmaddr for vmaddr, vmsize, _, _ in segments if vmsize)
+
+
+def kernel_font(image):
+    segments, address = kernel_layout(image, "_iso_font")
+    for vmaddr, _, fileoff, filesize in segments:
+        relative = address - vmaddr
         if 0 <= relative and relative + 4096 <= filesize:
             return image[fileoff + relative:fileoff + relative + 4096]
     raise ValueError("_iso_font is not backed by 4096 file bytes")
 
 
-def decode(raw, font):
+def checkpoint_stages(raw):
+    if len(raw) != 4:
+        raise ValueError("expected a four-byte early-stage mask")
+    mask, = struct.unpack("<I", raw)
+    if mask & ~((1 << 21) - 1):
+        raise ValueError("early-stage mask contains unknown stage bits")
+    return mask, [stage for stage in range(1, 21) if mask & (1 << stage)]
+
+
+def decode(raw, font, full_console=False):
     if len(raw) != STRIDE * HEIGHT * 4 or len(font) != 4096:
         raise ValueError("expected the fixed 1600x2560 BGRA32 framebuffer and 4096-byte font")
     pixels = array("I", raw)
@@ -79,7 +100,7 @@ def decode(raw, font):
         glyphs.setdefault(font[char * 16:(char + 1) * 16], chr(char))
     # The bottom 32 scanlines contain stage bands, not console cells.
     rows, unknown = [], 0
-    for row in range((HEIGHT - 32) // 32):
+    for row in range(HEIGHT // 32 if full_console else (HEIGHT - 32) // 32):
         text, rendered = [], False
         for col in range(WIDTH // 16):
             glyph = bytearray()
@@ -123,10 +144,12 @@ def main():
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--framebuffer", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--full-console", action="store_true",
+                        help="include the last row after normal fbcon has replaced the stage bands")
     args = parser.parse_args()
     try:
         image = args.kernel.read_bytes()
-        report = decode(args.framebuffer.read_bytes(), kernel_font(image))
+        report = decode(args.framebuffer.read_bytes(), kernel_font(image), args.full_console)
     except (OSError, ValueError, struct.error) as error:
         parser.exit(2, f"framebuffer decode failed: {error}\n")
     report["kernel_sha256"] = hashlib.sha256(image).hexdigest()

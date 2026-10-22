@@ -21,6 +21,14 @@ PAYLOADS.mkdir(parents=True, exist_ok=True)
 spec = importlib.util.spec_from_file_location("adt", ROOT / "loader/scripts/make-nabu-diagnostic-adt.py")
 adt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adt)
+spec = importlib.util.spec_from_file_location("fixtures", ROOT / "loader/scripts/qemu-upstream-fixtures.py")
+fixtures = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixtures)
+spec = importlib.util.spec_from_file_location("fb", ROOT / "loader/scripts/decode-nabu-framebuffer.py")
+fb = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fb)
+kernel_image = (ROOT / "verified-kernel/kernel.macho").read_bytes()
+stage_mask_offset = fb.kernel_symbol_offset(kernel_image, "_nabu_early_stage_mask")
 u32 = lambda value: struct.pack("<I", value)
 u64 = lambda value: struct.pack("<Q", value)
 tree = adt.node("device-tree", [
@@ -29,7 +37,7 @@ tree = adt.node("device-tree", [
 ], [
     adt.node("chosen", [("darwinboot-memory-size", u64(0x10000000)),
                        ("dram-base", u64(0x40000000)), ("dram-size", u64(0x80000000)),
-                       ("random-seed", bytes(64))],
+                       ("random-seed", bytes(64)), *fixtures.nvram_proxy(FRAMEWORK)],
              [adt.node("memory-map")]),
     adt.node("cpus", children=[adt.node("cpu0", [
         ("state", b"running\0"), ("reg", u32(0)), ("device_type", b"cpu\0"),
@@ -38,6 +46,10 @@ tree = adt.node("device-tree", [
     adt.node("defaults", [("sleep-disabled", u32(1))]),
     adt.node("options"),
     adt.node("product", [("product-name", b"QEMU experiment\0")]),
+    adt.node("nabu-fbcon", [
+        ("reg", struct.pack("<QQ", 0x9c000000, 0xfa0000)),
+        ("width", u32(1600)), ("height", u32(2560)), ("stride", u32(6400)),
+    ]),
     adt.node("arm-io", [
         ("device_type", b"arm-io\0"), ("ranges", struct.pack("<QQQ", 0, 0x08000000, 0x1000000)),
     ], [adt.node("gic", [
@@ -77,6 +89,7 @@ result = subprocess.run([
     "--debug-log", OUT / "exceptions.log",
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
+    "--handoff-dump", hex(stage_mask_offset), "4", OUT / "early-stage-mask.raw",
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
     "--expect", "DARWINBOOT: inputs validated; exiting boot services",
     "--expect", "DARWINBOOT: supplied 64 fresh UEFI RNG seed bytes",
@@ -89,6 +102,9 @@ report = {
     "early_markers": [],
     "root_filesystem": False, "userland": False,
     "emulator_watchdog_policy": "wdt=-1: disable elapsed-time hygiene checks under emulation only",
+    "nvram_policy": "empty volatile upstream CHRP snapshot; no persistence controller",
+    "framebuffer_console": True,
+    "persistent_checkpoint_capture_valid": False,
 }
 raw = OUT / "framebuffer.raw"
 if raw.is_file() and raw.stat().st_size == 0xfa0000:
@@ -121,20 +137,34 @@ if raw.is_file() and raw.stat().st_size == 0xfa0000:
         sys.executable, ROOT / "loader/scripts/decode-nabu-framebuffer.py",
         "--kernel", ROOT / "verified-kernel/kernel.macho",
         "--framebuffer", raw, "--output", OUT / "console.json",
+        "--full-console",
     ])
     report["console_decode_pass"] = decoded.returncode == 0
     if decoded.returncode == 0:
         console = json.loads((OUT / "console.json").read_text(encoding="utf-8"))
         report["early_panic_rows"] = [
             row for row in console["decoded_rows"] if "NABU EARLY PANIC:" in row["text"]]
+        report["panic_rows"] = [
+            row for row in console["decoded_rows"]
+            if "NABU EARLY PANIC:" in row["text"] or "panic(cpu " in row["text"]]
+report["visual_early_markers"] = report["early_markers"]
+mask_file = OUT / "early-stage-mask.raw"
+if mask_file.is_file():
+    mask, report["early_markers"] = fb.checkpoint_stages(mask_file.read_bytes())
+    report["persistent_early_stage_mask"] = hex(mask)
+    report["persistent_checkpoint_capture_valid"] = True
+    if not set(report["visual_early_markers"]) <= set(report["early_markers"]):
+        raise ValueError("visible stage markers disagree with the persistent stage mask")
 report["kernel_c_entry_observed"] = 1 in report["early_markers"]
 report["kernel_vm_mapping_observed"] = 9 in report["early_markers"]
 report["kernel_early_startup_observed"] = 20 in report["early_markers"]
 report["kernel_early_panic_observed"] = bool(report.get("early_panic_rows"))
+report["kernel_panic_observed"] = bool(report.get("panic_rows"))
 report["limits"] = [
     "The framebuffer and GIC configuration are emulator adapters, not a physical nabu test.",
     "Early markers only show those kernel checkpoints; they do not prove a userspace boot.",
 ]
 (OUT / "observation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))
-raise SystemExit(0 if result.returncode == 0 and report["kernel_vm_mapping_observed"] else 1)
+raise SystemExit(0 if result.returncode == 0 and report["kernel_vm_mapping_observed"]
+                 and report["persistent_checkpoint_capture_valid"] else 1)
