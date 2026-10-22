@@ -72,6 +72,8 @@ result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
     "--log", OUT / "qemu.log", "--cpu-model", "max", "--cpus", "1",
     "--memory-mib", "2048", "--gic-version", "3", "--timeout", "100",
+    "--no-acpi", "--register-dump", OUT / "registers.txt",
+    "--debug-log", OUT / "exceptions.log",
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
@@ -91,6 +93,9 @@ if raw.is_file() and raw.stat().st_size == 0xfa0000:
     pixels = array("I", data)
     if sys.byteorder != "little":
         pixels.byteswap()
+    white = sum(Counter(pixels[row * 1600:row * 1600 + 48])[0xffffffff]
+                for row in range(2528, 2560))
+    report["assembly_entry_white_marker_observed"] = white >= 1500
     for stage in range(1, 21):
         color = 0xff00ff00 | ((stage & 7) * 32 << 16)
         count = sum(Counter(pixels[row * 1600 + stage * 48:

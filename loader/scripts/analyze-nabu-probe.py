@@ -7,6 +7,8 @@ from pathlib import Path
 import re
 
 MAX_U64 = (1 << 64) - 1
+BOOTSTRAP_MASK = (1 << 25) - 1
+KERNEL_BASE = 0xfffffe0007004000
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Za-z0-9]")
 
 
@@ -69,13 +71,13 @@ def analyze(raw):
             runs.append([item["start"], item["end"]])
     candidates = []
     for start, end in runs:
-        candidate = ((start + 0x1fffff) & ~0x1fffff) + 0x4000
+        candidate = start + ((KERNEL_BASE - start) & BOOTSTRAP_MASK)
         if candidate + 0x10000000 <= min(end, 1 << 32):
             candidates.append(candidate)
     candidate = reported_memory["low256m_candidate"]
     # Descriptor order can select any viable suffix of a coalesced run.
     if candidate:
-        if candidate & 0x1fffff != 0x4000 or not any(
+        if candidate & BOOTSTRAP_MASK != KERNEL_BASE & BOOTSTRAP_MASK or not any(
                 start <= candidate and candidate + 0x10000000 <= min(end, 1 << 32)
                 for start, end in runs):
             raise ValueError("reported low-memory candidate is outside conventional memory")
@@ -113,6 +115,7 @@ def analyze(raw):
         "cpu": cpu, "gop": gop, "memory": {
             **summary, **reported_memory, "conventional_runs": runs,
             "kernel_base_assumption": "0xfffffe0007004000",
+            "bootstrap_block_bytes": BOOTSTRAP_MASK + 1,
             "physical_dram_capacity_verified": False,
         },
         "diagnostic_contract_compatible": not blockers,

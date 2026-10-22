@@ -49,6 +49,17 @@ Its positive result is a contract comparison, not permission or proof to boot.
 
 ## Remaining work
 
+The first real-kernel QEMU experiment (run 39765266344) entered the actual
+XNU assembly entry, as shown by the 64x32 white physical-framebuffer marker,
+but did not reach its first C checkpoint. This is a failed experiment,
+not a successful kernel boot. Its QEMU GOP adapter also declined activation.
+
+Source inspection found that the loader preserved only 2 MiB VA/PA offsets,
+while this nabu kernel uses 16 KiB pages and 32 MiB L2 bootstrap mappings.
+The loader and probe now preserve 32 MiB congruence. Host and synthetic
+handoff checks cover that constraint. A new experiment must determine
+whether this repair permits the real kernel to continue.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.

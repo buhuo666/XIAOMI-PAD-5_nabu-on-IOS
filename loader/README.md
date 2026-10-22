@@ -15,6 +15,11 @@ storage/PSCI node paths and ramdisk/trust cache/GPU addon placeholders.
 Its companion ADT records 12 GiB as inventory only; that capacity is not
 declared as memory owned by XNU.
 
+All loader variants preserve the kernel virtual-base offset within a 32 MiB
+bootstrap block when selecting physical memory. The nabu kernel uses 16 KiB
+pages and 32 MiB L2 mappings; matching only a 2 MiB offset is insufficient.
+This stronger constraint also satisfies 4 KiB-page / 2 MiB-block kernels.
+
 Host tests compile the actual loader parsers and check both ABI layouts
 against the real xnu-8796 header. The pinned kernel from Actions run
 39762760559 is parsed without booting it. No filesystem or Apple userland
@@ -64,7 +69,8 @@ driver validates the QEMU FDT before configuring ramfb at the kernel's fixed
 
 The experiment runs the actual compiled open-source kernel with an
 emulator-specific ADT and no root filesystem. It captures the serial log,
-display, physical framebuffer and early checkpoint markers. The experiment
+display, physical framebuffer, CPU registers, exception log and early checkpoint
+markers. ACPI is disabled so the adapter can use the QEMU FDT. The experiment
 fails if the kernel's post-VM-mapping marker is not observed; raw evidence is
 still uploaded. These observations never establish physical nabu support or
 an iPadOS userspace boot.

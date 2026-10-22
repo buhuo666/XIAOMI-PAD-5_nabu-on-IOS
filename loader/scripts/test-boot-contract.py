@@ -79,7 +79,13 @@ int main(void) {
     video[i]--;
   }
   assert(DarwinWindowCandidate(0xa4000000,0x100000000,0xfffffe0007004000,
-                              0x10000000,0x100000000,&p) && p==0xa4004000);
+                              0x10000000,0x100000000,&p) && p==0xa5004000);
+  assert(DarwinWindowCandidate(0x48000000,0x80000000,0xfffffe0007004000,
+                              0x10000000,0x100000000,&p) && p==0x49004000);
+  assert(DarwinWindowCandidate(0x49004000,0x59004000,0xfffffe0007004000,
+                              0x10000000,0x100000000,&p) && p==0x49004000);
+  assert(!DarwinWindowCandidate(0x49004001,0x59004001,0xfffffe0007004000,
+                               0x10000000,0x100000000,&p));
   assert(!DarwinWindowCandidate(0x100000000,0x300000000,0x4000,
                                0x10000000,0x100000000,&p));
   assert(!DarwinWindowCandidate(0xf0000000,0x200000000,0x4000,

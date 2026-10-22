@@ -1,17 +1,20 @@
 diff --git a/package/Scripts/qemu-run.py b/package/Scripts/qemu-run.py
-index 54eb81f..6869fee 100755
+index 54eb81f..bc625de 100755
 --- a/package/Scripts/qemu-run.py
 +++ b/package/Scripts/qemu-run.py
-@@ -119,12 +119,29 @@ def main() -> int:
+@@ -119,12 +119,32 @@ def main() -> int:
      parser.add_argument("--disk", action="append", default=[], type=Path, help="extra raw disk image (read-only)")
      parser.add_argument("--timeout", type=float, default=90.0)
      parser.add_argument("--cpus", type=int, default=2, help="number of virtual CPUs (default: 2)")
 +    parser.add_argument("--cpu-model", default="cortex-a72")
 +    parser.add_argument("--gic-version", choices=("2", "3"))
++    parser.add_argument("--no-acpi", action="store_true")
 +    parser.add_argument("--memory-mib", type=int, default=1024)
 +    parser.add_argument("--final-screenshot", type=Path, help="PNG captured before stopping QEMU")
 +    parser.add_argument("--memory-dump", nargs=3, metavar=("ADDRESS", "BYTES", "PATH"),
 +                        help="Capture guest physical memory through QMP before stopping")
++    parser.add_argument("--register-dump", type=Path)
++    parser.add_argument("--debug-log", type=Path)
      parser.add_argument("--finish-on-expect", action="store_true",
                          help="finish two seconds after all expected patterns match")
      parser.add_argument("--menu-marker", default=r"UNIXNU: menu: shown")
@@ -32,18 +35,28 @@ index 54eb81f..6869fee 100755
      display = None
      if args.display_size:
          match = re.fullmatch(r"([0-9]+)x([0-9]+)", args.display_size)
-@@ -148,7 +165,9 @@ def main() -> int:
+@@ -148,13 +168,19 @@ def main() -> int:
          args.log.unlink()
  
      cmd = [
 -        qemu, "-M", "virt", "-cpu", "cortex-a72", "-m", "1024", "-smp", str(args.cpus),
-+        qemu, "-M", "virt" + (f",gic-version={args.gic_version}" if args.gic_version else ""),
++        qemu, "-M", "virt" + (f",gic-version={args.gic_version}" if args.gic_version else "") +
++        (",acpi=off" if args.no_acpi else ""),
 +        "-cpu", args.cpu_model,
 +        "-m", str(args.memory_mib), "-smp", str(args.cpus),
          "-drive", f"if=pflash,format=raw,readonly=on,file={code}",
      ]
      if vars_template:
-@@ -180,6 +199,7 @@ def main() -> int:
+         vars_copy = work / "vars.fd"
+         shutil.copy(vars_template, vars_copy)
+         cmd += ["-drive", f"if=pflash,format=raw,file={vars_copy}"]
++    if args.debug_log:
++        args.debug_log.parent.mkdir(parents=True, exist_ok=True)
++        cmd += ["-d", "int,guest_errors,unimp", "-D", str(args.debug_log.resolve())]
+     cmd += [
+         "-drive", f"if=none,id=esp,format=raw,readonly=on,file=fat:{args.esp.resolve()}",
+         "-device", "virtio-blk-pci,drive=esp",
+@@ -180,6 +206,7 @@ def main() -> int:
      menu_seen = False
      expectations_since = None
      expectations_complete = False
@@ -51,7 +64,7 @@ index 54eb81f..6869fee 100755
      deadline = time.time() + args.timeout
      try:
          qmp = Qmp(str(qmp_path))
-@@ -211,6 +231,24 @@ def main() -> int:
+@@ -211,6 +238,30 @@ def main() -> int:
              time.sleep(0.2)
      finally:
          if proc.poll() is None:
@@ -70,13 +83,19 @@ index 54eb81f..6869fee 100755
 +                        result = qmp.command("pmemsave", val=address, size=length, filename=str(target))
 +                        if "error" in result:
 +                            raise RuntimeError(f"pmemsave: {result['error']}")
++                    if args.register_dump:
++                        result = qmp.command("human-monitor-command", **{"command-line": "info registers"})
++                        if "error" in result:
++                            raise RuntimeError(f"register dump: {result['error']}")
++                        args.register_dump.parent.mkdir(parents=True, exist_ok=True)
++                        args.register_dump.write_text(result["return"], encoding="utf-8")
 +                except (OSError, RuntimeError, ValueError) as error:
 +                    print("capture failed:", error)
 +                    capture_failed = True
              print("expectations complete: stopping QEMU" if expectations_complete else "timeout: stopping QEMU")
              if qmp:
                  try:
-@@ -230,7 +268,7 @@ def main() -> int:
+@@ -230,7 +281,7 @@ def main() -> int:
      clean = args.log.with_suffix(".clean.log")
      clean.write_text(log)
  

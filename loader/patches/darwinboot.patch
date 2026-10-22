@@ -193,10 +193,10 @@ index 3a90c96..80329ea 100644
  [Packages]
 diff --git a/DarwinBootPkg/Driver/NabuDiagnostic.h b/DarwinBootPkg/Driver/NabuDiagnostic.h
 new file mode 100644
-index 0000000..4d22d46
+index 0000000..0753b74
 --- /dev/null
 +++ b/DarwinBootPkg/Driver/NabuDiagnostic.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,58 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
 +#ifndef DARWINBOOT_NABU_DIAGNOSTIC_H
 +#define DARWINBOOT_NABU_DIAGNOSTIC_H
@@ -242,12 +242,13 @@ index 0000000..4d22d46
 +
 +static inline int DarwinWindowCandidate(UINT64 start, UINT64 end, UINT64 base,
 +                                       UINT64 size, UINT64 limit, UINT64 *candidate) {
-+  UINT64 aligned;
++  // XNU's 16 KiB bootstrap uses 32 MiB L2 blocks. Preserve their VA/PA
++  // offsets; the stronger congruence also covers 4 KiB / 2 MiB bootstraps.
++  const UINT64 mask = 0x1ffffffULL;
++  UINT64 aligned, delta = (base - start) & mask;
 +  if (end > limit) { end = limit; }
-+  if (start > MAX_UINT64 - 0x1fffffULL) { return 0; }
-+  aligned = (start + 0x1fffffULL) & ~0x1fffffULL;
-+  if (aligned > MAX_UINT64 - (base & 0x1fffffULL)) { return 0; }
-+  aligned += base & 0x1fffffULL;
++  if (start > MAX_UINT64 - delta) { return 0; }
++  aligned = start + delta;
 +  if (end < aligned || size > end - aligned) { return 0; }
 +  *candidate = aligned;
 +  return 1;
@@ -285,7 +286,7 @@ index 13b9c74..ca79db8 100644
 +validation suite requires the ordinary profile; it is not a diagnostic
 +profile hardware test. No profile here supplies an iPadOS userland.
 diff --git a/Test/Kernel.S b/Test/Kernel.S
-index 8d11163..2ba85bf 100644
+index 8d11163..3a17ffb 100644
 --- a/Test/Kernel.S
 +++ b/Test/Kernel.S
 @@ -6,6 +6,9 @@
@@ -298,6 +299,15 @@ index 8d11163..2ba85bf 100644
  .section .text, "ax"
  .global _start
  _start:
+@@ -23,7 +26,7 @@ _start:
+   b.ne failed
+   ldr x5, [x0, #16]
+   eor x6, x3, x5
+-  tst x6, #0x1fffff
++  tst x6, #0x1ffffff
+   b.ne failed
+   adr x6, _start
+   sub x6, x6, x5
 @@ -33,7 +36,13 @@ _start:
    mov x7, #FIXTURE_WINDOW_SIZE
    cmp x6, x7
@@ -630,10 +640,10 @@ index 0000000..f2e7c79
 +  gEfiLoadedImageProtocolGuid
 diff --git a/Test/QemuNabuEnvironment.c b/Test/QemuNabuEnvironment.c
 new file mode 100644
-index 0000000..f628ae3
+index 0000000..1224c83
 --- /dev/null
 +++ b/Test/QemuNabuEnvironment.c
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,181 @@
 +// SPDX-License-Identifier: BSD-2-Clause-Patent
 +// Emulator-only adapter for the real 8796 framebuffer bootstrap experiment.
 +#include <Uefi.h>
@@ -724,17 +734,28 @@ index 0000000..f628ae3
 +  UINT8 *Config;
 +  (VOID)ImageHandle; (VOID)SystemTable;
 +  Status = EfiGetSystemConfigurationTable (&gFdtTableGuid, &Fdt);
-+  if (EFI_ERROR (Status) || Fdt == NULL || FdtCheckHeader (Fdt) != 0) { return EFI_UNSUPPORTED; }
++  if (EFI_ERROR (Status) || Fdt == NULL || FdtCheckHeader (Fdt) != 0) {
++    Print (L"QEMU-NABU: refused: QEMU FDT unavailable (%r)\n", Status);
++    return EFI_UNSUPPORTED;
++  }
 +  Compatible = FdtGetProp (Fdt, 0, "compatible", &Length);
 +  if (Compatible == NULL || Length != sizeof ("linux,dummy-virt") ||
 +      CompareMem (Compatible, "linux,dummy-virt", sizeof ("linux,dummy-virt")) != 0) {
++    Print (L"QEMU-NABU: refused: root compatible length=%d value=%a\n", Length,
++           Compatible == NULL ? "(null)" : Compatible);
 +    return EFI_UNSUPPORTED;
 +  }
 +  // Require the exact virt fw_cfg node before any emulator MMIO access.
-+  if (FdtPathOffset (Fdt, "/fw-cfg@9020000") < 0) { return EFI_UNSUPPORTED; }
++  if (FdtPathOffset (Fdt, "/fw-cfg@9020000") < 0) {
++    Print (L"QEMU-NABU: refused: expected fw-cfg node absent\n");
++    return EFI_UNSUPPORTED;
++  }
 +  FwSelect (0);
 +  FwRead (Signature, sizeof (Signature));
-+  if (CompareMem (Signature, "QEMU", 4) != 0) { return EFI_UNSUPPORTED; }
++  if (CompareMem (Signature, "QEMU", 4) != 0) {
++    Print (L"QEMU-NABU: refused: fw-cfg signature mismatch\n");
++    return EFI_UNSUPPORTED;
++  }
 +  FwSelect (0x19);
 +  FwRead (CountBytes, sizeof (CountBytes));
 +  Files = SwapBytes32 (ReadUnaligned32 ((UINT32 *)CountBytes));
