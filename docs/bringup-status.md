@@ -94,6 +94,16 @@ It supplies only a fresh empty 8 KiB CHRP image in guest RAM, not a hardware
 NVRAM controller. Its partition bounds, CHRP checksums and Adler checksum
 are checked before use.
 
+Run 39772752656 passed with kernel 39771320855. All twenty checkpoint bits
+were read from `_nabu_early_stage_mask` (`0x1ffffe`), including the real
+framebuffer mapping path (17/18). The final captured frame had no decoded
+panic text, and all 393 artifact file hashes matched after download.
+This is not a no-panic guarantee: DEVELOPMENT defaults suppress kprintf,
+and a single register snapshot does not establish forward progress.
+The follow-up experiment explicitly enables verbose/development kprintf,
+samples registers every ten seconds, and pauses the VM for consistent final
+screen/memory/register capture.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.

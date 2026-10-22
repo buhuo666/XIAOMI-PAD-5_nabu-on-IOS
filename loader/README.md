@@ -92,6 +92,9 @@ No NVRAM persistence controller is installed. Patch 0086 retains a RAM-only
 checkpoint mask when framebuffer console initialization clears the screen.
 The exact Mach-O symbol determines the mask offset; QMP capture is bounded
 by the physical ownership window logged by DarwinBoot.
+DEVELOPMENT kprintf is explicitly enabled only in the experiment. Periodic
+register snapshots help distinguish forward progress from one final address;
+the VM is paused before the final memory/display/register capture.
 
 `loader/scripts/decode-nabu-framebuffer.py` extracts the exact `_iso_font`
 from the supplied kernel's Mach-O symbol table and decodes matching 2x-scaled

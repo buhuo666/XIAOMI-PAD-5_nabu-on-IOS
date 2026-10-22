@@ -79,13 +79,14 @@ id = "xnu-experiment"
 title = "QEMU only: actual open-source XNU"
 type = "xnu"
 path = "Payloads/kernel.macho"
-args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1"
+args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1 -v -enable_kprintf_spam"
 ''', encoding="ascii")
 result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
     "--log", OUT / "qemu.log", "--cpu-model", "max", "--cpus", "1",
     "--memory-mib", "2048", "--gic-version", "3", "--timeout", "100",
     "--no-acpi", "--rng", "--register-dump", OUT / "registers.txt",
+    "--register-sample-interval", "10",
     "--debug-log", OUT / "exceptions.log",
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
@@ -104,6 +105,7 @@ report = {
     "emulator_watchdog_policy": "wdt=-1: disable elapsed-time hygiene checks under emulation only",
     "nvram_policy": "empty volatile upstream CHRP snapshot; no persistence controller",
     "framebuffer_console": True,
+    "development_kprintf_enabled": True,
     "persistent_checkpoint_capture_valid": False,
 }
 raw = OUT / "framebuffer.raw"
