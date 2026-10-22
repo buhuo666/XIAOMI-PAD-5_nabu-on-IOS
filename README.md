@@ -26,3 +26,6 @@ Android MemTotal and swap are separate observations, not UEFI/DRAM validation:
 ```powershell
 pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
 ```
+
+设备证据采集与当前验证顺序见 [本机验证入口](docs/device-validation.md)。
+当前进展与每次实验的边界见 [bringup-status.md](docs/bringup-status.md)。

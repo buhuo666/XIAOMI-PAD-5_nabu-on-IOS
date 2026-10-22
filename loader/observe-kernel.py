@@ -88,7 +88,7 @@ id = "xnu-experiment"
 title = "QEMU only: actual open-source XNU"
 type = "xnu"
 path = "Payloads/kernel.macho"
-args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1 -v -enable_kprintf_spam"
+args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1 serial=1 -v -enable_kprintf_spam"
 ''', encoding="ascii")
 result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
@@ -122,6 +122,7 @@ report = {
     "nvram_policy": "empty volatile upstream CHRP snapshot; no persistence controller",
     "framebuffer_console": True,
     "development_kprintf_enabled": True,
+    "printf_serial_output_requested": True,
     "register_symbolization_pass": register_symbols.returncode == 0,
     "requested_owned_memory_bytes": owned_memory_size,
     "persistent_checkpoint_capture_valid": False,

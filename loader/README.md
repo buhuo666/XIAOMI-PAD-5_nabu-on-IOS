@@ -100,6 +100,8 @@ sampled the page-allocation wait path. It also captures five VM page counters
 from exact exported symbols within the loader-owned window. This allocation
 change applies only to the emulator experiment. The guarded nabu diagnostic
 profile continues to require exactly 256 MiB.
+The experiment requests `serial=1` to route ordinary startup console output
+through the existing framebuffer serial implementation.
 
 `loader/scripts/symbolize-registers.py` resolves sampled PC/LR addresses with
 `llvm-symbolizer` against the exact kernel and records its SHA-256. The result

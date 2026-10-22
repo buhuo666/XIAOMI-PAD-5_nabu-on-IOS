@@ -114,6 +114,20 @@ The next emulator experiment increases only its allocated window from 256 to
 512 MiB and captures actual free/reserved/target/wired/delayed page counters.
 The physical-device diagnostic contract remains 256 MiB.
 
+Run 39775489349 allocated 512 MiB and passed all loader, contract and emulator
+checks; all 400 artifact hashes were verified after download. The actual
+kernel logged scheduler, BANK, IPC, HMAC-SHA256 and libpthread initialization.
+Nine periodic snapshots and the final capture were in the timebase, idle,
+waitq or recount paths, rather than the earlier page-allocation wait loop.
+The paused counters were: free 31007, reserved 130, target 144, wired 1712,
+delayed 0. The symbolizer's kernel hash matched the selected kernel.
+No panic text was decoded from the final framebuffer.
+
+This establishes progress beyond the 256 MiB experiment, not a completed
+OS boot or a proven minimum memory requirement. The follow-up keeps 512 MiB
+and requests the existing `serial=1` output option to expose ordinary
+`printf`/IOLog boot messages as well as kprintf.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.
