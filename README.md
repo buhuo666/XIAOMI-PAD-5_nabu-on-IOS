@@ -29,3 +29,9 @@ pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
 
 设备证据采集与当前验证顺序见 [本机验证入口](docs/device-validation.md)。
 当前进展与每次实验的边界见 [bringup-status.md](docs/bringup-status.md)。
+
+本设备已安装 **Windows 11 ARM**。2026-10-22 的只读 ADB 查询已观察到
+`mindowsesp`、`mindowswin`、`mindowsdat`；这些是现有系统空间，不能用于
+格式化安装。已有 Windows 的固件信息采集和独立探针路径见
+[已有 Windows 验证路径](docs/existing-windows.md)。探针包仅在 PC 上准备，
+不会替换现有 UEFI、Windows 引导或 Android 分区。

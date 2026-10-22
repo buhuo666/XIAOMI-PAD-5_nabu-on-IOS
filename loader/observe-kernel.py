@@ -27,6 +27,9 @@ spec.loader.exec_module(fixtures)
 spec = importlib.util.spec_from_file_location("fb", ROOT / "loader/scripts/decode-nabu-framebuffer.py")
 fb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fb)
+spec = importlib.util.spec_from_file_location("progress", ROOT / "loader/scripts/boot-progress.py")
+progress = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(progress)
 kernel_image = (ROOT / "verified-kernel/kernel.macho").read_bytes()
 stage_mask_offset = fb.kernel_symbol_offset(kernel_image, "_nabu_early_stage_mask")
 startup_phase_offset = fb.kernel_symbol_offset(kernel_image, "_startup_phase")
@@ -133,6 +136,7 @@ report = {
     "persistent_checkpoint_capture_valid": False,
 }
 report["paused_vm_page_counters"] = {}
+report["console_progress"] = progress.summarize({})
 for name in counter_names:
     path = OUT / (name[1:] + ".raw")
     if path.is_file() and path.stat().st_size == 4:
@@ -179,6 +183,8 @@ if raw.is_file() and raw.stat().st_size == 0xfa0000:
     report["console_decode_pass"] = decoded.returncode == 0
     if decoded.returncode == 0:
         console = json.loads((OUT / "console.json").read_text(encoding="utf-8"))
+        report["console_progress"] = progress.summarize(
+            console, report.get("paused_cpu_count_state"))
         report["early_panic_rows"] = [
             row for row in console["decoded_rows"] if "NABU EARLY PANIC:" in row["text"]]
         report["panic_rows"] = [
@@ -197,11 +203,25 @@ report["kernel_vm_mapping_observed"] = 9 in report["early_markers"]
 report["kernel_early_startup_observed"] = 20 in report["early_markers"]
 report["kernel_early_panic_observed"] = bool(report.get("early_panic_rows"))
 report["kernel_panic_observed"] = bool(report.get("panic_rows"))
+report["observation_goal"] = "single-CPU initialization, BSD entry and HFS root-device wait messages"
+required_progress = (
+    "cpu_count_published", "cpu_sgi_self_test_message_observed",
+    "bsd_init_message_observed", "bsd_autoconf_complete_message_observed",
+    "root_device_search_message_observed", "hfs_root_wait_message_observed",
+)
+report["missing_goal_observations"] = [
+    name for name in required_progress if not report["console_progress"][name]
+]
+report["observation_goal_pass"] = (
+    result.returncode == 0 and report["kernel_vm_mapping_observed"]
+    and report["persistent_checkpoint_capture_valid"]
+    and report["register_symbolization_pass"] and report.get("console_decode_pass", False)
+    and not report["missing_goal_observations"] and not report["kernel_panic_observed"]
+)
 report["limits"] = [
     "The framebuffer and GIC configuration are emulator adapters, not a physical nabu test.",
     "Early markers only show those kernel checkpoints; they do not prove a userspace boot.",
 ]
 (OUT / "observation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))
-raise SystemExit(0 if result.returncode == 0 and report["kernel_vm_mapping_observed"]
-                 and report["persistent_checkpoint_capture_valid"] else 1)
+raise SystemExit(0 if report["observation_goal_pass"] else 1)

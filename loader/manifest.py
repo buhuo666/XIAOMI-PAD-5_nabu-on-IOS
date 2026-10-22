@@ -38,6 +38,8 @@ if observation.is_file():
             "printf_serial_output_requested",
             "startup_debug_requested", "paused_startup_phase",
             "paused_cpu_count_state",
+            "console_progress",
+            "observation_goal", "observation_goal_pass", "missing_goal_observations",
         )
     }
 for path in sorted(root.rglob("*")):
@@ -75,6 +77,8 @@ if summary_path:
             f"- Allocated-window request: {report.get('requested_owned_memory_bytes', 'not recorded')} bytes",
             f"- Paused startup phase: `{report.get('paused_startup_phase', 'not captured')}`",
             f"- Paused CPU-count initialization state: `{report.get('paused_cpu_count_state', 'not captured')}`",
+            f"- Observation goal: {report.get('observation_goal', 'early VM checkpoint (older run)')}",
+            f"- Observation goal passed: `{report.get('observation_goal_pass', 'not recorded by older run')}`",
             "- Root filesystem supplied: **no**; iPadOS userland tested: **no**",
             "",
             "A passed early checkpoint is not a completed OS boot. Absence of captured",
@@ -83,6 +87,13 @@ if summary_path:
         if counters:
             lines.extend(["", "| Paused VM counter | Pages |", "| --- | ---: |"])
             lines.extend(f"| `{name}` | {value} |" for name, value in counters.items())
+        progress = report.get("console_progress")
+        if progress:
+            lines.extend(["", "### Explicit captured messages", ""])
+            lines.extend(
+                f"- `{name}`: `{value}`" for name, value in progress.items() if name != "limits"
+            )
+            lines.extend(["", progress["limits"]])
         symbols_path = root / "kernel-observation/registers.symbols.json"
         if symbols_path.is_file():
             symbols = json.loads(symbols_path.read_text(encoding="utf-8"))

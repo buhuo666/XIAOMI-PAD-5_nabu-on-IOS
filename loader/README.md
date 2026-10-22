@@ -77,9 +77,11 @@ The experiment runs the actual compiled open-source kernel with an
 emulator-specific ADT and no root filesystem. It captures the serial log,
 display, physical framebuffer, CPU registers, exception log and early checkpoint
 markers. ACPI is disabled so the adapter can use the QEMU FDT. The experiment
-fails if the kernel's post-VM-mapping marker is not observed; raw evidence is
-still uploaded. These observations never establish physical nabu support or
-an iPadOS userspace boot.
+requires its demonstrated single-CPU/SGI, BSD entry/autoconf and HFS root-device
+wait messages, the post-VM marker, successful console/register decoding, and
+no captured panic. Raw evidence is still uploaded on failure. These observations
+never establish a mounted filesystem, physical nabu support or an iPadOS
+userspace boot.
 The emulator command line uses `wdt=-1` because host emulation latency can
 trip interrupt/preemption elapsed-time hygiene limits. This policy is
 reported in the observation and is not a physical-device recommendation.

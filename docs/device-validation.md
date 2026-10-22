@@ -4,6 +4,11 @@
 所使用的 UEFI、内存映射、GOP、RNG 和内核交接。当前目标是先获得设备证据，
 再决定真机诊断方案。
 
+2026-10-22 已通过授权 ADB 取得本设备基础信息。用户确认本机另装有
+Windows 11 ARM；已观察到 mindowsesp / mindowswin / mindowsdat 分区名。
+后续应沿用并核对现有 UEFI，保留 Windows 和 Android。具体操作边界及
+Windows 端采集脚本见 [已有 Windows 验证路径](existing-windows.md)。
+
 ## 1. 在现有 Android 中读取基础信息
 
 设备正常进入 Android、连接电脑并授权 ADB 后，在本仓库运行：
@@ -28,11 +33,19 @@ MemTotal、MemAvailable 和 Swap；不保存设备序列号或个人数据。脚
 MemTotal 是 Android 可见内存，不能独立证明全部物理容量、保留区或 UEFI
 连续可分配范围。不要把 Swap 或软件“内存扩展”计入物理 DRAM。
 
+可另外运行 `tools/collect-android-boot-evidence.ps1`，参数与基础采集器相同。
+它只读取选定硬件属性、分区名称和 sysfs 元数据；权限拒绝也会记入报告，
+不读取分区内容或尝试提权。当前设备的分区尺寸、设备树和 DRM mode 均被拒绝。
+
 ## 2. 确认已有 UEFI 的可逆调用方式
 
 需先确认目前设备的引导器状态、固件来源、镜像哈希和调用路径。下载仓库里
 其他设备的运行记录、固定 framebuffer 地址和“cust 可格式化”等说法，
 不作为本设备的操作依据。本项目尚未提供可直接安装的 iPadOS 镜像。
+
+已有 Windows 证明本设备使用过 ARM64 UEFI 启动链，但不证明其中包含
+Shell/Boot from File、匹配的 GOP，或支持本次探针。不要替换 Windows 的
+bootmgfw.efi / BOOTAA64.EFI，不修改 BCD、BootOrder 或 BootNext。
 
 当前阶段不需要为 iPadOS 创建分区。先完成 CPU、内存和显示的交接验证，
 后续再根据实际 UFS/GPT 备份、匹配用户态和文件系统需求制定存储方案。

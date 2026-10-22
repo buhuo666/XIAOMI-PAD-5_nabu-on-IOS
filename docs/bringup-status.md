@@ -12,6 +12,7 @@
 | Persistent early-stage mask kernel | 39771320855 | Patch 0086, actual-function mask tests, macOS compile/link and exported-symbol verification |
 | Scheduler/VM progress with 512 MiB | 39775489349 | Exact-kernel PC/LR symbols and paused VM counters; no physical-device claim |
 | Pre-BSD startup trace | 39778361201 | EARLY_BOOT/LOCKDOWN callback phases completed; CPU matching gap identified |
+| CPU driver and BSD root-device search | 39779752907 | Single-CPU SGI verified, BSD/autoconf completed, captured HFS root-device wait |
 
 Clock fallback kernel SHA-256:
 `768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e`
@@ -170,3 +171,50 @@ one CPU and supplies no PSCI node, extra CPUs, storage or root filesystem.
 
 No partition editing, flashing, NVRAM updates, or access to the tablet's
 Android data is part of the completed work.
+
+## CPU publication and BSD confirmed (2026-10-22)
+
+Run 39779752907 completed on macos-14; all 402 artifact sizes and SHA-256
+digests matched after download. The paused `_max_cpus_initialized` is 1,
+and the exact-font decoder recovered:
+
+- `NABU CPU: 1/1 CPUs initialized, SGI1 verified`
+- `NABU BSD: bsd_init enter`
+- `NABU BSD: after bsd_autoconf`
+- `NABU: setconf before IOFindBSDRoot`
+- An `IOMedia` / `Apple_HFS` root-device matching wait.
+
+This verifies the emulator CPU-compatible repair and progress beyond the
+earlier pre-BSD wait. It does not provide a root device or mount a filesystem.
+The selected kernel hash is unchanged. No panic text was decoded, which is
+not a guarantee that no panic occurred outside the captured framebuffer.
+The NVRAM serialization failure reported no `_nvramController`; the emulator
+still has only a volatile CHRP snapshot and no persistence controller.
+
+Subsequent observations now report explicit CPU/BSD/root-search messages and
+require that demonstrated milestone, successful decoding/symbolization and
+no captured panic to pass. Early VM markers alone no longer pass this
+real-kernel experiment. These are emulator requirements, not tablet results.
+
+## Connected tablet and existing Windows (2026-10-22)
+
+The owner confirms that this tablet also runs Windows 11 ARM. Its current
+authorized ADB session reports Android 15, nabu, slot `_a`,
+`ro.boot.flash.locked=0`, and `ro.boot.verifiedbootstate=orange`.
+Android MemTotal is 11766512 KiB (12048908288 bytes), separate from
+12582908 KiB of swap. It is consistent with the reported RAM upgrade but
+does not establish the entire DRAM layout or a UEFI allocation window.
+
+Read-only names identify `mindowsesp`/`mindowswin`/`mindowsdat` as
+`sda32`/`sda33`/`sda34`. These existing OS partitions, along with Android
+and both boot slots, must be preserved. Partition names do not establish
+filesystem health, free space or which boot image contains the installed UEFI.
+Android shell denied device-tree, DRM-mode and partition-size reads; the
+collector records those failures and does not escalate privileges.
+
+The probe-only kit is staged on the PC from verified run 39779752907.
+It contains no kernel, fallback bootloader, startup script or installer.
+The Windows collector refuses an x64 host and queries only selected metadata
+on the ARM64 tablet. Neither tool deploys to the tablet. See
+[existing-windows.md](existing-windows.md) for the existing-UEFI validation
+path and its unresolved firmware/menu evidence.
