@@ -36,10 +36,13 @@ pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
 [已有 Windows 验证路径](docs/existing-windows.md)。探针包仅在 PC 上准备，
 不会替换现有 UEFI、Windows 引导或 Android 分区。
 
-用户已授权从 Android 空间规划 **64 GiB** 项目专用空间。真实设备的六个
-UFS LUN 的 GPT、两个启动槽位及 ESP 已离线备份并校验，平板已返回 Android。
-用户随后已明确同意清除 Android userdata，当前候选改为 **4 GiB 引导 +
-60 GiB 系统**，无需保留旧 userdata 内容。尚未擦除或创建分区；
-执行前仍需验证与当前 F2FS / metadata encryption 匹配的重建流程。
-实测边界、容量预算、候选布局及工具见
+用户授权的 **64 GiB** 项目空间已于 2026-10-22 实际划分：
+**4 GiB FAT32 引导区 + 60 GiB 未格式化系统区**。
+Android userdata 已按授权清空并缩至约 150.35 GiB；metadata 已重建为 ext4，
+已安装的 Android 已成功创建加密映射和 F2FS，完成启动及设置向导。
+主备 GPT、其余分区条目、启动分区哈希及 Windows 卷边界样本已核验。
+没有刷写 boot 或切换槽位；Windows 实际启动仍待复测。
+原 Mindows 助手已重新安装，备份的 UEFI 文件已还原到共享存储并核对哈希。
+这只是独立存储空间，不是已安装或可启动的 iPadOS。
+实测边界、容量预算、执行记录及工具见
 [64 GiB 项目空间](docs/project-space-64g.md)。

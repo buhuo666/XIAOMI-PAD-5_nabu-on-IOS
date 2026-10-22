@@ -170,8 +170,9 @@ one CPU and supplies no PSCI node, extra CPUs, storage or root filesystem.
 5. Integrate a version-matched userland, storage and prelink path only after
    the diagnostic handoff is understood.
 
-No partition editing, flashing, NVRAM updates, or access to the tablet's
-Android data is part of the completed work.
+The emulator milestones above did not edit tablet partitions, flash images
+or update hardware NVRAM. The later, separately authorized physical partition
+operation is recorded below.
 
 ## CPU publication and BSD confirmed (2026-10-22)
 
@@ -248,8 +249,9 @@ The verified GPT places userdata at LBAs 68,190,272 through 124,381,178
 the existing Windows ESP. Raw userdata image generation is therefore blocked
 when `userdata.preserve_existing=true`, before tools, IPSW or output creation.
 
-An offline planner computes an aligned 512 MiB project EFI area and 63.5 GiB
-system area inside the current userdata tail. Neither partition exists yet.
+The initial offline planner computed an aligned 512 MiB project EFI area and
+63.5 GiB system area inside the userdata tail. At that proposal stage neither
+partition existed.
 The encrypted filesystem has no validated offline decrypted mapping or complete
 restorable backup. Its existing recovery tool advertises safe resize, but
 that does not verify compatibility or permit changing GPT boundaries first.
@@ -263,7 +265,55 @@ of Windows, Android system/vendor, boot slots or firmware. Actual file inventory
 is 16.48 MiB for kernel/loader/ADT/probe, or 308.91 MiB including optional UEFI
 and two boot archives plus two additional kernel-size budgets. A 512 MiB EFI
 area fits current materials but has no verified future ramdisk allowance.
-The candidate now reserves 4 GiB for project EFI and 60 GiB for system images,
-still 64 GiB total. No erase or partition edit has occurred. The installed
-Android fstab confirms F2FS with metadata encryption; the toolbox's ext4 format
-action is not a verified recreation path for this Android installation.
+The revised proposal reserved 4 GiB for project EFI and 60 GiB for system images,
+still 64 GiB total. The installed Android fstab confirms F2FS with metadata
+encryption; formatting userdata as ext4 would not match that configuration.
+
+## Authorized 4+60 GiB partition operation completed (2026-10-22)
+
+Following the owner's explicit confirmation, the temporary root recovery was
+RAM-booted again. All 24 original backup checksums, live GPT edges, boot hashes
+and absence of disk mounts were checked before applying the limited change.
+GPT entry 31 retains its original identity and start, with a shorter end;
+new entries 35 and 36 provide the project space:
+
+| Partition | First LBA | Last LBA, inclusive | Bytes |
+| --- | ---: | ---: | ---: |
+| userdata | 68,190,272 | 107,603,711 | 161,437,450,240 |
+| nabu_esp | 107,603,712 | 108,652,287 | 4,294,967,296 |
+| nabu_system | 108,652,288 | 124,380,927 | 64,424,509,440 |
+
+The old sgdisk initially aligned userdata's start forward by 192 sectors.
+The immediate readback rejected that change before any erasure; the original
+start was restored and the exact comparison passed. The executor now disables
+automatic alignment for explicit LBAs and rejects automatic-move notices.
+Seven synthetic offline tests cover this case and protected GPT identities.
+
+After a fresh temporary boot verified the kernel's new partition boundaries,
+the authorized userdata and project areas were discarded. Android's metadata
+was also reset for its new encryption keys and recreated as ext4; five-pass
+read-only e2fsck passed. Userdata is left wiped for installed Android fs_mgr /
+vold to create its encrypted F2FS, rather than creating an incompatible ext4
+or plaintext filesystem. Project ESP is FAT32 with 4096-byte sectors and passed
+a read-only mount test. The 60 GiB system partition is unformatted.
+
+Both GPT copies pass CRC and array consistency; every protected GPT entry is
+byte-identical to the baseline. Eleven unchanged boot/ESP partition hashes
+match their original backups. The other five LUN edge pairs and the Windows
+system/data volume edge samples match. This does not constitute whole-volume
+verification or a Windows boot test. No boot/firmware image was flashed, and
+the active slot remains `_a`.
+
+Android 15 then booted successfully on slot `_a`, with `sys.boot_completed=1`,
+`device_provisioned=1`, and `user_setup_complete=1`. After the owner restored ADB,
+normal shell reads confirmed encrypted, read-write F2FS on `/dev/block/dm-45`,
+metadata encryption enabled, and a 157,651,712 KiB data filesystem. MemTotal
+remains 11,766,512 KiB; this is not a UEFI memory map. The original Mindows helper
+APK was reinstalled and its original UEFI file restored to shared storage with
+SHA-256 verification, without invoking a boot-flashing function.
+
+Windows startup has not yet been retested. The original backups and private
+execution log remain on the PC, outside Git. There is still no physical XNU boot
+or iPadOS installation. Local checks pass: seven synthetic GPT change tests,
+six planner tests, four fastboot parser tests, and two preservation tests with
+the tracked userdata protection patch applied to a separate validation copy.
