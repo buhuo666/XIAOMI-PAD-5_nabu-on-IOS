@@ -1,3 +1,90 @@
+diff --git a/package/Scripts/qemu-run.py b/package/Scripts/qemu-run.py
+index 54eb81f..6869fee 100755
+--- a/package/Scripts/qemu-run.py
++++ b/package/Scripts/qemu-run.py
+@@ -119,12 +119,29 @@ def main() -> int:
+     parser.add_argument("--disk", action="append", default=[], type=Path, help="extra raw disk image (read-only)")
+     parser.add_argument("--timeout", type=float, default=90.0)
+     parser.add_argument("--cpus", type=int, default=2, help="number of virtual CPUs (default: 2)")
++    parser.add_argument("--cpu-model", default="cortex-a72")
++    parser.add_argument("--gic-version", choices=("2", "3"))
++    parser.add_argument("--memory-mib", type=int, default=1024)
++    parser.add_argument("--final-screenshot", type=Path, help="PNG captured before stopping QEMU")
++    parser.add_argument("--memory-dump", nargs=3, metavar=("ADDRESS", "BYTES", "PATH"),
++                        help="Capture guest physical memory through QMP before stopping")
+     parser.add_argument("--finish-on-expect", action="store_true",
+                         help="finish two seconds after all expected patterns match")
+     parser.add_argument("--menu-marker", default=r"UNIXNU: menu: shown")
+     args = parser.parse_args()
+     if args.cpus < 1:
+         parser.error("--cpus must be positive")
++    if not 128 <= args.memory_mib <= 16384:
++        parser.error("--memory-mib must be in 128..16384")
++    dump = None
++    if args.memory_dump:
++        try:
++            address, length = [int(item, 0) for item in args.memory_dump[:2]]
++            if address < 0 or not 0 < length <= 64 * 1024 * 1024:
++                raise ValueError()
++        except ValueError:
++            parser.error("invalid memory dump address or size (maximum 64 MiB)")
++        dump = (address, length, Path(args.memory_dump[2]).resolve())
+     display = None
+     if args.display_size:
+         match = re.fullmatch(r"([0-9]+)x([0-9]+)", args.display_size)
+@@ -148,7 +165,9 @@ def main() -> int:
+         args.log.unlink()
+ 
+     cmd = [
+-        qemu, "-M", "virt", "-cpu", "cortex-a72", "-m", "1024", "-smp", str(args.cpus),
++        qemu, "-M", "virt" + (f",gic-version={args.gic_version}" if args.gic_version else ""),
++        "-cpu", args.cpu_model,
++        "-m", str(args.memory_mib), "-smp", str(args.cpus),
+         "-drive", f"if=pflash,format=raw,readonly=on,file={code}",
+     ]
+     if vars_template:
+@@ -180,6 +199,7 @@ def main() -> int:
+     menu_seen = False
+     expectations_since = None
+     expectations_complete = False
++    capture_failed = False
+     deadline = time.time() + args.timeout
+     try:
+         qmp = Qmp(str(qmp_path))
+@@ -211,6 +231,24 @@ def main() -> int:
+             time.sleep(0.2)
+     finally:
+         if proc.poll() is None:
++            if qmp:
++                try:
++                    if args.final_screenshot:
++                        ppm = work / "final.ppm"
++                        result = qmp.command("screendump", filename=str(ppm))
++                        if "error" in result:
++                            raise RuntimeError(f"screendump: {result['error']}")
++                        args.final_screenshot.parent.mkdir(parents=True, exist_ok=True)
++                        ppm_to_png(ppm, args.final_screenshot)
++                    if dump:
++                        address, length, target = dump
++                        target.parent.mkdir(parents=True, exist_ok=True)
++                        result = qmp.command("pmemsave", val=address, size=length, filename=str(target))
++                        if "error" in result:
++                            raise RuntimeError(f"pmemsave: {result['error']}")
++                except (OSError, RuntimeError, ValueError) as error:
++                    print("capture failed:", error)
++                    capture_failed = True
+             print("expectations complete: stopping QEMU" if expectations_complete else "timeout: stopping QEMU")
+             if qmp:
+                 try:
+@@ -230,7 +268,7 @@ def main() -> int:
+     clean = args.log.with_suffix(".clean.log")
+     clean.write_text(log)
+ 
+-    failed = 0
++    failed = int(capture_failed)
+     for pattern in args.expect:
+         ok = re.search(pattern, log) is not None
+         failed += not ok
 diff --git a/scripts/build-darwinboot.sh b/scripts/build-darwinboot.sh
 index 0f35ae3..df19670 100755
 --- a/scripts/build-darwinboot.sh

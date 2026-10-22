@@ -1,8 +1,8 @@
 diff --git a/DarwinBootPkg/DarwinBoot.dsc b/DarwinBootPkg/DarwinBoot.dsc
-index f437c4f..7b877ff 100644
+index f437c4f..eb5a9ce 100644
 --- a/DarwinBootPkg/DarwinBoot.dsc
 +++ b/DarwinBootPkg/DarwinBoot.dsc
-@@ -8,6 +8,12 @@
+@@ -8,6 +8,15 @@
    SUPPORTED_ARCHITECTURES = AARCH64
    BUILD_TARGETS = DEBUG|RELEASE
    SKUID_IDENTIFIER = DEFAULT
@@ -12,10 +12,13 @@ index f437c4f..7b877ff 100644
 +!ifndef DARWINBOOT_NABU_DIAGNOSTIC
 +  DEFINE DARWINBOOT_NABU_DIAGNOSTIC = 0
 +!endif
++!ifndef DARWINBOOT_QEMU_EXPERIMENT
++  DEFINE DARWINBOOT_QEMU_EXPERIMENT = 0
++!endif
  
  !include MdePkg/MdeLibs.dsc.inc
  
-@@ -18,6 +24,7 @@
+@@ -18,10 +27,12 @@
    PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
    PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
    UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
@@ -23,7 +26,12 @@ index f437c4f..7b877ff 100644
    UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
    UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
    UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
-@@ -29,6 +36,14 @@
+   DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
++  FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
+   DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
+   DebugLib|MdePkg/Library/UefiDebugLibStdErr/UefiDebugLibStdErr.inf
+ 
+@@ -29,6 +40,17 @@
    gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x07
    gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000000
  
@@ -31,6 +39,9 @@ index f437c4f..7b877ff 100644
 +  *_*_AARCH64_CC_FLAGS = -DDARWINBOOT_XNU_MAJOR=$(DARWINBOOT_XNU_MAJOR) -DDARWINBOOT_NABU_DIAGNOSTIC=$(DARWINBOOT_NABU_DIAGNOSTIC)
 +
  [Components]
++!if $(DARWINBOOT_QEMU_EXPERIMENT) == 1
++  Test/QemuNabuEnvironment.inf
++!endif
 +  Test/NabuProbe.inf
    DarwinBootPkg/Driver/DarwinBoot.inf
 +!if $(DARWINBOOT_NABU_DIAGNOSTIC) == 1
@@ -617,6 +628,217 @@ index 0000000..f2e7c79
 +[Protocols]
 +  gUniXNULoaderProtocolGuid
 +  gEfiLoadedImageProtocolGuid
+diff --git a/Test/QemuNabuEnvironment.c b/Test/QemuNabuEnvironment.c
+new file mode 100644
+index 0000000..f628ae3
+--- /dev/null
++++ b/Test/QemuNabuEnvironment.c
+@@ -0,0 +1,170 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++// Emulator-only adapter for the real 8796 framebuffer bootstrap experiment.
++#include <Uefi.h>
++#include <Guid/Fdt.h>
++#include <Library/BaseLib.h>
++#include <Library/BaseMemoryLib.h>
++#include <Library/FdtLib.h>
++#include <Library/MemoryAllocationLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Protocol/GraphicsOutput.h>
++
++#define FWCFG_BASE 0x09020000ULL
++#define FB_BASE 0x9c000000ULL
++#define FB_RESERVE 0x02000000
++STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL mGop;
++STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE mMode;
++STATIC EFI_GRAPHICS_OUTPUT_MODE_INFORMATION mInfo;
++
++STATIC VOID
++FwSelect (UINT16 Key)
++{
++  *(volatile UINT16 *)(UINTN)(FWCFG_BASE + 8) = SwapBytes16 (Key);
++  __asm__ volatile ("dsb sy" ::: "memory");
++}
++
++STATIC VOID
++FwRead (VOID *Buffer, UINTN Bytes)
++{
++  UINT8 *Out = Buffer;
++  UINTN Index;
++  for (Index = 0; Index < Bytes; Index++) {
++    Out[Index] = *(volatile UINT8 *)(UINTN)FWCFG_BASE;
++  }
++}
++
++STATIC EFI_STATUS
++EFIAPI
++Query (EFI_GRAPHICS_OUTPUT_PROTOCOL *This, UINT32 Mode, UINTN *Size,
++       EFI_GRAPHICS_OUTPUT_MODE_INFORMATION **Info)
++{
++  (VOID)This;
++  if (Mode != 0 || Size == NULL || Info == NULL) { return EFI_INVALID_PARAMETER; }
++  *Info = AllocateCopyPool (sizeof (mInfo), &mInfo);
++  if (*Info == NULL) { return EFI_OUT_OF_RESOURCES; }
++  *Size = sizeof (mInfo);
++  return EFI_SUCCESS;
++}
++
++STATIC EFI_STATUS
++EFIAPI
++SetMode (EFI_GRAPHICS_OUTPUT_PROTOCOL *This, UINT32 Mode)
++{
++  (VOID)This;
++  return Mode == 0 ? EFI_SUCCESS : EFI_UNSUPPORTED;
++}
++
++STATIC EFI_STATUS
++EFIAPI
++Blt (EFI_GRAPHICS_OUTPUT_PROTOCOL *This, EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Buffer,
++     EFI_GRAPHICS_OUTPUT_BLT_OPERATION Operation, UINTN SourceX, UINTN SourceY,
++     UINTN DestinationX, UINTN DestinationY, UINTN Width, UINTN Height, UINTN Delta)
++{
++  (VOID)This; (VOID)Buffer; (VOID)Operation; (VOID)SourceX; (VOID)SourceY;
++  (VOID)DestinationX; (VOID)DestinationY; (VOID)Width; (VOID)Height; (VOID)Delta;
++  return EFI_UNSUPPORTED;
++}
++
++EFI_STATUS
++EFIAPI
++QemuEnvironmentEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
++{
++  EFI_STATUS Status;
++  VOID *Fdt = NULL;
++  INT32 Length;
++  CONST CHAR8 *Compatible;
++  UINTN Index, Count, Attempt;
++  EFI_HANDLE *Handles;
++  EFI_HANDLE Selected = NULL;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL *Original, *Current;
++  EFI_PHYSICAL_ADDRESS Address = FB_BASE;
++  UINT8 Signature[4], File[64], CountBytes[4];
++  UINT32 Files;
++  UINT16 Selector = 0;
++  // The DMA descriptor must be 16-byte aligned, and its control field is
++  // written by QEMU. Config follows the packed big-endian RAMFBCfg layout.
++  struct { UINT32 Control, Length; UINT64 Address; } *Dma;
++  UINT8 *Config;
++  (VOID)ImageHandle; (VOID)SystemTable;
++  Status = EfiGetSystemConfigurationTable (&gFdtTableGuid, &Fdt);
++  if (EFI_ERROR (Status) || Fdt == NULL || FdtCheckHeader (Fdt) != 0) { return EFI_UNSUPPORTED; }
++  Compatible = FdtGetProp (Fdt, 0, "compatible", &Length);
++  if (Compatible == NULL || Length != sizeof ("linux,dummy-virt") ||
++      CompareMem (Compatible, "linux,dummy-virt", sizeof ("linux,dummy-virt")) != 0) {
++    return EFI_UNSUPPORTED;
++  }
++  // Require the exact virt fw_cfg node before any emulator MMIO access.
++  if (FdtPathOffset (Fdt, "/fw-cfg@9020000") < 0) { return EFI_UNSUPPORTED; }
++  FwSelect (0);
++  FwRead (Signature, sizeof (Signature));
++  if (CompareMem (Signature, "QEMU", 4) != 0) { return EFI_UNSUPPORTED; }
++  FwSelect (0x19);
++  FwRead (CountBytes, sizeof (CountBytes));
++  Files = SwapBytes32 (ReadUnaligned32 ((UINT32 *)CountBytes));
++  if (Files > 4096) { return EFI_COMPROMISED_DATA; }
++  for (Index = 0; Index < Files; Index++) {
++    FwRead (File, sizeof (File));
++    if (CompareMem (File + 8, "etc/ramfb", sizeof ("etc/ramfb")) == 0) {
++      Selector = SwapBytes16 (ReadUnaligned16 ((UINT16 *)(File + 4)));
++    }
++  }
++  if (Selector == 0) { return EFI_NOT_FOUND; }
++  Status = gBS->HandleProtocol (gST->ConsoleOutHandle, &gEfiGraphicsOutputProtocolGuid, (VOID **)&Original);
++  if (EFI_ERROR (Status)) {
++    Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Original);
++  }
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiGraphicsOutputProtocolGuid, NULL, &Count, &Handles);
++  if (EFI_ERROR (Status)) { return Status; }
++  for (Index = 0; Index < Count; Index++) {
++    Status = gBS->HandleProtocol (Handles[Index], &gEfiGraphicsOutputProtocolGuid, (VOID **)&Current);
++    if (!EFI_ERROR (Status) && Current == Original) { Selected = Handles[Index]; break; }
++  }
++  FreePool (Handles);
++  if (Selected == NULL) { return EFI_NOT_FOUND; }
++  Status = gBS->AllocatePages (AllocateAddress, EfiLoaderData, EFI_SIZE_TO_PAGES (FB_RESERVE), &Address);
++  if (EFI_ERROR (Status)) { return Status; }
++  ZeroMem ((VOID *)(UINTN)Address, FB_RESERVE);
++  // AllocatePool guarantees 8-byte alignment; use a page for DMA's stricter bound.
++  Config = AllocatePages (1);
++  if (Config == NULL) { return EFI_OUT_OF_RESOURCES; }
++  Dma = (VOID *)(Config + 64);
++  ZeroMem (Config, EFI_PAGE_SIZE);
++  WriteUnaligned64 ((UINT64 *)Config, SwapBytes64 (FB_BASE));
++  WriteUnaligned32 ((UINT32 *)(Config + 8), SwapBytes32 (0x34325258)); // DRM_FORMAT_XRGB8888
++  WriteUnaligned32 ((UINT32 *)(Config + 16), SwapBytes32 (1600));
++  WriteUnaligned32 ((UINT32 *)(Config + 20), SwapBytes32 (2560));
++  WriteUnaligned32 ((UINT32 *)(Config + 24), SwapBytes32 (6400));
++  Dma->Control = SwapBytes32 (((UINT32)Selector << 16) | 8 | 16);
++  Dma->Length = SwapBytes32 (28);
++  Dma->Address = SwapBytes64 ((UINT64)(UINTN)Config);
++  __asm__ volatile ("dsb sy" ::: "memory");
++  *(volatile UINT64 *)(UINTN)(FWCFG_BASE + 16) = SwapBytes64 ((UINT64)(UINTN)Dma);
++  for (Attempt = 0; Attempt < 10000; Attempt++) {
++    __asm__ volatile ("dsb sy" ::: "memory");
++    if (*(volatile UINT32 *)&Dma->Control == 0) { break; }
++    if (SwapBytes32 (*(volatile UINT32 *)&Dma->Control) & 1) { return EFI_DEVICE_ERROR; }
++    gBS->Stall (100);
++  }
++  if (Attempt == 10000) { return EFI_TIMEOUT; }
++  FreePages (Config, 1);
++  mInfo.HorizontalResolution = 1600;
++  mInfo.VerticalResolution = 2560;
++  mInfo.PixelsPerScanLine = 1600;
++  mInfo.PixelFormat = PixelBlueGreenRedReserved8BitPerColor;
++  mMode.MaxMode = 1;
++  mMode.Info = &mInfo;
++  mMode.SizeOfInfo = sizeof (mInfo);
++  mMode.FrameBufferBase = FB_BASE;
++  mMode.FrameBufferSize = FB_RESERVE;
++  mGop.QueryMode = Query;
++  mGop.SetMode = SetMode;
++  mGop.Blt = Blt;
++  mGop.Mode = &mMode;
++  Status = gBS->ReinstallProtocolInterface (Selected, &gEfiGraphicsOutputProtocolGuid, Original, &mGop);
++  if (!EFI_ERROR (Status)) {
++    Print (L"QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only\n");
++  }
++  return Status;
++}
+diff --git a/Test/QemuNabuEnvironment.inf b/Test/QemuNabuEnvironment.inf
+new file mode 100644
+index 0000000..f55e5b2
+--- /dev/null
++++ b/Test/QemuNabuEnvironment.inf
+@@ -0,0 +1,29 @@
++## SPDX-License-Identifier: BSD-2-Clause-Patent
++[Defines]
++  INF_VERSION = 0x00010019
++  BASE_NAME = QemuNabuEnvironment
++  FILE_GUID = D9473D8D-14BC-4F36-A109-1A51BE6B043B
++  MODULE_TYPE = UEFI_DRIVER
++  VERSION_STRING = 0.1
++  ENTRY_POINT = QemuEnvironmentEntry
++
++[Sources]
++  QemuNabuEnvironment.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++
++[LibraryClasses]
++  BaseLib
++  BaseMemoryLib
++  FdtLib
++  MemoryAllocationLib
++  UefiBootServicesTableLib
++  UefiDriverEntryPoint
++  UefiLib
++
++[Protocols]
++  gEfiGraphicsOutputProtocolGuid
++
++[Guids]
++  gFdtTableGuid
 diff --git a/Test/make-fixtures.py b/Test/make-fixtures.py
 index 79d491a..9050050 100755
 --- a/Test/make-fixtures.py

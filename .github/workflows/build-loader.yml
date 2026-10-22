@@ -2,6 +2,11 @@ name: build-darwinboot
 
 on:
   workflow_dispatch:
+    inputs:
+      observe_kernel:
+        description: Observe the real open-source kernel in QEMU (experimental)
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -68,6 +73,12 @@ jobs:
         run: |
           set -o pipefail
           bash loader/build.sh 2>&1 | tee out/build.log
+
+      - name: Observe real kernel in QEMU
+        if: inputs.observe_kernel == true
+        run: |
+          set -o pipefail
+          bash loader/observe-kernel.sh 2>&1 | tee out/kernel-observation.log
 
       - name: Record artifacts
         if: success()

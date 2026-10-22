@@ -55,6 +55,20 @@ totals and candidate bounds, then compares the CPU/timer/GOP observations with
 the diagnostic contract. A compatible report still has `ready_to_boot=false`:
 it cannot prove device identity, successful allocation or a kernel boot.
 
+## Optional real-kernel emulator observation
+
+The manual `observe_kernel` input adds a separate experiment after all normal
+tests. It uses QEMU `virt` with a `max` CPU, GICv3 and 2 GiB RAM. A test-only
+driver validates the QEMU FDT before configuring ramfb at the kernel's fixed
+0x9c000000 address. This driver is excluded from default builds.
+
+The experiment runs the actual compiled open-source kernel with an
+emulator-specific ADT and no root filesystem. It captures the serial log,
+display, physical framebuffer and early checkpoint markers. The experiment
+fails if the kernel's post-VM-mapping marker is not observed; raw evidence is
+still uploaded. These observations never establish physical nabu support or
+an iPadOS userspace boot.
+
 Do not flash these EFI drivers as boot images or replace an existing
 payload with the diagnostic files. A matching UEFI integration and
 device observations are still required.
