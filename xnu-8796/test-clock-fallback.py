@@ -21,7 +21,9 @@ prelude = r"""
 #include <stdio.h>
 #include <string.h>
 #define NABU 1
+#ifndef bzero
 #define bzero(p,n) memset(p,0,n)
+#endif
 #define kSuccess 0
 typedef void *DTEntry;
 typedef int OpaqueDTEntryIterator;

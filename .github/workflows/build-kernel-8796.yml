@@ -27,6 +27,7 @@ on:
     paths:
       - "xnu-8796/patches/**"
       - "xnu-8796/prepare-dxb.py"
+      - "xnu-8796/test-clock-fallback.py"
       - ".github/workflows/build-kernel-8796.yml"
 
 concurrency:
