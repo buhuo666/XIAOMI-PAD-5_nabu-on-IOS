@@ -21,6 +21,11 @@ against the real xnu-8796 header. The pinned kernel from Actions run
 is included. Compilation and host parser acceptance do not validate
 UEFI handoff, actual device memory maps, interrupts, or hardware boot.
 
+QEMU runs ordinary Darwin 22/23 synthetic handoffs, Darwin 22 GOP and packed
+ramdisk variants, and eight diagnostic refusals. It checks firmware retention
+on refusal and the synthetic payload after ExitBootServices. These results
+apply only to the emulator and synthetic payload, never the physical tablet.
+
 Do not flash these EFI drivers as boot images or replace an existing
 payload with the diagnostic files. A matching UEFI integration and
 device observations are still required.

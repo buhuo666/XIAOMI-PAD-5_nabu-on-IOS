@@ -1,4 +1,5 @@
 /sources/
 /out/
 /verified-kernel/
+/toolchain/
 __pycache__/
