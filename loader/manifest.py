@@ -36,6 +36,7 @@ if observation.is_file():
             "development_kprintf_enabled", "register_symbolization_pass",
             "requested_owned_memory_bytes", "paused_vm_page_counters",
             "printf_serial_output_requested",
+            "startup_debug_requested", "paused_startup_phase",
         )
     }
 for path in sorted(root.rglob("*")):
@@ -71,6 +72,7 @@ if summary_path:
             f"- Post-VM checkpoint observed: `{report.get('kernel_vm_mapping_observed', False)}`",
             f"- Panic text found in captured framebuffer: `{report.get('kernel_panic_observed', False)}`",
             f"- Allocated-window request: {report.get('requested_owned_memory_bytes', 'not recorded')} bytes",
+            f"- Paused startup phase: `{report.get('paused_startup_phase', 'not captured')}`",
             "- Root filesystem supplied: **no**; iPadOS userland tested: **no**",
             "",
             "A passed early checkpoint is not a completed OS boot. Absence of captured",

@@ -128,6 +128,19 @@ OS boot or a proven minimum memory requirement. The follow-up keeps 512 MiB
 and requests the existing `serial=1` output option to expose ordinary
 `printf`/IOLog boot messages as well as kprintf.
 
+Run 39776490485 passed on macOS and all 400 artifact hashes matched locally.
+Ordinary logging now confirms that IODTNVRAM accepted the 8 KiB CHRP snapshot
+and parsed its common partition. The DT platform expert registered. Scheduler
+maintenance, averages and thread-dispatch functions were sampled in addition
+to idle/timebase functions. No panic text was decoded from the captured frame.
+Some device messages describe stubs (including a static battery fallback);
+their registration is not hardware support.
+
+There was no captured `bsd_init enter` or root-device-wait message, so neither
+BSD entry nor a root filesystem wait is claimed. The next experiment enables
+XNU's existing `startup_debug=1` and captures `_startup_phase` directly, without
+changing the kernel or adding any storage.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.

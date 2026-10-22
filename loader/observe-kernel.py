@@ -29,6 +29,7 @@ fb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fb)
 kernel_image = (ROOT / "verified-kernel/kernel.macho").read_bytes()
 stage_mask_offset = fb.kernel_symbol_offset(kernel_image, "_nabu_early_stage_mask")
+startup_phase_offset = fb.kernel_symbol_offset(kernel_image, "_startup_phase")
 owned_memory_size = 0x20000000
 counter_names = (
     "_vm_page_free_count", "_vm_page_free_reserved", "_vm_page_free_target",
@@ -88,7 +89,7 @@ id = "xnu-experiment"
 title = "QEMU only: actual open-source XNU"
 type = "xnu"
 path = "Payloads/kernel.macho"
-args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1 serial=1 -v -enable_kprintf_spam"
+args = "nabulog=0 ufsrw=0 cpus=1 debug=0x14e wdt=-1 serial=1 startup_debug=1 -v -enable_kprintf_spam"
 ''', encoding="ascii")
 result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
@@ -100,6 +101,7 @@ result = subprocess.run([
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
     "--handoff-dump", hex(stage_mask_offset), "4", OUT / "early-stage-mask.raw",
+    "--handoff-dump", hex(startup_phase_offset), "4", OUT / "startup-phase.raw",
     *counter_dumps,
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
     "--expect", "DARWINBOOT: inputs validated; exiting boot services",
@@ -123,6 +125,7 @@ report = {
     "framebuffer_console": True,
     "development_kprintf_enabled": True,
     "printf_serial_output_requested": True,
+    "startup_debug_requested": True,
     "register_symbolization_pass": register_symbols.returncode == 0,
     "requested_owned_memory_bytes": owned_memory_size,
     "persistent_checkpoint_capture_valid": False,
@@ -132,6 +135,9 @@ for name in counter_names:
     path = OUT / (name[1:] + ".raw")
     if path.is_file() and path.stat().st_size == 4:
         report["paused_vm_page_counters"][name[1:]] = struct.unpack("<I", path.read_bytes())[0]
+phase_file = OUT / "startup-phase.raw"
+if phase_file.is_file() and phase_file.stat().st_size == 4:
+    report["paused_startup_phase"] = struct.unpack("<I", phase_file.read_bytes())[0]
 raw = OUT / "framebuffer.raw"
 if raw.is_file() and raw.stat().st_size == 0xfa0000:
     data = raw.read_bytes()

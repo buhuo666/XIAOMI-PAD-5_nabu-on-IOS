@@ -102,6 +102,8 @@ change applies only to the emulator experiment. The guarded nabu diagnostic
 profile continues to require exactly 256 MiB.
 The experiment requests `serial=1` to route ordinary startup console output
 through the existing framebuffer serial implementation.
+It also uses the existing `startup_debug=1` option and captures the actual
+`_startup_phase` variable to locate any stop before BSD initialization.
 
 `loader/scripts/symbolize-registers.py` resolves sampled PC/LR addresses with
 `llvm-symbolizer` against the exact kernel and records its SHA-256. The result
