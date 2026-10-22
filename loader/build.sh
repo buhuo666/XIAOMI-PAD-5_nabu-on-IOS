@@ -37,9 +37,11 @@ for profile in darwin23 darwin22 nabu-diagnostic; do
   llvm-readobj --file-headers "$ROOT/out/$profile/DarwinBoot.efi" > "$ROOT/out/$profile/pe-headers.txt"
   grep -q 'IMAGE_FILE_MACHINE_ARM64' "$ROOT/out/$profile/pe-headers.txt"
 done
+cp build/DarwinBoot/DEBUG_CLANGPDB/AARCH64/NabuProbe.efi "$ROOT/out/"
 cd "$ROOT"
 python3 loader/qemu-smoke.py --profile darwin23
 python3 loader/qemu-smoke.py --profile darwin22
 python3 loader/qemu-smoke.py --profile darwin22 --gop
 python3 loader/qemu-smoke.py --profile darwin22 --packed
 python3 loader/qemu-smoke.py --profile nabu-diagnostic
+python3 loader/qemu-smoke.py --profile probe

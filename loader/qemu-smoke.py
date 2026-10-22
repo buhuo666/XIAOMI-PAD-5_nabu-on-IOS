@@ -11,10 +11,23 @@ ROOT = Path(__file__).resolve().parents[1]
 FRAMEWORK = ROOT / "sources/framework"
 OUT = ROOT / "out"
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--profile", choices=("darwin22", "darwin23", "nabu-diagnostic"), required=True)
+parser.add_argument("--profile", choices=("darwin22", "darwin23", "nabu-diagnostic", "probe"), required=True)
 parser.add_argument("--gop", action="store_true")
 parser.add_argument("--packed", action="store_true")
 args = parser.parse_args()
+if args.profile == "probe":
+    esp = OUT / "qemu/probe/esp"
+    (esp / "EFI/BOOT").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(OUT / "NabuProbe.efi", esp / "EFI/BOOT/BOOTAA64.EFI")
+    subprocess.run(["python3", FRAMEWORK / "package/Scripts/qemu-run.py", esp,
+                    "--log", OUT / "qemu/probe/qemu.log", "--cpus", "1",
+                    "--timeout", "50", "--finish-on-expect",
+                    "--expect", "NABU-PROBE: report-version=1",
+                    "--expect", r"memory conventional_bytes=0x[0-9A-Fa-f]+ low256m_candidate=0x[1-9A-Fa-f]",
+                    "--expect", r"gop base=0x[0-9A-Fa-f]+.*nabu_match=0",
+                    "--expect", "NABU-PROBE: complete truncated=0 exit_boot_services=0 nvram_writes=0",
+                    "--reject", "ASSERT"], check=True)
+    raise SystemExit(0)
 diagnostic = args.profile == "nabu-diagnostic"
 if diagnostic and (args.gop or args.packed):
     parser.error("diagnostic refusal checks require no GOP or ramdisk")
@@ -75,6 +88,13 @@ if diagnostic:
         (payloads / f"{label}.macho.adt").write_bytes(tree)
     expect += ["NABU-DIAGNOSTIC-VALIDATION: 8 refused requests; firmware retained PASS"]
     reject += ["NABU-DIAGNOSTIC-VALIDATION: FAIL", "inputs validated; exiting boot services"]
+    config = config.replace('default = "synthetic"', 'default = "exit"')
+    config += '''[[entry]]
+id = "exit"
+title = "Return to firmware"
+type = "action"
+action = "exit"
+'''
 else:
     config += '''[[entry]]
 id = "synthetic"

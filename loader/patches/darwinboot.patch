@@ -1,5 +1,5 @@
 diff --git a/DarwinBootPkg/DarwinBoot.dsc b/DarwinBootPkg/DarwinBoot.dsc
-index f437c4f..c66cbbc 100644
+index f437c4f..7b877ff 100644
 --- a/DarwinBootPkg/DarwinBoot.dsc
 +++ b/DarwinBootPkg/DarwinBoot.dsc
 @@ -8,6 +8,12 @@
@@ -15,7 +15,15 @@ index f437c4f..c66cbbc 100644
  
  !include MdePkg/MdeLibs.dsc.inc
  
-@@ -29,6 +35,13 @@
+@@ -18,6 +24,7 @@
+   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
+   PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
+   UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
++  UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
+   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
+   UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
+   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
+@@ -29,6 +36,14 @@
    gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x07
    gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000000
  
@@ -23,6 +31,7 @@ index f437c4f..c66cbbc 100644
 +  *_*_AARCH64_CC_FLAGS = -DDARWINBOOT_XNU_MAJOR=$(DARWINBOOT_XNU_MAJOR) -DDARWINBOOT_NABU_DIAGNOSTIC=$(DARWINBOOT_NABU_DIAGNOSTIC)
 +
  [Components]
++  Test/NabuProbe.inf
    DarwinBootPkg/Driver/DarwinBoot.inf
 +!if $(DARWINBOOT_NABU_DIAGNOSTIC) == 1
 +  Test/NabuValidation.inf
@@ -292,6 +301,228 @@ index 8d11163..2ba85bf 100644
    cmp x6, x7
    b.ne failed
    add x7, x5, x7
+diff --git a/Test/NabuProbe.c b/Test/NabuProbe.c
+new file mode 100644
+index 0000000..604c950
+--- /dev/null
++++ b/Test/NabuProbe.c
+@@ -0,0 +1,182 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#include <Uefi.h>
++#include <Library/BaseLib.h>
++#include <Library/BaseMemoryLib.h>
++#include <Library/MemoryAllocationLib.h>
++#include <Library/PrintLib.h>
++#include <Library/UefiBootServicesTableLib.h>
++#include <Library/UefiLib.h>
++#include <Protocol/LoadedImage.h>
++#include <Protocol/SimpleFileSystem.h>
++#include "../DarwinBootPkg/Driver/BootArgs.h"
++#include "../DarwinBootPkg/Driver/BootVideo.h"
++#include "../DarwinBootPkg/Driver/NabuDiagnostic.h"
++
++#define REPORT_CAPACITY 65536
++#define READ_SYSREG(Name) ({ UINT64 Value; __asm__ volatile ("mrs %0, " #Name : "=r" (Value)); Value; })
++STATIC CHAR8 *mReport;
++STATIC UINTN mLength;
++STATIC BOOLEAN mTruncated;
++
++STATIC VOID
++Log (CONST CHAR8 *Format, ...)
++{
++  CHAR8 Line[512];
++  VA_LIST Args;
++  UINTN Length;
++  VA_START (Args, Format);
++  Length = AsciiVSPrint (Line, sizeof (Line), Format, Args);
++  VA_END (Args);
++  Print (L"%a", Line);
++  if (Length < REPORT_CAPACITY - mLength) {
++    CopyMem (mReport + mLength, Line, Length);
++    mLength += Length;
++    mReport[mLength] = 0;
++  } else {
++    mTruncated = TRUE;
++  }
++}
++
++STATIC EFI_STATUS
++SaveReport (EFI_HANDLE Device)
++{
++  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
++  EFI_FILE_PROTOCOL *Root;
++  EFI_FILE_PROTOCOL *File;
++  EFI_STATUS Status;
++  CHAR16 Path[64];
++  UINTN Index;
++  UINTN Bytes;
++  Status = gBS->HandleProtocol (Device, &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = Fs->OpenVolume (Fs, &Root);
++  if (EFI_ERROR (Status)) { return Status; }
++  Status = EFI_OUT_OF_RESOURCES;
++  // Pick a new file; never truncate an existing report on the selected volume.
++  for (Index = 1; Index <= 9999; Index++) {
++    UnicodeSPrint (Path, sizeof (Path), L"\\nabu-probe-%04u.txt", (UINT32)Index);
++    Status = Root->Open (Root, &File, Path, EFI_FILE_MODE_READ, 0);
++    if (!EFI_ERROR (Status)) { File->Close (File); Status = EFI_OUT_OF_RESOURCES; continue; }
++    if (Status != EFI_NOT_FOUND) { break; }
++    Status = Root->Open (Root, &File, Path, EFI_FILE_MODE_CREATE | EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE, 0);
++    if (EFI_ERROR (Status)) { break; }
++    Bytes = mLength;
++    Status = File->Write (File, &Bytes, mReport);
++    if (!EFI_ERROR (Status) && Bytes != mLength) { Status = EFI_DEVICE_ERROR; }
++    if (!EFI_ERROR (Status)) { Status = File->Flush (File); }
++    File->Close (File);
++    if (!EFI_ERROR (Status)) { Print (L"NABU-PROBE: saved %s on the application volume\n", Path); }
++    break;
++  }
++  Root->Close (Root);
++  return Status;
++}
++
++EFI_STATUS
++EFIAPI
++NabuProbeEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
++{
++  EFI_STATUS Status;
++  EFI_LOADED_IMAGE_PROTOCOL *Loaded;
++  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
++  EFI_MEMORY_DESCRIPTOR *Map;
++  EFI_MEMORY_DESCRIPTOR *Descriptor;
++  UINTN Capacity = 0, Size = 0, Key, Stride = 0, Attempt, Offset;
++  UINT32 Version;
++  UINT64 Video[6], Candidate, LowCandidate = 0, Conventional = 0;
++  UINT64 End, Granules;
++  BOOLEAN Save = FALSE;
++  (VOID)SystemTable;
++  Status = gBS->HandleProtocol (ImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&Loaded);
++  if (EFI_ERROR (Status)) { return Status; }
++  if (Loaded->LoadOptions != NULL && Loaded->LoadOptionsSize != 0) {
++    if (Loaded->LoadOptionsSize != sizeof (L"--save") ||
++        CompareMem (Loaded->LoadOptions, L"--save", sizeof (L"--save")) != 0) {
++      Print (L"NABU-PROBE: expected no options or exactly --save\n");
++      return EFI_INVALID_PARAMETER;
++    }
++    Save = TRUE;
++  }
++  mReport = AllocateZeroPool (REPORT_CAPACITY);
++  if (mReport == NULL) { return EFI_OUT_OF_RESOURCES; }
++  mLength = 0;
++  mTruncated = FALSE;
++  Map = NULL;
++  for (Attempt = 0; Attempt < 4; Attempt++) {
++    Size = Capacity;
++    Status = gBS->GetMemoryMap (&Size, Map, &Key, &Stride, &Version);
++    if (Status != EFI_BUFFER_TOO_SMALL) { break; }
++    if (Map != NULL) { FreePool (Map); Map = NULL; }
++    if (Size > MAX_UINTN - 32 * sizeof (EFI_MEMORY_DESCRIPTOR)) { Status = EFI_OUT_OF_RESOURCES; break; }
++    Capacity = Size + 32 * sizeof (EFI_MEMORY_DESCRIPTOR);
++    Map = AllocatePool (Capacity);
++    if (Map == NULL) { Status = EFI_OUT_OF_RESOURCES; break; }
++  }
++  if (EFI_ERROR (Status)) { goto Done; }
++  if (Stride < sizeof (EFI_MEMORY_DESCRIPTOR) || Size % Stride != 0) {
++    Status = EFI_COMPROMISED_DATA;
++    goto Done;
++  }
++  Log ("NABU-PROBE: report-version=1\n");
++  Log ("cpu currentel=0x%lx midr=0x%lx mpidr=0x%lx\n",
++       READ_SYSREG (CurrentEL), READ_SYSREG (MIDR_EL1), READ_SYSREG (MPIDR_EL1));
++  Granules = READ_SYSREG (ID_AA64MMFR0_EL1);
++  Log ("cpu mmfr0=0x%lx pfr0=0x%lx cntfrq=%lu\n",
++       Granules, READ_SYSREG (ID_AA64PFR0_EL1), READ_SYSREG (CNTFRQ_EL0));
++  Log ("cpu granule16k_encoding=%lu physical_address_encoding=%lu\n",
++       (Granules >> 20) & 15, Granules & 15);
++  Log ("memory descriptors=%lu stride=%lu version=%u\n", (UINT64)(Size / Stride), (UINT64)Stride, Version);
++  for (Offset = 0; Offset < Size; Offset += Stride) {
++    Descriptor = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)Map + Offset);
++    Log ("mem type=%u start=0x%lx pages=0x%lx attr=0x%lx\n",
++         Descriptor->Type, Descriptor->PhysicalStart, Descriptor->NumberOfPages, Descriptor->Attribute);
++    if (Descriptor->NumberOfPages > (MAX_UINT64 - Descriptor->PhysicalStart) / EFI_PAGE_SIZE) { continue; }
++    End = Descriptor->PhysicalStart + EFI_PAGES_TO_SIZE (Descriptor->NumberOfPages);
++    if (Descriptor->Type != EfiConventionalMemory) { continue; }
++    if (End - Descriptor->PhysicalStart <= MAX_UINT64 - Conventional) {
++      Conventional += End - Descriptor->PhysicalStart;
++    }
++    // Match the loader's adjacent conventional-descriptor coalescing.
++    for (Attempt = 0; Attempt < Size / Stride; Attempt++) {
++      UINTN Other;
++      BOOLEAN Extended = FALSE;
++      for (Other = 0; Other < Size; Other += Stride) {
++        EFI_MEMORY_DESCRIPTOR *Next = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)Map + Other);
++        if (Next->Type == EfiConventionalMemory && Next->PhysicalStart == End &&
++            Next->NumberOfPages != 0 &&
++            Next->NumberOfPages <= (MAX_UINT64 - End) / EFI_PAGE_SIZE) {
++          End += EFI_PAGES_TO_SIZE (Next->NumberOfPages);
++          Extended = TRUE;
++          break;
++        }
++      }
++      if (!Extended) { break; }
++    }
++    if (LowCandidate == 0 && DarwinWindowCandidate (Descriptor->PhysicalStart, End,
++        0xfffffe0007004000ULL, 0x10000000, 0x100000000ULL, &Candidate)) {
++      LowCandidate = Candidate;
++    }
++  }
++  Log ("memory conventional_bytes=0x%lx low256m_candidate=0x%lx\n", Conventional, LowCandidate);
++  Log ("memory candidate_is_snapshot_only=1 allocation_attempted=0 inventory_is_not_total_dram=1\n");
++  Status = gBS->HandleProtocol (gST->ConsoleOutHandle, &gEfiGraphicsOutputProtocolGuid, (VOID **)&Gop);
++  if (EFI_ERROR (Status)) {
++    Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
++  }
++  if (!EFI_ERROR (Status)) {
++    Status = DarwinBootVideoFromGop (Gop, Video);
++    if (!EFI_ERROR (Status)) {
++      Log ("gop base=0x%lx display=%lu row=%lu width=%lu height=%lu depth=%lu nabu_match=%u\n",
++           Video[0], Video[1], Video[2], Video[3], Video[4], Video[5], DarwinNabuVideoValid (Video));
++    }
++  }
++  if (EFI_ERROR (Status)) { Log ("gop unavailable_or_unsupported=%r\n", Status); }
++  Log ("NABU-PROBE: complete truncated=%u exit_boot_services=0 nvram_writes=0\n", mTruncated);
++  Status = EFI_SUCCESS;
++  if (Save) { Status = SaveReport (Loaded->DeviceHandle); }
++Done:
++  if (Map != NULL) { FreePool (Map); }
++  FreePool (mReport);
++  mReport = NULL;
++  return Status;
++}
+diff --git a/Test/NabuProbe.inf b/Test/NabuProbe.inf
+new file mode 100644
+index 0000000..f6e071b
+--- /dev/null
++++ b/Test/NabuProbe.inf
+@@ -0,0 +1,28 @@
++## SPDX-License-Identifier: BSD-2-Clause-Patent
++[Defines]
++  INF_VERSION = 0x00010019
++  BASE_NAME = NabuProbe
++  FILE_GUID = A682D655-8981-4DC4-8EAA-5FDBA239D337
++  MODULE_TYPE = UEFI_APPLICATION
++  VERSION_STRING = 0.1
++  ENTRY_POINT = NabuProbeEntry
++
++[Sources]
++  NabuProbe.c
++
++[Packages]
++  MdePkg/MdePkg.dec
++
++[LibraryClasses]
++  BaseLib
++  BaseMemoryLib
++  MemoryAllocationLib
++  PrintLib
++  UefiBootServicesTableLib
++  UefiApplicationEntryPoint
++  UefiLib
++
++[Protocols]
++  gEfiLoadedImageProtocolGuid
++  gEfiSimpleFileSystemProtocolGuid
++  gEfiGraphicsOutputProtocolGuid
 diff --git a/Test/NabuValidation.c b/Test/NabuValidation.c
 new file mode 100644
 index 0000000..c6e43a5

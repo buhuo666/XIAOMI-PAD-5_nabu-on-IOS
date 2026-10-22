@@ -26,6 +26,24 @@ ramdisk variants, and eight diagnostic refusals. It checks firmware retention
 on refusal and the synthetic payload after ExitBootServices. These results
 apply only to the emulator and synthetic payload, never the physical tablet.
 
+## Firmware information collector
+
+`NabuProbe.efi` is a standalone UEFI application. It reports CPU ID registers,
+timer frequency, all UEFI memory descriptors, a possible low 256 MiB window,
+and GOP geometry. It stays in boot services and returns to firmware.
+Its memory candidate is a snapshot, not an allocation or proof of bootability.
+Conventional memory is not the total physical DRAM inventory.
+
+With no arguments it prints only. The exact optional argument `--save` writes
+a new `nabu-probe-0001.txt` (or the next unused number) in the root of the
+application's own filesystem volume. Use that option only when the application
+is loaded from the intended removable test volume. It does not overwrite an
+existing report. File writes occur only with this explicit option.
+
+This application is not an Android boot image. Installing a compatible UEFI
+environment and choosing a reversible device boot method remain separate work;
+no flashing or repartitioning commands are provided by this workflow.
+
 Do not flash these EFI drivers as boot images or replace an existing
 payload with the diagnostic files. A matching UEFI integration and
 device observations are still required.
