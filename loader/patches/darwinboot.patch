@@ -98,10 +98,16 @@ index aefcd90..772de3c 100644
  
  #endif
 diff --git a/DarwinBootPkg/Driver/DarwinBoot.c b/DarwinBootPkg/Driver/DarwinBoot.c
-index 25ce2d2..0b248bc 100644
+index 25ce2d2..b760027 100644
 --- a/DarwinBootPkg/Driver/DarwinBoot.c
 +++ b/DarwinBootPkg/Driver/DarwinBoot.c
-@@ -16,6 +16,7 @@
+@@ -11,11 +11,13 @@
+ #include <Protocol/UniXNULoader.h>
+ #include <Protocol/LoadedImage.h>
+ #include <Protocol/GraphicsOutput.h>
++#include <Protocol/Rng.h>
+ #include <Protocol/SimpleFileSystem.h>
+ #include "BootArgs.h"
  #include "BootVideo.h"
  #include "PackedRamdisk.h"
  #include "WindowSize.h"
@@ -109,7 +115,43 @@ index 25ce2d2..0b248bc 100644
  
  #define WINDOW_SIZE  SIZE_256MB
  #define BLOCK_SIZE   SIZE_2MB
-@@ -248,6 +249,9 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+@@ -183,7 +185,7 @@ ParseKernel (CONST UINT8 *Data, UINTN Size, KERNEL *Kernel)
+ 
+ STATIC
+ BOOLEAN
+-AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN ParentPath, UINTN *RamdiskOffset, UINTN *TrustCacheOffset, UINTN *AddonOffset, UINT64 *WindowSize, BOOLEAN *KeepPacked)
++AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN ParentPath, UINTN *RamdiskOffset, UINTN *TrustCacheOffset, UINTN *AddonOffset, UINT64 *WindowSize, BOOLEAN *KeepPacked, UINTN *SeedOffset)
+ {
+   UINT32 Properties;
+   UINT32 Children;
+@@ -194,6 +196,7 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+   UINTN  TrustCandidate;
+   UINTN  AddonCandidate;
+   UINTN  MemoryCandidate;
++  UINTN  SeedCandidate;
+   CONST UINT8 *Name;
+   UINTN  NameLength;
+ 
+@@ -203,6 +206,7 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+   TrustCandidate = MAX_UINTN;
+   AddonCandidate = MAX_UINTN;
+   MemoryCandidate = MAX_UINTN;
++  SeedCandidate = MAX_UINTN;
+   if ((Depth > 64) || (Size - *Offset < 8)) { return FALSE; }
+   Properties = U32 (Data + *Offset);
+   Children = U32 (Data + *Offset + 4);
+@@ -240,6 +244,10 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+       if ((MemoryCandidate != MAX_UINTN) || (Length != 8)) { return FALSE; }
+       MemoryCandidate = *Offset;
+     }
++    if (AsciiStrCmp ((CONST CHAR8 *)(Data + *Offset - 36), "random-seed") == 0) {
++      if (SeedCandidate != MAX_UINTN || Length != 64) { return FALSE; }
++      SeedCandidate = *Offset;
++    }
+     *Offset += Length;
+     if (ALIGN_VALUE (*Offset, 4) > Size) { return FALSE; }
+     *Offset = ALIGN_VALUE (*Offset, 4);
+@@ -248,6 +256,9 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
    if (Depth == 0) { Path = 0; }
    if ((Depth == 1) && (ParentPath == 0) && (NameLength == 7) && (CompareMem (Name, "chosen", 7) == 0)) { Path = 1; }
    if ((Depth == 2) && (ParentPath == 1) && (NameLength == 11) && (CompareMem (Name, "memory-map", 11) == 0)) { Path = 2; }
@@ -119,7 +161,45 @@ index 25ce2d2..0b248bc 100644
    if ((Path == 2) && (Candidate != MAX_UINTN)) {
      if (*RamdiskOffset != MAX_UINTN) { return FALSE; }
      *RamdiskOffset = Candidate;
-@@ -429,8 +433,8 @@ AllocateWindow (KERNEL *Kernel, UINT64 WindowSize, EFI_PHYSICAL_ADDRESS *Address
+@@ -265,9 +276,13 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+     *WindowSize = U64 (Data + MemoryCandidate);
+     if (!DarwinWindowSizeValid (*WindowSize)) { return FALSE; }
+   }
++  if (SeedCandidate != MAX_UINTN) {
++    if (Path != 1 || *SeedOffset != MAX_UINTN) { return FALSE; }
++    *SeedOffset = SeedCandidate;
++  }
+   if (Children > (Size - *Offset) / 8) { return FALSE; }
+   for (Index = 0; Index < Children; Index++) {
+-    if (!AdtNode (Data, Size, Offset, Depth + 1, Path, RamdiskOffset, TrustCacheOffset, AddonOffset, WindowSize, KeepPacked)) { return FALSE; }
++    if (!AdtNode (Data, Size, Offset, Depth + 1, Path, RamdiskOffset, TrustCacheOffset, AddonOffset, WindowSize, KeepPacked, SeedOffset)) { return FALSE; }
+   }
+   return TRUE;
+ }
+@@ -302,6 +317,22 @@ ValidTrustCaches (CONST UINT8 *Data, UINTN Size)
+   return TRUE;
+ }
+ 
++STATIC
++EFI_STATUS
++FillBootSeed (UINT8 *Seed)
++{
++  EFI_RNG_PROTOCOL *Rng;
++  EFI_STATUS Status;
++  ZeroMem (Seed, 64);
++  Status = gBS->LocateProtocol (&gEfiRngProtocolGuid, NULL, (VOID **)&Rng);
++  if (!EFI_ERROR (Status)) { Status = Rng->GetRNG (Rng, NULL, 64, Seed); }
++  if (EFI_ERROR (Status) || IsZeroBuffer (Seed, 64)) {
++    ZeroMem (Seed, 64);
++    return EFI_ERROR (Status) ? Status : EFI_DEVICE_ERROR;
++  }
++  return EFI_SUCCESS;
++}
++
+ STATIC
+ EFI_STATUS
+ GetMap (EFI_MEMORY_DESCRIPTOR **Map, UINTN *Capacity, UINTN *Size, UINTN *Key, UINTN *Stride)
+@@ -429,8 +460,8 @@ AllocateWindow (KERNEL *Kernel, UINT64 WindowSize, EFI_PHYSICAL_ADDRESS *Address
                    Descriptor->PhysicalStart + EFI_PAGES_TO_SIZE (Descriptor->NumberOfPages));
      RunBytes = End - Descriptor->PhysicalStart;
      if (RunBytes > BestBytes) { BestBytes = RunBytes; BestStart = Descriptor->PhysicalStart; }
@@ -130,7 +210,16 @@ index 25ce2d2..0b248bc 100644
      Status = gBS->AllocatePages (AllocateAddress, EfiLoaderCode, EFI_SIZE_TO_PAGES (WindowSize), &Candidate);
      if (!EFI_ERROR (Status)) { *Address = Candidate; break; }
    }
-@@ -499,11 +503,19 @@ Boot (
+@@ -490,6 +521,8 @@ Boot (
+   UINTN                           TrustCacheOffset;
+   UINT64                          TrustCacheAddress;
+   UINTN                           AddonOffset;
++  UINTN                           SeedOffset;
++  UINT8                           *BootSeed;
+   UINT64                          AddonAddress;
+   DARWIN_BOOT_ARGS                *Args;
+   EFI_MEMORY_DESCRIPTOR           *Map;
+@@ -499,11 +532,19 @@ Boot (
    UINTN                           Stride;
    UINT32                          Version;
    UINTN                           Attempt;
@@ -151,13 +240,28 @@ index 25ce2d2..0b248bc 100644
    if ((Request->KextCount != 0) || (Request->DeviceTree != NULL) || (Request->DeviceTreeSize != 0) ||
        (DarwinCurrentEl () != 4)) {
      Print (L"DARWINBOOT: unsupported inputs or exception level; firmware retained\n");
-@@ -557,6 +569,13 @@ Boot (
-   if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+@@ -529,6 +570,7 @@ Boot (
+   TrustCaches = NULL;
+   Addon = NULL;
+   AddonSize = 0;
++  BootSeed = NULL;
+   TreePath = NULL;
+   Map = NULL;
+   Address = 0;
+@@ -552,11 +594,19 @@ Boot (
+   RamdiskOffset = MAX_UINTN;
+   TrustCacheOffset = MAX_UINTN;
+   AddonOffset = MAX_UINTN;
++  SeedOffset = MAX_UINTN;
+   WindowSize = 0;
+   KeepPacked = FALSE;
+-  if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
++  if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked, &SeedOffset) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
    if (KeepPacked && (!RamdiskPacked || (RamdiskOffset == MAX_UINTN))) { Status = EFI_COMPROMISED_DATA; goto Fail; }
    if (WindowSize == 0) { WindowSize = WINDOW_SIZE; }
 +#if DARWINBOOT_NABU_DIAGNOSTIC
 +  if ((WindowSize != SIZE_256MB) || (RamdiskOffset != MAX_UINTN) ||
-+      (TrustCacheOffset != MAX_UINTN) || (AddonOffset != MAX_UINTN)) {
++      (TrustCacheOffset != MAX_UINTN) || (AddonOffset != MAX_UINTN) || (SeedOffset == MAX_UINTN)) {
 +    Status = EFI_UNSUPPORTED;
 +    goto Fail;
 +  }
@@ -165,7 +269,7 @@ index 25ce2d2..0b248bc 100644
    if (Kernel.Base > MAX_UINT64 - WindowSize) { Status = EFI_LOAD_ERROR; goto Fail; }
    if (Request->Ramdisk != NULL) {
      if ((RamdiskOffset == MAX_UINTN) || (U64 ((UINT8 *)Tree + RamdiskOffset) != 0) ||
-@@ -599,6 +618,13 @@ Boot (
+@@ -599,6 +649,13 @@ Boot (
    }
    Status = ReadBootVideo (Video);
    if (EFI_ERROR (Status)) { goto Fail; }
@@ -179,8 +283,32 @@ index 25ce2d2..0b248bc 100644
    Status = AllocateWindow (&Kernel, WindowSize, &Address);
    if (EFI_ERROR (Status)) { goto Fail; }
    ArgsAddress = ALIGN_VALUE (Address + Kernel.End - Kernel.Base, SIZE_16KB);
+@@ -631,6 +688,15 @@ Boot (
+   Args->DeviceTreeLength = (UINT32)TreeSize;
+   CopyMem (Args->CommandLine, CommandLine, sizeof (CommandLine));
+   CopyMem ((VOID *)(UINTN)TreeAddress, Tree, TreeSize);
++  if (SeedOffset != MAX_UINTN) {
++    BootSeed = (UINT8 *)(UINTN)(TreeAddress + SeedOffset);
++    Status = FillBootSeed (BootSeed);
++    if (EFI_ERROR (Status)) {
++      Print (L"DARWINBOOT: no usable UEFI RNG seed; firmware retained (%r)\n", Status);
++      goto Fail;
++    }
++    Print (L"DARWINBOOT: supplied 64 fresh UEFI RNG seed bytes\n");
++  }
+   if (Request->Ramdisk != NULL) {
+     if (KeepPacked) { CopyMem ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize); }
+     else { CopyRamdisk ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize, RamdiskPacked); }
+@@ -698,6 +764,7 @@ Boot (
+   CpuDeadLoop ();
+   return EFI_ABORTED;
+ Fail:
++  if (BootSeed != NULL) { ZeroMem (BootSeed, 64); }
+   if (Root != NULL) { Root->Close (Root); }
+   if (Image != NULL) { FreePool (Image); }
+   if (Tree != NULL) { FreePool (Tree); }
 diff --git a/DarwinBootPkg/Driver/DarwinBoot.inf b/DarwinBootPkg/Driver/DarwinBoot.inf
-index 3a90c96..80329ea 100644
+index 3a90c96..17e3cc4 100644
 --- a/DarwinBootPkg/Driver/DarwinBoot.inf
 +++ b/DarwinBootPkg/Driver/DarwinBoot.inf
 @@ -13,6 +13,7 @@
@@ -191,6 +319,14 @@ index 3a90c96..80329ea 100644
    Entry.S
  
  [Packages]
+@@ -34,6 +35,7 @@
+   gEfiSimpleFileSystemProtocolGuid ## CONSUMES
+   gEfiLoadedImageProtocolGuid ## CONSUMES
+   gEfiGraphicsOutputProtocolGuid ## CONSUMES
++  gEfiRngProtocolGuid ## CONSUMES
+ 
+ [Guids]
+   gEfiFileInfoGuid
 diff --git a/DarwinBootPkg/Driver/NabuDiagnostic.h b/DarwinBootPkg/Driver/NabuDiagnostic.h
 new file mode 100644
 index 0000000..0753b74

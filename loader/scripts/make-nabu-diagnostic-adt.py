@@ -35,6 +35,7 @@ def build(dram_size, owned_size):
         node("chosen", [
             ("darwinboot-memory-size", u64(owned_size)),
             ("dram-base", u64(0x80000000)), ("dram-size", u64(dram_size)),
+            ("random-seed", bytes(64)),
         ], [node("memory-map")]),
         node("cpus", children=[node("cpu0", [
             ("state", b"running\0"), ("reg", u32(0)),
@@ -76,11 +77,13 @@ def main():
         "requested_owned_window_bytes": args.owned_memory_size,
         "kernel_args": ["nabulog=0", "ufsrw=0", "cpus=1"],
         "ramdisk": False, "trust_cache": False, "storage_nodes": False,
+        "random_seed": "64-byte placeholder; loader must replace through UEFI RNG",
         "hardware_tested": False, "ready_to_boot": False,
         "blockers": [
             "Requires a Darwin 22 loader built with DARWINBOOT_NABU_DIAGNOSTIC=1.",
             "XNU bootstrap framebuffer address 0x9c000000 and 1600x2560 geometry need actual GOP verification.",
             "The diagnostic loader must find 256 MiB of conventional memory entirely below 4 GiB.",
+            "A usable UEFI RNG protocol must supply 64 fresh seed bytes before handoff.",
             "No root filesystem or userland is supplied; this is only an offline diagnostic candidate.",
             "No UEFI memory map or CPU handoff has been validated on this device.",
         ],

@@ -30,6 +30,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertIn("/arm-io/gic", nodes)
         self.assertEqual(list(path for path in nodes if path.startswith("/cpus/")), ["/cpus/cpu0"])
         self.assertEqual(set(nodes["/chosen/memory-map"]), {"name"})
+        self.assertEqual(nodes["/chosen"]["random-seed"], bytes(64))
         self.assertFalse(any("ufs" in path.lower() for path in nodes))
         self.assertNotIn("/psci", nodes)
 
@@ -151,11 +152,79 @@ int main(void) {
                     ("trailing", tree + b"\0", False),
                     ("storage", forbidden, not diagnostic),
                     ("psci", adt.node("device-tree", children=[adt.node("psci")]), not diagnostic),
+                    ("short-seed", adt.node("device-tree", children=[adt.node(
+                        "chosen", [("random-seed", bytes(63))])]), False),
+                    ("misplaced-seed", adt.node("device-tree", [("random-seed", bytes(64))]), False),
+                    ("duplicate-seed", adt.node("device-tree", children=[adt.node(
+                        "chosen", [("random-seed", bytes(64)), ("random-seed", bytes(64))])]), False),
                 ):
                     dt.write_bytes(data)
                     result = json.loads(contract.run([binary, kernel, dt]))
                     with self.subTest(profile=(major, diagnostic), tree=label):
                         self.assertEqual(result["adt_parser_accepts"], accepted)
+
+    def test_actual_entropy_helper_refuses_failed_sources(self):
+        source = (FRAMEWORK / "drivers/DarwinBoot/DarwinBootPkg/Driver/DarwinBoot.c").read_text()
+        helper = contract.extract(source, "STATIC\nEFI_STATUS\nFillBootSeed (",
+                                  "\nSTATIC\nEFI_STATUS\nGetMap (")
+        prelude = r"""
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <assert.h>
+typedef uint8_t UINT8;
+typedef void VOID;
+typedef int EFI_STATUS;
+typedef struct RNG EFI_RNG_PROTOCOL;
+struct RNG { EFI_STATUS (*GetRNG)(EFI_RNG_PROTOCOL *, VOID *, size_t, UINT8 *); };
+#define STATIC static
+#define EFI_SUCCESS 0
+#define EFI_DEVICE_ERROR 7
+#define EFI_ERROR(s) ((s)!=0)
+#define ZeroMem(p,n) memset(p,0,n)
+static int mode, calls, gEfiRngProtocolGuid;
+static int IsZeroBuffer(const void *p, size_t n) {
+  const UINT8 *b=p;
+  for (size_t i=0;i<n;i++) if(b[i]) return 0;
+  return 1;
+}
+static EFI_STATUS get(EFI_RNG_PROTOCOL *p, VOID *algorithm, size_t size, UINT8 *out) {
+  (void)p; assert(algorithm==NULL && size==64); calls++;
+  if(mode==1) { memset(out,0xa5,size); return 9; }
+  if(mode!=2) for(size_t i=0;i<size;i++) out[i]=(UINT8)(i+1);
+  return 0;
+}
+static EFI_RNG_PROTOCOL rng={get};
+static EFI_STATUS locate(VOID *guid, VOID *registration, VOID **out) {
+  assert(guid==&gEfiRngProtocolGuid && registration==NULL);
+  if(mode==0) return 14;
+  *out=&rng; return 0;
+}
+static struct { EFI_STATUS (*LocateProtocol)(VOID *,VOID *,VOID **); } bs={locate}, *gBS=&bs;
+"""
+        main = r"""
+int main(void) {
+  UINT8 seed[64];
+  for(mode=0;mode<4;mode++) {
+    memset(seed,0xcc,sizeof(seed)); calls=0;
+    EFI_STATUS status=FillBootSeed(seed);
+    assert(calls==(mode==0?0:1));
+    if(mode<3) assert(status!=0 && IsZeroBuffer(seed,64));
+    else {
+      assert(status==0);
+      for(size_t i=0;i<64;i++) assert(seed[i]==i+1);
+    }
+  }
+  return 0;
+}
+"""
+        with tempfile.TemporaryDirectory(prefix="nabu-entropy-test-") as work:
+            work = Path(work)
+            code, binary = work / "entropy.c", work / "entropy.exe"
+            code.write_text(prelude + helper + main, encoding="ascii")
+            subprocess.run([CC, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            str(code), "-o", str(binary)], check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=30)
 
 
 if __name__ == "__main__":

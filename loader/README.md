@@ -19,6 +19,10 @@ All loader variants preserve the kernel virtual-base offset within a 32 MiB
 bootstrap block when selecting physical memory. The nabu kernel uses 16 KiB
 pages and 32 MiB L2 mappings; matching only a 2 MiB offset is insufficient.
 This stronger constraint also satisfies 4 KiB-page / 2 MiB-block kernels.
+The diagnostic ADT includes a 64-byte `/chosen/random-seed` placeholder.
+Before handoff the loader replaces it through `EFI_RNG_PROTOCOL`, refusing
+an unavailable, failed or all-zero result. Seed bytes are never printed.
+The real-kernel QEMU experiment adds a host-backed virtio RNG.
 
 Host tests compile the actual loader parsers and check both ABI layouts
 against the real xnu-8796 header. The pinned kernel from Actions run
@@ -74,6 +78,12 @@ markers. ACPI is disabled so the adapter can use the QEMU FDT. The experiment
 fails if the kernel's post-VM-mapping marker is not observed; raw evidence is
 still uploaded. These observations never establish physical nabu support or
 an iPadOS userspace boot.
+
+`loader/scripts/decode-nabu-framebuffer.py` extracts the exact `_iso_font`
+from the supplied kernel's Mach-O symbol table and decodes matching 2x-scaled
+console cells into `console.json`. This exposes early panic text without
+assuming a host font. Wrapped lines remain in physical framebuffer row order.
+Build manifests and raw evidence are also recorded when an experiment fails.
 
 Do not flash these EFI drivers as boot images or replace an existing
 payload with the diagnostic files. A matching UEFI integration and

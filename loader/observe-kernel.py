@@ -28,7 +28,8 @@ tree = adt.node("device-tree", [
     ("compatible", b"xiaomi,nabu\0qcom,sm8150\0"),
 ], [
     adt.node("chosen", [("darwinboot-memory-size", u64(0x10000000)),
-                       ("dram-base", u64(0x40000000)), ("dram-size", u64(0x80000000))],
+                       ("dram-base", u64(0x40000000)), ("dram-size", u64(0x80000000)),
+                       ("random-seed", bytes(64))],
              [adt.node("memory-map")]),
     adt.node("cpus", children=[adt.node("cpu0", [
         ("state", b"running\0"), ("reg", u32(0)), ("device_type", b"cpu\0"),
@@ -72,12 +73,13 @@ result = subprocess.run([
     "python3", FRAMEWORK / "package/Scripts/qemu-run.py", ESP,
     "--log", OUT / "qemu.log", "--cpu-model", "max", "--cpus", "1",
     "--memory-mib", "2048", "--gic-version", "3", "--timeout", "100",
-    "--no-acpi", "--register-dump", OUT / "registers.txt",
+    "--no-acpi", "--rng", "--register-dump", OUT / "registers.txt",
     "--debug-log", OUT / "exceptions.log",
     "--final-screenshot", OUT / "screen.png",
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
     "--expect", "DARWINBOOT: inputs validated; exiting boot services",
+    "--expect", "DARWINBOOT: supplied 64 fresh UEFI RNG seed bytes",
     "--reject", "ASSERT",
 ])
 report = {
@@ -114,6 +116,12 @@ if raw.is_file() and raw.stat().st_size == 0xfa0000:
     (OUT / "physical-framebuffer.png").write_bytes(
         b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1600, 2560, 8, 2, 0, 0, 0)) +
         chunk(b"IDAT", zlib.compress(scanlines, 9)) + chunk(b"IEND", b""))
+    decoded = subprocess.run([
+        sys.executable, ROOT / "loader/scripts/decode-nabu-framebuffer.py",
+        "--kernel", ROOT / "verified-kernel/kernel.macho",
+        "--framebuffer", raw, "--output", OUT / "console.json",
+    ])
+    report["console_decode_pass"] = decoded.returncode == 0
 report["kernel_c_entry_observed"] = 1 in report["early_markers"]
 report["kernel_vm_mapping_observed"] = 9 in report["early_markers"]
 report["limits"] = [

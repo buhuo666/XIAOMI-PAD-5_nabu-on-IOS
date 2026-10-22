@@ -1,14 +1,15 @@
 diff --git a/package/Scripts/qemu-run.py b/package/Scripts/qemu-run.py
-index 54eb81f..bc625de 100755
+index 54eb81f..2d90b43 100755
 --- a/package/Scripts/qemu-run.py
 +++ b/package/Scripts/qemu-run.py
-@@ -119,12 +119,32 @@ def main() -> int:
+@@ -119,12 +119,33 @@ def main() -> int:
      parser.add_argument("--disk", action="append", default=[], type=Path, help="extra raw disk image (read-only)")
      parser.add_argument("--timeout", type=float, default=90.0)
      parser.add_argument("--cpus", type=int, default=2, help="number of virtual CPUs (default: 2)")
 +    parser.add_argument("--cpu-model", default="cortex-a72")
 +    parser.add_argument("--gic-version", choices=("2", "3"))
 +    parser.add_argument("--no-acpi", action="store_true")
++    parser.add_argument("--rng", action="store_true", help="add a host-backed virtio RNG for emulator tests")
 +    parser.add_argument("--memory-mib", type=int, default=1024)
 +    parser.add_argument("--final-screenshot", type=Path, help="PNG captured before stopping QEMU")
 +    parser.add_argument("--memory-dump", nargs=3, metavar=("ADDRESS", "BYTES", "PATH"),
@@ -35,7 +36,7 @@ index 54eb81f..bc625de 100755
      display = None
      if args.display_size:
          match = re.fullmatch(r"([0-9]+)x([0-9]+)", args.display_size)
-@@ -148,13 +168,19 @@ def main() -> int:
+@@ -148,17 +169,26 @@ def main() -> int:
          args.log.unlink()
  
      cmd = [
@@ -56,7 +57,14 @@ index 54eb81f..bc625de 100755
      cmd += [
          "-drive", f"if=none,id=esp,format=raw,readonly=on,file=fat:{args.esp.resolve()}",
          "-device", "virtio-blk-pci,drive=esp",
-@@ -180,6 +206,7 @@ def main() -> int:
+     ]
++    if args.rng:
++        cmd += ["-object", "rng-random,id=rng0,filename=/dev/urandom",
++                "-device", "virtio-rng-pci,rng=rng0"]
+     for index, disk in enumerate(args.disk):
+         cmd += [
+             "-drive", f"if=none,id=disk{index},format=raw,readonly=on,file={disk.resolve()}",
+@@ -180,6 +210,7 @@ def main() -> int:
      menu_seen = False
      expectations_since = None
      expectations_complete = False
@@ -64,7 +72,7 @@ index 54eb81f..bc625de 100755
      deadline = time.time() + args.timeout
      try:
          qmp = Qmp(str(qmp_path))
-@@ -211,6 +238,30 @@ def main() -> int:
+@@ -211,6 +242,30 @@ def main() -> int:
              time.sleep(0.2)
      finally:
          if proc.poll() is None:
@@ -95,7 +103,7 @@ index 54eb81f..bc625de 100755
              print("expectations complete: stopping QEMU" if expectations_complete else "timeout: stopping QEMU")
              if qmp:
                  try:
-@@ -230,7 +281,7 @@ def main() -> int:
+@@ -230,7 +285,7 @@ def main() -> int:
      clean = args.log.with_suffix(".clean.log")
      clean.write_text(log)
  

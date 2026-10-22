@@ -132,16 +132,16 @@ int main(int argc,char **argv) {
                      k.Count,(unsigned long long)k.Base,(unsigned long long)k.End,
                      (unsigned long long)k.Entry,(unsigned long long)(k.End-k.Base));
   if (argc>2) {
-    UINTN at=0,r=MAX_UINTN,t=MAX_UINTN,a=MAX_UINTN;
+    UINTN at=0,r=MAX_UINTN,t=MAX_UINTN,a=MAX_UINTN,seed=MAX_UINTN;
     UINT64 w=0; BOOLEAN packed=FALSE; int ok;
     b=read_file(argv[2],&n);
-    ok=AdtNode(b,n,&at,0,3,&r,&t,&a,&w,&packed) && at==n;
+    ok=AdtNode(b,n,&at,0,3,&r,&t,&a,&w,&packed,&seed) && at==n;
     printf(",\"adt_parser_accepts\":%s,\"owned_window_bytes\":%llu,"
            "\"ramdisk_placeholder\":%s,\"trust_cache_placeholder\":%s,"
-           "\"gpu_addon_placeholder\":%s,\"packed_ramdisk\":%s",
+           "\"gpu_addon_placeholder\":%s,\"packed_ramdisk\":%s,\"random_seed_placeholder\":%s",
            ok?"true":"false",(unsigned long long)(w?w:WINDOW_SIZE),
            r!=MAX_UINTN?"true":"false",t!=MAX_UINTN?"true":"false",
-           a!=MAX_UINTN?"true":"false",packed?"true":"false");
+           a!=MAX_UINTN?"true":"false",packed?"true":"false",seed!=MAX_UINTN?"true":"false");
     free(b);
   }
   puts("}"); return 0;
@@ -222,6 +222,10 @@ def check(args):
             blockers.append("xnu-8796 requires /arm-io/gic, which this ADT lacks.")
         if args.xnu_major == 22:
             blockers.append("NABU bootstrap still hardcodes framebuffer 0x9c000000 and assumes low physical memory; verify before any device boot.")
+            if not selected["random_seed_placeholder"]:
+                blockers.append("xnu-8796 needs 64 boot seed bytes; /chosen/random-seed is absent.")
+        if selected["random_seed_placeholder"]:
+            blockers.append("The seed placeholder must be filled by a usable UEFI RNG before handoff.")
         for flag, label in (("ramdisk_placeholder", "RAMDisk"),
                             ("trust_cache_placeholder", "TrustCache"),
                             ("gpu_addon_placeholder", "GpuAddon")):

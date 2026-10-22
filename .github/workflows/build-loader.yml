@@ -63,6 +63,7 @@ jobs:
           mkdir -p out/diagnostic
           python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
           python3 loader/scripts/test-probe-analysis.py
+          python3 loader/scripts/test-framebuffer-decode.py
           python3 loader/scripts/make-nabu-diagnostic-adt.py \
             --dram-size 0x300000000 --output out/diagnostic/kernel.macho.adt
           python3 loader/scripts/check-boot-contract.py --framework sources/framework \
@@ -81,8 +82,9 @@ jobs:
           bash loader/observe-kernel.sh 2>&1 | tee out/kernel-observation.log
 
       - name: Record artifacts
-        if: success()
+        if: always() && !cancelled()
         run: |
+          mkdir -p out
           cp loader/README.md out/BUILD-NOTES.md
           python3 loader/manifest.py out
 

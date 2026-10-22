@@ -60,6 +60,15 @@ The loader and probe now preserve 32 MiB congruence. Host and synthetic
 handoff checks cover that constraint. A new experiment must determine
 whether this repair permits the real kernel to continue.
 
+Run 39767864244 confirmed the repair: the real kernel reached checkpoints
+1 through 7, including C entry, platform discovery, CPU bootstrap and entry
+to `arm_vm_init`. The framebuffer console reported:
+`Expected 64 seed bytes from bootloader, but got 0. @prng_random.c:64`.
+The QEMU GOP adapter also activated successfully with ACPI disabled.
+The next repair supplies `/chosen/random-seed` from UEFI RNG before handoff;
+it does not weaken the kernel's entropy requirement or bake a reusable seed
+into an artifact.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.
