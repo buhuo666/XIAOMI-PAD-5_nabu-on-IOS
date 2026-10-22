@@ -77,3 +77,17 @@ diff --git a/iokit/Kernel/arm/NabuSurface.cpp b/iokit/Kernel/arm/NabuSurface.cpp
  /* The table lock; the framebuffer may publish a surface before the root starts. */
  static void
  nabu_surface_init_lock(void)
+diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -570,6 +570,10 @@
+ 		s->release();
+ 		return;
+ 	}
++	if (dh == 0 || scaled_w == 0) {
++		s->release();
++		return;
++	}
+ 
+ 	/* Black letterbox. */
+ 	for (uint32_t y = 0; y < off; y++) {
