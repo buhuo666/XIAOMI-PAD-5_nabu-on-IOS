@@ -1,0 +1,77 @@
+name: build-darwinboot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "loader/**"
+      - ".github/workflows/build-loader.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: darwinboot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      KERNEL_RUN: "39750243808"
+      KERNEL_SHA256: eae72e9a4f42f459966099c228249b08a275db23268ced32dc005a71b1693caa
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          brew install llvm lld nasm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
+          echo "CLANG_BIN=$(brew --prefix llvm)/bin/" >> "$GITHUB_ENV"
+
+      - name: Prepare pinned sources
+        run: bash loader/prepare.sh
+
+      - name: Download verified kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: xnu-8796-kernel
+          path: verified-kernel
+          github-token: ${{ github.token }}
+          run-id: ${{ env.KERNEL_RUN }}
+
+      - name: Check parsers and real kernel contract
+        run: |
+          set -euo pipefail
+          test "$(shasum -a 256 verified-kernel/kernel.macho | cut -d ' ' -f 1)" = "$KERNEL_SHA256"
+          mkdir -p out/diagnostic
+          python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
+          python3 loader/scripts/make-nabu-diagnostic-adt.py \
+            --dram-size 0x300000000 --output out/diagnostic/kernel.macho.adt
+          python3 loader/scripts/check-boot-contract.py --framework sources/framework \
+            --kernel verified-kernel/kernel.macho --adt out/diagnostic/kernel.macho.adt \
+            --xnu-source sources/xnu --cc clang --output out/diagnostic/boot-contract.json
+
+      - name: Build loader variants
+        run: |
+          set -o pipefail
+          bash loader/build.sh 2>&1 | tee out/build.log
+
+      - name: Record artifacts
+        if: success()
+        run: |
+          cp loader/README.md out/BUILD-NOTES.md
+          python3 loader/manifest.py out
+
+      - name: Upload build evidence
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwinboot-macos
+          path: out/
+          if-no-files-found: error

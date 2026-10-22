@@ -1,0 +1,119 @@
+diff --git a/scripts/build-darwinboot.sh b/scripts/build-darwinboot.sh
+index 0f35ae3..df19670 100755
+--- a/scripts/build-darwinboot.sh
++++ b/scripts/build-darwinboot.sh
+@@ -9,4 +9,15 @@ export CLANG_BIN=${CLANG_BIN:-$ROOT/.cache/toolchain/}
+ export PYTHON_COMMAND=python3
+ export PATH=$EDK_TOOLS_PATH/BinWrappers/PosixLike:$EDK_TOOLS_PATH/Source/C/bin:$PATH
+ cd "$ROOT"
+-build -p DarwinBootPkg/DarwinBoot.dsc -a AARCH64 -b "${TARGET:-DEBUG}" -t CLANGPDB -n "${JOBS:-4}"
++XNU_MAJOR=${DARWINBOOT_XNU_MAJOR:-23}
++case "$XNU_MAJOR" in
++  22|23) ;;
++  *) printf 'Unsupported DARWINBOOT_XNU_MAJOR: %s\n' "$XNU_MAJOR" >&2; exit 1 ;;
++esac
++DIAGNOSTIC=${DARWINBOOT_NABU_DIAGNOSTIC:-0}
++case "$XNU_MAJOR:$DIAGNOSTIC" in
++  22:0|22:1|23:0) ;;
++  *) printf 'Unsupported Darwin/diagnostic profile: %s:%s\n' "$XNU_MAJOR" "$DIAGNOSTIC" >&2; exit 1 ;;
++esac
++build -p DarwinBootPkg/DarwinBoot.dsc -a AARCH64 -b "${TARGET:-DEBUG}" -t CLANGPDB -n "${JOBS:-4}" \
++  -D "DARWINBOOT_XNU_MAJOR=$XNU_MAJOR" -D "DARWINBOOT_NABU_DIAGNOSTIC=$DIAGNOSTIC"
+diff --git a/scripts/test-darwinboot.py b/scripts/test-darwinboot.py
+index 5bb8544..445c5b3 100755
+--- a/scripts/test-darwinboot.py
++++ b/scripts/test-darwinboot.py
+@@ -10,6 +10,8 @@ parser = argparse.ArgumentParser(description=__doc__)
+ parser.add_argument('--memory-size', type=lambda value: int(value, 0), choices=[0x10000000, 0x20000000])
+ parser.add_argument('--packed-ramdisk', action='store_true', help='Exercise real packed seed expansion before firmware exit')
+ parser.add_argument('--gop', action='store_true', help='Exercise the actual QEMU ramfb UEFI GOP handoff')
++parser.add_argument('--xnu-major', type=int, choices=[22, 23], default=23,
++                    help='Must match DARWINBOOT_XNU_MAJOR used to build DarwinBoot')
+ parser.add_argument('--gop-high-resolution', action='store_true', help='Exercise real QEMU ramfb 3048x2032 allocation and mode programming')
+ parser.add_argument('--ramfb-geometry-refusal', action='store_true', help='Load the geometry fixture without a GOP and require a clean refusal')
+ args = parser.parse_args()
+@@ -18,6 +20,8 @@ if args.ramfb_geometry_refusal and (args.gop or args.gop_high_resolution):
+ if args.gop_high_resolution:
+     args.gop = True
+ OUTPUT = ROOT / ('build/darwinboot-test' if not args.memory_size else f'build/darwinboot-test-{args.memory_size >> 20}m')
++if args.xnu_major != 23:
++    OUTPUT = OUTPUT.with_name(OUTPUT.name + f'-darwin{args.xnu_major}')
+ if args.gop:
+     OUTPUT = OUTPUT.with_name(OUTPUT.name + '-gop')
+ if args.packed_ramdisk:
+@@ -32,6 +36,7 @@ PAYLOADS = ESP / 'EFI/UniXNU/Payloads'
+ OUTPUT.mkdir(parents=True, exist_ok=True)
+ PAYLOADS.mkdir(parents=True, exist_ok=True)
+ subprocess.run(['python3', ROOT / 'drivers/DarwinBoot/Test/make-fixtures.py', PAYLOADS,
++                '--xnu-major', str(args.xnu_major),
+                 *(['--memory-size', str(args.memory_size)] if args.memory_size else []),
+                 *(['--gop'] if args.gop else []),
+                 *(['--gop-width', '3048', '--gop-height', '2032'] if args.gop_high_resolution else [])], check=True)
+diff --git a/scripts/unixnu/payload.py b/scripts/unixnu/payload.py
+index 6a1b8cf..6d4d1e6 100644
+--- a/scripts/unixnu/payload.py
++++ b/scripts/unixnu/payload.py
+@@ -25,14 +25,17 @@ def paths(ctx):
+     return out, out / 'payload.img', out / 'payload.json'
+ 
+ 
+-def check_args(arguments):
++def check_args(arguments, xnu_major=23):
++    limits = {22: 607, 23: 1000}
++    if xnu_major not in limits:
++        raise Error(f'unsupported Darwin boot_args ABI: {xnu_major}')
+     for value in arguments:
+         if not re.fullmatch(r'[A-Za-z0-9_.\-]+(=[A-Za-z0-9_.,\-]+)?', value):
+             raise Error(f'unsupported kernel argument: {value}')
+     line = ' '.join(arguments)
+-    # DarwinBoot copies the command line into a 1024-byte buffer and refuses a longer one.
+-    if len(line) > 1000:
+-        raise Error(f'the kernel command line is {len(line)} bytes; the limit is 1000')
++    # Reserve the trailing NUL in the selected pexpert boot_args ABI.
++    if len(line) > limits[xnu_major]:
++        raise Error(f'the kernel command line is {len(line)} bytes; the Darwin {xnu_major} limit is {limits[xnu_major]}')
+     return line
+ 
+ 
+@@ -83,6 +86,15 @@ def build(ctx, kernel=None):
+     spec = ctx.board.get('payload')
+     if not spec:
+         raise Error('board.toml has no [payload]')
++    adt = spec.get('adt', {})
++    adt_tool = ctx.tree / adt.get('tool', '')
++    if not adt_tool.is_file():
++        raise Error(f'ADT generator not found: {adt_tool}; configure payload.adt.tool for the selected kernel')
++    dram_size = adt.get('dram_size', spec.get('dram_size'))
++    if dram_size is None:
++        raise Error('board.toml needs payload.adt.dram_size (or payload.dram_size)')
++    if 'dram_size' in adt and 'dram_size' in spec and adt['dram_size'] != spec['dram_size']:
++        raise Error('conflicting payload.dram_size and payload.adt.dram_size')
+     args = ctx.args
+     kernel = expand(kernel or getattr(args, 'kernel', None) or ctx.work / 'kernel/kernel.macho')
+     if not kernel.is_file():
+@@ -91,7 +103,7 @@ def build(ctx, kernel=None):
+     # An extra NAME=VALUE replaces the board's argument of the same name.
+     names = {item.split('=', 1)[0] for item in extra}
+     arguments = [item for item in spec.get('kernel_args', []) if item.split('=', 1)[0] not in names] + extra
+-    line = check_args(arguments)
++    line = check_args(arguments, spec.get('boot_args_xnu_major', 23))
+     check_native_root(kernel, arguments)
+     owner_trust = getattr(args, 'owner_trust_cache', None)
+     trust = expand(owner_trust or args.trust_cache) if (owner_trust or getattr(args, 'trust_cache', None)) else None
+@@ -114,7 +126,6 @@ def build(ctx, kernel=None):
+     if addon and (not addon.is_file() or addon.read_bytes()[:8] != b'NGPUADD2'):
+         raise Error(f'GPU addon not found or not made by scripts/make-gpu-addon.py: {addon}')
+     seed = getattr(args, 'unique_chip_id', None) or os.environ.get('UNIXNU_UNIQUE_CHIP_ID')
+-    adt = spec.get('adt', {})
+     if adt.get('unique_chip_id') == 'required' and not seed:
+         raise Error('the platform seed is not stored in any repository: pass --unique-chip-id HEX (or UNIXNU_UNIQUE_CHIP_ID)')
+     out, image, report = paths(ctx)
+@@ -132,7 +143,7 @@ def build(ctx, kernel=None):
+         shutil.copyfile(addon, payloads / 'kernel.macho.gpuaddon')
+     if data:
+         shutil.copyfile(data, payloads / 'scratch-data.img')
+-    command = ['python3', ctx.tree / adt['tool'], '--output', payloads / 'kernel.macho.adt', '--dram-size', str(spec['dram_size'])]
++    command = ['python3', adt_tool, '--output', payloads / 'kernel.macho.adt', '--dram-size', str(dram_size)]
+     for key, flag in (('owned_memory_size', '--owned-memory-size'), ('root_match_volume_uuid', '--root-match-volume-uuid'),
+                       ('chip_id', '--chip-id'), ('cpu_regs', '--cpu-regs'), ('psci_method', '--psci-method')):
+         if adt.get(key) is not None:

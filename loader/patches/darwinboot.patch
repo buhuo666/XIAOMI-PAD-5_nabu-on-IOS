@@ -1,0 +1,310 @@
+diff --git a/DarwinBootPkg/DarwinBoot.dsc b/DarwinBootPkg/DarwinBoot.dsc
+index f437c4f..e6d27e8 100644
+--- a/DarwinBootPkg/DarwinBoot.dsc
++++ b/DarwinBootPkg/DarwinBoot.dsc
+@@ -8,6 +8,12 @@
+   SUPPORTED_ARCHITECTURES = AARCH64
+   BUILD_TARGETS = DEBUG|RELEASE
+   SKUID_IDENTIFIER = DEFAULT
++!ifndef DARWINBOOT_XNU_MAJOR
++  DEFINE DARWINBOOT_XNU_MAJOR = 23
++!endif
++!ifndef DARWINBOOT_NABU_DIAGNOSTIC
++  DEFINE DARWINBOOT_NABU_DIAGNOSTIC = 0
++!endif
+ 
+ !include MdePkg/MdeLibs.dsc.inc
+ 
+@@ -29,6 +35,9 @@
+   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x07
+   gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000000
+ 
++[BuildOptions]
++  *_*_AARCH64_CC_FLAGS = -DDARWINBOOT_XNU_MAJOR=$(DARWINBOOT_XNU_MAJOR) -DDARWINBOOT_NABU_DIAGNOSTIC=$(DARWINBOOT_NABU_DIAGNOSTIC)
++
+ [Components]
+   DarwinBootPkg/Driver/DarwinBoot.inf
+   Test/Validation.inf
+diff --git a/DarwinBootPkg/Driver/BootArgs.h b/DarwinBootPkg/Driver/BootArgs.h
+index aefcd90..772de3c 100644
+--- a/DarwinBootPkg/Driver/BootArgs.h
++++ b/DarwinBootPkg/Driver/BootArgs.h
+@@ -4,7 +4,18 @@
+ 
+ #include <Base.h>
+ 
+-// Darwin 23 pexpert/pexpert/arm64/boot.h ABI; all fields are little-endian.
++#ifndef DARWINBOOT_XNU_MAJOR
++#define DARWINBOOT_XNU_MAJOR 23
++#endif
++
++// pexpert/pexpert/arm64/boot.h ABI; all fields are little-endian.
++#if DARWINBOOT_XNU_MAJOR == 22
++#define DARWIN_BOOT_LINE_LENGTH 608
++#elif DARWINBOOT_XNU_MAJOR == 23
++#define DARWIN_BOOT_LINE_LENGTH 1024
++#else
++#error Unsupported Darwin boot_args ABI
++#endif
+ typedef struct {
+   UINT16  Revision;
+   UINT16  Version;
+@@ -18,7 +29,7 @@ typedef struct {
+   UINT32  TreePadding;
+   UINT64  DeviceTree;
+   UINT32  DeviceTreeLength;
+-  CHAR8   CommandLine[1024];
++  CHAR8   CommandLine[DARWIN_BOOT_LINE_LENGTH];
+   UINT32  FlagsPadding;
+   UINT64  BootFlags;
+   UINT64  MemorySizeActual;
+@@ -27,7 +38,14 @@ typedef struct {
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, DeviceTree) == 0x60, "DT ABI");
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, Video) == 0x28, "video ABI");
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, CommandLine) == 0x6c, "command line ABI");
++#if DARWINBOOT_XNU_MAJOR == 22
++STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, BootFlags) == 0x2d0, "boot flags ABI");
++STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, MemorySizeActual) == 0x2d8, "memory ABI");
++STATIC_ASSERT (sizeof (DARWIN_BOOT_ARGS) == 0x2e0, "boot_args ABI");
++#else
++STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, BootFlags) == 0x470, "boot flags ABI");
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, MemorySizeActual) == 0x478, "memory ABI");
+ STATIC_ASSERT (sizeof (DARWIN_BOOT_ARGS) == 0x480, "boot_args ABI");
++#endif
+ 
+ #endif
+diff --git a/DarwinBootPkg/Driver/DarwinBoot.c b/DarwinBootPkg/Driver/DarwinBoot.c
+index 25ce2d2..0b248bc 100644
+--- a/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -16,6 +16,7 @@
+ #include "BootVideo.h"
+ #include "PackedRamdisk.h"
+ #include "WindowSize.h"
++#include "NabuDiagnostic.h"
+ 
+ #define WINDOW_SIZE  SIZE_256MB
+ #define BLOCK_SIZE   SIZE_2MB
+@@ -248,6 +249,9 @@ AdtNode (CONST UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, UINTN Parent
+   if (Depth == 0) { Path = 0; }
+   if ((Depth == 1) && (ParentPath == 0) && (NameLength == 7) && (CompareMem (Name, "chosen", 7) == 0)) { Path = 1; }
+   if ((Depth == 2) && (ParentPath == 1) && (NameLength == 11) && (CompareMem (Name, "memory-map", 11) == 0)) { Path = 2; }
++#if DARWINBOOT_NABU_DIAGNOSTIC
++  if (!DarwinNabuNodePath (Depth, ParentPath, Name, NameLength, &Path)) { return FALSE; }
++#endif
+   if ((Path == 2) && (Candidate != MAX_UINTN)) {
+     if (*RamdiskOffset != MAX_UINTN) { return FALSE; }
+     *RamdiskOffset = Candidate;
+@@ -429,8 +433,8 @@ AllocateWindow (KERNEL *Kernel, UINT64 WindowSize, EFI_PHYSICAL_ADDRESS *Address
+                   Descriptor->PhysicalStart + EFI_PAGES_TO_SIZE (Descriptor->NumberOfPages));
+     RunBytes = End - Descriptor->PhysicalStart;
+     if (RunBytes > BestBytes) { BestBytes = RunBytes; BestStart = Descriptor->PhysicalStart; }
+-    Candidate = ALIGN_VALUE (Descriptor->PhysicalStart, BLOCK_SIZE) + (Kernel->Base & (BLOCK_SIZE - 1));
+-    if ((Candidate < Descriptor->PhysicalStart) || (End < Candidate) || (End - Candidate < WindowSize)) { continue; }
++    if (!DarwinWindowCandidate (Descriptor->PhysicalStart, End, Kernel->Base, WindowSize,
++                               DARWINBOOT_NABU_DIAGNOSTIC ? 0x100000000ULL : MAX_UINT64, &Candidate)) { continue; }
+     Status = gBS->AllocatePages (AllocateAddress, EfiLoaderCode, EFI_SIZE_TO_PAGES (WindowSize), &Candidate);
+     if (!EFI_ERROR (Status)) { *Address = Candidate; break; }
+   }
+@@ -499,11 +503,19 @@ Boot (
+   UINTN                           Stride;
+   UINT32                          Version;
+   UINTN                           Attempt;
+-  CHAR8                           CommandLine[1024];
++  CHAR8                           CommandLine[DARWIN_BOOT_LINE_LENGTH];
+   UINT64                          Video[6];
+ 
+   (VOID)This;
+   if ((Request == NULL) || (Request->Volume == NULL) || (Request->KernelPath == NULL)) { return EFI_INVALID_PARAMETER; }
++#if DARWINBOOT_NABU_DIAGNOSTIC
++  if ((Request->BootArgs == NULL) ||
++      (StrCmp (Request->BootArgs, L"nabulog=0 ufsrw=0 cpus=1") != 0) ||
++      (Request->Ramdisk != NULL) || (Request->RamdiskSize != 0)) {
++    Print (L"DARWINBOOT: NABU diagnostic arguments or ramdisk rejected; firmware retained\n");
++    return EFI_UNSUPPORTED;
++  }
++#endif
+   if ((Request->KextCount != 0) || (Request->DeviceTree != NULL) || (Request->DeviceTreeSize != 0) ||
+       (DarwinCurrentEl () != 4)) {
+     Print (L"DARWINBOOT: unsupported inputs or exception level; firmware retained\n");
+@@ -557,6 +569,13 @@ Boot (
+   if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+   if (KeepPacked && (!RamdiskPacked || (RamdiskOffset == MAX_UINTN))) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+   if (WindowSize == 0) { WindowSize = WINDOW_SIZE; }
++#if DARWINBOOT_NABU_DIAGNOSTIC
++  if ((WindowSize != SIZE_256MB) || (RamdiskOffset != MAX_UINTN) ||
++      (TrustCacheOffset != MAX_UINTN) || (AddonOffset != MAX_UINTN)) {
++    Status = EFI_UNSUPPORTED;
++    goto Fail;
++  }
++#endif
+   if (Kernel.Base > MAX_UINT64 - WindowSize) { Status = EFI_LOAD_ERROR; goto Fail; }
+   if (Request->Ramdisk != NULL) {
+     if ((RamdiskOffset == MAX_UINTN) || (U64 ((UINT8 *)Tree + RamdiskOffset) != 0) ||
+@@ -599,6 +618,13 @@ Boot (
+   }
+   Status = ReadBootVideo (Video);
+   if (EFI_ERROR (Status)) { goto Fail; }
++#if DARWINBOOT_NABU_DIAGNOSTIC
++  if (!DarwinNabuVideoValid (Video)) {
++    Print (L"DARWINBOOT: NABU diagnostic GOP does not match kernel bootstrap; firmware retained\n");
++    Status = EFI_UNSUPPORTED;
++    goto Fail;
++  }
++#endif
+   Status = AllocateWindow (&Kernel, WindowSize, &Address);
+   if (EFI_ERROR (Status)) { goto Fail; }
+   ArgsAddress = ALIGN_VALUE (Address + Kernel.End - Kernel.Base, SIZE_16KB);
+diff --git a/DarwinBootPkg/Driver/DarwinBoot.inf b/DarwinBootPkg/Driver/DarwinBoot.inf
+index 3a90c96..80329ea 100644
+--- a/DarwinBootPkg/Driver/DarwinBoot.inf
++++ b/DarwinBootPkg/Driver/DarwinBoot.inf
+@@ -13,6 +13,7 @@
+   BootArgs.h
+   BootVideo.h
+   DiagFont.h
++  NabuDiagnostic.h
+   Entry.S
+ 
+ [Packages]
+diff --git a/DarwinBootPkg/Driver/NabuDiagnostic.h b/DarwinBootPkg/Driver/NabuDiagnostic.h
+new file mode 100644
+index 0000000..4d22d46
+--- /dev/null
++++ b/DarwinBootPkg/Driver/NabuDiagnostic.h
+@@ -0,0 +1,57 @@
++// SPDX-License-Identifier: BSD-2-Clause-Patent
++#ifndef DARWINBOOT_NABU_DIAGNOSTIC_H
++#define DARWINBOOT_NABU_DIAGNOSTIC_H
++
++#ifndef DARWINBOOT_NABU_DIAGNOSTIC
++#define DARWINBOOT_NABU_DIAGNOSTIC 0
++#endif
++
++#if DARWINBOOT_NABU_DIAGNOSTIC && DARWINBOOT_XNU_MAJOR != 22
++#error NABU diagnostic guards require the Darwin 22 ABI
++#endif
++
++#if DARWINBOOT_NABU_DIAGNOSTIC
++// Only the offline diagnostic tree is supported. In particular, no storage
++// controller or PSCI node may reach the kernel through this profile.
++static inline int DarwinNabuNodePath(UINTN depth, UINTN parent,
++                                    const UINT8 *name, UINTN length, UINTN *path) {
++  if (name == NULL || length == 0 || name[length - 1] != 0) { return 0; }
++#define NABU_NODE(d,p,s,id) \
++  if (depth == (d) && parent == (p) && length == sizeof(s) && \
++      CompareMem(name, s, sizeof(s)) == 0) { *path = (id); return 1; }
++  NABU_NODE(0, 3, "device-tree", 0)
++  NABU_NODE(1, 0, "chosen", 1)
++  NABU_NODE(2, 1, "memory-map", 2)
++  NABU_NODE(1, 0, "cpus", 4)
++  NABU_NODE(2, 4, "cpu0", 5)
++  NABU_NODE(1, 0, "defaults", 6)
++  NABU_NODE(1, 0, "options", 7)
++  NABU_NODE(1, 0, "product", 8)
++  NABU_NODE(1, 0, "arm-io", 9)
++  NABU_NODE(2, 9, "gic", 10)
++#undef NABU_NODE
++  return 0;
++}
++#endif
++
++// These are the current xnu-8796 NABU bootstrap constants, not panel discovery.
++static inline int DarwinNabuVideoValid(const UINT64 video[6]) {
++  return video[0] == 0x9c000000ULL && video[1] == 1 &&
++         video[2] == 6400 && video[3] == 1600 &&
++         video[4] == 2560 && video[5] == 32;
++}
++
++static inline int DarwinWindowCandidate(UINT64 start, UINT64 end, UINT64 base,
++                                       UINT64 size, UINT64 limit, UINT64 *candidate) {
++  UINT64 aligned;
++  if (end > limit) { end = limit; }
++  if (start > MAX_UINT64 - 0x1fffffULL) { return 0; }
++  aligned = (start + 0x1fffffULL) & ~0x1fffffULL;
++  if (aligned > MAX_UINT64 - (base & 0x1fffffULL)) { return 0; }
++  aligned += base & 0x1fffffULL;
++  if (end < aligned || size > end - aligned) { return 0; }
++  *candidate = aligned;
++  return 1;
++}
++
++#endif
+diff --git a/README.md b/README.md
+index 13b9c74..ca79db8 100644
+--- a/README.md
++++ b/README.md
+@@ -5,3 +5,25 @@ UEFI bootloader for UniXNU. Loads the payload, kernel, device tree and trust cac
+ Current state: boots from the firmware volume and supports the packed RAM disk handoff.
+ 
+ Built as part of the firmware volume.
++
++The standalone `DarwinBoot.dsc` defaults to Darwin 23 / xnu-10063 boot_args.
++For Darwin 22 / xnu-8796, build with `-D DARWINBOOT_XNU_MAJOR=22` (or run
++`scripts/build-darwinboot.sh` with `DARWINBOOT_XNU_MAJOR=22`). The ABIs differ:
++the command line is 608 bytes in 8796 and 1024 in 10063. Their memSizeActual
++offsets are 0x2d8 and 0x478 respectively. Do not mix a loader and kernel ABI.
++Firmware DSCs that include this driver directly must also pass the matching
++C compiler definition; the standalone DSC option does not configure them.
++
++`scripts/test-darwinboot.py --xnu-major 22` selects the corresponding synthetic
++QEMU entry fixture. It must match the loader already built. This is a separate
++boot_args layout check, not evidence that a real nabu device boots.
++
++For the xnu-8796 nabu diagnostic candidate, also set
++`DARWINBOOT_NABU_DIAGNOSTIC=1`. This profile requires Darwin 22, the exact
++arguments `nabulog=0 ufsrw=0 cpus=1`, a 256 MiB owned window entirely below
++4 GiB, and GOP base 0x9c000000 / 1600x2560 / stride 6400 / BGRA32.
++It accepts only the diagnostic node paths, excluding storage and PSCI nodes,
++and rejects ramdisk, trust cache and GPU addon placeholders. Unsupported
++inputs return to firmware before ExitBootServices. The generic QEMU
++validation suite requires the ordinary profile; it is not a diagnostic
++profile hardware test. No profile here supplies an iPadOS userland.
+diff --git a/Test/Kernel.S b/Test/Kernel.S
+index 8d11163..2ba85bf 100644
+--- a/Test/Kernel.S
++++ b/Test/Kernel.S
+@@ -6,6 +6,9 @@
+ #ifndef FIXTURE_ADT_EXTRA
+ #define FIXTURE_ADT_EXTRA 0
+ #endif
++#ifndef FIXTURE_XNU_MAJOR
++#define FIXTURE_XNU_MAJOR 23
++#endif
+ .section .text, "ax"
+ .global _start
+ _start:
+@@ -33,7 +36,13 @@ _start:
+   mov x7, #FIXTURE_WINDOW_SIZE
+   cmp x6, x7
+   b.ne failed
++#if FIXTURE_XNU_MAJOR == 22
++  ldr x6, [x0, #0x2d8]
++#elif FIXTURE_XNU_MAJOR == 23
+   ldr x6, [x0, #0x478]
++#else
++#error Unsupported fixture ABI
++#endif
+   cmp x6, x7
+   b.ne failed
+   add x7, x5, x7
+diff --git a/Test/make-fixtures.py b/Test/make-fixtures.py
+index 79d491a..9050050 100755
+--- a/Test/make-fixtures.py
++++ b/Test/make-fixtures.py
+@@ -14,6 +14,7 @@ def main():
+     parser.add_argument('output', type=Path)
+     parser.add_argument('--memory-size', type=lambda value: int(value, 0), choices=[0x10000000, 0x20000000])
+     parser.add_argument('--gop', action='store_true')
++    parser.add_argument('--xnu-major', type=int, choices=[22, 23], default=23)
+     args = parser.parse_args()
+     output = args.output.resolve()
+     output.mkdir(parents=True, exist_ok=True)
+@@ -23,6 +24,7 @@ def main():
+     subprocess.run([tools['clang'], '--target=aarch64-none-elf', '-c',
+                     f'-DFIXTURE_WINDOW_SIZE={args.memory_size or 0x10000000}',
+                     f'-DFIXTURE_GOP={int(args.gop)}',
++                    f'-DFIXTURE_XNU_MAJOR={args.xnu_major}',
+                     f'-DFIXTURE_ADT_EXTRA={44 if args.memory_size else 0}',
+                     str(Path(__file__).with_name('Kernel.S')), '-o', str(output / 'kernel.o')], check=True)
+     subprocess.run([tools['ld.lld'], f'-Ttext={BASE + 0x1000:#x}', '-e', '_start',
