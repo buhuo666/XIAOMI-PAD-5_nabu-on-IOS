@@ -13,6 +13,7 @@
 | Scheduler/VM progress with 512 MiB | 39775489349 | Exact-kernel PC/LR symbols and paused VM counters; no physical-device claim |
 | Pre-BSD startup trace | 39778361201 | EARLY_BOOT/LOCKDOWN callback phases completed; CPU matching gap identified |
 | CPU driver and BSD root-device search | 39779752907 | Single-CPU SGI verified, BSD/autoconf completed, captured HFS root-device wait |
+| Enforced BSD/root-wait observation | 39783240494 | All six explicit progress checks passed; 402 artifact hashes verified |
 
 Clock fallback kernel SHA-256:
 `768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e`
@@ -195,6 +196,13 @@ Subsequent observations now report explicit CPU/BSD/root-search messages and
 require that demonstrated milestone, successful decoding/symbolization and
 no captured panic to pass. Early VM markers alone no longer pass this
 real-kernel experiment. These are emulator requirements, not tablet results.
+
+Run 39783240494 verified the stricter observation on macos-14 at source
+`6d8a772085574c8d1eb580ad0bb0d70709783eb7`. All six explicit progress
+checks were true, `missing_goal_observations` was empty, and
+`observation_goal_pass` was true. All 402 artifact sizes and SHA-256 digests
+matched after download. It still supplied no root filesystem or userland,
+and did not execute on the physical tablet.
 
 ## Connected tablet and existing Windows (2026-10-22)
 
