@@ -97,6 +97,7 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
+          python3 xnu-8796/test-clock-fallback.py --xnu-source dxb/xnu
           KERNEL_CONFIG_LOWER="$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')"
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"
