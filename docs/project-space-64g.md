@@ -95,6 +95,38 @@ Android 采集时约 38% 已用，空闲容量足够规划，但这不证明尾�
 和 [AOSP main.c](https://android.googlesource.com/platform/external/f2fs-tools/+/refs/heads/main/fsck/main.c)。
 上游 safe-resize 实现不是这台设备的兼容性测试结果。
 
+## 复用 Mindows 工具箱及现有启动文件
+
+已检查用户现有 `D:\Mindows工具箱V8\bin` 中的 `par.bat`、`calc.bat`、
+`clean.bat`、`toolbox.bat` 和 `mindows.bat`，没有执行其分区写入流程。
+
+- `par.bat` 的备份、建分区、删除条目分别封装 `sgdisk -b`、`-n/-c/-t`、
+  `-d`；没有迁移 F2FS 尾部数据或建立解密映射的逻辑。
+- `par.bat` 的起止参数经过 `calc kb2sec` 转换。`calc.bat` 实际以
+  `参数 * 1024 / 逻辑扇区字节数` 计算，参数是 KiB，不是本方案表中的 LBA。
+  当前逻辑扇区为 4096 字节，直接代入 LBA 会被再除以四，得到错误地址。
+- `toolbox.bat` 的传统恢复分区表流程会删除现有 Windows 分区并重建 userdata；
+  其“双清和格式化 Data”流程会执行 factory reset、移除 userdata 映射并格式化。
+  这些菜单流程不适合保留当前两套系统。
+- `clean.bat` 提供的是 mkfs / factory reset，不是无损缩容。
+
+可以复用经过核对的底层工具和单项操作，但必须先完成解密 F2FS 的备份、
+离线缩容和检查，不能通过先删除重建 GPT 条目来代替缩文件系统。
+若通过删除重建条目更新 userdata 边界，还必须保留其分区号、唯一 GUID、
+类型、属性、名称和起点，不能只用 `sgdisk -n` 的默认身份重新创建。
+
+**按此候选布局，不需要因为新增项目空间而重做 Android boot.img 或 Windows
+UEFI。** 前提是保留现有 boot/vendor_boot/dtbo、Windows ESP、Windows 系统
+分区及其身份、起点和现有引导配置；userdata 仅在成功缩小文件系统后缩短末尾。
+这不等于已经验证未来的三系统启动。
+
+实际读回的 boot_a、boot_b 均为 Android v3 容器，内含相同 Linux kernel
+段，且与 sdcard 上含固件卷的 UEFI 镜像不同。不能根据 A/B 命名把一个槽位
+当作可随意覆盖的“第三系统槽位”，也不能断言现有 Windows 固件只存于其中一槽。
+Mindows 的部分模式会重写 boot_a 和 boot_b；新增 XNU 路径需要单独核对这些
+切换行为，再决定使用现有 UEFI 的文件启动功能或增加兼容启动入口。
+项目引导文件可规划放在新 nabu_esp 中，但入口及实际 UEFI 兼容性尚未验证。
+
 ## 可复用工具
 
 - `tools/prepare-backup-recovery.py`：只处理哈希固定的本地 rec-14.img，生成临时
