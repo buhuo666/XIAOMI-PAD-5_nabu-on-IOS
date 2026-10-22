@@ -1,0 +1,22 @@
+diff --git a/osfmk/arm64/nabu_early.c b/osfmk/arm64/nabu_early.c
+--- a/osfmk/arm64/nabu_early.c
++++ b/osfmk/arm64/nabu_early.c
+@@ -27,6 +27,9 @@ extern unsigned char iso_font[256 * 16];
+ /* Initialized data must remain writable until disable, including panics. */
+ static unsigned int early_row, early_col;
+ static unsigned int early_started, early_disabled, early_panicking;
++/* Boot-CPU-only checkpoints survive framebuffer console initialization.
++ * Emulator/debugger observation only; no MMIO or persistent storage. */
++volatile uint32_t nabu_early_stage_mask;
+ 
+ static void
+ nabu_early_clear_row(void)
+@@ -99,6 +102,8 @@ nabu_early_mark(unsigned int stage, const char *label)
+ 		}
+ 	}
+ 	__asm__ volatile("dsb sy" ::: "memory");
++	nabu_early_stage_mask |= 1u << stage;
++	__asm__ volatile("dsb sy" ::: "memory");
+ 	nabu_early_string("NABU EARLY ");
+ 	if (stage >= 10) {
+ 		nabu_early_putc((char)('0' + stage / 10));

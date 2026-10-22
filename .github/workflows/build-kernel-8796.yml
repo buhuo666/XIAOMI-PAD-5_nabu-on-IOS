@@ -28,6 +28,7 @@ on:
       - "xnu-8796/patches/**"
       - "xnu-8796/prepare-dxb.py"
       - "xnu-8796/test-clock-fallback.py"
+      - "xnu-8796/test-early-stage-mask.py"
       - ".github/workflows/build-kernel-8796.yml"
 
 concurrency:
@@ -99,6 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 xnu-8796/test-clock-fallback.py --xnu-source dxb/xnu
+          python3 xnu-8796/test-early-stage-mask.py --xnu-source dxb/xnu
           KERNEL_CONFIG_LOWER="$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')"
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"
@@ -108,6 +110,7 @@ jobs:
           cp "$KERNEL" out/kernel.macho
           (cd out && shasum -a 256 kernel.macho > SHA256SUMS)
           xcrun nm -U out/kernel.macho > out/kernel-symbols.txt
+          grep -q ' _nabu_early_stage_mask$' out/kernel-symbols.txt
           git -C dxb rev-parse HEAD > out/dxb-commit.txt
           git -C dxb/xnu rev-parse HEAD > out/xnu-commit.txt
           shasum -a 256 dxb/patches/[0-9][0-9][0-9][0-9]-*.patch dxb/patches/[0-9][0-9][0-9][0-9]-*.sh > out/patch-SHA256SUMS
