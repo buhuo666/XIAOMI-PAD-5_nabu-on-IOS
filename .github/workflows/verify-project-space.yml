@@ -1,0 +1,37 @@
+name: verify-project-space
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "tools/apply-project-space.py"
+      - "tools/backup-device-layout.py"
+      - "tools/deploy-project-probe.py"
+      - "tools/plan-project-space.py"
+      - "tools/analyze-fastboot-report.py"
+      - "tools/test-*.py"
+      - ".github/workflows/verify-project-space.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-checks:
+    runs-on: macos-14
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check project-volume safety without hardware
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/apply-project-space.py tools/deploy-project-probe.py \
+            tools/backup-device-layout.py tools/plan-project-space.py
+          python3 tools/test-apply-project-space.py
+          python3 tools/test-project-space.py
+          python3 tools/test-fastboot-report.py
+          python3 tools/test-project-probe-deployment.py
+          git diff --check

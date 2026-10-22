@@ -20,15 +20,20 @@
 后续同日已通过固定 fastboot 查询取得容量，再通过临时不挂载磁盘的 root ADB
 环境备份并校验真实 GPT、两个启动槽位和 ESP。设备随后已返回 Android。
 实测 userdata 起点为 68,190,272（4096 字节 LBA），旧起点 2,654,272
-现在属于 Windows ESP。用户新增的 64 GiB 项目空间仍处于候选布局阶段，
+现在属于 Windows ESP。用户新增的 64 GiB 项目空间已按 4 GiB FAT32 +
+60 GiB 未格式化区完成，Android 已重建加密数据区并正常启动。
 详见 [64 GiB 项目空间](project-space-64g.md)；不能使用旧范围写入。
+后续项目写入仅允许进入这两个新分区，现有 Windows / Android 和引导区
+不能用作测试存储，见 [真机测试边界](device-test-scope.md)。
 
 ## 先在平板的现有 Windows 中采集
 
-按原来已在使用的方法进入平板 Windows，随后在平板本机的 PowerShell 运行：
+仅在现有启动方式及新项目卷路径都已确认后，才考虑进入平板 Windows
+运行只读采集器。当前写入限制下，报告必须输出到新项目卷，不能写入
+Windows 系统 / 数据卷。下面的占位路径必须先替换成已核实的新项目卷：
 
 ```powershell
-.\collect-windows-arm-info.ps1 -OutputPath .\windows-arm-device-report.json
+.\collect-windows-arm-info.ps1 -OutputPath '<新项目卷路径>\windows-arm-device-report.json'
 ```
 
 脚本只查询 SMBIOS 固件版本、Windows 版本、内存、磁盘/分区元数据和卷容量。
@@ -36,7 +41,11 @@
 不会挂载 ESP、分配盘符、编辑 BCD、重启或更改分区。它在 x64 PC 上会拒绝执行。
 Windows 中的可用内存不能替代 UEFI 启动阶段的内存映射。
 
-## 已准备的探针包
+## 已部署到新项目区的探针包
+
+2026-10-22 已把以下固定哈希探针部署到新建 nabu_esp 的
+`\EFI\NabuDiag\NabuProbe.efi`，并完成该卷 16 MiB 写入 / 卸载 / 回读验证。
+没有在固件内执行探针，未改变默认引导入口。下面的命令仍只用于 PC 准备材料。
 
 在 PC 上，由已核对的 Actions 附件生成独立目录：
 
@@ -58,7 +67,7 @@ Windows 中的可用内存不能替代 UEFI 启动阶段的内存映射。
 UEFI Shell 入口。不能仅凭 Windows 已安装推定固件包含这些功能，不能使用
 Surface Duo 的通用说明替代 nabu 上实际验证过的入口。
 
-若现有固件确认支持外置 FAT 测试卷，可在该卷放置
+若现有固件确认支持新建项目 FAT 测试卷，可在该卷放置
 `EFI\NabuDiag\NabuProbe.efi`，从 Boot from File 手动选择它；或在已确认的
 UEFI Shell 中选择正确的 `fsN:` 后执行：
 
@@ -68,7 +77,7 @@ fsN:\EFI\NabuDiag\NabuProbe.efi
 
 `fsN:` 是现场识别的测试卷，不是固定 `fs0:`。默认模式只显示 CPU、timer、
 GOP、RNG 协议存在性与内存描述符，然后返回固件；不交接内核。
-在确认应用来自外置测试卷、且愿意在该卷保存新报告后，可单独执行：
+在确认应用来自新建的 nabu_esp、且固件本身符合上述写入限制后，可单独执行：
 
 ```text
 fsN:\EFI\NabuDiag\NabuProbe.efi --save

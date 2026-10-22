@@ -8,6 +8,10 @@
 Windows 11 ARM；已观察到 mindowsesp / mindowswin / mindowsdat 分区名。
 后续应沿用并核对现有 UEFI，保留 Windows 和 Android。具体操作边界及
 Windows 端采集脚本见 [已有 Windows 验证路径](existing-windows.md)。
+用户随后已完成 4 GiB + 60 GiB 独立项目分区，并要求后续项目写入仅使用
+这两个新分区。新 ESP 已通过实机读写校验并部署探针，当前执行边界见
+[真机测试边界](device-test-scope.md)；不能把下面的 PC 输出路径当成允许
+写入平板 Android 或 Windows 系统盘的授权。
 
 ## 1. 在现有 Android 中读取基础信息
 
@@ -47,8 +51,8 @@ MemTotal 是 Android 可见内存，不能独立证明全部物理容量、保�
 Shell/Boot from File、匹配的 GOP，或支持本次探针。不要替换 Windows 的
 bootmgfw.efi / BOOTAA64.EFI，不修改 BCD、BootOrder 或 BootNext。
 
-当前阶段不需要为 iPadOS 创建分区。先完成 CPU、内存和显示的交接验证，
-后续再根据实际 UFS/GPT 备份、匹配用户态和文件系统需求制定存储方案。
+用户指定的独立分区现已创建，但它们不提供 CPU、内存或显示交接的证据。
+应先完成这些验证，再确定 60 GiB 系统区的文件系统及匹配用户态方案。
 
 ## 3. 在已确认的 UEFI 中收集报告
 

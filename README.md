@@ -46,3 +46,9 @@ Android userdata 已按授权清空并缩至约 150.35 GiB；metadata 已重建�
 这只是独立存储空间，不是已安装或可启动的 iPadOS。
 实测边界、容量预算、执行记录及工具见
 [64 GiB 项目空间](docs/project-space-64g.md)。
+
+分区后的项目写入只允许使用新建的 nabu_esp / nabu_system。
+已在 nabu_esp 完成 16 MiB 写入、卸载、重新挂载及 SHA-256 回读测试，
+并部署固定哈希的 NabuProbe.efi；没有执行 UEFI 探针或 XNU。
+工具的只读保护、实测结果与固件入口的剩余限制见
+[真机测试边界](docs/device-test-scope.md)。

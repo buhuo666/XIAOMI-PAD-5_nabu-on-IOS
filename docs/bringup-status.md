@@ -317,3 +317,28 @@ execution log remain on the PC, outside Git. There is still no physical XNU boot
 or iPadOS installation. Local checks pass: seven synthetic GPT change tests,
 six planner tests, four fastboot parser tests, and two preservation tests with
 the tracked userdata protection patch applied to a separate validation copy.
+
+## Project-volume-only device testing (2026-10-22)
+
+The owner then restricted all future project persistent writes to the new
+4 GiB / 60 GiB partitions. The userdata erasure authorization was specific to
+the completed partition operation and is not an ongoing test permission.
+
+A fresh RAM-only recovery session revalidated GPTs and kernel boundaries.
+Every other partition was marked kernel read-only; only nabu_esp was mounted
+writable. A 16 MiB random file passed SHA-256 checks after writing and after
+unmounting and reopening the filesystem read-only, then was deleted.
+The pinned 14,336-byte ARM64 NabuProbe.efi from run 39779752907 was staged at
+`\EFI\NabuDiag\NabuProbe.efi`, with provenance and recovery observations.
+
+All eleven protected boot/ESP hashes, all six LUN edge pairs and the Windows
+volume edge samples were unchanged across deployment. The 60 GiB partition
+remains unformatted and read-only during the test. The deployment helper
+refuses non-project filenames and refuses overwriting existing files.
+
+Recovery MemTotal is 11,733,112 KiB, distinct from normal Android's
+11,766,512 KiB. Linux System RAM regions were collected; fb0 geometry was
+unavailable. These observations do not supply a UEFI memory map or GOP.
+Neither the EFI probe nor XNU was executed. The existing UEFI's automatic boot
+and variable-storage behavior still needs verification before invoking it
+under the new write restriction. See [device-test-scope.md](device-test-scope.md).
