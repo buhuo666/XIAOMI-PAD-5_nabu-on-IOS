@@ -101,7 +101,7 @@ jobs:
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"
           file "$KERNEL"
-          lipo -verify_arch arm64 "$KERNEL"
+          xcrun lipo "$KERNEL" -verify_arch arm64
           mkdir -p out
           cp "$KERNEL" out/kernel.macho
           (cd out && shasum -a 256 kernel.macho > SHA256SUMS)
