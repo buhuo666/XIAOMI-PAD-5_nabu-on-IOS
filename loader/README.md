@@ -104,6 +104,10 @@ The experiment requests `serial=1` to route ordinary startup console output
 through the existing framebuffer serial implementation.
 It also uses the existing `startup_debug=1` option and captures the actual
 `_startup_phase` variable to locate any stop before BSD initialization.
+The emulator's single CPU advertises `qcom,kryo485` alongside `arm,armv8` so
+the exact kernel's NabuCPU personality can initialize the boot CPU and
+publish the CPU count. This is a driver-matching fixture, not a claim that
+QEMU's `max` CPU reproduces the tablet's microarchitecture.
 
 `loader/scripts/symbolize-registers.py` resolves sampled PC/LR addresses with
 `llvm-symbolizer` against the exact kernel and records its SHA-256. The result

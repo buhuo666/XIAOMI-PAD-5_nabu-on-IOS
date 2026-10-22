@@ -30,6 +30,7 @@ spec.loader.exec_module(fb)
 kernel_image = (ROOT / "verified-kernel/kernel.macho").read_bytes()
 stage_mask_offset = fb.kernel_symbol_offset(kernel_image, "_nabu_early_stage_mask")
 startup_phase_offset = fb.kernel_symbol_offset(kernel_image, "_startup_phase")
+cpu_count_state_offset = fb.kernel_symbol_offset(kernel_image, "_max_cpus_initialized")
 owned_memory_size = 0x20000000
 counter_names = (
     "_vm_page_free_count", "_vm_page_free_reserved", "_vm_page_free_target",
@@ -51,7 +52,7 @@ tree = adt.node("device-tree", [
              [adt.node("memory-map")]),
     adt.node("cpus", children=[adt.node("cpu0", [
         ("state", b"running\0"), ("reg", u32(0)), ("device_type", b"cpu\0"),
-        ("compatible", b"arm,armv8\0"), ("timebase-frequency", u32(62500000)),
+        ("compatible", b"qcom,kryo485\0arm,armv8\0"), ("timebase-frequency", u32(62500000)),
     ])]),
     adt.node("defaults", [("sleep-disabled", u32(1))]),
     adt.node("options"),
@@ -102,6 +103,7 @@ result = subprocess.run([
     "--memory-dump", "0x9c000000", "0xfa0000", OUT / "framebuffer.raw",
     "--handoff-dump", hex(stage_mask_offset), "4", OUT / "early-stage-mask.raw",
     "--handoff-dump", hex(startup_phase_offset), "4", OUT / "startup-phase.raw",
+    "--handoff-dump", hex(cpu_count_state_offset), "4", OUT / "cpu-count-state.raw",
     *counter_dumps,
     "--expect", "QEMU-NABU: reserved framebuffer 0x9c000000 1600x2560 stride6400; emulator only",
     "--expect", "DARWINBOOT: inputs validated; exiting boot services",
@@ -138,6 +140,9 @@ for name in counter_names:
 phase_file = OUT / "startup-phase.raw"
 if phase_file.is_file() and phase_file.stat().st_size == 4:
     report["paused_startup_phase"] = struct.unpack("<I", phase_file.read_bytes())[0]
+cpu_state_file = OUT / "cpu-count-state.raw"
+if cpu_state_file.is_file() and cpu_state_file.stat().st_size == 4:
+    report["paused_cpu_count_state"] = struct.unpack("<I", cpu_state_file.read_bytes())[0]
 raw = OUT / "framebuffer.raw"
 if raw.is_file() and raw.stat().st_size == 0xfa0000:
     data = raw.read_bytes()

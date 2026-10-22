@@ -141,6 +141,21 @@ BSD entry nor a root filesystem wait is claimed. The next experiment enables
 XNU's existing `startup_debug=1` and captures `_startup_phase` directly, without
 changing the kernel or adding any storage.
 
+Run 39778361201 passed and all 401 artifact hashes matched. Startup tracing
+and the actual `_startup_phase=0xffffffff` establish completion of the
+EARLY_BOOT and LOCKDOWN callback phases. The last bootstrap message was
+`PE_lockdown_iokit`; the platform expert subsequently registered, but no
+`bsd_init enter` was captured.
+
+Source tracing found that the experiment's CPU compatible list contained only
+`arm,armv8`, while this exact kernel's NabuCPU personality matches
+`qcom,kryo485`. Consequently it could not run the driver that calls
+`ml_set_max_cpus`; `kperf_init_early`, immediately before BSD entry, waits on
+that publication. This is a source-supported explanation to verify, not yet
+a measured stack trace. The next experiment adds the matching string to
+the emulator CPU node and captures `_max_cpus_initialized`. It still selects
+one CPU and supplies no PSCI node, extra CPUs, storage or root filesystem.
+
 1. Establish a reversible UEFI invocation path for this actual tablet,
    then collect its memory/GOP/CPU report.
 2. Compare the 12 GiB inventory with reserved regions and usable UEFI ranges.

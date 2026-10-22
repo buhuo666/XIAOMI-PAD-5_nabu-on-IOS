@@ -37,6 +37,7 @@ if observation.is_file():
             "requested_owned_memory_bytes", "paused_vm_page_counters",
             "printf_serial_output_requested",
             "startup_debug_requested", "paused_startup_phase",
+            "paused_cpu_count_state",
         )
     }
 for path in sorted(root.rglob("*")):
@@ -73,6 +74,7 @@ if summary_path:
             f"- Panic text found in captured framebuffer: `{report.get('kernel_panic_observed', False)}`",
             f"- Allocated-window request: {report.get('requested_owned_memory_bytes', 'not recorded')} bytes",
             f"- Paused startup phase: `{report.get('paused_startup_phase', 'not captured')}`",
+            f"- Paused CPU-count initialization state: `{report.get('paused_cpu_count_state', 'not captured')}`",
             "- Root filesystem supplied: **no**; iPadOS userland tested: **no**",
             "",
             "A passed early checkpoint is not a completed OS boot. Absence of captured",
