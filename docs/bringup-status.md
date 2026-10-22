@@ -10,6 +10,8 @@
 | UEFI observation collector | 39763299490 | Adds NabuProbe.efi and a sixth QEMU test; all pass |
 | Real kernel early VM/console startup | 39769172744 | Real xnu-8796 C entry, final TTBR1 mapping, pmap_bootstrap and kprintf startup; simulator only |
 | Persistent early-stage mask kernel | 39771320855 | Patch 0086, actual-function mask tests, macOS compile/link and exported-symbol verification |
+| Scheduler/VM progress with 512 MiB | 39775489349 | Exact-kernel PC/LR symbols and paused VM counters; no physical-device claim |
+| Pre-BSD startup trace | 39778361201 | EARLY_BOOT/LOCKDOWN callback phases completed; CPU matching gap identified |
 
 Clock fallback kernel SHA-256:
 `768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e`
