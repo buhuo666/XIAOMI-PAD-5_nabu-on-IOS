@@ -226,3 +226,32 @@ The Windows collector refuses an x64 host and queries only selected metadata
 on the ARM64 tablet. Neither tool deploys to the tablet. See
 [existing-windows.md](existing-windows.md) for the existing-UEFI validation
 path and its unresolved firmware/menu evidence.
+
+## Real GPT backup and 64 GiB proposal (2026-10-22)
+
+The owner's subsequent authorization reserves 64 GiB from Android storage,
+while retaining Android and Windows. Fixed fastboot queries first measured
+userdata as 230,157,955,072 bytes; a remote unsupported getvar returned process
+status zero, so the analyzer also checks its FAILED text.
+
+A later temporary RAM boot used the local nabu recovery kernel with the recovery
+application, decrypt startup, boot-control startup and disk fstab disabled.
+Root ADB and the absence of all disk filesystem mounts were verified.
+All six UFS LUNs' primary/backup GPT headers and entry arrays passed CRC and
+consistency checks. Twelve boot/ESP/metadata images also passed device/local
+SHA-256 comparison. This is physical recovery execution, not an XNU tablet boot.
+No partition edit, flash, erase or slot change occurred. Normal Android 15
+startup on slot `_a` and a read-write encrypted F2FS `/data` were reverified.
+
+The verified GPT places userdata at LBAs 68,190,272 through 124,381,178
+(4096-byte blocks). The old configured first LBA, 2,654,272, now identifies
+the existing Windows ESP. Raw userdata image generation is therefore blocked
+when `userdata.preserve_existing=true`, before tools, IPSW or output creation.
+
+An offline planner computes an aligned 512 MiB project EFI area and 63.5 GiB
+system area inside the current userdata tail. Neither partition exists yet.
+The encrypted filesystem has no validated offline decrypted mapping or complete
+restorable backup. Its existing recovery tool advertises safe resize, but
+that does not verify compatibility or permit changing GPT boundaries first.
+See [project-space-64g.md](project-space-64g.md) for exact observations,
+candidate boundaries and remaining prerequisites.

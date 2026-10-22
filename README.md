@@ -35,3 +35,9 @@ pwsh -File tools/collect-android-info.ps1 -AdbPath D:\platform-tools\adb.exe
 格式化安装。已有 Windows 的固件信息采集和独立探针路径见
 [已有 Windows 验证路径](docs/existing-windows.md)。探针包仅在 PC 上准备，
 不会替换现有 UEFI、Windows 引导或 Android 分区。
+
+用户已授权从 Android 空间规划 **64 GiB** 项目专用空间。真实设备的六个
+UFS LUN 的 GPT、两个启动槽位及 ESP 已离线备份并校验，平板已返回 Android。
+当前仅完成布局计算，尚未缩容或创建分区；加密 F2FS 的离线解密 / 缩容路径和
+完整 userdata 备份仍未验证。实测边界、候选布局及工具见
+[64 GiB 项目空间](docs/project-space-64g.md)。

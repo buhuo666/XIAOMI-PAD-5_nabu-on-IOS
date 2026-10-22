@@ -66,6 +66,9 @@ jobs:
           python3 loader/scripts/test-framebuffer-decode.py
           python3 loader/scripts/test-register-symbols.py
           python3 loader/scripts/test-boot-progress.py
+          python3 loader/scripts/test-userdata-preservation.py --framework sources/framework
+          python3 tools/test-fastboot-report.py
+          python3 tools/test-project-space.py
           python3 loader/scripts/test-qemu-upstream-fixtures.py --framework sources/framework
           python3 loader/scripts/test-handoff-dump.py --framework sources/framework
           python3 loader/scripts/make-nabu-diagnostic-adt.py \

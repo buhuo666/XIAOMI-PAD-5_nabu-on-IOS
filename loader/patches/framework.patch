@@ -296,3 +296,19 @@ index 6a1b8cf..6d4d1e6 100644
      for key, flag in (('owned_memory_size', '--owned-memory-size'), ('root_match_volume_uuid', '--root-match-volume-uuid'),
                        ('chip_id', '--chip-id'), ('cpu_regs', '--cpu-regs'), ('psci_method', '--psci-method')):
          if adt.get(key) is not None:
+diff --git a/scripts/unixnu/userdata.py b/scripts/unixnu/userdata.py
+index 6885f51..8039e6e 100644
+--- a/scripts/unixnu/userdata.py
++++ b/scripts/unixnu/userdata.py
+@@ -55,6 +55,11 @@ def build(ctx, dry_run=False):
+     spec = ctx.board.get('userdata')
+     if not spec:
+         raise Error('board.toml has no [userdata]')
++    if spec.get('preserve_existing', False):
++        raise Error(
++            'userdata.preserve_existing is enabled: raw userdata image generation is disabled '
++            'to preserve the installed Android/Windows layout; historical geometry is not a deployment target'
++        )
+     tool('hdiutil', 'the disk images are attached with macOS hdiutil')
+     source = Ipsw(ctx)
+     capacity = (spec['last_lba'] - spec['first_lba'] + 1) * spec.get('lba_bytes', 4096)

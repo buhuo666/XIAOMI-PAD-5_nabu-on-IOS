@@ -17,6 +17,12 @@
 这些 Windows 分区不是可供 iPadOS 格式化的空闲空间。此前仓库记录的 userdata
 边界也不是本次测量值，不应用于任何写入。
 
+后续同日已通过固定 fastboot 查询取得容量，再通过临时不挂载磁盘的 root ADB
+环境备份并校验真实 GPT、两个启动槽位和 ESP。设备随后已返回 Android。
+实测 userdata 起点为 68,190,272（4096 字节 LBA），旧起点 2,654,272
+现在属于 Windows ESP。用户新增的 64 GiB 项目空间仍处于候选布局阶段，
+详见 [64 GiB 项目空间](project-space-64g.md)；不能使用旧范围写入。
+
 ## 先在平板的现有 Windows 中采集
 
 按原来已在使用的方法进入平板 Windows，随后在平板本机的 PowerShell 运行：
