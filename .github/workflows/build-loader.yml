@@ -22,8 +22,8 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      KERNEL_RUN: "39750243808"
-      KERNEL_SHA256: eae72e9a4f42f459966099c228249b08a275db23268ced32dc005a71b1693caa
+      KERNEL_RUN: "39762760559"
+      KERNEL_SHA256: 768d5fe74fde124c58fb55365859997cdb98c47fe60d84c88ec3deea63a4b37e
     steps:
       - uses: actions/checkout@v4
 
@@ -57,6 +57,7 @@ jobs:
           test "$(shasum -a 256 verified-kernel/kernel.macho | cut -d ' ' -f 1)" = "$KERNEL_SHA256"
           mkdir -p out/diagnostic
           python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
+          python3 loader/scripts/test-probe-analysis.py
           python3 loader/scripts/make-nabu-diagnostic-adt.py \
             --dram-size 0x300000000 --output out/diagnostic/kernel.macho.adt
           python3 loader/scripts/check-boot-contract.py --framework sources/framework \

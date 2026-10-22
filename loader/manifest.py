@@ -9,7 +9,7 @@ root = Path(sys.argv[1])
 manifest = {
     "hardware_tested": False,
     "ready_to_boot": False,
-    "kernel_run": "39750243808",
+    "kernel_run": "39762760559",
     "profiles": {
         "darwin23": {"xnu_major": 23, "nabu_diagnostic": False},
         "darwin22": {"xnu_major": 22, "nabu_diagnostic": False},

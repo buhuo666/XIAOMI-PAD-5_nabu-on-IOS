@@ -45,3 +45,5 @@ python3 loader/qemu-smoke.py --profile darwin22 --gop
 python3 loader/qemu-smoke.py --profile darwin22 --packed
 python3 loader/qemu-smoke.py --profile nabu-diagnostic
 python3 loader/qemu-smoke.py --profile probe
+python3 loader/scripts/analyze-nabu-probe.py out/qemu/probe/qemu.clean.log \
+  --output out/qemu/probe/analysis.json

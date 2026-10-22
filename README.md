@@ -5,3 +5,14 @@ This repository is a GitHub Actions build harness for the experimental xnu-8796.
 The workflow uploads a raw arm64 XNU kernel and build provenance. It does not create a prelinked kernel, IPSW root filesystem, or bootable image, and it does not flash a device. Hardware boot remains unverified.
 
 Run **Actions → build-xnu-8796 → Run workflow** to select RELEASE, DEVELOPMENT, or DEBUG. The workflow also runs on pushes to `main` that change the numbered device patches or build workflow.
+
+**Actions -> build-darwinboot** builds Darwin 22/23 loaders and a restricted
+nabu diagnostic profile on macOS 14. It verifies the selected kernel hash,
+boot_args layout, actual loader parsers, synthetic QEMU handoffs, and
+diagnostic refusals. It also builds `NabuProbe.efi` to collect UEFI memory,
+CPU and GOP observations. See [loader/README.md](loader/README.md) for the
+profile constraints and the collector's optional report-saving behavior.
+
+The 12 GiB physical RAM inventory is preserved separately from the 256 MiB
+diagnostic allocation. Full DRAM ownership, physical device boot, firmware
+integration, and an iPadOS filesystem/userland are still unverified.

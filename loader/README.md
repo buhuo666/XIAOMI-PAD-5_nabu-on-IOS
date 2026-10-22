@@ -17,7 +17,7 @@ declared as memory owned by XNU.
 
 Host tests compile the actual loader parsers and check both ABI layouts
 against the real xnu-8796 header. The pinned kernel from Actions run
-39750243808 is parsed without booting it. No filesystem or Apple userland
+39762760559 is parsed without booting it. No filesystem or Apple userland
 is included. Compilation and host parser acceptance do not validate
 UEFI handoff, actual device memory maps, interrupts, or hardware boot.
 
@@ -43,6 +43,17 @@ existing report. File writes occur only with this explicit option.
 This application is not an Android boot image. Installing a compatible UEFI
 environment and choosing a reversible device boot method remain separate work;
 no flashing or repartitioning commands are provided by this workflow.
+
+Analyze a saved text report with:
+
+```sh
+python3 loader/scripts/analyze-nabu-probe.py nabu-probe-0001.txt --output probe-analysis.json
+```
+
+The analyzer checks report completeness, descriptor count, alignment, overlap,
+totals and candidate bounds, then compares the CPU/timer/GOP observations with
+the diagnostic contract. A compatible report still has `ready_to_boot=false`:
+it cannot prove device identity, successful allocation or a kernel boot.
 
 Do not flash these EFI drivers as boot images or replace an existing
 payload with the diagnostic files. A matching UEFI integration and
