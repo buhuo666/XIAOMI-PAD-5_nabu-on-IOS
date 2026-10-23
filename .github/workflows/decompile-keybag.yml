@@ -1,0 +1,58 @@
+name: decompile-keybag-20G81
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install read-only extraction dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libfuse3-dev zlib1g-dev libbz2-dev
+      - name: Acquire pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 -o ghidra.zip https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
+          echo '795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6  ghidra.zip' | sha256sum -c -
+          unzip -q ghidra.zip
+          git clone https://github.com/sgan81/apfs-fuse.git apfs
+          git -C apfs checkout --detach 66b86bd525e8cb90f9012543be89b1f092b75cf3
+          git -C apfs submodule update --init
+          test "$(git -C apfs/3rdparty/lzfse rev-parse HEAD)" = e634ca58b4821d9f3d560cdc6df5dec02ffc93fd
+          cmake -S apfs -B apfs-build
+          cmake --build apfs-build -j2 --target apfs-fuse
+      - name: Fetch official OS and extract exact target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decompile/fetch_target.py "$RUNNER_TEMP/payload"
+          mkdir "$RUNNER_TEMP/mount" "$RUNNER_TEMP/input"
+          "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro "$RUNNER_TEMP/payload/os.dmg" "$RUNNER_TEMP/mount"
+          trap 'fusermount3 -u "$RUNNER_TEMP/mount"' EXIT
+          cp "$RUNNER_TEMP/mount/root/usr/libexec/keybagd" "$RUNNER_TEMP/input/keybagd"
+          echo "b9ed5ef0594dc52ceebb561b74878c3467fba4cbbdb5b6b543dbb39b09fedcfa  $RUNNER_TEMP/input/keybagd" | sha256sum -c -
+      - name: Analyze Mach-O without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/project" "$RUNNER_TEMP/report"
+          "$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless" "$RUNNER_TEMP/project" keybag -import "$RUNNER_TEMP/input/keybagd" -scriptPath "$GITHUB_WORKSPACE/tools/decompile" -postScript ExportKeybag.java "$RUNNER_TEMP/report" -analysisTimeoutPerFile 1200 -deleteProject -log "$RUNNER_TEMP/report/ghidra.log"
+          printf 'Source commit: %s\nGhidra: 11.4.2\n' "$GITHUB_SHA" > "$RUNNER_TEMP/report/provenance.txt"
+          java -version 2>> "$RUNNER_TEMP/report/provenance.txt"
+          sha256sum "$RUNNER_TEMP/input/keybagd" >> "$RUNNER_TEMP/report/provenance.txt"
+          test -s "$RUNNER_TEMP/report/coverage.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keybag-static-analysis-${{ github.run_id }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: error
+          retention-days: 7
