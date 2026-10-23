@@ -80,8 +80,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
+          {
+            echo "Runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+            sw_vers
+            uname -m
+            echo "Installed Xcode applications:"
+            find /Applications -maxdepth 1 -name 'Xcode*.app' -print
+          } | tee out/runner-environment.txt
           XC=/Applications/Xcode_15.0.1.app
-          test -d "$XC" || { echo "Xcode 15.0.1 is required" >&2; exit 1; }
+          if ! test -d "$XC"; then
+            echo "Xcode 15.0.1 is required but absent; kernel compilation was not attempted." | tee out/toolchain-error.txt
+            exit 1
+          fi
           export DEVELOPER_DIR="$XC/Contents/Developer"
           echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
           sudo xcode-select -s "$DEVELOPER_DIR"
