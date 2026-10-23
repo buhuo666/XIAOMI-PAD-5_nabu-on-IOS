@@ -88,9 +88,18 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence.run(self.args)
 
-    def test_wrong_toolchain_rejected(self):
+    def test_migration_toolchain_can_be_recorded(self):
         (self.directory / "toolchain.txt").write_text(
             "Xcode 16.2\nBuild version 16C5032a\nProductName:\tmacOS\n")
+        (self.directory / "build-manifest.json").unlink()
+        self.args.command = "record"
+        evidence.run(self.args)
+        self.args.command = "verify"
+        self.assertTrue(evidence.run(self.args)["verified"])
+
+    def test_wrong_toolchain_rejected(self):
+        (self.directory / "toolchain.txt").write_text(
+            "Xcode 16.2\nBuild version WRONG\nProductName:\tmacOS\n")
         with self.assertRaises(ValueError):
             evidence.run(self.args)
 

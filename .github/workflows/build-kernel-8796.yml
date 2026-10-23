@@ -6,7 +6,7 @@ name: build-xnu-8796
 # Hard constraints, learned from the reference project (mytiantian001/iPadOS-nabu,
 # see docs/prior-art-mytiantian001-ipados-nabu.md):
 #   * Xcode 16's iig emits IORPC.kernelContent, which xnu-8796 does not have ->
-#     this experiment changes the runner only; Xcode 15.0.1 stays pinned.
+#     macOS 15 migration pins Xcode 16.2; compatibility is under test.
 #   * libfirehose_kernel is built arm64e-only; the NABU kernel is plain arm64,
 #     so build.sh has to be told to build arm64 as well.
 #   * MACHINE_CONFIG=NABU selects the MASTER.arm64.nabu config that patch 0006 adds.
@@ -50,7 +50,7 @@ env:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +76,7 @@ jobs:
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
 
-      - name: Toolchain (Xcode 15.0.1 only)
+      - name: Toolchain (macOS 15 / Xcode 16.2)
         run: |
           set -euo pipefail
           mkdir -p out
@@ -87,17 +87,17 @@ jobs:
             echo "Installed Xcode applications:"
             find /Applications -maxdepth 1 -name 'Xcode*.app' -print
           } | tee out/runner-environment.txt
-          XC=/Applications/Xcode_15.0.1.app
+          XC=/Applications/Xcode_16.2.app
           if ! test -d "$XC"; then
-            echo "Xcode 15.0.1 is required but absent; kernel compilation was not attempted." | tee out/toolchain-error.txt
+            echo "Xcode 16.2 is required but absent; kernel compilation was not attempted." | tee out/toolchain-error.txt
             exit 1
           fi
           export DEVELOPER_DIR="$XC/Contents/Developer"
           echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
           sudo xcode-select -s "$DEVELOPER_DIR"
           xcodebuild -version | tee out/toolchain.txt
-          grep -qx 'Xcode 15.0.1' out/toolchain.txt
-          grep -qx 'Build version 15A507' out/toolchain.txt
+          grep -qx 'Xcode 16.2' out/toolchain.txt
+          grep -qx 'Build version 16C5032a' out/toolchain.txt
           xcrun --find iig | tee -a out/toolchain.txt
           xcrun clang --version | tee -a out/toolchain.txt
           sw_vers | tee -a out/toolchain.txt

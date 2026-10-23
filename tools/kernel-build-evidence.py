@@ -48,7 +48,9 @@ def validate_inputs(args):
     if not re.fullmatch(r"[0-9a-f]{40}", (directory / "xnu-commit.txt").read_text().strip()):
         raise ValueError("Invalid upstream XNU commit")
     toolchain = (directory / "toolchain.txt").read_text()
-    if "Xcode 15.0.1\nBuild version 15A507\n" not in toolchain:
+    if not any(identity in toolchain for identity in (
+            "Xcode 15.0.1\nBuild version 15A507\n",
+            "Xcode 16.2\nBuild version 16C5032a\n")):
         raise ValueError("Build does not identify the pinned Xcode toolchain")
     if not re.search(r"^ProductName:\s+macOS$", toolchain, re.MULTILINE):
         raise ValueError("Build does not identify a macOS host")
