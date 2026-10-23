@@ -6,7 +6,7 @@ name: build-xnu-8796
 # Hard constraints, learned from the reference project (mytiantian001/iPadOS-nabu,
 # see docs/prior-art-mytiantian001-ipados-nabu.md):
 #   * Xcode 16's iig emits IORPC.kernelContent, which xnu-8796 does not have ->
-#     the runner must stay on macos-14 with its oldest Xcode 15.
+#     this build pins macos-14 and Xcode 15.0.1.
 #   * libfirehose_kernel is built arm64e-only; the NABU kernel is plain arm64,
 #     so build.sh has to be told to build arm64 as well.
 #   * MACHINE_CONFIG=NABU selects the MASTER.arm64.nabu config that patch 0006 adds.
@@ -29,7 +29,12 @@ on:
       - "xnu-8796/prepare-dxb.py"
       - "xnu-8796/test-clock-fallback.py"
       - "xnu-8796/test-early-stage-mask.py"
+      - "xnu-8796/test-project-system-root.py"
+      - "tools/kernel-build-evidence.py"
       - ".github/workflows/build-kernel-8796.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: xnu8796-${{ github.ref }}
@@ -50,6 +55,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test build evidence validation
+        run: python3 tools/test-kernel-build-evidence.py
+
       - name: Fetch build script
         run: |
           git init -q dxb
@@ -68,23 +76,24 @@ jobs:
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
 
-      - name: Toolchain (Xcode 15 only)
+      - name: Toolchain (Xcode 15.0.1 only)
         run: |
+          set -euo pipefail
+          mkdir -p out
+          XC=/Applications/Xcode_15.0.1.app
+          test -d "$XC" || { echo "Xcode 15.0.1 is required" >&2; exit 1; }
+          export DEVELOPER_DIR="$XC/Contents/Developer"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$DEVELOPER_DIR"
+          xcodebuild -version | tee out/toolchain.txt
+          grep -qx 'Xcode 15.0.1' out/toolchain.txt
+          grep -qx 'Build version 15A507' out/toolchain.txt
+          xcrun --find iig | tee -a out/toolchain.txt
+          xcrun clang --version | tee -a out/toolchain.txt
+          sw_vers | tee -a out/toolchain.txt
           brew install jq gum bash cmake ninja || true
           printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
           sudo chmod +x /usr/local/bin/xcodes
-          sw_vers
-          ls -d /Applications/Xcode*.app
-          XC=$(find /Applications -maxdepth 1 -type d -name 'Xcode_15*.app' | sort -V | head -1)
-          if [ -z "$XC" ]; then
-            echo "Xcode 15 is required for xnu-8796 MIG generation" >&2
-            exit 1
-          fi
-          echo "picked: $XC"
-          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
-          sudo xcode-select -s "$XC/Contents/Developer"
-          xcodebuild -version
-          xcrun --find iig
 
       - name: Build
         working-directory: dxb
@@ -99,12 +108,14 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
-          python3 xnu-8796/test-clock-fallback.py --xnu-source dxb/xnu
-          python3 xnu-8796/test-early-stage-mask.py --xnu-source dxb/xnu
+          mkdir -p out
+          python3 xnu-8796/test-clock-fallback.py --xnu-source dxb/xnu 2>&1 | tee out/source-tests.txt
+          python3 xnu-8796/test-early-stage-mask.py --xnu-source dxb/xnu 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/test-project-system-root.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           KERNEL_CONFIG_LOWER="$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')"
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"
-          file "$KERNEL"
+          file "$KERNEL" | tee out/kernel-file.txt
           xcrun lipo "$KERNEL" -verify_arch arm64
           mkdir -p out
           cp "$KERNEL" out/kernel.macho
@@ -113,6 +124,7 @@ jobs:
           grep -q ' _nabu_early_stage_mask$' out/kernel-symbols.txt
           git -C dxb rev-parse HEAD > out/dxb-commit.txt
           git -C dxb/xnu rev-parse HEAD > out/xnu-commit.txt
+          git rev-parse HEAD > out/project-commit.txt
           shasum -a 256 dxb/patches/[0-9][0-9][0-9][0-9]-*.patch dxb/patches/[0-9][0-9][0-9][0-9]-*.sh > out/patch-SHA256SUMS
           cat > out/BUILD-NOTES.txt <<'EOF'
           kernel.macho is a raw XNU kernel for Xiaomi Pad 5 (nabu).
@@ -127,6 +139,14 @@ jobs:
         run: |
           mkdir -p out
           cp dxb/build.log out/build.log 2>/dev/null || true
+
+      - name: Record verified build
+        if: success()
+        run: |
+          python3 tools/kernel-build-evidence.py record \
+            --directory out --patch-directory xnu-8796/patches \
+            --source-commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+            --kernel-config "$KERNEL_CONFIG"
 
       - name: Upload
         if: always() && !cancelled()

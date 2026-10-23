@@ -3,16 +3,18 @@ name: build-darwinboot
 on:
   workflow_dispatch:
     inputs:
+      kernel_run_id:
+        description: Successful build-xnu-8796 run from this source commit
+        type: string
+        required: true
+      kernel_sha256:
+        description: Expected SHA-256 of that run's kernel.macho
+        type: string
+        required: true
       observe_kernel:
         description: Observe the real open-source kernel in QEMU (experimental)
         type: boolean
         default: false
-  push:
-    branches: [main]
-    paths:
-      - "loader/**"
-      - ".github/workflows/build-loader.yml"
-
 permissions:
   contents: read
   actions: read
@@ -27,10 +29,28 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      KERNEL_RUN: "39771320855"
-      KERNEL_SHA256: cdb8e23ba56dcec2d8c2df5f69b1388dd96618759e8ed52e3b54d70bbbe572e6
+      KERNEL_RUN: ${{ inputs.kernel_run_id }}
+      KERNEL_SHA256: ${{ inputs.kernel_sha256 }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate explicit kernel selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$KERNEL_RUN" =~ ^[0-9]+$ ]]
+          [[ "$KERNEL_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$KERNEL_RUN" > kernel-run.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads(Path("kernel-run.json").read_text())
+          assert run["status"] == "completed" and run["conclusion"] == "success", "Kernel build did not succeed"
+          assert run["head_sha"] == os.environ["GITHUB_SHA"], "Kernel came from a different source commit"
+          assert run["repository"]["full_name"] == os.environ["GITHUB_REPOSITORY"], "Wrong kernel repository"
+          assert run["path"] == ".github/workflows/build-kernel-8796.yml", "Wrong kernel workflow"
+          PY
 
       - name: Install LLVM
         run: |
@@ -60,7 +80,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(shasum -a 256 verified-kernel/kernel.macho | cut -d ' ' -f 1)" = "$KERNEL_SHA256"
+          python3 tools/kernel-build-evidence.py verify \
+            --directory verified-kernel --patch-directory xnu-8796/patches \
+            --source-commit "$GITHUB_SHA" --run-id "$KERNEL_RUN" \
+            --kernel-sha256 "$KERNEL_SHA256"
           mkdir -p out/diagnostic
+          cp verified-kernel/build-manifest.json out/kernel-build-manifest.json
           python3 loader/scripts/test-boot-contract.py --framework sources/framework --cc clang
           python3 loader/scripts/test-probe-analysis.py
           python3 loader/scripts/test-framebuffer-decode.py

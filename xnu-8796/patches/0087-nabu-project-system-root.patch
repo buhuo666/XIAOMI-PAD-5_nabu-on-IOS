@@ -1,0 +1,338 @@
+diff --git a/bsd/dev/nabu_project_storage.h b/bsd/dev/nabu_project_storage.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_project_storage.h
+@@ -0,0 +1,149 @@
++/*
++ * Storage contract for this nabu's isolated 60 GiB system partition.
++ * Types, memcpy and memcmp are supplied by the kernel or host test harness.
++ */
++#ifndef NABU_PROJECT_STORAGE_H
++#define NABU_PROJECT_STORAGE_H
++
++#define NABU_PROJECT_NAME "nabu_system"
++#define NABU_PROJECT_NUMBER 36u
++#define NABU_PROJECT_FIRST 108652288ULL
++#define NABU_PROJECT_LAST 124380927ULL
++#define NABU_PROJECT_BLOCKS (NABU_PROJECT_LAST - NABU_PROJECT_FIRST + 1)
++#define NABU_PROJECT_DISK_BLOCKS 124381184ULL
++#define NABU_PROJECT_BLOCK_SIZE 4096u
++#define NABU_PROJECT_MAX_TRANSFER 256u
++
++static inline uint32_t
++nabu_project_le32(const uint8_t *p)
++{
++	return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
++	       (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
++}
++
++static inline uint64_t
++nabu_project_le64(const uint8_t *p)
++{
++	return (uint64_t)nabu_project_le32(p) |
++	       (uint64_t)nabu_project_le32(p + 4) << 32;
++}
++
++/* zero_at masks the GPT header CRC field; pass (size_t)-1 for ordinary CRC. */
++static inline uint32_t
++nabu_project_crc32(const uint8_t *p, size_t length, size_t zero_at)
++{
++	uint32_t crc = 0xffffffffu;
++	for (size_t i = 0; i < length; i++) {
++		uint8_t byte = (i >= zero_at && i - zero_at < 4) ? 0 : p[i];
++		crc ^= byte;
++		for (unsigned bit = 0; bit < 8; bit++) {
++			crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
++		}
++	}
++	return ~crc;
++}
++
++static inline int
++nabu_project_range_allowed(uint8_t lun, uint64_t first, uint64_t blocks,
++    uint64_t lba, uint64_t count)
++{
++	return lun == 0 && first == NABU_PROJECT_FIRST &&
++	       blocks == NABU_PROJECT_BLOCKS && count != 0 &&
++	       lba >= first && lba - first < blocks &&
++	       count <= blocks - (lba - first);
++}
++
++static inline int
++nabu_project_gpt_header(const uint8_t *p, size_t available,
++    uint64_t *entry_lba, uint32_t *entries, uint32_t *table_crc)
++{
++	if (available < 92 || memcmp(p, "EFI PART", 8) != 0 ||
++	    nabu_project_le32(p + 8) != 0x10000 ||
++	    nabu_project_le32(p + 20) != 0) {
++		return 0;
++	}
++	uint32_t bytes = nabu_project_le32(p + 12);
++	if (bytes < 92 || bytes > available || bytes > NABU_PROJECT_BLOCK_SIZE ||
++	    nabu_project_crc32(p, bytes, 16) != nabu_project_le32(p + 16) ||
++	    nabu_project_le64(p + 24) != 1 ||
++	    nabu_project_le64(p + 32) != NABU_PROJECT_DISK_BLOCKS - 1) {
++		return 0;
++	}
++	uint64_t first_usable = nabu_project_le64(p + 40);
++	uint64_t last_usable = nabu_project_le64(p + 48);
++	uint64_t table_lba = nabu_project_le64(p + 72);
++	uint32_t count = nabu_project_le32(p + 80);
++	if (nabu_project_le32(p + 84) != 128 ||
++	    count < NABU_PROJECT_NUMBER || count > (1u << 20) / 128 ||
++	    table_lba < 2 || table_lba >= first_usable ||
++	    (count * 128u + NABU_PROJECT_BLOCK_SIZE - 1) / NABU_PROJECT_BLOCK_SIZE >
++	    first_usable - table_lba ||
++	    first_usable > NABU_PROJECT_FIRST || last_usable < NABU_PROJECT_LAST ||
++	    last_usable >= NABU_PROJECT_DISK_BLOCKS - 1) {
++		return 0;
++	}
++	*entry_lba = table_lba;
++	*entries = count;
++	*table_crc = nabu_project_le32(p + 88);
++	return 1;
++}
++
++static inline int
++nabu_project_gpt_entry(const uint8_t *entry, uint32_t number)
++{
++	if (number != NABU_PROJECT_NUMBER ||
++	    nabu_project_le64(entry + 32) != NABU_PROJECT_FIRST ||
++	    nabu_project_le64(entry + 40) != NABU_PROJECT_LAST) {
++		return 0;
++	}
++	uint8_t type_any = 0, identity_any = 0;
++	for (unsigned i = 0; i < 16; i++) {
++		type_any |= entry[i];
++		identity_any |= entry[16 + i];
++	}
++	if (!type_any || !identity_any) {
++		return 0;
++	}
++	for (unsigned i = 0; i < 36; i++) {
++		uint8_t expected = i < sizeof(NABU_PROJECT_NAME) - 1 ?
++		    (uint8_t)NABU_PROJECT_NAME[i] : 0;
++		if (entry[56 + i * 2] != expected || entry[57 + i * 2] != 0) {
++			return 0;
++		}
++	}
++	return 1;
++}
++
++/* Gate every command before the request list is touched or a doorbell rung. */
++static inline int
++nabu_project_command_allowed(uint8_t lun, uint64_t first, uint64_t blocks,
++    const uint8_t *cdb, unsigned cdb_length, uint32_t bytes, int write)
++{
++	if (lun != 0 || cdb == NULL || cdb_length == 0) {
++		return 0;
++	}
++	if (!write && cdb_length == 6 && cdb[0] == 0x00 && bytes == 0) {
++		static const uint8_t tur[6] = { 0 };
++		return memcmp(cdb, tur, sizeof(tur)) == 0;
++	}
++	if (cdb_length == 10 && cdb[1] == 0 && cdb[6] == 0 && cdb[9] == 0) {
++		uint64_t lba = (uint64_t)cdb[2] << 24 | (uint64_t)cdb[3] << 16 |
++		    (uint64_t)cdb[4] << 8 | cdb[5];
++		uint32_t count = (uint32_t)cdb[7] << 8 | cdb[8];
++		if (!write && cdb[0] == 0x35 && bytes == 0) {
++			return nabu_project_range_allowed(lun, first, blocks, lba, count);
++		}
++		if (cdb[0] != (write ? 0x2a : 0x28)) {
++			return 0;
++		}
++		if (!count || count > NABU_PROJECT_MAX_TRANSFER ||
++		    bytes != count * NABU_PROJECT_BLOCK_SIZE ||
++		    lba >= NABU_PROJECT_DISK_BLOCKS || count > NABU_PROJECT_DISK_BLOCKS - lba) {
++			return 0;
++		}
++		return !write || nabu_project_range_allowed(lun, first, blocks, lba, count);
++	}
++	return 0;
++}
++
++#endif
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -5,8 +5,8 @@
+  * bootloader, which loaded our boot image from it. This driver reuses that
+  * state: it points the transfer request list at its own memory (verifying the
+  * host took it before ringing any doorbell) and issues polled SCSI commands,
+- * one at a time, to LUN 0. It finds one GPT partition by name (boot-arg
+- * ufsroot=, default "userdata") and exposes it as the BSD disk ufsroot0
++ * one at a time, to LUN 0. It validates the isolated nabu_system GPT entry
++ * at fixed partition 36 and exposes it as the BSD disk ufsroot0
+  * (rufsroot0), with 512-byte logical sectors over the device's 4 KiB blocks.
+  * Root on it with rd=ufsroot0.
+  *
+@@ -39,6 +39,7 @@
+ #include <pexpert/device_tree.h>
+ #include <libkern/libkern.h>
+ #include <machine/atomic.h>
++#include "nabu_project_storage.h"
+ 
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+@@ -148,6 +149,11 @@
+ static int
+ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+ {
++	if ((!su.writable && (write || (cdb && cdb_len && cdb[0] == 0x35))) ||
++	    !nabu_project_command_allowed(su.lun, su.first_block, su.nblocks,
++	    cdb, cdb_len, len, write)) {
++		return EPERM;
++	}
+ 	struct utrd *utrd = (struct utrd *)(su.dma + DMA_UTRL);
+ 	struct ucd *ucd = (struct ucd *)(su.dma + DMA_UCD);
+ 	uint64_t ucd_pa = su.dma_pa + DMA_UCD, bounce_pa = su.dma_pa + DMA_BOUNCE;
+@@ -278,7 +284,8 @@
+ static int
+ ufs_write_blocks(uint64_t lba, uint32_t count)
+ {
+-	if (!su.writable || !su.nblocks || count == 0 || count > BOUNCE_SIZE / UFS_BLOCK ||
++	if (!nabu_project_range_allowed(su.lun, su.first_block, su.nblocks, lba, count) ||
++	    !su.writable || !su.nblocks || count == 0 || count > BOUNCE_SIZE / UFS_BLOCK ||
+ 	    lba < su.first_block || lba - su.first_block >= su.nblocks ||
+ 	    count > su.nblocks - (lba - su.first_block) || lba + count - 1 > UINT32_MAX) {
+ 		printf("NABU UFS: refusing write of %u blocks at 0x%llx\n", count, lba);
+@@ -295,62 +302,58 @@
+ static int
+ ufs_sync_cache(void)
+ {
+-	static const uint8_t cdb[10] = { 0x35 };       /* SYNCHRONIZE CACHE(10), whole LUN */
+-	return ufs_scsi(cdb, sizeof(cdb), 0, false);
++	/* A zero transfer length would flush the whole LUN; use a bounded range. */
++	if (!su.writable || !nabu_project_range_allowed(su.lun, su.first_block, su.nblocks,
++	    su.first_block, su.nblocks)) {
++		return EPERM;
++	}
++	uint64_t lba = su.first_block, remaining = su.nblocks;
++	while (remaining) {
++		uint32_t count = remaining > 0xffffu ? 0xffffu : (uint32_t)remaining;
++		uint8_t cdb[10] = {
++			0x35, 0, /* SYNCHRONIZE CACHE(10), never the zero-count whole-LUN form */
++			(uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
++			0, (uint8_t)(count >> 8), (uint8_t)count, 0
++		};
++		int error = ufs_scsi(cdb, sizeof(cdb), 0, false);
++		if (error) { return error; }
++		lba += count;
++		remaining -= count;
++	}
++	return 0;
+ }
+ 
+ static int
+ ufs_find_partition(const char *want)
+ {
++	if (strcmp(want, NABU_PROJECT_NAME) != 0 || su.lun != 0) {
++		return EPERM;
++	}
+ 	const uint8_t *b = (const uint8_t *)(su.dma + DMA_BOUNCE);
+ 	int error = ufs_read_blocks(1, 1);
+ 	if (error) {
+ 		return error;
+ 	}
+-	if (memcmp(b, "EFI PART", 8) != 0) {
+-		printf("NABU UFS: LUN %u has no GPT\n", su.lun);
++	uint64_t entry_lba;
++	uint32_t nent, table_crc;
++	if (!nabu_project_gpt_header(b, UFS_BLOCK, &entry_lba, &nent, &table_crc)) {
++		printf("NABU UFS: GPT CRC or project geometry rejected\n");
+ 		return ENXIO;
+ 	}
+-	uint64_t entry_lba;
+-	uint32_t nent, esz;
+-	memcpy(&entry_lba, b + 72, 8);
+-	memcpy(&nent, b + 80, 4);
+-	memcpy(&esz, b + 84, 4);
+-	if (esz != 128 || nent == 0 || nent * esz > BOUNCE_SIZE) {
+-		printf("NABU UFS: unsupported GPT entries %u x %u\n", nent, esz);
++	uint32_t table_bytes = nent * 128u;
++	uint32_t table_blocks = (table_bytes + UFS_BLOCK - 1) / UFS_BLOCK;
++	/* Each READ(10) stays within the 1 MiB bounce-buffer limit. */
++	error = ufs_read_blocks(entry_lba, table_blocks);
++	if (error) { return error; }
++	if (nabu_project_crc32(b, table_bytes, (size_t)-1) != table_crc ||
++	    !nabu_project_gpt_entry(b + (NABU_PROJECT_NUMBER - 1) * 128u,
++	    NABU_PROJECT_NUMBER)) {
++		printf("NABU UFS: system partition identity or table CRC rejected\n");
+ 		return ENXIO;
+ 	}
+-	error = ufs_read_blocks(entry_lba, (nent * esz + UFS_BLOCK - 1) / UFS_BLOCK);
+-	if (error) {
+-		return error;
+-	}
+-	for (uint32_t i = 0; i < nent; i++) {
+-		const uint8_t *e = b + i * esz;
+-		char name[37];
+-		unsigned c;
+-		for (c = 0; c < 36; c++) {
+-			uint16_t ch = (uint16_t)(e[56 + 2 * c] | e[57 + 2 * c] << 8);
+-			if (ch == 0 || ch > 0x7f) {
+-				break;
+-			}
+-			name[c] = (char)ch;
+-		}
+-		name[c] = 0;
+-		if (strcmp(name, want) != 0) {
+-			continue;
+-		}
+-		uint64_t first, last;
+-		memcpy(&first, e + 32, 8);
+-		memcpy(&last, e + 40, 8);
+-		if (last < first) {
+-			return ENXIO;
+-		}
+-		su.first_block = first;
+-		su.nblocks = last - first + 1;
+-		return 0;
+-	}
+-	printf("NABU UFS: no GPT partition named \"%s\"\n", want);
+-	return ENOENT;
++	su.first_block = NABU_PROJECT_FIRST;
++	su.nblocks = NABU_PROJECT_BLOCKS;
++	return 0;
+ }
+ 
+ static int
+@@ -590,7 +593,7 @@
+ 	printf("NABU UFS: init entry\n");
+ 	uintptr_t const *reg = NULL;
+ 	unsigned int size = 0;
+-	char want[64] = "userdata";
++	char want[64] = NABU_PROJECT_NAME;
+ 	int error;
+ 
+ 	if (SecureDTLookupEntry(NULL, "/nabu-ufs", &node) != kSuccess ||
+@@ -600,6 +603,11 @@
+ 		return ENXIO;
+ 	}
+ 	PE_parse_boot_argn("ufsroot", want, sizeof(want));
++	want[sizeof(want) - 1] = 0;
++	if (strcmp(want, NABU_PROJECT_NAME) != 0) {
++		printf("NABU UFS: ufsroot must name the isolated project system partition\n");
++		return EPERM;
++	}
+ 	uint32_t rw = 0;
+ 	PE_parse_boot_argn("ufsrw", &rw, sizeof(rw));
+ 	uint32_t cache = 0, wait = 0;
+@@ -650,7 +658,7 @@
+ 	devfs_make_node(su.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "ufsroot0");
+ 	devfs_make_node(makedev(su.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rufsroot0");
+ 	/* Only now, with the partition bounds known, can writes be allowed. */
+-	su.writable = (rw != 0);
++	su.writable = (rw == 1);
+ 	su.ready = true;
+ 	printf("NABU UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, %s, DMA at 0x%llx\n",
+ 	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
+@@ -794,7 +802,7 @@
+ static void
+ nabu_log_start(void)
+ {
+-	uint32_t on = 1;
++	uint32_t on = 0; /* Persistent logging requires an explicit project-volume opt-in. */
+ 	thread_t thread;
+ 
+ 	PE_parse_boot_argn("nabulog", &on, sizeof(on));
