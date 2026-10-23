@@ -1,5 +1,8 @@
 name: decompile-keybag-20G81
 on:
+  push:
+    branches: [ci/xnu-8796-project-root]
+    paths: ['.github/workflows/decompile-keybag.yml', 'tools/decompile/**']
   workflow_dispatch:
 permissions:
   contents: read
