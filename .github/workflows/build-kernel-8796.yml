@@ -23,7 +23,7 @@ on:
         description: make -k (collect all compile errors in one run)
         default: "true"
   push:
-    branches: [main]
+    branches: [main, ci/xnu-8796-project-root]
     paths:
       - "xnu-8796/patches/**"
       - "xnu-8796/prepare-dxb.py"

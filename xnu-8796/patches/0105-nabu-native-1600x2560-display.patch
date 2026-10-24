@@ -1,6 +1,6 @@
 --- a/iokit/Kernel/arm/NabuFramebuffer.cpp
 +++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
-@@ -61,17 +61,17 @@
+@@ -73,17 +73,15 @@
  #define NABU_FB_NOTIFY_TYPES           8
  #define NABU_FB_NOTIFY_VSYNC           5
  #define NABU_FB_VSYNC_US               16667
@@ -23,7 +23,9 @@
 +#define NABU_FB_LOGICAL_W              1600
 +#define NABU_FB_LOGICAL_H              2560
  #define NABU_FB_FORMAT_BGRA            0x42475241
-@@ -158,14 +158,14 @@
+ 
+ class IOMobileFramebuffer : public IOService {
+@@ -184,12 +182,8 @@
  	}
  	int native = 0;
  	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
@@ -37,21 +39,21 @@
 +	fLogicalH = native ? fHeight : NABU_FB_LOGICAL_H;
  	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
  	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
-*** a/iokit/Kernel/arm/hid/NabuHID.cpp
+ 	fLock = IOLockAlloc();
+--- a/iokit/Kernel/arm/hid/NabuHID.cpp
 +++ b/iokit/Kernel/arm/hid/NabuHID.cpp
-@@ -423,10 +423,10 @@
+@@ -434,8 +434,8 @@
  	}
  	int native = 0;
  	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
 -	fLogicalW = native ? 1080 : 1125;
 -	fLogicalH = native ? 2400 : 2436;
--	fOffX = (fLogicalW - 1080) / 2;
--	fOffY = (fLogicalH - 2400) / 2;
 +	fLogicalW = native ? 1080 : 1600;
 +	fLogicalH = native ? 2400 : 2560;
-+	fOffX = (fLogicalW - 1080) / 2;
-+	fOffY = (fLogicalH - 2400) / 2;
-@@ -454,7 +454,7 @@
+ 	fOffX = (fLogicalW - 1080) / 2;
+ 	fOffY = (fLogicalH - 2400) / 2;
+ 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+@@ -463,7 +463,7 @@
  
  	IOLockLock(fLock);
  	bool was = fDown[finger];
@@ -59,4 +61,4 @@
 +	/* 1080x2400 touch coordinates -> the presented 1600x2560 display. */
  	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
  	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
-*** End Patch
+ 	bool moved = down && (nx != fX[finger] || ny != fY[finger]);
