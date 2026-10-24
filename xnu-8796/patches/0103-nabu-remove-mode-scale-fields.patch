@@ -1,0 +1,8 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -304,5 +304,3 @@
+ 	    nabu_mode_number(vertical, "PreciseSyncRate", 60u << 16) &&
+ 	    nabu_mode_number(timing, "ID", 1) && nabu_mode_number(timing, "Score", 1) &&
+-	    nabu_mode_number(timing, "Scale", 2) &&
+-	    nabu_mode_number(timing, "PreferredScale", 2) &&
+ 	    timing->setObject("IsVirtual", kOSBooleanFalse) &&

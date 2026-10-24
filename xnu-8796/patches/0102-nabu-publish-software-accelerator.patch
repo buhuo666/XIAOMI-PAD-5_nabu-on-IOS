@@ -1,0 +1,50 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -90,6 +90,8 @@
+ 	OSDeclareDefaultStructors(IOMobileFramebuffer);
+ };
+ 
++static void nabu_publish_software_accelerator(IOService *provider);
++
+ OSDefineMetaClassAndStructors(IOMobileFramebuffer, IOService);
+ 
+ class IOMobileFramebufferUserClient;
+@@ -254,6 +256,7 @@
+ 		return false;
+ 	}
+ 	registerService();
++	nabu_publish_software_accelerator(provider);
+ 	IOLog("NABU FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+ 	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
+ 	if (fForceOn) {
+@@ -873,4 +876,30 @@
+ 	}
+ 	return ret;
+ }
++/*
++ * The tablet has no Apple GPU driver. CoreAnimation waits for an
++ * IOAcceleratorES service before selecting its software renderer, and the
++ * repeated empty matches were the last device-visible gap before the
++ * SpringBoard assertion. Publish a deliberately property-free service:
++ * Metal and OpenGL ES skip it, while the software path no longer waits for a
++ * hardware accelerator that cannot exist on this port.
++ */
++class IOAcceleratorES : public IOService {
++	OSDeclareDefaultStructors(IOAcceleratorES);
++};
++
++OSDefineMetaClassAndStructors(IOAcceleratorES, IOService);
++
++static void
++nabu_publish_software_accelerator(IOService *provider)
++{
++	IOAcceleratorES *accelerator = OSTypeAlloc(IOAcceleratorES);
++	if (accelerator != NULL && accelerator->init() && accelerator->attach(provider)) {
++		accelerator->setName("sgx");
++		accelerator->registerService();
++		IOLog("NABU ACCEL: property-free IOAcceleratorES registered for software rendering\n");
++	}
++	OSSafeReleaseNULL(accelerator);
++}
++
+ #endif /* NABU */
