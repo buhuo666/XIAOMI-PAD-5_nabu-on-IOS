@@ -1,0 +1,23 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -400,6 +400,20 @@
+ {
+ 	IOReturn ret = kIOReturnSuccess;
+ 	uint64_t out[2] = { 0, 0 };
+ 	uint32_t outCount = 0;
++	if (selector == 17 && args->structureInput != NULL &&
++	    args->structureInputSize >= 64) {
++		static bool logged17;
++		if (!logged17) {
++			logged17 = true;
++			const uint32_t *words = (const uint32_t *)args->structureInput;
++			IOLog("NABU MODE17: bytes=%u w0=%x w1=%x w2=%x w3=%x "
++			    "w4=%x w5=%x w6=%x w7=%x w8=%x w9=%x w10=%x w11=%x "
++			    "w12=%x w13=%x w14=%x w15=%x\n",
++			    args->structureInputSize, words[0], words[1], words[2], words[3],
++			    words[4], words[5], words[6], words[7], words[8], words[9],
++			    words[10], words[11], words[12], words[13], words[14], words[15]);
++		}
++	}
+ 
+ 	switch (selector) {
