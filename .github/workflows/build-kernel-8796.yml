@@ -124,6 +124,7 @@ jobs:
           python3 xnu-8796/test-project-system-root.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-keystore-registration.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-amfi-service.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/test-display-mode.py --xnu-source dxb/xnu --cc clang++ 2>&1 | tee -a out/source-tests.txt
           KERNEL_CONFIG_LOWER="$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')"
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"

@@ -1,0 +1,127 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -45,6 +45,9 @@
+ #include <IOKit/IOLib.h>
+ #include <IOKit/IOLocks.h>
+ #include <IOKit/IOWorkLoop.h>
++#include <libkern/c++/OSDictionary.h>
++#include <libkern/c++/OSArray.h>
++#include <libkern/c++/OSNumber.h>
+ #include <IOKit/IOTimerEventSource.h>
+ #include <IOKit/system.h>
+ #include <pexpert/pexpert.h>
+@@ -62,6 +65,7 @@
+ 	kNabuFBIsMainDisplay           = 18,
+ 	kNabuFBGetDotPitch             = 28,
+ 	kNabuFBNotifications           = 72,
++	kNabuFBGetBlock                = 79,
+ };
+ 
+ #define NABU_FB_SWAP_REC_SIZE          0x46c
+@@ -128,6 +132,7 @@
+ 	uint32_t      fFadeStep;      /* fade-out steps done while off */
+ 
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++	bool publishDisplayModes(void);
+ 	void addClient(IOMobileFramebufferUserClient *client);
+ 	void removeClient(IOMobileFramebufferUserClient *client);
+ 	void swap(const uint8_t *rec);
+@@ -244,6 +249,10 @@
+ 	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
+ 	setProperty("external", false);
+ 	setProperty("DisplayPipePlaneBaseAlignment", 64ULL, 32);
++	if (!publishDisplayModes()) {
++		IOLog("NABU MODE: allocation/property publication failed\n");
++		return false;
++	}
+ 	registerService();
+ 	IOLog("NABU FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+ 	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
+@@ -251,6 +260,62 @@
+ 		IOLog("NABU FB: nabufb_force_on=1, RequestPowerChange(0) will be ignored\n");
+ 	}
+ 	return true;
++}
++
++/* One native software mode; this describes the existing scanout, not panel MMIO. */
++static bool
++nabu_mode_number(OSDictionary *dict, const char *key, uint32_t value)
++{
++	OSNumber *number = OSNumber::withNumber(value, 32);
++	if (number == NULL) return false;
++	bool ok = dict->setObject(key, number);
++	number->release();
++	return ok;
++}
++
++bool
++AppleCLCD::publishDisplayModes(void)
++{
++	OSDictionary *timing = OSDictionary::withCapacity(8);
++	OSDictionary *horizontal = OSDictionary::withCapacity(4);
++	OSDictionary *vertical = OSDictionary::withCapacity(4);
++	OSDictionary *color = OSDictionary::withCapacity(8);
++	OSArray *timings = OSArray::withCapacity(1);
++	OSArray *colors = OSArray::withCapacity(1);
++	bool ok = false;
++	if (timing == NULL || horizontal == NULL || vertical == NULL || color == NULL ||
++	    timings == NULL || colors == NULL) goto done;
++	ok = nabu_mode_number(color, "ID", 1) &&
++	    nabu_mode_number(color, "PixelEncoding", 0) &&
++	    nabu_mode_number(color, "Depth", 8) &&
++	    nabu_mode_number(color, "Colorimetry", 1) &&
++	    nabu_mode_number(color, "EOTF", 1) &&
++	    nabu_mode_number(color, "DynamicRange", 0) &&
++	    nabu_mode_number(color, "Score", 1) &&
++	    color->setObject("IsVirtual", kOSBooleanFalse) && colors->setObject(color) &&
++	    nabu_mode_number(horizontal, "Active", fLogicalW) &&
++	    nabu_mode_number(horizontal, "Total", fLogicalW) &&
++	    nabu_mode_number(horizontal, "SyncRate", 60u << 16) &&
++	    nabu_mode_number(horizontal, "PreciseSyncRate", 60u << 16) &&
++	    nabu_mode_number(vertical, "Active", fLogicalH) &&
++	    nabu_mode_number(vertical, "Total", fLogicalH) &&
++	    nabu_mode_number(vertical, "SyncRate", 60u << 16) &&
++	    nabu_mode_number(vertical, "PreciseSyncRate", 60u << 16) &&
++	    nabu_mode_number(timing, "ID", 1) && nabu_mode_number(timing, "Score", 1) &&
++	    timing->setObject("IsVirtual", kOSBooleanFalse) &&
++	    timing->setObject("IsOverscanned", kOSBooleanFalse) &&
++	    timing->setObject("HorizontalAttributes", horizontal) &&
++	    timing->setObject("VerticalAttributes", vertical) &&
++	    timing->setObject("ColorModes", colors) && timings->setObject(timing);
++	if (ok) ok = setProperty("TimingElements", timings) && setProperty("ColorElements", colors);
++	if (!ok) { removeProperty("TimingElements"); removeProperty("ColorElements"); }
++done:
++	OSSafeReleaseNULL(timings); OSSafeReleaseNULL(colors);
++	OSSafeReleaseNULL(timing); OSSafeReleaseNULL(horizontal);
++	OSSafeReleaseNULL(vertical); OSSafeReleaseNULL(color);
++	if (ok) IOLog("NABU MODE: %ux%u rate16=0x%x timing=1 color=1 RGB8 SDR\n",
++	    fLogicalW, fLogicalH, 60u << 16);
++	return ok;
+ }
+ 
+ void
+@@ -762,6 +827,24 @@
+ 	if (args->structureOutputDescriptor == NULL && args->structureOutput != NULL) {
+ 		bzero(args->structureOutput, args->structureOutputSize);
+ 	}
++	if (selector == kNabuFBGetBlock) {
++		if (args->structureOutputDescriptor != NULL || args->structureOutput == NULL ||
++		    args->scalarInputCount < 1) {
++			ret = kIOReturnBadArgument;
++		} else if (args->scalarInput[0] == 0x40) {
++			if (args->structureOutputSize < 12) {
++				ret = kIOReturnBadArgument;
++			} else {
++				uint32_t ids[2] = { 1, 1 }; /* color ID, timing ID */
++				memcpy((uint8_t *)args->structureOutput + 4, ids, sizeof(ids));
++			}
++		}
++		static unsigned mode_logs;
++		if (mode_logs++ < 8 && args->scalarInputCount >= 1) {
++			IOLog("NABU MODE: block=0x%llx bytes=%u result=0x%x\n",
++			    args->scalarInput[0], args->structureOutputSize, ret);
++		}
++	}
+ 	if (selector >= 64 || !(nabu_fb_logged & (1ULL << selector))) {
+ 		if (selector < 64) {
+ 			nabu_fb_logged |= 1ULL << selector;
