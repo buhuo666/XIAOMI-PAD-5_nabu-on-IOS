@@ -1,0 +1,78 @@
+--- a/iokit/Kernel/IOUserClient.cpp
++++ b/iokit/Kernel/IOUserClient.cpp
+@@ -44,6 +44,7 @@
+ #include <IOKit/IOUserServer.h>
+ #include <IOKit/system.h>
+ #include <libkern/OSDebug.h>
++#include <libkern/OSAtomic.h>
+ #include <DriverKit/OSAction.h>
+ #include <sys/proc.h>
+ #include <sys/kauth.h>
+@@ -3600,6 +3601,47 @@
+ }
+ 
+ 
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++/*
++ * Separate budget from nabuiolog: matching retries can exhaust its 400 lines.
++ * Only public display-policy keys are observed; no other property is logged.
++ * Opt in with nabuscalelog=1. Do not fabricate or change a property value.
++ */
++static void
++nabu_scale_property_trace(IORegistryEntry *entry, const char *key,
++    OSObject *obj, const char *source)
++{
++	static int parsed;
++	static int enabled;
++	static volatile SInt32 lines;
++	if (!parsed) {
++		PE_parse_boot_argn("nabuscalelog", &enabled, sizeof(enabled));
++		parsed = 1;
++	}
++	if (!enabled || key == NULL ||
++	    (strcmp(key, "display-scale") != 0 &&
++	    strcmp(key, "display-rotation") != 0 &&
++	    strcmp(key, "artwork-scale-factor") != 0)) return;
++	if (OSIncrementAtomic(&lines) >= 96) return;
++	char process[32] = {};
++	proc_selfname(process, sizeof(process));
++	OSData *data = OSDynamicCast(OSData, obj);
++	OSNumber *number = OSDynamicCast(OSNumber, obj);
++	uint32_t word = 0;
++	if (data != NULL && data->getLength() == sizeof(word)) {
++		bcopy(data->getBytesNoCopy(), &word, sizeof(word));
++	}
++	IOLog("NABU SCALE: process=%s node=%s key=%s source=%s type=%s "
++	    "length=%u serializable=%u word=0x%x number=%llu\n",
++	    process, entry->getName(), key, source,
++	    obj ? obj->getMetaClass()->getClassName() : "missing",
++	    data ? data->getLength() : 0,
++	    data ? (unsigned)data->isSerializable() : 0, word,
++	    number ? number->unsigned64BitValue() : 0ULL);
++}
++#endif
++
+ static OSObject *
+ IOCopyPropertyCompatible(IORegistryEntry * regEntry, const char * name)
+ {
+@@ -3609,6 +3651,9 @@
+ 
+ 	obj = regEntry->copyProperty(name);
+ 	if (obj) {
++#if defined(ARM64_BOARD_CONFIG_NABU)
++		nabu_scale_property_trace(regEntry, name, obj, "direct");
++#endif
+ 		return obj;
+ 	}
+ 
+@@ -3628,6 +3673,9 @@
+ 		compatProperties->release();
+ 	}
+ 
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	nabu_scale_property_trace(regEntry, name, obj, "compat-or-missing");
++#endif
+ 	return obj;
+ }
+ 
