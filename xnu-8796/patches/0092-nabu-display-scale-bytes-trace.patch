@@ -1,0 +1,12 @@
+--- a/iokit/Kernel/IOUserClient.cpp
++++ b/iokit/Kernel/IOUserClient.cpp
+@@ -3706,6 +3706,9 @@
+ #endif
+ 
+ 	obj = IOCopyPropertyCompatible(entry, property_name);
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	nabu_scale_property_trace(entry, property_name, obj, "bytes");
++#endif
+ 	if (!obj) {
+ 		return kIOReturnNoResources;
+ 	}
