@@ -1,0 +1,125 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -60,6 +60,11 @@
+     "     'IOProbeScore'    = 10000:32;"
+     "   },"
+     "   {"
++    "     'IOClass'         = AppleMobileFileIntegrity;"
++    "     'IOProviderClass' = IOResources;"
++    "     'IOMatchCategory' = AppleMobileFileIntegrity;"
++    "   },"
++    "   {"
+     "     'IOClass'         = AppleKeyStore;"
+     "     'IOProviderClass' = IOResources;"
+     "     'IOMatchCategory' = AppleKeyStore;"
+--- a/iokit/conf/files.arm64
++++ b/iokit/conf/files.arm64
+@@ -11,6 +11,7 @@
+ 
+ iokit/Kernel/arm/NabuCPU.cpp                                    optional iokitcpp
+ iokit/Kernel/arm/NabuEntitlements.cpp                           optional iokitcpp
++iokit/Kernel/arm/NabuAMFI.cpp                                   optional iokitcpp
+ iokit/Kernel/arm/NabuKeyStore.cpp                               optional iokitcpp
+ iokit/Kernel/arm/NabuWatchdog.cpp                               optional iokitcpp
+ iokit/Kernel/arm/NabuSurface.cpp                                optional iokitcpp
+--- /dev/null
++++ b/iokit/Kernel/arm/NabuAMFI.cpp
+@@ -0,0 +1,72 @@
++/* NABU experimental AMFI IOKit compatibility, limited to 20G81 launchd cache.
++ * These locally pinned CodeDirectories are not an Apple trust-cache implementation.
++ * Both cover all 339 pages of the pinned installed launchd.plist (see findings).
++ * Signature attachment/page validation remains the responsibility of Security/XNU.
++ */
++#include <pexpert/arm64/board_config.h>
++#if defined(NABU)
++#include <IOKit/IOService.h>
++#include <IOKit/IOUserClient.h>
++#include <IOKit/IOKitKeys.h>
++#include <IOKit/IOLib.h>
++#include <libkern/c++/OSBoolean.h>
++#include "NabuAMFIQuery.h"
++
++class AppleMobileFileIntegrity : public IOService {
++    OSDeclareDefaultStructors(AppleMobileFileIntegrity);
++public:
++    bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++};
++OSDefineMetaClassAndStructors(AppleMobileFileIntegrity, IOService);
++bool AppleMobileFileIntegrity::start(IOService *provider)
++{
++    if (!IOService::start(provider)) return false;
++    setProperty(kIOUserClientClassKey, "AppleMobileFileIntegrityUserClient");
++    registerService();
++    IOLog("NABU AMFI: restricted 20G81 launchd cache query service registered\n");
++    return true;
++}
++
++class AppleMobileFileIntegrityUserClient : public IOUserClient {
++    OSDeclareDefaultStructors(AppleMobileFileIntegrityUserClient);
++public:
++    bool initWithTask(task_t task, void *sid, UInt32 type) APPLE_KEXT_OVERRIDE;
++    IOReturn clientClose(void) APPLE_KEXT_OVERRIDE;
++    IOReturn externalMethod(uint32_t selector, IOExternalMethodArguments *args,
++        IOExternalMethodDispatch *dispatch, OSObject *target, void *ref) APPLE_KEXT_OVERRIDE;
++};
++OSDefineMetaClassAndStructors(AppleMobileFileIntegrityUserClient, IOUserClient);
++bool AppleMobileFileIntegrityUserClient::initWithTask(task_t task, void *sid, UInt32 type)
++{
++    if (type != 0 || task == TASK_NULL) return false;
++    OSObject *ent = copyClientEntitlement(task, "com.apple.private.amfi.can-check-trust-cache");
++    bool allowed = ent == kOSBooleanTrue;
++    OSSafeReleaseNULL(ent);
++    if (!allowed) return false;
++    return IOUserClient::initWithTask(task, sid, type);
++}
++IOReturn AppleMobileFileIntegrityUserClient::clientClose(void)
++{
++    terminate();
++    return kIOReturnSuccess;
++}
++IOReturn AppleMobileFileIntegrityUserClient::externalMethod(uint32_t selector,
++    IOExternalMethodArguments *args, __unused IOExternalMethodDispatch *dispatch,
++    __unused OSObject *target, __unused void *ref)
++{
++    if (selector != 6) return kIOReturnUnsupported;
++    if (args == NULL || args->structureInputDescriptor != NULL ||
++        args->structureOutputDescriptor != NULL || args->asyncWakePort != MACH_PORT_NULL ||
++        args->scalarInputCount != 1 || args->scalarInput == NULL ||
++        args->scalarOutputCount != 0 || args->structureOutputSize != 0) {
++        return kIOReturnBadArgument;
++    }
++    int result = nabu_amfi_cache_query(args->scalarInput[0], args->structureInput,
++        args->structureInputSize);
++    IOReturn ret = result < 0 ? kIOReturnBadArgument :
++        result ? kIOReturnSuccess : kIOReturnNotFound;
++    IOLog("NABU AMFI: cache query selector=6 length=%u result=0x%x\n",
++        args->structureInputSize, ret);
++    return ret;
++}
++#endif
+--- /dev/null
++++ b/iokit/Kernel/arm/NabuAMFIQuery.h
+@@ -0,0 +1,23 @@
++/* Local project allowlist for the verified 20G81 launchd.plist CodeDirectories.
++ * SHA-256(file): 9d0546d0a377c8bb8a40a63a3fc70ad23af079bbe51b605586ecd8ed46824731
++ * SHA-256(sig): 4ddd672c5df2ebb5963f1ea472f850ed109e90a6d93172458a50b138724b2435
++ * No loading, adding, or persisting hashes through the user client.
++ */
++#ifndef NABU_AMFI_QUERY_H
++#define NABU_AMFI_QUERY_H
++static int nabu_amfi_cache_query(unsigned long long kind, const void *input, unsigned long length)
++{
++    static const unsigned char hashes[2][20] = {
++        {0x33,0x6c,0xaa,0xd5,0x1c,0x93,0x82,0x13,0x11,0x39,0xed,0xff,0x75,0xa9,0xca,0x29,0xdc,0x5d,0xf5,0x1c},
++        {0x48,0xd2,0xf5,0x79,0xb4,0xaf,0xb2,0x42,0x8f,0x07,0xc7,0x3d,0x95,0x9b,0x82,0x6d,0x7d,0x81,0x57,0x20}
++    };
++    if (kind != 1 || input == 0 || length != 20) return -1;
++    const unsigned char *p = (const unsigned char *)input;
++    for (unsigned h = 0; h < 2; ++h) {
++        unsigned diff = 0;
++        for (unsigned i = 0; i < 20; ++i) diff |= p[i] ^ hashes[h][i];
++        if (diff == 0) return 1;
++    }
++    return 0;
++}
++#endif
