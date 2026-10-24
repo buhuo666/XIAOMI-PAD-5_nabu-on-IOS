@@ -1,10 +1,10 @@
 --- a/iokit/Kernel/arm/NabuFramebuffer.cpp
 +++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
-@@ -45,6 +45,7 @@
+@@ -45,2 +45,3 @@
  #include <IOKit/IOKitKeys.h>
 +#include <IOKit/IODeviceTreeSupport.h>
  #include <IOKit/IOLib.h>
-@@ -160,6 +161,25 @@
+@@ -160,5 +160,23 @@
  	if (!native && fWidth <= NABU_FB_LOGICAL_W && fHeight <= NABU_FB_LOGICAL_H) {
  		fLogicalW = NABU_FB_LOGICAL_W;
  		fLogicalH = NABU_FB_LOGICAL_H;
