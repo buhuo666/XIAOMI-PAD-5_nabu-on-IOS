@@ -1,0 +1,62 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -61,17 +61,17 @@
+ #define NABU_FB_NOTIFY_TYPES           8
+ #define NABU_FB_NOTIFY_VSYNC           5
+ #define NABU_FB_VSYNC_US               16667
+-#define NABU_FB_DOT_PITCH              458     /* ppi, as the iPhone X panel */
++#define NABU_FB_DOT_PITCH              276     /* ppi, Android reports 275.71x275.64 */
+ /*
+- * The iOS userland only has status bar / layout data for real iPhone
+- * screens (UIKit: "No status bar visual provider for screen", the red
+- * rdar://45025538 bar for 360x800 points). The display is therefore
+- * presented as the iPhone X panel, 1125x2436 (375x812 points @3x), and the
+- * centered 1080x2400 part of it is shown on the 1080x2400 panel.
+- * Boot-arg nabufb_native=1 presents the real panel size instead.
++ * Xiaomi Pad 5's panel and ABL scanout are 1600x2560.  The display service
++ * reports that same pixel canvas to iPadOS; display-scale=1 means one logical
++ * point per physical pixel.  nabufb_native=1 remains a diagnostic escape
++ * hatch for reporting the framebuffer dimensions supplied by PE_video.
+  */
+-#define NABU_FB_LOGICAL_W              1125
+-#define NABU_FB_LOGICAL_H              2436
++#define NABU_FB_LOGICAL_W              1600
++#define NABU_FB_LOGICAL_H              2560
+ #define NABU_FB_FORMAT_BGRA            0x42475241
+@@ -158,14 +158,14 @@
+ 	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
+-	fLogicalW = fWidth;
+-	fLogicalH = fHeight;
+-	if (!native && fWidth <= NABU_FB_LOGICAL_W && fHeight <= NABU_FB_LOGICAL_H) {
+-		fLogicalW = NABU_FB_LOGICAL_W;
+-		fLogicalH = NABU_FB_LOGICAL_H;
+-	}
++	fLogicalW = native ? fWidth : NABU_FB_LOGICAL_W;
++	fLogicalH = native ? fHeight : NABU_FB_LOGICAL_H;
+ 	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
+ 	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
+*** a/iokit/Kernel/arm/hid/NabuHID.cpp
++++ b/iokit/Kernel/arm/hid/NabuHID.cpp
+@@ -423,10 +423,10 @@
+ 	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
+-	fLogicalW = native ? 1080 : 1125;
+-	fLogicalH = native ? 2400 : 2436;
+-	fOffX = (fLogicalW - 1080) / 2;
+-	fOffY = (fLogicalH - 2400) / 2;
++	fLogicalW = native ? 1080 : 1600;
++	fLogicalH = native ? 2400 : 2560;
++	fOffX = (fLogicalW - 1080) / 2;
++	fOffY = (fLogicalH - 2400) / 2;
+@@ -454,7 +454,7 @@
+ 
+ 	IOLockLock(fLock);
+ 	bool was = fDown[finger];
+-	/* Panel pixels -> the presented 1125x2436 display (NabuFramebuffer.cpp). */
++	/* 1080x2400 touch coordinates -> the presented 1600x2560 display. */
+ 	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
+ 	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
+*** End Patch
