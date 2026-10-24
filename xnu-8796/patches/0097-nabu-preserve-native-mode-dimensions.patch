@@ -1,6 +1,6 @@
 --- a/iokit/Kernel/arm/NabuFramebuffer.cpp
 +++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
-@@ -180,4 +180,14 @@
+@@ -180,4 +180,13 @@
  		}
  		chosen->release();
  	}
