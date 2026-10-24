@@ -1,0 +1,16 @@
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -180,6 +180,13 @@
+ 		}
+ 		chosen->release();
+ 	}
++	/*
++	 * Keep the mode dimensions native.  The explicit scale policy is consumed
++	 * by the display frameworks; changing the IOMFB mode dimensions here makes
++	 * 20G81 construct an invalid zero-scale FBSDisplayMode.
++	 */
++	if (fLogicalW * 2 == fWidth && fLogicalH * 2 == fHeight) {
++		fLogicalW = fWidth;
++		fLogicalH = fHeight;
++	}
+ 	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
