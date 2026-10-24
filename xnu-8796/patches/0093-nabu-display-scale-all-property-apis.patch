@@ -1,0 +1,24 @@
+--- a/iokit/Kernel/IOUserClient.cpp
++++ b/iokit/Kernel/IOUserClient.cpp
+@@ -3777,6 +3777,9 @@
+ #endif
+ 
+ 	obj = IOCopyPropertyCompatible(entry, property_name);
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	nabu_scale_property_trace(entry, property_name, obj, "api");
++#endif
+ 	if (!obj) {
+ 		return kIOReturnNotFound;
+ 	}
+--- a/iokit/Kernel/IOUserClient.cpp
++++ b/iokit/Kernel/IOUserClient.cpp
+@@ -3825,6 +3825,9 @@
+ 
+ 	obj = entry->copyProperty( property_name,
+ 	    IORegistryEntry::getPlane( plane ), options );
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	nabu_scale_property_trace(entry, property_name, obj, "recursive");
++#endif
+ 	if (!obj) {
+ 		return kIOReturnNotFound;
+ 	}
