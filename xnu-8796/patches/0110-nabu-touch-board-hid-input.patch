@@ -1,0 +1,631 @@
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -22,7 +22,7 @@
+ int
+ nvt_write_addr(const struct nvt_bus *bus, uint32_t addr, const uint8_t *data, size_t len)
+ {
+-	if (data == NULL || len == 0 || len > 256) {
++	if (data == NULL || len == 0 || len > NVT_IO_CHUNK_BYTES) {
+ 		return -1;
+ 	}
+ 	if (nvt_set_page(bus, addr) != 0) {
+@@ -37,14 +37,16 @@
+ int
+ nvt_read_addr(const struct nvt_bus *bus, uint32_t addr, uint8_t *out, size_t len)
+ {
+-	if (out == NULL || len == 0 || len > 8192) {
++	if (out == NULL || len == 0 || len > NVT_IO_CHUNK_BYTES) {
+ 		return -1;
+ 	}
+ 	if (nvt_set_page(bus, addr) != 0) {
+ 		return -1;
+ 	}
+-	uint8_t tx[8194];
+-	uint8_t rx[8194];
++	/* Kernel threads have a 16 KiB stack. Large transfers must be chunked,
++	 * never use two 8194-byte automatic buffers here. */
++	uint8_t tx[NVT_IO_CHUNK_BYTES + 2];
++	uint8_t rx[NVT_IO_CHUNK_BYTES + 2];
+ 	memset(tx, 0, len + 2);
+ 	tx[0] = (uint8_t)(addr & 0x7f);
+ 	if (nvt_xfer(bus, tx, rx, len + 2) != 0) {
+@@ -73,6 +75,22 @@
+ 		return -1;
+ 	}
+ 	memcpy(frame, rx + 2, NVT_POINT_DATA_LEN);
++	/* nabu vendor POINT_DATA_CHECKSUM: bytes 1..65 (without the command)
++	 * sum to zero. Recovery packets are not touch reports. */
++	unsigned checksum = 0;
++	for (unsigned i = 0; i < NVT_POINT_DATA_LEN; ++i) {
++		checksum += frame[i];
++	}
++	if (checksum & 0xffu) {
++		return -1;
++	}
++	unsigned same = 0;
++	for (unsigned i = 0; i < 6; ++i) {
++		same += frame[i] == frame[0];
++	}
++	if (same == 6 && (frame[0] == 0x77 || frame[0] == 0xfd || frame[0] == 0xfe)) {
++		return -1;
++	}
+ 	return 0;
+ }
+ 
+@@ -107,7 +125,7 @@
+ 
+ 		unsigned x = ((unsigned)p[1] << 4) | (p[3] >> 4);
+ 		unsigned y = ((unsigned)p[2] << 4) | (p[3] & 0x0fu);
+-		if (x > max_x || y > max_y) {
++		if (x >= max_x || y >= max_y) {
+ 			continue;
+ 		}
+ 
+--- a/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/nabu_nt36523.h
+@@ -15,6 +15,7 @@
+ 
+ #define NVT_POINT_DATA_LEN   65
+ #define NVT_MAX_FINGERS      10
++#define NVT_IO_CHUNK_BYTES   256
+ #define NVT_DEFAULT_MAX_X    1600
+ #define NVT_DEFAULT_MAX_Y    2560
+ 
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -7,8 +7,8 @@
+  *   pins      GPIO23/24/25 (qup18), GPIO26 CS (qup18), GPIO39 IRQ
+  *   touch     novatek,NVT-ts-spi, swrst 0x3f0fe, max 15 MHz
+  *
+- * The first stage only proves the bus and reads the trim/FWINFO blocks.
+- * Point frames are logged; HID delivery is added once the hardware answers.
++ * Actual EAST/NORTH pin tiles and hardware-gated GCC branch semantics.
++ * Verified point frames feed the existing HID service continuously.
+  *
+  * SPDX-License-Identifier: BSD-2-Clause-Patent
+  */
+@@ -25,16 +25,15 @@
+ 
+ #include "nabu_geni_spi.h"
+ #include "nabu_nt36523.h"
++#include "nabu_touch_board.h"
++#include "nabu_touch_input.h"
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern kern_return_t thread_terminate(thread_t);
+-extern int nabu_rpmh_vreg_enable(const char *res, unsigned mv);
+ extern void nabu_hid_touch(int finger, int down, int x, int y);
+ void nabu_touch_init(void);
+ 
+ #define NABU_GCC_PA        0x00100000u
+-#define NABU_TLMM_PA       0x03000000u
+-#define NABU_TLMM_SIZE     0x00060000u  /* through GPIO90 at 0x5a000 */
+ #define NABU_SE_PA         0x00c84000u
+ #define NABU_QUP_PA        0x00cc0000u
+ 
+@@ -52,23 +51,23 @@
+ #define NABU_SE_TX_COUNT   0x800u
+ #define NABU_SE_RX_COUNT   0x804u
+ 
+-/* Hardware mux indices for SM8150 pin groups:
+- * gpio23/24/25/26 = {gpio, cci_timer2, qup18, ...}; gpio39 = {gpio, ...}. */
+ #define NABU_MUX_GPIO   0u
+-#define NABU_MUX_QUP18  2u
+ 
+ #define NABU_TOUCH_IRQ_GPIO 39u
+-#define NABU_TOUCH_PWR_GPIO 90u
+ 
+ struct nabu_touch_state {
+ 	vm_offset_t gcc;
+-	vm_offset_t tlmm;
++	vm_offset_t east;
++	vm_offset_t north;
+ 	vm_offset_t se;
+ 	vm_offset_t qup;
+ 	struct geni_spi spi;
+ 	struct nvt_bus bus;
+ 	bool started;
+ 	bool mapped;
++	unsigned clock_level;
++	unsigned source_hz;
++	struct nbu_touch_slots slots;
+ };
+ 
+ static struct nabu_touch_state ts;
+@@ -132,27 +131,33 @@
+ 	return geni_spi_transfer(&ts.spi, tx, rx, len, 0);
+ }
+ 
+-static void
++static bool
+ nbu_pin(unsigned pin, unsigned func, unsigned pull, unsigned drive,
+     int output, int level)
+ {
+ 	uint32_t ctl_off = NABU_TLMM_GPIO(pin);
+ 	uint32_t io_off = NABU_TLMM_IO(pin);
+ 	uint32_t cfg;
+-
+-	if (!ts.tlmm) {
+-		return;
++	vm_offset_t tile = pin >= 23 && pin <= 26 ? ts.east :
++	    pin == NABU_TOUCH_IRQ_GPIO ? ts.north : 0;
++
++	if (!tile) {
++		return false;
+ 	}
+ 	if (output) {
+-		uint32_t io = nbu_rd(ts.tlmm, io_off);
++		uint32_t io = nbu_rd(tile, io_off);
+ 		io = (io & ~2u) | (level ? 2u : 0u);
+-		nbu_wr(ts.tlmm, io_off, io);
+-	}
+-	cfg = nbu_rd(ts.tlmm, ctl_off);
++		nbu_wr(tile, io_off, io);
++	}
++	cfg = nbu_rd(tile, ctl_off);
+ 	cfg &= ~0x3ffu;
+ 	cfg |= ((func & 0xfu) << 2) | (pull & 3u) | ((drive & 7u) << 6) |
+ 	    (output ? 0x200u : 0u);
+-	nbu_wr(ts.tlmm, ctl_off, cfg);
++	nbu_wr(tile, ctl_off, cfg);
++	uint32_t observed = nbu_rd(tile, ctl_off);
++	printf("NABU TOUCH: pin=%u mux=%u cfg=%#x expected=%#x\n",
++	    pin, func, observed, cfg);
++	return (observed & 0x3ffu) == (cfg & 0x3ffu);
+ }
+ 
+ static bool
+@@ -170,12 +175,18 @@
+ 	bool ok = true;
+ 
+ 	vote = nbu_rd(ts.gcc, NABU_GCC_VOTE);
+-	nbu_wr(ts.gcc, NABU_GCC_VOTE, vote | (1u << 1) | (1u << 2) | (1u << 5));
++	nbu_wr(ts.gcc, NABU_GCC_VOTE, vote | NBU_TOUCH_VOTES);
+ 	rcg = nbu_rd(ts.gcc, NABU_GCC_RCG);
+ 	cfg = nbu_rd(ts.gcc, NABU_GCC_RCG + 4u);
+ 	dfs = nbu_rd(ts.gcc, NABU_GCC_RCG + 0x14u);
+ 	printf("NABU TOUCH: gcc vote %#x -> %#x rcg=%#x cfg=%#x dfs=%#x\n",
+ 	    vote, nbu_rd(ts.gcc, NABU_GCC_VOTE), rcg, cfg, dfs);
++	if ((nbu_rd(ts.gcc, NABU_GCC_VOTE) & NBU_TOUCH_VOTES) != NBU_TOUCH_VOTES) {
++		printf("NABU TOUCH: QUP clock vote readback failed\n");
++		return false;
++	}
++	ts.clock_level = 0;
++	ts.source_hz = NBU_TOUCH_XO_HZ;
+ 
+ 	if (!(dfs & 1u)) {
+ 		uint32_t newcfg = (cfg & ~(0x371fu | (1u << 20))) | 1u;
+@@ -195,7 +206,19 @@
+ 			ok = false;
+ 		}
+ 	} else {
+-		printf("NABU TOUCH: rcg uses DFS, not rewriting tables\n");
++		uint32_t levels[8];
++		for (unsigned i = 0; i < 8; ++i) {
++			levels[i] = nbu_rd(ts.gcc, NABU_GCC_RCG + 0x1cu + 4u * i);
++		}
++		int level = nbu_touch_xo_level(levels);
++		if (level < 0) {
++			printf("NABU TOUCH: DFS has no verified XO level; cfg0=%#x\n",
++			    levels[0]);
++			return false;
++		}
++		ts.clock_level = (unsigned)level;
++		printf("NABU TOUCH: DFS XO level=%u cfg=%#x source=%u\n",
++		    ts.clock_level, levels[level], ts.source_hz);
+ 	}
+ 
+ 	for (unsigned i = 0; i < sizeof(branches) / sizeof(branches[0]); i++) {
+@@ -203,14 +226,16 @@
+ 		bool running = false;
+ 		for (unsigned j = 0; j < 1000; j++) {
+ 			v = nbu_rd(ts.gcc, branches[i].off);
+-			if (!(v & 0x80000000u)) {
++			if (nbu_touch_branch_ready(branches[i].off, v,
++			    nbu_rd(ts.gcc, NABU_GCC_VOTE))) {
+ 				running = true;
+ 				break;
+ 			}
+ 			delay(1);
+ 		}
+-		printf("NABU TOUCH: branch %s=%#x running=%d\n",
+-		    branches[i].name, v, running);
++		printf("NABU TOUCH: branch %s=%#x ready=%d hwcg=%d\n",
++		    branches[i].name, v, running,
++		    branches[i].off == NBU_TOUCH_S_AHB && (v & NBU_TOUCH_HWCG) != 0);
+ 		if (!running) {
+ 			ok = false;
+ 		}
+@@ -258,7 +283,7 @@
+ 		return false;
+ 	}
+ 	geni_spi_setup(&ts.spi, 0, 0);
+-	r = geni_spi_set_clock(&ts.spi, 9600000, 19200000, 0);
++	r = geni_spi_set_clock(&ts.spi, 9600000, ts.source_hz, ts.clock_level);
+ 	printf("NABU TOUCH: geni clock=%d clk_sel=%#x mclk=%#x\n", r,
+ 	    nbu_rd(ts.se, 0x7c), nbu_rd(ts.se, 0x48));
+ 	return r == 0;
+@@ -281,24 +306,10 @@
+ 	struct nvt_info info;
+ 	int r;
+ 
+-	/* Engineering reset, then the vendor bootloader reset. */
+-	{
+-		uint8_t v = 0x5a;
+-		r = nvt_write_addr(&ts.bus, 0x7fff80u, &v, 1);
+-		printf("NABU TOUCH: eng reset r=%d\n", r);
+-	}
+-	delay(1000);
+-	{
+-		uint8_t v = 0x69;
+-		r = nvt_write_addr(&ts.bus, 0x3f0feu, &v, 1);
+-		printf("NABU TOUCH: bootloader reset r=%d\n", r);
+-	}
+-	delay(5000);
+-	{
+-		uint8_t v = 0;
+-		r = nvt_write_addr(&ts.bus, 0x3f310u, &v, 1);
+-		printf("NABU TOUCH: fast-read disable r=%d\n", r);
+-	}
++	/* Preserve a running controller. Resetting into its bootloader without
++	 * uploading the matching firmware destroys the very state we need.
++	 * A separate, verified firmware-download implementation is required if
++	 * firmware is absent; never call a chip ID a working touch controller. */
+ 	delay(5000);
+ 
+ 	r = nbu_read_trim(0x3f004u, id);
+@@ -317,13 +328,22 @@
+ 
+ 	r = nvt_read_addr(&ts.bus, 0x2fe78u, fw, sizeof(fw));
+ 	printf("NABU TOUCH: fwinfo r=%d\n", r);
+-	if (r == 0) {
+-		(void)nvt_parse_fwinfo(fw, sizeof(fw), &info);
++	if (r == 0 && nvt_parse_fwinfo(fw, sizeof(fw), &info) == 0) {
+ 		printf("NABU TOUCH: fw=%u/%u valid=%d x_num=%u y_num=%u max=%ux%u buttons=%u\n",
+ 		    info.fw_ver, info.fw_type, info.valid, info.x_num,
+ 		    info.y_num, info.max_x, info.max_y, info.max_buttons);
+-	}
+-	return true;
++		if (info.valid && info.max_x == NBU_TOUCH_WIDTH &&
++		    info.max_y == NBU_TOUCH_HEIGHT) {
++			uint8_t state = 0;
++			r = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u, &state, 1);
++			printf("NABU TOUCH: firmware reset-state=%#x read=%d\n", state, r);
++			if (!r && state >= 0xa0u && state <= 0xafu) {
++				return true;
++			}
++		}
++	}
++	printf("NABU TOUCH: matching running firmware unavailable; upload required before HID\n");
++	return false;
+ }
+ 
+ static void
+@@ -331,19 +351,25 @@
+ {
+ 	uint8_t frame[NVT_POINT_DATA_LEN];
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+-	unsigned good = 0, bad = 0;
+-
+-	for (unsigned i = 0; i < 100; i++) {
++	unsigned good = 0, bad = 0, consecutive = 0;
++
++	printf("NABU TOUCH: continuous HID polling enabled, native=%ux%u\n",
++	    NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT);
++	for (unsigned i = 0;; i++) {
+ 		int n = -1;
+ 		if (nvt_read_point_frame(&ts.bus, frame) == 0) {
+-			n = nvt_parse_points(frame, 1600, 2560, contacts,
++			n = nvt_parse_points(frame, NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT, contacts,
+ 			    NVT_MAX_FINGERS);
+-			if (bad) {
+-				printf("NABU TOUCH: point read recovered after %u errors\n", bad);
+-				bad = 0;
+-			}
+-			good++;
+-			if (n > 0) {
++			if (n >= 0 && nbu_touch_publish(&ts.slots, contacts, n, nabu_hid_touch) == 0) {
++				if (consecutive) {
++					printf("NABU TOUCH: point read recovered after %u errors\n", consecutive);
++				}
++				consecutive = 0;
++				good++;
++			} else {
++				n = -1;
++			}
++			if (n > 0 && good <= 16) {
+ 				printf("NABU TOUCH: frame %u contacts=%d f0=%02x %02x %02x %02x %02x %02x\n",
+ 				    i, n, frame[0], frame[1], frame[2], frame[3],
+ 				    frame[4], frame[5]);
+@@ -353,13 +379,25 @@
+ 					    contacts[k].pressure);
+ 				}
+ 			}
+-		} else {
+-			if (bad++ == 0) {
+-				printf("NABU TOUCH: point read failed at frame %u\n", i);
+-			}
+-		}
+-		delay(20000);
+-	}
++		}
++		if (n < 0) {
++			nbu_touch_release(&ts.slots, nabu_hid_touch);
++			bad++;
++			if (++consecutive == 1) {
++				printf("NABU TOUCH: invalid/failed point frame %u irq=%#x status=%#x\n",
++				    i, nbu_rd(ts.se, NABU_SE_IRQ_STATUS), nbu_rd(ts.se, NABU_SE_STATUS));
++			}
++			if (consecutive >= 32) {
++				printf("NABU TOUCH: stopping after 32 consecutive failures; contacts released\n");
++				break;
++			}
++		}
++		if ((i % 1000u) == 0) {
++			printf("NABU TOUCH: HID poll good=%u bad=%u active=%#x\n", good, bad, ts.slots.active);
++		}
++		nbu_sleep_ms(10);
++	}
++	nbu_touch_release(&ts.slots, nabu_hid_touch);
+ 	printf("NABU TOUCH: polling done good=%u bad=%u\n", good, bad);
+ }
+ 
+@@ -367,7 +405,6 @@
+ nbu_touch_thread(void *arg, wait_result_t result)
+ {
+ 	unsigned delay_s = 15;
+-	int power_error;
+ 
+ 	(void)arg;
+ 	(void)result;
+@@ -377,30 +414,32 @@
+ 	printf("NABU TOUCH: mapping SE18/GCC/TLMM\n");
+ 
+ 	ts.gcc = ml_io_map(NABU_GCC_PA, 0x60000);
+-	ts.tlmm = ml_io_map(NABU_TLMM_PA, NABU_TLMM_SIZE);
++	ts.east = ml_io_map(NBU_TOUCH_EAST_PA, NBU_TOUCH_EAST_SIZE);
++	ts.north = ml_io_map(NBU_TOUCH_NORTH_PA, NBU_TOUCH_NORTH_SIZE);
+ 	ts.se = ml_io_map(NABU_SE_PA, 0x4000);
+ 	ts.qup = ml_io_map(NABU_QUP_PA, 0x6000);
+-	if (!ts.gcc || !ts.tlmm || !ts.se || !ts.qup) {
+-		printf("NABU TOUCH: MMIO map failed gcc=%#lx tlmm=%#lx se=%#lx qup=%#lx\n",
+-		    (unsigned long)ts.gcc, (unsigned long)ts.tlmm,
++	if (!ts.gcc || !ts.east || !ts.north || !ts.se || !ts.qup) {
++		printf("NABU TOUCH: MMIO map failed gcc=%#lx east=%#lx north=%#lx se=%#lx qup=%#lx\n",
++		    (unsigned long)ts.gcc, (unsigned long)ts.east, (unsigned long)ts.north,
+ 		    (unsigned long)ts.se, (unsigned long)ts.qup);
+ 		goto out;
+ 	}
+ 	ts.mapped = true;
+ 
+-	power_error = nabu_rpmh_vreg_enable("ldoc11", 3200);
+-	printf("NABU TOUCH: L11C vote=%d\n", power_error);
+-	nbu_pin(23, NABU_MUX_QUP18, 0, 2, 0, 0);
+-	nbu_pin(24, NABU_MUX_QUP18, 0, 2, 0, 0);
+-	nbu_pin(25, NABU_MUX_QUP18, 0, 2, 0, 0);
+-	nbu_pin(26, NABU_MUX_QUP18, 0, 2, 0, 0);
+-	nbu_pin(NABU_TOUCH_IRQ_GPIO, NABU_MUX_GPIO, 1, 2, 0, 0);
+-	nbu_pin(NABU_TOUCH_PWR_GPIO, NABU_MUX_GPIO, 0, 0, 1, 1);
+-	printf("NABU TOUCH: pins 23/24/25/26=%#x %#x %#x %#x irq39=%#x pwr90=%#x io39=%#x\n",
+-	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(23)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(24)),
+-	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(25)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(26)),
+-	    nbu_rd(ts.tlmm, NABU_TLMM_GPIO(39)), nbu_rd(ts.tlmm, NABU_TLMM_GPIO(90)),
+-	    nbu_rd(ts.tlmm, NABU_TLMM_IO(39)));
++	/* The actual NT36523 FDT declares no GPIO90 or L11C power control.
++	 * Keep inherited rails and change only the verified SPI/IRQ pin set. */
++	bool pins = true;
++	for (unsigned pin = 23; pin <= 26; ++pin) {
++		if (!nbu_pin(pin, nbu_touch_pin_mux(pin), 0, 2, 0, 0)) {
++			pins = false;
++		}
++	}
++	uint32_t irq_cfg = nbu_rd(ts.north, NABU_TLMM_GPIO(NABU_TOUCH_IRQ_GPIO));
++	if (!nbu_pin(NABU_TOUCH_IRQ_GPIO, NABU_MUX_GPIO,
++	    irq_cfg & 3u, (irq_cfg >> 6) & 7u, 0, 0) || !pins) {
++		printf("NABU TOUCH: pin configuration readback failed\n");
++		goto out;
++	}
+ 	delay(10000);
+ 
+ 	if (!nbu_clocks()) {
+--- /dev/null
++++ b/bsd/dev/nabu_touch_board.h
+@@ -0,0 +1,76 @@
++/* SPDX-License-Identifier: BSD-2-Clause-Patent */
++#ifndef NABU_TOUCH_BOARD_H
++#define NABU_TOUCH_BOARD_H
++#include <stdint.h>
++
++/* nabu live FDT: SE18 c84000, QUP wrapper cc0000, 15 MHz SPI maximum.
++ * MiCode nabu-r-oss gcc-sm8150.c/pinctrl-sm8150.c define register semantics. */
++#define NBU_TOUCH_WIDTH 1600u
++#define NBU_TOUCH_HEIGHT 2560u
++#define NBU_TOUCH_SPI_MAX_HZ 15000000u
++#define NBU_TOUCH_XO_HZ 19200000u
++#define NBU_TOUCH_EAST_PA 0x03500000u
++#define NBU_TOUCH_NORTH_PA 0x03900000u
++#define NBU_TOUCH_EAST_SIZE 0x1b000u
++#define NBU_TOUCH_NORTH_SIZE 0x28000u
++#define NBU_TOUCH_GCC_VOTE 0x52014u
++#define NBU_TOUCH_VOTES ((1u << 1) | (1u << 2) | (1u << 5))
++#define NBU_TOUCH_M_AHB 0x1e004u
++#define NBU_TOUCH_S_AHB 0x1e008u
++#define NBU_TOUCH_SE_HALT 0x1e274u
++#define NBU_TOUCH_RCG 0x1e278u
++#define NBU_TOUCH_HWCG (1u << 1)
++#define NBU_TOUCH_CLK_OFF (1u << 31)
++
++/* Panel pixels to IOFixed 0..1. No phone-sized canvas or centering offset. */
++static inline int32_t
++nbu_touch_normalize(int coordinate, unsigned extent)
++{
++	if (extent < 2 || coordinate <= 0) {
++		return 0;
++	}
++	if ((unsigned)coordinate >= extent - 1u) {
++		return 0x10000;
++	}
++	return (int32_t)(((int64_t)coordinate << 16) / (extent - 1u));
++}
++
++/* SPI pins are EAST; IRQ gpio39 is NORTH. No unverified GPIO90 writes. */
++static inline unsigned
++nbu_touch_pin_mux(unsigned pin)
++{
++	return pin == 24u || pin == 25u ? 3u : 2u;
++}
++
++/* Hardware-gated s_ahb may report OFF while idle. The vendor clk-branch
++ * driver does not poll halt in this mode. Require our vote nevertheless;
++ * a subsequent real GENI identity/transfer is still mandatory. */
++static inline int
++nbu_touch_branch_ready(uint32_t offset, uint32_t cbcr, uint32_t vote)
++{
++	uint32_t bit = offset == NBU_TOUCH_M_AHB ? 1u << 2 :
++	    offset == NBU_TOUCH_S_AHB ? 1u << 1 :
++	    offset == NBU_TOUCH_SE_HALT ? 1u << 5 : 0;
++	if (!bit || !(vote & bit)) {
++		return 0;
++	}
++	if (offset == NBU_TOUCH_S_AHB && (cbcr & NBU_TOUCH_HWCG)) {
++		return 1;
++	}
++	return !(cbcr & NBU_TOUCH_CLK_OFF) ||
++	       (cbcr & 0xf0000000u) == 0x20000000u;
++}
++
++/* Select only an explicitly verified XO DFS level. Do not assume that an
++ * inherited level 0 uses 19.2 MHz or guess an unknown PLL/MND frequency. */
++static inline int
++nbu_touch_xo_level(const uint32_t cfg[8])
++{
++	for (unsigned i = 0; i < 8; ++i) {
++		if ((cfg[i] & 0x371fu) == 0 || (cfg[i] & 0x371fu) == 1) {
++			return (int)i;
++		}
++	}
++	return -1;
++}
++#endif
+--- /dev/null
++++ b/bsd/dev/nabu_touch_input.h
+@@ -0,0 +1,59 @@
++/* SPDX-License-Identifier: BSD-2-Clause-Patent */
++#ifndef NABU_TOUCH_INPUT_H
++#define NABU_TOUCH_INPUT_H
++#include "nabu_nt36523.h"
++#include "nabu_touch_board.h"
++
++struct nbu_touch_slots {
++	unsigned active;
++	int x[NVT_MAX_FINGERS];
++	int y[NVT_MAX_FINGERS];
++};
++typedef void (*nbu_touch_emit)(int slot, int down, int x, int y);
++
++/* Validate the full set before emitting anything; duplicate IDs never
++ * become conflicting HID updates. Missing contacts and failed reads release. */
++static inline int
++nbu_touch_publish(struct nbu_touch_slots *state,
++    const struct nvt_contact *points, int count, nbu_touch_emit emit)
++{
++	unsigned present = 0;
++	if (!state || !emit || count < 0 || count > NVT_MAX_FINGERS ||
++	    (count && !points)) {
++		return -1;
++	}
++	for (int i = 0; i < count; ++i) {
++		if (points[i].id < 1 || points[i].id > NVT_MAX_FINGERS ||
++		    !points[i].down || points[i].x < 0 || points[i].y < 0 ||
++		    points[i].x >= (int)NBU_TOUCH_WIDTH ||
++		    points[i].y >= (int)NBU_TOUCH_HEIGHT) {
++			return -1;
++		}
++		unsigned bit = 1u << (points[i].id - 1);
++		if (present & bit) {
++			return -1;
++		}
++		present |= bit;
++	}
++	for (int slot = 0; slot < NVT_MAX_FINGERS; ++slot) {
++		unsigned bit = 1u << slot;
++		if ((state->active & bit) && !(present & bit)) {
++			emit(slot, 0, state->x[slot], state->y[slot]);
++		}
++	}
++	for (int i = 0; i < count; ++i) {
++		int slot = points[i].id - 1;
++		state->x[slot] = points[i].x;
++		state->y[slot] = points[i].y;
++		emit(slot, 1, points[i].x, points[i].y);
++	}
++	state->active = present;
++	return 0;
++}
++
++static inline void
++nbu_touch_release(struct nbu_touch_slots *state, nbu_touch_emit emit)
++{
++	(void)nbu_touch_publish(state, 0, 0, emit);
++}
++#endif
+--- a/iokit/Kernel/arm/hid/NabuHID.cpp
++++ b/iokit/Kernel/arm/hid/NabuHID.cpp
+@@ -28,6 +28,7 @@
+ #include "IOHIDKeys.h"
+ #include "IOHIDPrivateKeys.h"
+ #include "IOHIDUsageTables.h"
++#include "../../../../bsd/dev/nabu_touch_board.h"
+ 
+ extern "C" uint64_t mach_absolute_time(void);
+ 
+@@ -432,16 +433,12 @@
+ 	if (!fLock || !IOHIDEventService::start(provider)) {
+ 		return false;
+ 	}
+-	int native = 0;
+-	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
+-	fLogicalW = native ? 1080 : 1125;
+-	fLogicalH = native ? 2400 : 2436;
+-	fOffX = (fLogicalW - 1080) / 2;
+-	fOffY = (fLogicalH - 2400) / 2;
++	fLogicalW = NBU_TOUCH_WIDTH;
++	fLogicalH = NBU_TOUCH_HEIGHT;
++	fOffX = fOffY = 0;
+ 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+-	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+-	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
++	/* Do not publish phone-sized millimeter dimensions as tablet facts. */
+ 	gNabuTouch = this;
+ 	registerService();
+ 	IOLog("NABU HID: touch registered\n");
+@@ -458,22 +455,21 @@
+ 	if (finger < 0 || finger >= NABU_TOUCH_FINGERS) {
+ 		return;
+ 	}
+-	x = x < 0 ? 0 : (x > 1079 ? 1079 : x);
+-	y = y < 0 ? 0 : (y > 2399 ? 2399 : y);
++	x = x < 0 ? 0 : (x >= fLogicalW ? fLogicalW - 1 : x);
++	y = y < 0 ? 0 : (y >= fLogicalH ? fLogicalH - 1 : y);
+ 
+ 	IOLockLock(fLock);
+ 	bool was = fDown[finger];
+-	/* Panel pixels -> the presented 1125x2436 display (NabuFramebuffer.cpp). */
+-	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
+-	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
++	IOFixed nx = (IOFixed)nbu_touch_normalize(x, fLogicalW);
++	IOFixed ny = (IOFixed)nbu_touch_normalize(y, fLogicalH);
+ 	bool moved = down && (nx != fX[finger] || ny != fY[finger]);
+ 	if (was == down && !moved) {
+ 		IOLockUnlock(fLock);
+ 		return;
+ 	}
+ 	if (!was && down) {
+-		fEdge[finger] = x < NABU_TOUCH_EDGE_PX || x > 1079 - NABU_TOUCH_EDGE_PX ||
+-		    y < NABU_TOUCH_EDGE_PX || y > 2399 - NABU_TOUCH_EDGE_PX;
++		fEdge[finger] = x < NABU_TOUCH_EDGE_PX || x > fLogicalW - 1 - NABU_TOUCH_EDGE_PX ||
++		    y < NABU_TOUCH_EDGE_PX || y > fLogicalH - 1 - NABU_TOUCH_EDGE_PX;
+ 	}
+ 
+ 	collection = IOHIDEvent::digitizerEvent(now, 0, kIOHIDDigitizerTransducerTypeHand, false, 0, 0, 0);
