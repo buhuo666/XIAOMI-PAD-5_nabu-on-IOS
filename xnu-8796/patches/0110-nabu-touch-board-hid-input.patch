@@ -585,8 +585,8 @@
  	}
 -	int native = 0;
 -	PE_parse_boot_argn("nabufb_native", &native, sizeof(native));
--	fLogicalW = native ? 1080 : 1125;
--	fLogicalH = native ? 2400 : 2436;
+-	fLogicalW = native ? 1080 : 1600;
+-	fLogicalH = native ? 2400 : 2560;
 -	fOffX = (fLogicalW - 1080) / 2;
 -	fOffY = (fLogicalH - 2400) / 2;
 +	fLogicalW = NBU_TOUCH_WIDTH;
@@ -611,7 +611,7 @@
  
  	IOLockLock(fLock);
  	bool was = fDown[finger];
--	/* Panel pixels -> the presented 1125x2436 display (NabuFramebuffer.cpp). */
+-	/* 1080x2400 touch coordinates -> the presented 1600x2560 display. */
 -	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
 -	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
 +	IOFixed nx = (IOFixed)nbu_touch_normalize(x, fLogicalW);
