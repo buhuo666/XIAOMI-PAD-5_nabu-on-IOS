@@ -1,0 +1,69 @@
+diff --git a/bsd/dev/nabu_keys.c b/bsd/dev/nabu_keys.c
+--- a/bsd/dev/nabu_keys.c
++++ b/bsd/dev/nabu_keys.c
+@@ -30,6 +30,12 @@ static uint32_t keys_version, keys_last_status;
+ static bool keys_started;
+ static int keys_sleep_chan;
+ 
++/* Volume-up + volume-down held together is the tablet's virtual Home key. */
++#define KEYS_POLL_MS                 20u
++#define KEYS_HOME_HOLD_MS            1000u
++#define KEYS_HOME_HOLD_POLLS         (KEYS_HOME_HOLD_MS / KEYS_POLL_MS)
++#define KEYS_HOME_RELEASE_POLLS      (100u / KEYS_POLL_MS)
++
+ static uint32_t
+ keys_rd(vm_offset_t base, uint32_t off)
+ {
+@@ -95,6 +101,10 @@ keys_thread(void *arg, wait_result_t result)
+ {
+ 	int state[3] = {0, 0, 0};
+ 	unsigned errors = 0;
++	unsigned volume_chord_polls = 0;
++	unsigned home_release_polls = 0;
++	bool home_fired = false;
++	bool home_down = false;
+ 	(void)arg;
+ 	(void)result;
+ 	for (;;) {
+@@ -118,6 +128,41 @@ keys_thread(void *arg, wait_result_t result)
+ 				nabu_hid_key(k, state[k]);
+ 			}
+ 		}
++
++		/*
++		 * Keep the ordinary volume events intact, but add a virtual Home tap
++		 * when both volume switches remain down for about one second.  Home is
++		 * released after 100 ms even if the user keeps holding both switches;
++		 * this matches the existing nabuhidtest tap and prevents key-repeat.
++		 */
++		bool volume_chord = state[1] && state[2];
++		if (volume_chord) {
++			if (volume_chord_polls < KEYS_HOME_HOLD_POLLS) {
++				volume_chord_polls++;
++			}
++			if (!home_fired && volume_chord_polls >= KEYS_HOME_HOLD_POLLS) {
++				home_fired = true;
++				home_down = true;
++				home_release_polls = KEYS_HOME_RELEASE_POLLS;
++				printf("NABU KEYS: volume chord held %u ms; virtual Home\n",
++				    KEYS_HOME_HOLD_MS);
++				nabu_hid_key(3, 1);
++			}
++		} else {
++			volume_chord_polls = 0;
++			if (home_down) {
++				home_down = false;
++				home_release_polls = 0;
++				nabu_hid_key(3, 0);
++			}
++			home_fired = false;
++		}
++		if (home_down && home_release_polls != 0) {
++			if (--home_release_polls == 0) {
++				home_down = false;
++				nabu_hid_key(3, 0);
++			}
++		}
+ 		keys_wait();
+ 	}
+ }
