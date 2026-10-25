@@ -1,0 +1,222 @@
+--- a/bsd/dev/nabu_keys.c
++++ b/bsd/dev/nabu_keys.c
+@@ -1,6 +1,6 @@
+ /*
+  * Minimal polled NABU keys. Call once after the scheduler is running.
+- * See hw-report.md: volume-up is PM6150L SID 4, NOT PM6150 SID 0.
++ * Android nabu FDT: volume-up is PM8150 SID 0 GPIO6, active low.
+  * PMIC access is READ ONLY: the sole MMIO write issues EXT_READL on an
+  * observer channel. No PMIC config, IRQ acknowledge or reset writes exist.
+  */
+@@ -12,6 +12,7 @@
+ #include <kern/sched_prim.h>
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
++#include "nabu_key_chord.h"
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern void nabu_hid_key(int key, int down);
+@@ -21,7 +22,9 @@
+ #define KEYS_OBS_PA      0x0e600000u
+ #define KEYS_CNFG_PA     0x0c40a000u
+ #define KEYS_PON_RT      0x0810u
+-#define KEYS_GPIO_RT     0xc110u
++#define KEYS_GPIO_BASE   0xc500u
++#define KEYS_GPIO_RT     (KEYS_GPIO_BASE + 0x10u)
++#define KEYS_GPIO_PPID   0x0c5u
+ #define KEYS_NO_APID     0xffffu
+ 
+ static vm_offset_t keys_core, keys_obs, keys_cnfg;
+@@ -30,11 +33,7 @@
+ static bool keys_started;
+ static int keys_sleep_chan;
+ 
+-/* Volume-up + volume-down held together is the tablet's virtual Home key. */
+-#define KEYS_POLL_MS                 20u
+-#define KEYS_HOME_HOLD_MS            1000u
+-#define KEYS_HOME_HOLD_POLLS         (KEYS_HOME_HOLD_MS / KEYS_POLL_MS)
+-#define KEYS_HOME_RELEASE_POLLS      (100u / KEYS_POLL_MS)
++#define KEYS_POLL_MS     20u
+ 
+ static uint32_t
+ keys_rd(vm_offset_t base, uint32_t off)
+@@ -91,7 +90,7 @@
+ keys_wait(void)
+ {
+ 	uint64_t deadline;
+-	clock_interval_to_deadline(20, NSEC_PER_MSEC, &deadline);
++	clock_interval_to_deadline(KEYS_POLL_MS, NSEC_PER_MSEC, &deadline);
+ 	(void)assert_wait_deadline(&keys_sleep_chan, THREAD_UNINT, deadline);
+ 	thread_block(THREAD_CONTINUE_NULL);
+ }
+@@ -101,10 +100,7 @@
+ {
+ 	int state[3] = {0, 0, 0};
+ 	unsigned errors = 0;
+-	unsigned volume_chord_polls = 0;
+-	unsigned home_release_polls = 0;
+-	bool home_fired = false;
+-	bool home_down = false;
++	struct nabu_key_chord chord = {0};
+ 	(void)arg;
+ 	(void)result;
+ 	for (;;) {
+@@ -123,45 +119,24 @@
+ 		for (int k = 0; k < 3; ++k) {
+ 			if ((k == 1 ? gok : pok) && now[k] != state[k]) {
+ 				state[k] = now[k];
+-				printf("NABU KEYS: key=%d down=%d pon=%#x gpio4:c110=%#x\n",
++				printf("NABU KEYS: key=%d down=%d pon=%#x gpio0:c510=%#x\n",
+ 				    k, state[k], pon, gpio);
+ 				nabu_hid_key(k, state[k]);
+ 			}
+ 		}
+ 
+-		/*
+-		 * Keep the ordinary volume events intact, but add a virtual Home tap
+-		 * when both volume switches remain down for about one second.  Home is
+-		 * released after 100 ms even if the user keeps holding both switches;
+-		 * this matches the existing nabuhidtest tap and prevents key-repeat.
+-		 */
+-		bool volume_chord = state[1] && state[2];
+-		if (volume_chord) {
+-			if (volume_chord_polls < KEYS_HOME_HOLD_POLLS) {
+-				volume_chord_polls++;
+-			}
+-			if (!home_fired && volume_chord_polls >= KEYS_HOME_HOLD_POLLS) {
+-				home_fired = true;
+-				home_down = true;
+-				home_release_polls = KEYS_HOME_RELEASE_POLLS;
+-				printf("NABU KEYS: volume chord held %u ms; virtual Home\n",
+-				    KEYS_HOME_HOLD_MS);
+-				nabu_hid_key(3, 1);
+-			}
+-		} else {
+-			volume_chord_polls = 0;
+-			if (home_down) {
+-				home_down = false;
+-				home_release_polls = 0;
+-				nabu_hid_key(3, 0);
+-			}
+-			home_fired = false;
+-		}
+-		if (home_down && home_release_polls != 0) {
+-			if (--home_release_polls == 0) {
+-				home_down = false;
+-				nabu_hid_key(3, 0);
+-			}
++		/* Never count failed/stale GPIO observations as a held key. */
++		uint64_t now_abs, now_ns;
++		clock_get_uptime(&now_abs);
++		absolutetime_to_nanoseconds(now_abs, &now_ns);
++		unsigned events = nabu_key_chord_step(&chord, pok && gok,
++		    pok && gok && now[1], pok && gok && now[2], now_ns);
++		if (events & NABU_HOME_UP) {
++			nabu_hid_key(3, 0);
++		}
++		if (events & NABU_HOME_DOWN) {
++			printf("NABU KEYS: volume chord held 1000 ms; virtual Home\n");
++			nabu_hid_key(3, 1);
+ 		}
+ 		keys_wait();
+ 	}
+@@ -197,21 +172,21 @@
+ 		return;
+ 	}
+ 	keys_pon_apid = keys_find_apid(0x008, count);
+-	keys_gpio_apid = keys_find_apid(0x4c1, count);
++	keys_gpio_apid = keys_find_apid(KEYS_GPIO_PPID, count);
+ 	uint8_t pon = 0, gpio = 0, mode = 0, en = 0, subtype = 0;
+ 	bool pok = keys_read(keys_pon_apid, KEYS_PON_RT, &pon);
+ 	bool gok = keys_read(keys_gpio_apid, KEYS_GPIO_RT, &gpio);
+-	bool mok = keys_read(keys_gpio_apid, 0xc140, &mode);
+-	bool eok = keys_read(keys_gpio_apid, 0xc146, &en);
+-	bool sok = keys_read(keys_gpio_apid, 0xc105, &subtype);
+-	printf("NABU KEYS: arb=%#x apids=%u pon-apid=%u gpio4-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
++	bool mok = keys_read(keys_gpio_apid, KEYS_GPIO_BASE + 0x40u, &mode);
++	bool eok = keys_read(keys_gpio_apid, KEYS_GPIO_BASE + 0x46u, &en);
++	bool sok = keys_read(keys_gpio_apid, KEYS_GPIO_BASE + 0x05u, &subtype);
++	printf("NABU KEYS: arb=%#x apids=%u pon-apid=%u gpio6-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
+ 	    keys_version, count, keys_pon_apid, keys_gpio_apid,
+ 	    pon, pok, gpio, gok, mode, mok, en, eok, subtype, sok);
+ 	/* GPIO configuration belongs to firmware. Diagnose, never repair it here. */
+ 	unsigned dir = subtype >= 0x10u && subtype <= 0x13u ?
+ 	    mode & 3u : (mode >> 4) & 7u;
+ 	if (!eok || !mok || !sok || !(en & 0x80u) || (dir != 0 && dir != 2)) {
+-		printf("NABU KEYS: GPIO2 not confirmed enabled as input; volume-up withheld, PMIC unchanged\n");
++		printf("NABU KEYS: GPIO6 not confirmed enabled as input; volume-up withheld, PMIC unchanged\n");
+ 		keys_gpio_apid = KEYS_NO_APID;
+ 	}
+ 	if (!pok && !gok) {
+--- /dev/null
++++ b/bsd/dev/nabu_key_chord.h
+@@ -0,0 +1,69 @@
++/*
++ * Nabu volume chord: require confirmed release, then one continuous second.
++ * Caller supplies monotonic nanoseconds and trustworthy switch states.
++ * No hardware or storage access is performed here.
++ */
++#ifndef NABU_KEY_CHORD_H
++#define NABU_KEY_CHORD_H
++
++#define NABU_HOME_HOLD_NS       1000000000ULL
++#define NABU_HOME_TAP_NS        100000000ULL
++#define NABU_HOME_DOWN          1u
++#define NABU_HOME_UP            2u
++
++struct nabu_key_chord {
++	uint64_t started_ns;
++	uint64_t release_ns;
++	bool armed;
++	bool pending;
++	bool home_down;
++};
++
++static unsigned
++nabu_key_chord_step(struct nabu_key_chord *s, bool valid,
++    bool volume_up, bool volume_down, uint64_t now_ns)
++{
++	unsigned events = 0;
++
++	if (s->home_down && (!valid || !volume_up || !volume_down ||
++	    now_ns >= s->release_ns)) {
++		s->home_down = false;
++		events |= NABU_HOME_UP;
++	}
++	if (!valid) {
++		s->armed = false;
++		s->pending = false;
++		return events;
++	}
++	if (!volume_up && !volume_down) {
++		s->armed = true;
++		s->pending = false;
++		return events;
++	}
++	if (!s->armed) {
++		return events;
++	}
++	if (!volume_up || !volume_down) {
++		s->pending = false;
++		return events;
++	}
++	if (!s->pending) {
++		s->started_ns = now_ns;
++		s->pending = true;
++		return events;
++	}
++	if (now_ns < s->started_ns) {
++		s->armed = false;
++		s->pending = false;
++		return events;
++	}
++	if (now_ns - s->started_ns >= NABU_HOME_HOLD_NS) {
++		s->home_down = true;
++		s->release_ns = now_ns + NABU_HOME_TAP_NS;
++		s->armed = false;
++		s->pending = false;
++		events |= NABU_HOME_DOWN;
++	}
++	return events;
++}
++#endif
