@@ -13,6 +13,7 @@ HARNESS = r"""
 #include <stdio.h>
 #include <string.h>
 #include "nabu_touch_input.h"
+typedef uintptr_t vm_offset_t;
 static struct {int slot,down,x,y;} events[64];
 static unsigned emitted;
 static void emit(int s,int d,int x,int y) {
@@ -23,6 +24,8 @@ static uint8_t packet[NVT_POINT_DATA_LEN];
 static int fail_read;
 static unsigned polling_mode, polling_reads, polling_ms, first_down_ms;
 static unsigned polling_abort_ms;
+static uint32_t irq_mock_cfg=1u, irq_mock_status;
+static unsigned irq_poll_active, irq_status_consumed_ms=UINT32_MAX;
 static jmp_buf polling_abort;
 static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
     (void)ctx; assert(tx && n);
@@ -71,11 +74,21 @@ static void checksum(void) {
     packet[NVT_POINT_DATA_LEN-1]=(uint8_t)(0u-sum);
 }
 
-/* Compile the actual GPIO39-gated loop with virtual time and fake GPIO/SPI.
- * Replays delayed touch events, missing ready edges and post-start failures. */
+/* Compile the actual GPIO39 edge-latch and poll path with fake MMIO/SPI.
+ * Replays narrow rising edges that are absent from sampled input levels. */
 #define NSEC_PER_MSEC 1000000u
 #define NABU_TOUCH_IRQ_GPIO 39u
+#define NABU_TLMM_GPIO(pin) ((uint32_t)(pin)*0x1000u)
 #define NABU_TLMM_IO(pin) ((uint32_t)(pin)*0x1000u+4u)
+#define NABU_TLMM_INTR_CFG(pin) ((uint32_t)(pin)*0x1000u+8u)
+#define NABU_TLMM_INTR_STATUS(pin) ((uint32_t)(pin)*0x1000u+12u)
+#define NABU_TLMM_INTR_ENABLE       (1u << 0)
+#define NABU_TLMM_INTR_POLARITY     (1u << 1)
+#define NABU_TLMM_INTR_DETECTION    (3u << 2)
+#define NABU_TLMM_INTR_RAW_STATUS   (1u << 4)
+#define NABU_TLMM_INTR_TARGET       (7u << 5)
+#define NABU_TLMM_INTR_TARGET_APPS  (3u << 5)
+#define NABU_TLMM_INTR_EDGE_RISING  (1u << 2)
 static struct {
     struct nvt_bus bus;
     struct nbu_touch_slots slots;
@@ -96,12 +109,37 @@ static void nbu_sleep_ms(unsigned ms) {
     assert(polling_ms<=31000); /* No unbounded wait on a broken controller. */
 }
 static uint32_t nbu_rd(uintptr_t base,uint32_t off) {
-    assert(base==1 && off==0x27004);
-    if (polling_mode==1)
-        return polling_ms==500 || polling_ms==510 || polling_ms==520;
-    if (polling_mode==3)
-        return polling_ms%10==0;
+    assert(base==1);
+    if(off==NABU_TLMM_INTR_CFG(NABU_TOUCH_IRQ_GPIO)) return irq_mock_cfg;
+    if(off==NABU_TLMM_INTR_STATUS(NABU_TOUCH_IRQ_GPIO)) {
+        if (irq_poll_active) {
+            bool event = (polling_mode==1 &&
+                          (polling_ms==500 || polling_ms==510 || polling_ms==520)) ||
+                         (polling_mode==3 && polling_ms%10==0 &&
+                          irq_status_consumed_ms!=polling_ms);
+            if(event) irq_mock_status|=1u;
+        }
+        return irq_mock_status;
+    }
+    if(off==NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) return 0; /* Edge is narrower than the sampling interval. */
+    assert(!"unexpected GPIO register read");
     return 0;
+}
+static void nbu_wr(uintptr_t base,uint32_t off,uint32_t value) {
+    assert(base==1);
+    if(off==NABU_TLMM_INTR_STATUS(NABU_TOUCH_IRQ_GPIO)) {
+        /* The real SM8150 GPIO interrupt status is write-zero-to-clear. */
+        irq_mock_status &= value;
+        irq_status_consumed_ms=polling_ms;
+        return;
+    }
+    if(off==NABU_TLMM_INTR_CFG(NABU_TOUCH_IRQ_GPIO)) {
+        irq_mock_cfg=value;
+        irq_poll_active=1;
+        irq_status_consumed_ms=UINT32_MAX;
+        return;
+    }
+    assert(!"unexpected GPIO register write");
 }
 static void nabu_hid_touch(int slot,int down,int x,int y) {
     if(down && first_down_ms==UINT32_MAX) first_down_ms=polling_ms;
@@ -109,13 +147,18 @@ static void nabu_hid_touch(int slot,int down,int x,int y) {
 }
 static int polling_log(const char *format,...) {(void)format;return 0;}
 #define printf polling_log
-/* ACTUAL_POLLING_LOOP */
+/* ACTUAL_IRQ_AND_POLLING */
 #undef printf
 
 static void replay_polling(unsigned mode) {
     memset(&ts,0,sizeof(ts));ts.north=1;ts.bus.xfer=transfer;
     polling_mode=mode;polling_reads=polling_ms=emitted=0;
     first_down_ms=UINT32_MAX;polling_abort_ms=0;
+    irq_mock_cfg=1u;irq_mock_status=0;irq_poll_active=0;
+    irq_status_consumed_ms=UINT32_MAX;
+    const uint32_t expected_irq_cfg = NABU_TLMM_INTR_POLARITY |
+        NABU_TLMM_INTR_EDGE_RISING | NABU_TLMM_INTR_RAW_STATUS |
+        NABU_TLMM_INTR_TARGET_APPS;
     if(mode==1) {
         polling_abort_ms=1000;
         if(setjmp(polling_abort)==0) nbu_poll_points();
@@ -133,6 +176,10 @@ static void replay_polling(unsigned mode) {
         assert(polling_reads==33 && first_down_ms==0 && emitted==2);
         assert(!events[1].down && ts.slots.active==0 && polling_ms==320);
     }
+    assert((irq_mock_cfg & (NABU_TLMM_INTR_ENABLE |
+        NABU_TLMM_INTR_POLARITY | NABU_TLMM_INTR_DETECTION |
+        NABU_TLMM_INTR_RAW_STATUS | NABU_TLMM_INTR_TARGET)) == expected_irq_cfg);
+    assert(irq_mock_status==0); /* Every latched test edge was acknowledged. */
     polling_mode=0;polling_abort_ms=0;
 }
 int main(void) {
@@ -201,7 +248,7 @@ int main(void) {
     fw[0]=1;fw[1]=254;fw[4]=6;fw[5]=64;fw[6]=10;fw[7]=0;
     assert(!nvt_parse_fwinfo(fw,sizeof(fw),&info)&&info.valid&&info.max_x==1600&&info.max_y==2560);
     replay_polling(1);replay_polling(2);replay_polling(3);
-    puts("Actual GPIO39-gated loop replay passed: no-ready performs zero point reads, ready frames reach HID, bad frames release contacts.");
+    puts("Actual GPIO39 edge-latch gated loop replay passed: sub-sample rising edges reach SPI/HID; no edge performs zero point reads; bad frames release contacts.");
     puts("Actual touch helpers passed: SM8150 HWCG/votes/tiles/mux, native coordinates, HID slots/releases, checksum/recovery, bounded stack buffers.");
     return 0;
 }
@@ -230,15 +277,25 @@ def main():
     assert "last_pio_irq" in touch and "last_pio_rx_bytes" in touch
     assert "if (nbu_probe_chip() || nbu_upload_firmware()) {\n\t\tnbu_poll_points();\n\t}" in touch
     assert "nvt_start_scanning" not in touch
+    irq_start = touch.index("static bool\nnbu_touch_irq_prepare(void)\n")
+    irq_end = touch.index("\nstatic uint32_t\nnbu_se_rd(", irq_start)
     poll_start = touch.index("static void\nnbu_poll_points(void)\n")
     poll_end = touch.index("\nstatic void\nnbu_touch_thread(", poll_start)
     polling_loop = touch[poll_start:poll_end]
-    assert "nbu_wr(" not in polling_loop
-    harness = HARNESS.replace("/* ACTUAL_POLLING_LOOP */", polling_loop)
+    irq_helpers = touch[irq_start:irq_end]
+    assert "NABU_TLMM_INTR_STATUS(NABU_TOUCH_IRQ_GPIO)" in touch
+    assert "NABU_TLMM_INTR_EDGE_RISING" in touch
+    assert "NABU_TLMM_INTR_RAW_STATUS" in touch
+    assert "parent=masked" in touch
+    assert "return (observed & mask) == (cfg & mask)" in touch
+    assert "nbu_touch_irq_take()" in polling_loop
+    assert "irq_consumed" not in polling_loop
+    harness = HARNESS.replace("/* ACTUAL_IRQ_AND_POLLING */",
+                              irq_helpers + polling_loop)
     assert "ts.clock_level" in touch and "nbu_touch_xo_level(levels)" in touch
     assert "ts.east = ml_io_map(NBU_TOUCH_EAST_PA" in touch
     assert "ts.north = ml_io_map(NBU_TOUCH_NORTH_PA" in touch
-    assert "bool frame_ready = irq_level && !irq_consumed;" in touch
+    assert "bool frame_ready = nbu_touch_irq_take();" in polling_loop
     assert "if (!frame_ready)" in touch
     assert "nbu_sleep_ms(1)" in touch and "i < 100;" not in touch
     assert "nabu_rpmh_vreg_enable" not in touch and "nbu_pin(90" not in touch
