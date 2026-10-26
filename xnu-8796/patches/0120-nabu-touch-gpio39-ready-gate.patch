@@ -1,0 +1,93 @@
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -396,32 +396,51 @@
+ 	uint8_t frame[NVT_POINT_DATA_LEN];
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+ 	unsigned good = 0, bad = 0, consecutive = 0;
+ 	uint64_t startup_deadline, state_deadline = 0;
+-	unsigned irq_high = 0, irq_low = 0;
+-
+-	/* Firmware-ready may still mean REK (0xa1). Linux reads point data
+-	 * from its rising-edge IRQ, not immediately after the download. Give
+-	 * this polling bring-up one bounded settling interval; never publish
+-	 * a frame that fails checksum or contact validation. No reset retries. */
++	unsigned irq_high = 0, irq_low = 0, irq_events = 0;
++	bool irq_consumed = false;
++
++	/* The vendor thread reads only after the rising-edge GPIO39 IRQ. XNU
++	 * has not yet registered the TLMM/GIC interrupt domain, so sample the
++	 * input for this bounded diagnostic window and consume each high pulse
++	 * once. Never read/publish a point frame while data-ready is low. */
+ 	clock_interval_to_deadline(30000u, NSEC_PER_MSEC, &startup_deadline);
+ 
+-	printf("NABU TOUCH: continuous HID polling enabled, native=%ux%u\n",
++	printf("NABU TOUCH: GPIO39-gated diagnostic enabled, native=%ux%u window=30000ms\n",
+ 	    NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT);
+ 	for (unsigned i = 0;; i++) {
+ 		uint64_t now = mach_absolute_time();
+ 		unsigned irq_level = nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u;
+ 		irq_high += irq_level;
+ 		irq_low += !irq_level;
+-		if (now >= state_deadline) {
++		if (!irq_level) {
++			irq_consumed = false;
++		}
++		bool frame_ready = irq_level && !irq_consumed;
++		if (frame_ready) {
++			irq_consumed = true;
++			irq_events++;
++		}
++		if (!frame_ready && now >= state_deadline) {
+ 			uint8_t reset[5] = {0};
+ 			int state_read = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u,
+ 			    reset, sizeof(reset));
+-			printf("NABU TOUCH: state poll=%u read=%d reset=%02x %02x %02x %02x %02x irq=%u high=%u low=%u good=%u bad=%u\n",
++			printf("NABU TOUCH: state poll=%u read=%d reset=%02x %02x %02x %02x %02x irq=%u high=%u low=%u events=%u good=%u bad=%u\n",
+ 			    i, state_read, reset[0], reset[1], reset[2], reset[3], reset[4],
+-			    irq_level, irq_high, irq_low, good, bad);
++			    irq_level, irq_high, irq_low, irq_events, good, bad);
+ 			clock_interval_to_deadline(1000u, NSEC_PER_MSEC, &state_deadline);
+ 		}
++		if (now >= startup_deadline) {
++			printf("NABU TOUCH: diagnostic window ended events=%u good=%u bad=%u; contacts released\n",
++			    irq_events, good, bad);
++			break;
++		}
++		if (!frame_ready) {
++			nbu_sleep_ms(1);
++			continue;
++		}
++
+ 		int n = -1;
+ 		int parsed_count = -1;
+ 		int publish_status = -1;
+ 		struct nvt_frame_diag diag;
+@@ -477,18 +496,19 @@
+ 				    diag.checksum_sum, diag.checksum_expected, diag.checksum_observed,
+ 				    ts.spi.last_pio_irq, ts.spi.last_pio_status, ts.spi.last_pio_rx_status,
+ 				    (unsigned)ts.spi.last_pio_tx_bytes, (unsigned)ts.spi.last_pio_rx_bytes);
+ 			}
+-			if (consecutive >= 32 && mach_absolute_time() >= startup_deadline) {
+-				printf("NABU TOUCH: stopping after startup grace and %u consecutive failures; good=%u contacts released\n",
+-				    consecutive, good);
+-				break;
+-			}
++		}
++		if (consecutive >= 32) {
++			printf("NABU TOUCH: stopping after %u consecutive IRQ-frame failures; events=%u good=%u contacts released\n",
++			    consecutive, irq_events, good);
++			break;
+ 		}
+ 		if ((i % 1000u) == 0) {
+-			printf("NABU TOUCH: HID poll good=%u bad=%u active=%#x\n", good, bad, ts.slots.active);
+-		}
+-		nbu_sleep_ms(10);
++			printf("NABU TOUCH: IRQ poll events=%u good=%u bad=%u active=%#x\n",
++			    irq_events, good, bad, ts.slots.active);
++		}
++		nbu_sleep_ms(1);
+ 	}
+ 	nbu_touch_release(&ts.slots, nabu_hid_touch);
+ 	printf("NABU TOUCH: polling done good=%u bad=%u\n", good, bad);
+ }
