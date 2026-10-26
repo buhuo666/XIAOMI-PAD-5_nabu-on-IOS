@@ -127,9 +127,10 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 +			    irq_level, irq_high, irq_low, irq_latched, irq_events, good, bad);
  			clock_interval_to_deadline(1000u, NSEC_PER_MSEC, &state_deadline);
  		}
- 		if (good == 0 && now >= startup_deadline) {
+-		if (now >= startup_deadline) {
 -			printf("NABU TOUCH: diagnostic window ended events=%u good=%u bad=%u; contacts released\n",
 -			    irq_events, good, bad);
++		if (good == 0 && now >= startup_deadline) {
 +			printf("NABU TOUCH: diagnostic window ended line-high=%u line-low=%u latched=%u events=%u good=%u bad=%u; contacts released\n",
 +			    irq_high, irq_low, irq_latched, irq_events, good, bad);
  			break;
