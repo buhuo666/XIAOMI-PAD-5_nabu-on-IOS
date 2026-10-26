@@ -1,0 +1,56 @@
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -396,10 +396,31 @@
+ 	uint8_t frame[NVT_POINT_DATA_LEN];
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+ 	unsigned good = 0, bad = 0, consecutive = 0;
++	uint64_t startup_deadline, state_deadline = 0;
++	unsigned irq_high = 0, irq_low = 0;
++
++	/* Firmware-ready may still mean REK (0xa1). Linux reads point data
++	 * from its rising-edge IRQ, not immediately after the download. Give
++	 * this polling bring-up one bounded settling interval; never publish
++	 * a frame that fails checksum or contact validation. No reset retries. */
++	clock_interval_to_deadline(30000u, NSEC_PER_MSEC, &startup_deadline);
+ 
+ 	printf("NABU TOUCH: continuous HID polling enabled, native=%ux%u\n",
+ 	    NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT);
+ 	for (unsigned i = 0;; i++) {
++		uint64_t now = mach_absolute_time();
++		unsigned irq_level = nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u;
++		irq_high += irq_level;
++		irq_low += !irq_level;
++		if (now >= state_deadline) {
++			uint8_t reset[5] = {0};
++			int state_read = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u,
++			    reset, sizeof(reset));
++			printf("NABU TOUCH: state poll=%u read=%d reset=%02x %02x %02x %02x %02x irq=%u high=%u low=%u good=%u bad=%u\n",
++			    i, state_read, reset[0], reset[1], reset[2], reset[3], reset[4],
++			    irq_level, irq_high, irq_low, good, bad);
++			clock_interval_to_deadline(1000u, NSEC_PER_MSEC, &state_deadline);
++		}
+ 		int n = -1;
+ 		int parsed_count = -1;
+ 		int publish_status = -1;
+@@ -418,6 +439,9 @@
+ 					printf("NABU TOUCH: point read recovered after %u errors\n", consecutive);
+ 				}
+ 				consecutive = 0;
++				if (!good) {
++					printf("NABU TOUCH: first-valid-frame poll=%u contacts=%d\n", i, n);
++				}
+ 				good++;
+ 			} else {
+ 				n = -1;
+@@ -454,8 +478,9 @@
+ 				    ts.spi.last_pio_irq, ts.spi.last_pio_status, ts.spi.last_pio_rx_status,
+ 				    (unsigned)ts.spi.last_pio_tx_bytes, (unsigned)ts.spi.last_pio_rx_bytes);
+ 			}
+-			if (consecutive >= 32) {
+-				printf("NABU TOUCH: stopping after 32 consecutive failures; contacts released\n");
++			if (consecutive >= 32 && mach_absolute_time() >= startup_deadline) {
++				printf("NABU TOUCH: stopping after startup grace and %u consecutive failures; good=%u contacts released\n",
++				    consecutive, good);
+ 				break;
+ 			}
+ 		}

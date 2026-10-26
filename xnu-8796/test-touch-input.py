@@ -19,19 +19,93 @@ static void emit(int s,int d,int x,int y) {
 }
 static uint8_t packet[NVT_POINT_DATA_LEN];
 static int fail_read;
+static unsigned polling_mode, polling_reads, polling_ms, first_down_ms;
 static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
     (void)ctx; assert(tx && n);
     if(tx[0]==0xff && n==3 && !rx) return 0;
     if(fail_read) return fail_read;
     if(rx) {
         memset(rx,0,n);
-        if(n==NVT_POINT_DATA_LEN+2) memcpy(rx+2,packet,sizeof(packet));
+        if(n==NVT_POINT_DATA_LEN+2) {
+            if (!polling_mode) {
+                memcpy(rx+2,packet,sizeof(packet));
+            } else {
+                polling_reads++;
+                if ((polling_mode==1 && polling_ms>=500 && polling_ms<520) ||
+                    (polling_mode==3 && polling_ms<30000)) {
+                    if (polling_mode==1) {
+                        rx[2]=9;rx[3]=50;rx[4]=62;rx[5]=8;rx[6]=1;rx[7]=1;
+                    }
+                    unsigned sum=0;
+                    for(unsigned i=2;i<n-1;i++)sum+=rx[i];
+                    rx[n-1]=(uint8_t)(0u-sum);
+                } else {
+                    memset(rx+2,0xff,NVT_POINT_DATA_LEN);
+                    rx[n-1]=0x1b; /* Synthetic startup frame with bad checksum. */
+                }
+            }
+        }
+        if(polling_mode && n==7 && tx[0]==0x60)
+            rx[2]=polling_ms<500?0xa1:0xa3;
     }
     return 0;
 }
 static void checksum(void) {
     unsigned sum=0; for(unsigned i=0;i<NVT_POINT_DATA_LEN-1;i++) sum+=packet[i];
     packet[NVT_POINT_DATA_LEN-1]=(uint8_t)(0u-sum);
+}
+
+/* Compile the actual kernel polling loop with virtual time and a fake bus.
+ * Replays startup checksum errors followed by a delayed valid touch, an
+ * indefinitely invalid controller, and a failure after successful startup. */
+#define NSEC_PER_MSEC 1000000u
+#define NABU_TOUCH_IRQ_GPIO 39u
+#define NABU_TLMM_IO(pin) ((uint32_t)(pin)*0x1000u+4u)
+static struct {
+    struct nvt_bus bus;
+    struct nbu_touch_slots slots;
+    uintptr_t north;
+    struct {
+        unsigned last_pio_irq, last_pio_status, last_pio_rx_status;
+        size_t last_pio_tx_bytes, last_pio_rx_bytes;
+    } spi;
+} ts;
+static uint64_t mach_absolute_time(void) {return polling_ms;}
+static void clock_interval_to_deadline(unsigned ms,unsigned scale,uint64_t *out) {
+    assert(scale==NSEC_PER_MSEC);*out=(uint64_t)polling_ms+ms;
+}
+static void nbu_sleep_ms(unsigned ms) {
+    assert(ms==10);polling_ms+=ms;
+    assert(polling_ms<=31000); /* No unbounded wait on a broken controller. */
+}
+static uint32_t nbu_rd(uintptr_t base,uint32_t off) {
+    assert(base==1 && off==0x27004);return (polling_ms/100)&1;
+}
+static void nabu_hid_touch(int slot,int down,int x,int y) {
+    if(down && first_down_ms==UINT32_MAX) first_down_ms=polling_ms;
+    emit(slot,down,x,y);
+}
+static int polling_log(const char *format,...) {(void)format;return 0;}
+#define printf polling_log
+/* ACTUAL_POLLING_LOOP */
+#undef printf
+
+static void replay_polling(unsigned mode) {
+    memset(&ts,0,sizeof(ts));ts.north=1;ts.bus.xfer=transfer;
+    polling_mode=mode;polling_reads=polling_ms=emitted=0;first_down_ms=UINT32_MAX;
+    nbu_poll_points();
+    assert(polling_reads>32 && ts.slots.active==0);
+    if(mode==1) {
+        assert(first_down_ms==500 && emitted==3);
+        assert(events[0].down && events[0].x==800 && events[0].y==1000);
+        assert(!events[2].down);
+        assert(polling_ms>=30000 && polling_ms<=30010);
+    } else if(mode==2) {
+        assert(emitted==0 && polling_ms>=30000 && polling_ms<=30010);
+    } else {
+        assert(emitted==0 && polling_ms==30310);
+    }
+    polling_mode=0;
 }
 int main(void) {
     assert(NBU_TOUCH_EAST_PA==0x03500000u && NBU_TOUCH_NORTH_PA==0x03900000u);
@@ -98,6 +172,8 @@ int main(void) {
     uint8_t fw[39]={0};struct nvt_info info;
     fw[0]=1;fw[1]=254;fw[4]=6;fw[5]=64;fw[6]=10;fw[7]=0;
     assert(!nvt_parse_fwinfo(fw,sizeof(fw),&info)&&info.valid&&info.max_x==1600&&info.max_y==2560);
+    replay_polling(1);replay_polling(2);replay_polling(3);
+    puts("Actual polling loop replay passed: delayed touch reaches HID, bad startup is bounded, runtime error limit releases contacts.");
     puts("Actual touch helpers passed: SM8150 HWCG/votes/tiles/mux, native coordinates, HID slots/releases, checksum/recovery, bounded stack buffers.");
     return 0;
 }
@@ -126,6 +202,11 @@ def main():
     assert "last_pio_irq" in touch and "last_pio_rx_bytes" in touch
     assert "if (nbu_probe_chip() || nbu_upload_firmware()) {\n\t\tnbu_poll_points();\n\t}" in touch
     assert "nvt_start_scanning" not in touch
+    poll_start = touch.index("static void\nnbu_poll_points(void)\n")
+    poll_end = touch.index("\nstatic void\nnbu_touch_thread(", poll_start)
+    polling_loop = touch[poll_start:poll_end]
+    assert "nbu_wr(" not in polling_loop
+    harness = HARNESS.replace("/* ACTUAL_POLLING_LOOP */", polling_loop)
     assert "ts.clock_level" in touch and "nbu_touch_xo_level(levels)" in touch
     assert "ts.east = ml_io_map(NBU_TOUCH_EAST_PA" in touch
     assert "ts.north = ml_io_map(NBU_TOUCH_NORTH_PA" in touch
@@ -138,7 +219,7 @@ def main():
         out = Path(tmp)
         (out / "sys").mkdir()
         (out / "sys/systm.h").write_text("#include <string.h>\n")
-        (out / "touch.c").write_text(HARNESS)
+        (out / "touch.c").write_text(harness)
         exe = out / "touch-test"
         subprocess.run([args.cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                         "-I", str(dev), "-I", str(out),
