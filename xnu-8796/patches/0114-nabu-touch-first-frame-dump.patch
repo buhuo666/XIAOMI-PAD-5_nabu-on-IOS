@@ -1,0 +1,19 @@
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -437,6 +437,16 @@
+ 			nbu_touch_release(&ts.slots, nabu_hid_touch);
+ 			bad++;
+ 			if (++consecutive == 1) {
++				if (diag.stage == 3) {
++					static const char digits[] = "0123456789abcdef";
++					char hex[NVT_POINT_DATA_LEN * 2 + 1];
++					for (unsigned k = 0; k < NVT_POINT_DATA_LEN; ++k) {
++						hex[k * 2] = digits[frame[k] >> 4];
++						hex[k * 2 + 1] = digits[frame[k] & 15];
++					}
++					hex[sizeof(hex) - 1] = '\0';
++					printf("NABU TOUCH: first-frame-data=%s\n", hex);
++				}
+ 				printf("NABU TOUCH: frame spi=%d stage=%u page=%d xfer=%d parsed=%d publish=%d sum=%#x expected=%#x observed=%#x m_irq=%#x m_status=%#x rx_status=%#x tx=%u rx=%u\n",
+ 				    frame_status, diag.stage, diag.page_status, diag.transfer_status,
+ 				    parsed_count, publish_status,

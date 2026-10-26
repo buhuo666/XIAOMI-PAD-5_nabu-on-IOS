@@ -118,6 +118,7 @@ def main():
     assert "nbu_touch_release(&ts.slots, nabu_hid_touch)" in touch
     assert "nvt_read_point_frame_diag(&ts.bus, frame, &diag)" in touch
     assert "parsed=%d publish=%d" in touch
+    assert "first-frame-data=%s" in touch
     geni = (source / "bsd/dev/nabu_geni_spi.c").read_text(encoding="utf-8")
     assert "last_pio_irq |= st" in geni
     assert "last_pio_rx_bytes = len - x.rx_rem" in geni
