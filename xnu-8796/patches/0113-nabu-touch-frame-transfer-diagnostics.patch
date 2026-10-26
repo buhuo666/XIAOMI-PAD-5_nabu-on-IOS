@@ -1,0 +1,204 @@
+--- a/bsd/dev/nabu_geni_spi.c
++++ b/bsd/dev/nabu_geni_spi.c
+@@ -176,6 +176,7 @@
+ static void handle_rx(struct geni_spi *s, struct xfer *x) {
+     unsigned bpw = bytes_per_word(s);
+     uint32_t st = rd(s, SE_GENI_RX_FIFO_STATUS);
++    s->last_pio_rx_status = st;
+     size_t bytes = (size_t)(st & GENI_RX_WC_MASK) * bpw;
+     if (st & GENI_RX_LAST) {
+         unsigned valid = (st >> GENI_RX_LAST_VALID_SHIFT) & GENI_RX_LAST_VALID_MASK;
+@@ -294,6 +295,11 @@
+ 
+ int geni_spi_transfer(struct geni_spi *s, const uint8_t *tx, uint8_t *rx, size_t len, int keep_cs) {
+     if (!s || !len || len > GENI_TRANS_LEN_MASK || (!tx && !rx) || !s->cur_speed_hz) return GENI_ERR_PARAM;
++    s->last_pio_irq = 0;
++    s->last_pio_status = 0;
++    s->last_pio_rx_status = 0;
++    s->last_pio_tx_bytes = 0;
++    s->last_pio_rx_bytes = 0;
+     if (s->cur_bpw != 8) {
+         set_word_len(s, 8, !(s->last_mode & GENI_SPI_LSB_FIRST));
+         s->cur_bpw = 8;
+@@ -320,6 +326,7 @@
+             if (s->se.delay_us) s->se.delay_us(s->se.ctx, 1);
+             continue;
+         }
++        s->last_pio_irq |= st;
+         wr(s, SE_GENI_M_IRQ_CLEAR, st);
+         if (st & GENI_M_ERRORS) {
+             status = GENI_ERR_IO;
+@@ -329,11 +336,17 @@
+         if ((st & GENI_M_TX_FIFO_WATERMARK) && tx) handle_tx(s, &x);
+         if (st & GENI_M_CMD_DONE) {
+             if (rx && x.rx_rem) handle_rx(s, &x);
++            s->last_pio_tx_bytes = len - x.tx_rem;
++            s->last_pio_rx_bytes = len - x.rx_rem;
++            s->last_pio_status = rd(s, SE_GENI_STATUS);
+             status = (x.tx_rem || x.rx_rem) ? GENI_ERR_IO : 0;
+             if (x.tx_rem) wr(s, SE_GENI_TX_WATERMARK_REG, 0);
+             return status;
+         }
+     }
++    s->last_pio_tx_bytes = len - x.tx_rem;
++    s->last_pio_rx_bytes = len - x.rx_rem;
++    s->last_pio_status = rd(s, SE_GENI_STATUS);
+     s->snap_dma_tx = rd(s, SE_DMA_TX_IRQ_STAT);
+     s->snap_dma_rx = rd(s, SE_DMA_RX_IRQ_STAT);
+     s->snap_dma_txin = rd(s, SE_DMA_TX_LEN_IN);
+--- a/bsd/dev/nabu_geni_spi.h
++++ b/bsd/dev/nabu_geni_spi.h
+@@ -191,6 +191,8 @@
+     uint32_t snap_irq, snap_status, snap_txfs, snap_rxfs;  // registers read just before a timed-out transfer is cancelled
+     uint32_t snap_dma_tx, snap_dma_rx, snap_dma_txin, snap_dma_rxin;
+     int snap_valid;
++    uint32_t last_pio_irq, last_pio_status, last_pio_rx_status;
++    size_t last_pio_tx_bytes, last_pio_rx_bytes;
+     uint32_t last_tx_in, last_rx_in;                  // SE_DMA_{TX,RX}_LEN_IN after the latest DMA transfer: bytes the engine moved
+     // SE DMA mode (for engines whose FIFO interface is disabled and that cannot be re-enabled from the host): transfers go
+     // through two caller-provided buffers that the serial engine's DMA master can reach at tx_phys/rx_phys. The caller owns
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -9,7 +9,7 @@
+ 	if (bus == NULL || bus->xfer == NULL || len == 0) {
+ 		return -1;
+ 	}
+-	return bus->xfer(bus->ctx, tx, rx, len) == 0 ? 0 : -1;
++	return bus->xfer(bus->ctx, tx, rx, len);
+ }
+ 
+ int
+@@ -65,23 +65,45 @@
+ int
+ nvt_read_point_frame(const struct nvt_bus *bus, uint8_t frame[NVT_POINT_DATA_LEN])
+ {
+-	if (frame == NULL || nvt_set_page(bus, NVT_EVENT_BUF_ADDR) != 0) {
+-		return -1;
+-	}
++	return nvt_read_point_frame_diag(bus, frame, NULL);
++}
++
++int
++nvt_read_point_frame_diag(const struct nvt_bus *bus,
++    uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag)
++{
++	if (diag) {
++		memset(diag, 0, sizeof(*diag));
++		diag->stage = 1;
++	}
++	if (frame == NULL) {
++		return -1;
++	}
++	int rc = nvt_set_page(bus, NVT_EVENT_BUF_ADDR);
++	if (diag) diag->page_status = rc;
++	if (rc != 0) return rc;
+ 	uint8_t tx[NVT_POINT_DATA_LEN + 2];
+ 	uint8_t rx[NVT_POINT_DATA_LEN + 2];
+ 	memset(tx, 0, sizeof(tx));
+-	if (nvt_xfer(bus, tx, rx, sizeof(tx)) != 0) {
+-		return -1;
+-	}
++	if (diag) diag->stage = 2;
++	rc = nvt_xfer(bus, tx, rx, sizeof(tx));
++	if (diag) diag->transfer_status = rc;
++	if (rc != 0) return rc;
+ 	memcpy(frame, rx + 2, NVT_POINT_DATA_LEN);
+ 	/* nabu vendor POINT_DATA_CHECKSUM: bytes 1..65 (without the command)
+ 	 * sum to zero. Recovery packets are not touch reports. */
+ 	unsigned checksum = 0;
+-	for (unsigned i = 0; i < NVT_POINT_DATA_LEN; ++i) {
++	for (unsigned i = 0; i < NVT_POINT_DATA_LEN - 1; ++i) {
+ 		checksum += frame[i];
+ 	}
+-	if (checksum & 0xffu) {
++	uint8_t expected = (uint8_t)(0u - checksum);
++	if (diag) {
++		diag->stage = 3;
++		diag->checksum_sum = (uint8_t)checksum;
++		diag->checksum_expected = expected;
++		diag->checksum_observed = frame[NVT_POINT_DATA_LEN - 1];
++	}
++	if (expected != frame[NVT_POINT_DATA_LEN - 1]) {
+ 		return -1;
+ 	}
+ 	unsigned same = 0;
+@@ -89,8 +111,10 @@
+ 		same += frame[i] == frame[0];
+ 	}
+ 	if (same == 6 && (frame[0] == 0x77 || frame[0] == 0xfd || frame[0] == 0xfe)) {
+-		return -1;
+-	}
++		if (diag) diag->stage = 4;
++		return -1;
++	}
++	if (diag) diag->stage = 5;
+ 	return 0;
+ }
+ 
+--- a/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/nabu_nt36523.h
+@@ -41,6 +41,15 @@
+ 	int pressure;
+ };
+ 
++struct nvt_frame_diag {
++	unsigned stage;
++	int page_status;
++	int transfer_status;
++	uint8_t checksum_sum;
++	uint8_t checksum_expected;
++	uint8_t checksum_observed;
++};
++
+ struct nvt_info {
+ 	uint8_t fw_ver;
+ 	uint8_t fw_type;
+@@ -61,6 +70,8 @@
+ 
+ /* Read one 65-byte point frame from the event buffer. */
+ int nvt_read_point_frame(const struct nvt_bus *bus, uint8_t frame[NVT_POINT_DATA_LEN]);
++int nvt_read_point_frame_diag(const struct nvt_bus *bus,
++    uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag);
+ 
+ /*
+  * Parse a point frame into contacts.  Only id/event combinations 1 and 2 are
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -401,10 +401,19 @@
+ 	    NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT);
+ 	for (unsigned i = 0;; i++) {
+ 		int n = -1;
+-		if (nvt_read_point_frame(&ts.bus, frame) == 0) {
+-			n = nvt_parse_points(frame, NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT, contacts,
++		int parsed_count = -1;
++		int publish_status = -1;
++		struct nvt_frame_diag diag;
++		int frame_status = nvt_read_point_frame_diag(&ts.bus, frame, &diag);
++		if (frame_status == 0) {
++			parsed_count = nvt_parse_points(frame, NBU_TOUCH_WIDTH, NBU_TOUCH_HEIGHT, contacts,
+ 			    NVT_MAX_FINGERS);
+-			if (n >= 0 && nbu_touch_publish(&ts.slots, contacts, n, nabu_hid_touch) == 0) {
++			n = parsed_count;
++			if (n >= 0) {
++				publish_status = nbu_touch_publish(&ts.slots, contacts, n,
++				    nabu_hid_touch);
++			}
++			if (n >= 0 && publish_status == 0) {
+ 				if (consecutive) {
+ 					printf("NABU TOUCH: point read recovered after %u errors\n", consecutive);
+ 				}
+@@ -428,8 +437,12 @@
+ 			nbu_touch_release(&ts.slots, nabu_hid_touch);
+ 			bad++;
+ 			if (++consecutive == 1) {
+-				printf("NABU TOUCH: invalid/failed point frame %u irq=%#x status=%#x\n",
+-				    i, nbu_rd(ts.se, NABU_SE_IRQ_STATUS), nbu_rd(ts.se, NABU_SE_STATUS));
++				printf("NABU TOUCH: frame spi=%d stage=%u page=%d xfer=%d parsed=%d publish=%d sum=%#x expected=%#x observed=%#x m_irq=%#x m_status=%#x rx_status=%#x tx=%u rx=%u\n",
++				    frame_status, diag.stage, diag.page_status, diag.transfer_status,
++				    parsed_count, publish_status,
++				    diag.checksum_sum, diag.checksum_expected, diag.checksum_observed,
++				    ts.spi.last_pio_irq, ts.spi.last_pio_status, ts.spi.last_pio_rx_status,
++				    (unsigned)ts.spi.last_pio_tx_bytes, (unsigned)ts.spi.last_pio_rx_bytes);
+ 			}
+ 			if (consecutive >= 32) {
+ 				printf("NABU TOUCH: stopping after 32 consecutive failures; contacts released\n");

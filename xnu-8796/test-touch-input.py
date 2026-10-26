@@ -22,7 +22,7 @@ static int fail_read;
 static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
     (void)ctx; assert(tx && n);
     if(tx[0]==0xff && n==3 && !rx) return 0;
-    if(fail_read) return -1;
+    if(fail_read) return fail_read;
     if(rx) {
         memset(rx,0,n);
         if(n==NVT_POINT_DATA_LEN+2) memcpy(rx+2,packet,sizeof(packet));
@@ -75,18 +75,24 @@ int main(void) {
 
     struct nvt_bus bus={.xfer=transfer};
     uint8_t raw[NVT_POINT_DATA_LEN], big[257];
+    struct nvt_frame_diag diag;
     packet[0]=(1u<<3)|1; packet[1]=99;packet[2]=159;packet[3]=0xff;
     packet[4]=1;packet[5]=1;checksum();
-    assert(!nvt_read_point_frame(&bus,raw));
+    assert(!nvt_read_point_frame_diag(&bus,raw,&diag) && diag.stage==5);
     assert(nvt_parse_points(raw,1600,2560,p,2)==1 && p[0].x==1599 && p[0].y==2559);
     raw[1]=100;raw[3]=0x0f; assert(nvt_parse_points(raw,1600,2560,p,2)==0);
-    packet[10]^=1;assert(nvt_read_point_frame(&bus,raw)==-1);
+    packet[10]^=1;
+    assert(nvt_read_point_frame_diag(&bus,raw,&diag)==-1 && diag.stage==3);
+    assert(diag.checksum_expected!=diag.checksum_observed);
+    packet[10]^=1;
     memset(packet,0,sizeof(packet));checksum();assert(!nvt_read_point_frame(&bus,raw));
     for(unsigned i=0;i<6;i++){packet[i]=0x77;} checksum();
     assert(nvt_read_point_frame(&bus,raw)==-1);
     for(unsigned i=0;i<6;i++){packet[i]=0xfd;} checksum();
     assert(nvt_read_point_frame(&bus,raw)==-1);
-    fail_read=1; assert(nvt_read_point_frame(&bus,raw)==-1);fail_read=0;
+    fail_read=-110;
+    assert(nvt_read_point_frame_diag(&bus,raw,&diag)==-110 && diag.stage==2);
+    assert(diag.transfer_status==-110);fail_read=0;
     assert(nvt_read_addr(&bus,0,big,sizeof(big))==-1);
     assert(nvt_write_addr(&bus,0,big,sizeof(big))==-1);
     uint8_t fw[39]={0};struct nvt_info info;
@@ -108,8 +114,15 @@ def main():
     touch = (dev / "nabu_touch.c").read_text(encoding="utf-8")
     hid = (source / "iokit/Kernel/arm/hid/NabuHID.cpp").read_text(encoding="utf-8")
     assert "nbu_touch_branch_ready(branches[i].off, v," in touch
-    assert "nbu_touch_publish(&ts.slots, contacts, n, nabu_hid_touch)" in touch
+    assert "publish_status = nbu_touch_publish(&ts.slots, contacts, n," in touch
     assert "nbu_touch_release(&ts.slots, nabu_hid_touch)" in touch
+    assert "nvt_read_point_frame_diag(&ts.bus, frame, &diag)" in touch
+    assert "parsed=%d publish=%d" in touch
+    geni = (source / "bsd/dev/nabu_geni_spi.c").read_text(encoding="utf-8")
+    assert "last_pio_irq |= st" in geni
+    assert "last_pio_rx_bytes = len - x.rx_rem" in geni
+    assert "nvt_read_point_frame_diag(&ts.bus, frame, &diag)" in touch
+    assert "last_pio_irq" in touch and "last_pio_rx_bytes" in touch
     assert "ts.clock_level" in touch and "nbu_touch_xo_level(levels)" in touch
     assert "ts.east = ml_io_map(NBU_TOUCH_EAST_PA" in touch
     assert "ts.north = ml_io_map(NBU_TOUCH_NORTH_PA" in touch
