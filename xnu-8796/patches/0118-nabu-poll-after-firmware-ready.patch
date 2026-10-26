@@ -1,6 +1,9 @@
 --- a/bsd/dev/nabu_nt36523.c
 +++ b/bsd/dev/nabu_nt36523.c
-@@ -123,75 +123,0 @@
+@@ -120,81 +120,6 @@
+ 	return 0;
+ }
+ 
 -static int
 -nvt_set_custom_command(const struct nvt_bus *bus, uint8_t command,
 -    uint16_t value, struct nvt_scan_diag *diag)
@@ -76,9 +79,15 @@
 -	return 0;
 -}
 -
+ int
+ nvt_parse_points(const uint8_t frame[NVT_POINT_DATA_LEN], uint16_t max_x,
+     uint16_t max_y, struct nvt_contact *out, int max)
 --- a/bsd/dev/nabu_nt36523.h
 +++ b/bsd/dev/nabu_nt36523.h
-@@ -53,7 +53,0 @@
+@@ -50,13 +50,6 @@
+ 	uint8_t checksum_observed;
+ };
+ 
 -struct nvt_scan_diag {
 -	unsigned stage;
 -	uint8_t command;
@@ -86,14 +95,22 @@
 -	uint8_t reset_state;
 -};
 -
-@@ -80,4 +74,3 @@
+ struct nvt_info {
+ 	uint8_t fw_ver;
+ 	uint8_t fw_type;
+@@ -79,7 +72,6 @@
+ int nvt_read_point_frame(const struct nvt_bus *bus, uint8_t frame[NVT_POINT_DATA_LEN]);
  int nvt_read_point_frame_diag(const struct nvt_bus *bus,
      uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag);
 -int nvt_start_scanning(const struct nvt_bus *bus, struct nvt_scan_diag *diag);
  
+ /*
+  * Parse a point frame into contacts.  Only id/event combinations 1 and 2 are
 --- a/bsd/dev/nabu_touch.c
 +++ b/bsd/dev/nabu_touch.c
-@@ -524,9 +524,3 @@
+@@ -522,13 +522,7 @@
+ 	ts.bus.delay_ms = nbu_bus_delay_ms;
+ 
  	if (nbu_probe_chip() || nbu_upload_firmware()) {
 -		struct nvt_scan_diag scan;
 -		int rc = nvt_start_scanning(&ts.bus, &scan);
@@ -104,3 +121,5 @@
 -		}
 +		nbu_poll_points();
  	}
+ 
+ out:
