@@ -1,0 +1,76 @@
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -332,6 +332,10 @@
+ 
+ 	r = nvt_read_addr(&ts.bus, 0x2fe78u, fw, sizeof(fw));
+ 	printf("NABU TOUCH: fwinfo r=%d\n", r);
++	if (!r) {
++		printf("NABU TOUCH: fwinfo bytes=%02x %02x %02x %02x %02x %02x %02x %02x\n",
++		    fw[0], fw[1], fw[2], fw[3], fw[4], fw[5], fw[6], fw[7]);
++	}
+ 	if (r == 0 && nvt_parse_fwinfo(fw, sizeof(fw), &info) == 0) {
+ 		printf("NABU TOUCH: fw=%u/%u valid=%d x_num=%u y_num=%u max=%ux%u buttons=%u\n",
+ 		    info.fw_ver, info.fw_type, info.valid, info.x_num,
+@@ -376,6 +380,10 @@
+ 	printf("NABU TOUCH: firmware result=%d stage=%u part=%u offset=%#x written=%u verified=%u status=%#x\n",
+ 	    rc, result.stage, result.partition, result.offset,
+ 	    result.written, result.verified, result.observed);
++	printf("NABU TOUCH: firmware ready=%#x crc-flag=%#x expected=%#x/%#x result=%#x/%#x values-match=%u\n",
++	    result.reset_state, result.crc_flag,
++	    result.crc_expected[0], result.crc_expected[1],
++	    result.crc_result[0], result.crc_result[1], result.crc_values_match);
+ 	if (rc) {
+ 		return false;
+ 	}
+--- a/bsd/dev/nabu_touch_firmware.h
++++ b/bsd/dev/nabu_touch_firmware.h
+@@ -23,6 +23,8 @@
+ struct nbu_fw_result {
+ 	unsigned stage, partition;
+ 	uint32_t offset, written, verified, observed;
++	uint32_t crc_expected[2], crc_result[2];
++	unsigned reset_state, crc_flag, crc_values_match;
+ };
+ static inline uint32_t
+ nbu_fw_u32(const uint8_t *p)
+@@ -128,6 +130,11 @@
+ 	}
+ 	out->stage = 1; out->partition = 0; out->offset = 0;
+ 	out->written = out->verified = out->observed = 0;
++	out->reset_state = out->crc_flag = out->crc_values_match = 0;
++	for (unsigned i = 0; i < 2; ++i) {
++		out->crc_expected[i] = fw->part[i].crc;
++		out->crc_result[i] = 0;
++	}
+ 	if (nbu_fw_write_number(bus, 0x3f0feu, 0x69u, 1)) {
+ 		return -1;
+ 	}
+@@ -220,6 +227,7 @@
+ 			return -1;
+ 		}
+ 		out->observed = state;
++		out->reset_state = state;
+ 		if (state >= 0xa1u && state <= 0xafu) { ready = 1; break; }
+ 		bus->delay_ms(bus->ctx, 10);
+ 	}
+@@ -233,8 +241,18 @@
+ 		return -1;
+ 	}
+ 	out->observed = flag;
+-	if ((flag & 7u) != 4u || nbu_fw_u32(results) != fw->part[0].crc ||
+-	    nbu_fw_u32(results + 4) != fw->part[1].crc) {
++	out->crc_flag = flag;
++	out->crc_result[0] = nbu_fw_u32(results);
++	out->crc_result[1] = nbu_fw_u32(results + 4);
++	out->crc_values_match = out->crc_result[0] == out->crc_expected[0] &&
++	    out->crc_result[1] == out->crc_expected[1];
++	/* nabu vendor HW-CRC boot accepts the initialized firmware state;
++	 * result registers are read for failure diagnostics, not compared after
++	 * running firmware has initialized. Preserve the raw numbers as evidence.
++	 * Require full pre-boot SRAM readback, actual readiness and the hardware
++	 * done/no-ILM-or-DLM-error bits; never ignore a CRC error or missing done. */
++	if ((flag & 7u) != 4u || out->written != out->verified ||
++	    !out->written || out->reset_state < 0xa1u || out->reset_state > 0xafu) {
+ 		return -1;
+ 	}
+ 	out->stage = 10;

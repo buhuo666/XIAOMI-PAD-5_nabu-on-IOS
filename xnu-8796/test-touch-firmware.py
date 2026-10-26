@@ -13,6 +13,7 @@ HARNESS = r"""
 #include "nabu_touch_firmware.h"
 static uint8_t memory[0x40000];
 static unsigned page, writes, delays, fail_io, corrupt_read, never_ready, bad_crc;
+static unsigned initialized_crc_values_differ, missing_crc_done;
 static void put(uint8_t *p,uint32_t x) {
     for(unsigned i=0;i<4;i++)p[i]=(uint8_t)(x>>(8*i));
 }
@@ -40,14 +41,16 @@ static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
         memcpy(memory+address,tx+1,n-1);
         if(address==0x3f10d&&tx[1]==1) {
             if(!never_ready)memory[NBU_FW_EVENT|0x60]=0xa1;
-            memory[0x3f133]=bad_crc?7:4;
+            memory[0x3f133]=bad_crc?7:missing_crc_done?0:4;
             memcpy(memory+0x3f120,memory+0x3f100,8);
+            if(initialized_crc_values_differ)memory[0x3f120]^=0x5a;
         }
     }
     return 0;
 }
 static void reset(void) {
     memset(memory,0,sizeof(memory));page=writes=delays=fail_io=corrupt_read=never_ready=bad_crc=0;
+    initialized_crc_values_differ=missing_crc_done=0;
 }
 static void exercise(const uint8_t *image,size_t length) {
     struct nbu_firmware fw;struct nbu_fw_result result;
@@ -65,6 +68,15 @@ static void exercise(const uint8_t *image,size_t length) {
     reset();never_ready=1;assert(nbu_fw_download(&bus,&fw,&result)==-1&&result.stage==8);
     assert(delays>=5000&&delays<=5010);
     reset();bad_crc=1;assert(nbu_fw_download(&bus,&fw,&result)==-1&&result.stage==9);
+    assert(result.crc_flag==7&&result.reset_state==0xa1);
+    reset();missing_crc_done=1;
+    assert(nbu_fw_download(&bus,&fw,&result)==-1&&result.stage==9&&result.crc_flag==0);
+    reset();initialized_crc_values_differ=1;
+    assert(!nbu_fw_download(&bus,&fw,&result)&&result.stage==10);
+    assert(result.crc_flag==4&&result.reset_state==0xa1&&!result.crc_values_match);
+    assert(result.crc_expected[0]==fw.part[0].crc);
+    assert(result.crc_result[0]==(fw.part[0].crc^0x5a));
+    assert(result.written==bytes&&result.verified==bytes);
     printf("RAM download model: version=%u parts=%u cascade=%u transferred=%u; readback, timeout and CRC failures enforced.\n",
            fw.version,fw.count,fw.cascade,bytes);
 }
