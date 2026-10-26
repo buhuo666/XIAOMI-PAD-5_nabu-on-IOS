@@ -19,12 +19,6 @@ static void emit(int s,int d,int x,int y) {
 }
 static uint8_t packet[NVT_POINT_DATA_LEN];
 static int fail_read;
-struct scan_model {
-    uint32_t page;
-    unsigned commands, delays, fail_command, never_ack;
-    uint8_t command[16];
-    uint16_t value[16];
-};
 static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
     (void)ctx; assert(tx && n);
     if(tx[0]==0xff && n==3 && !rx) return 0;
@@ -34,30 +28,6 @@ static int transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
         if(n==NVT_POINT_DATA_LEN+2) memcpy(rx+2,packet,sizeof(packet));
     }
     return 0;
-}
-static int scan_transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
-    struct scan_model *m=ctx;assert(m&&tx&&n);
-    if(tx[0]==0xff&&n==3&&!rx) {
-        m->page=(uint32_t)tx[1]<<15|(uint32_t)tx[2]<<7;return 0;
-    }
-    uint32_t address=m->page|(tx[0]&0x7fu);
-    if(rx) {
-        if(fail_read)return fail_read;
-        memset(rx,0,n);
-        if(n==3&&address==(NVT_EVENT_BUF_ADDR|0x50u))rx[2]=m->never_ack?1:0;
-        if(n==3&&address==(NVT_EVENT_BUF_ADDR|0x60u))rx[2]=0xa1;
-    } else if(n==5&&address==(NVT_EVENT_BUF_ADDR|0x50u)) {
-        assert(m->commands<16);unsigned i=m->commands++;
-        assert(tx[0]==0xd0&&tx[2]==0);
-        m->command[i]=tx[1];m->value[i]=(uint16_t)(tx[3]|(uint16_t)tx[4]<<8);
-        if(m->fail_command==(unsigned)tx[1])return -5;
-    } else if(n==3&&address==0x113718u) {
-        assert(tx[0]==0x98&&tx[1]==120&&tx[2]==0);
-    }
-    return 0;
-}
-static void scan_delay(void *ctx,unsigned ms) {
-    ((struct scan_model *)ctx)->delays+=ms;
 }
 static void checksum(void) {
     unsigned sum=0; for(unsigned i=0;i<NVT_POINT_DATA_LEN-1;i++) sum+=packet[i];
@@ -128,18 +98,6 @@ int main(void) {
     uint8_t fw[39]={0};struct nvt_info info;
     fw[0]=1;fw[1]=254;fw[4]=6;fw[5]=64;fw[6]=10;fw[7]=0;
     assert(!nvt_parse_fwinfo(fw,sizeof(fw),&info)&&info.valid&&info.max_x==1600&&info.max_y==2560);
-    struct scan_model model={0};
-    struct nvt_bus scan_bus={.ctx=&model,.xfer=scan_transfer,.delay_ms=scan_delay};
-    struct nvt_scan_diag scan;
-    assert(!nvt_start_scanning(&scan_bus,&scan)&&scan.stage==9&&scan.reset_state==0xa1);
-    assert(model.commands==2&&model.command[0]==0x19&&model.value[0]==0);
-    assert(model.command[1]==0x01&&model.value[1]==2);
-    model=(struct scan_model){.fail_command=0x19};
-    assert(nvt_start_scanning(&scan_bus,&scan)==-5&&scan.stage==2);
-    model=(struct scan_model){.never_ack=1};
-    assert(nvt_start_scanning(&scan_bus,&scan)==-1&&scan.stage==4&&scan.status==1);
-    model=(struct scan_model){0};
-    fail_read=-110;assert(nvt_start_scanning(&scan_bus,&scan)==-110&&scan.stage==3);fail_read=0;
     puts("Actual touch helpers passed: SM8150 HWCG/votes/tiles/mux, native coordinates, HID slots/releases, checksum/recovery, bounded stack buffers.");
     return 0;
 }
@@ -166,8 +124,8 @@ def main():
     assert "last_pio_rx_bytes = len - x.rx_rem" in geni
     assert "nvt_read_point_frame_diag(&ts.bus, frame, &diag)" in touch
     assert "last_pio_irq" in touch and "last_pio_rx_bytes" in touch
-    assert "nvt_start_scanning(&ts.bus, &scan)" in touch
-    assert "NABU TOUCH: scan result=" in touch
+    assert "if (nbu_probe_chip() || nbu_upload_firmware()) {\n\t\tnbu_poll_points();\n\t}" in touch
+    assert "nvt_start_scanning" not in touch
     assert "ts.clock_level" in touch and "nbu_touch_xo_level(levels)" in touch
     assert "ts.east = ml_io_map(NBU_TOUCH_EAST_PA" in touch
     assert "ts.north = ml_io_map(NBU_TOUCH_NORTH_PA" in touch

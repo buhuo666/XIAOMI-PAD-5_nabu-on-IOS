@@ -1,0 +1,106 @@
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -123,75 +123,0 @@
+-static int
+-nvt_set_custom_command(const struct nvt_bus *bus, uint8_t command,
+-    uint16_t value, struct nvt_scan_diag *diag)
+-{
+-	/* CTP_SPI_WRITE sends register offset 0x50 followed by these four bytes. */
+-	uint8_t packet[4] = {
+-		command, 0, (uint8_t)value, (uint8_t)(value >> 8)
+-	};
+-	int rc;
+-
+-	diag->command = command;
+-	diag->status = 0xff;
+-	bus->delay_ms(bus->ctx, 35);
+-	for (unsigned attempt = 0; attempt < 5; ++attempt) {
+-		rc = nvt_write_addr(bus, NVT_EVENT_BUF_ADDR | 0x50u,
+-		    packet, sizeof(packet));
+-		if (rc) {
+-			diag->stage = 2;
+-			return rc;
+-		}
+-		bus->delay_ms(bus->ctx, 20);
+-		rc = nvt_read_addr(bus, NVT_EVENT_BUF_ADDR | 0x50u,
+-		    &diag->status, 1);
+-		if (rc) {
+-			diag->stage = 3;
+-			return rc;
+-		}
+-		if (diag->status == 0) {
+-			return 0;
+-		}
+-	}
+-	diag->stage = 4;
+-	return -1;
+-}
+-
+-int
+-nvt_start_scanning(const struct nvt_bus *bus, struct nvt_scan_diag *diag)
+-{
+-	uint8_t delay[2] = { 120, 0 };
+-	int rc;
+-
+-	if (!bus || !bus->xfer || !bus->delay_ms || !diag) {
+-		return -1;
+-	}
+-	memset(diag, 0, sizeof(*diag));
+-	diag->stage = 1;
+-	rc = nvt_set_custom_command(bus, 0x19, 0, diag);
+-	if (rc) {
+-		return rc;
+-	}
+-	diag->stage = 5;
+-	rc = nvt_write_addr(bus, 0x113718u, delay, sizeof(delay));
+-	if (rc) {
+-		diag->stage = 6;
+-		return rc;
+-	}
+-	rc = nvt_set_custom_command(bus, 0x01, 0x0002, diag);
+-	if (rc) {
+-		return rc;
+-	}
+-	diag->stage = 7;
+-	rc = nvt_read_addr(bus, NVT_EVENT_BUF_ADDR | 0x60u,
+-	    &diag->reset_state, 1);
+-	if (rc) {
+-		diag->stage = 8;
+-		return rc;
+-	}
+-	diag->stage = 9;
+-	if (diag->reset_state < 0xa1u || diag->reset_state > 0xafu) {
+-		diag->stage = 10;
+-		return -1;
+-	}
+-	return 0;
+-}
+-
+--- a/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/nabu_nt36523.h
+@@ -53,7 +53,0 @@
+-struct nvt_scan_diag {
+-	unsigned stage;
+-	uint8_t command;
+-	uint8_t status;
+-	uint8_t reset_state;
+-};
+-
+@@ -80,4 +74,3 @@
+ int nvt_read_point_frame_diag(const struct nvt_bus *bus,
+     uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag);
+-int nvt_start_scanning(const struct nvt_bus *bus, struct nvt_scan_diag *diag);
+ 
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -524,9 +524,3 @@
+ 	if (nbu_probe_chip() || nbu_upload_firmware()) {
+-		struct nvt_scan_diag scan;
+-		int rc = nvt_start_scanning(&ts.bus, &scan);
+-		printf("NABU TOUCH: scan result=%d stage=%u command=%#x ack=%#x reset=%#x\n",
+-		    rc, scan.stage, scan.command, scan.status, scan.reset_state);
+-		if (!rc) {
+-			nbu_poll_points();
+-		}
++		nbu_poll_points();
+ 	}
