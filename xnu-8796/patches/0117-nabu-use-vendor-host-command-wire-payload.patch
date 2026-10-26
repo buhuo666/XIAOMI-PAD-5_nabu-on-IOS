@@ -1,0 +1,16 @@
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -124,10 +124,9 @@
+ nvt_set_custom_command(const struct nvt_bus *bus, uint8_t command,
+     uint16_t value, struct nvt_scan_diag *diag)
+ {
+-	/* CTP_SPI_WRITE carries {0xbf, command, 0, value_lo, value_hi}
+-	 * after its register offset. */
+-	uint8_t packet[5] = {
+-		0xbf, command, 0, (uint8_t)value, (uint8_t)(value >> 8)
++	/* CTP_SPI_WRITE sends register offset 0x50 followed by these four bytes. */
++	uint8_t packet[4] = {
++		command, 0, (uint8_t)value, (uint8_t)(value >> 8)
+ 	};
+ 	int rc;
+ 

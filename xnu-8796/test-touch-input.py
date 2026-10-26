@@ -46,11 +46,11 @@ static int scan_transfer(void *ctx,const uint8_t *tx,uint8_t *rx,size_t n) {
         memset(rx,0,n);
         if(n==3&&address==(NVT_EVENT_BUF_ADDR|0x50u))rx[2]=m->never_ack?1:0;
         if(n==3&&address==(NVT_EVENT_BUF_ADDR|0x60u))rx[2]=0xa1;
-    } else if(n==6&&address==(NVT_EVENT_BUF_ADDR|0x50u)) {
+    } else if(n==5&&address==(NVT_EVENT_BUF_ADDR|0x50u)) {
         assert(m->commands<16);unsigned i=m->commands++;
-        assert(tx[0]==0xd0&&tx[1]==0xbf);
-        m->command[i]=tx[2];m->value[i]=(uint16_t)(tx[4]|(uint16_t)tx[5]<<8);
-        if(m->fail_command==(unsigned)tx[2])return -5;
+        assert(tx[0]==0xd0&&tx[2]==0);
+        m->command[i]=tx[1];m->value[i]=(uint16_t)(tx[3]|(uint16_t)tx[4]<<8);
+        if(m->fail_command==(unsigned)tx[1])return -5;
     } else if(n==3&&address==0x113718u) {
         assert(tx[0]==0x98&&tx[1]==120&&tx[2]==0);
     }
