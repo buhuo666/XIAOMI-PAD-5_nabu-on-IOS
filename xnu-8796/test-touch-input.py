@@ -29,6 +29,7 @@ def main():
         "nvt_read_point_frame(&ts.bus, frame)",
         "nbu_touch_publish(",
         "nabu_hid_touch(",
+        "nbu_touch_release(&ts.slots, nbu_hid_touch_native)",
         "fallback=80ms",
     )
     forbidden = ("nvt_write_addr(", "nabu_rpmh_vreg_enable(")
@@ -36,6 +37,8 @@ def main():
         parser.error("touch driver is missing a required gated input-path stage")
     if any(token in driver for token in forbidden):
         parser.error("touch driver contains a firmware-write or PMIC power path")
+    if "nabu_hid_touch_native" in driver:
+        parser.error("touch driver has an inconsistent HID callback symbol")
 
     test = ROOT / "tests/nabu-touch-input.c"
     includes = ROOT / "tests/include"

@@ -466,7 +466,7 @@ index 7de8766..336b7e3 100644
 +			bad++;
 +			consecutive++;
 +			if (ts.slots.active != 0) {
-+				nbu_touch_release(&ts.slots, nabu_hid_touch_native);
++				nbu_touch_release(&ts.slots, nbu_hid_touch_native);
  			}
  		}
 -		delay(20000);
