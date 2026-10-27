@@ -78,6 +78,7 @@ main(void)
 	struct nbu_touch_slots slots = {0};
 	struct nvt_contact contacts[NVT_MAX_FINGERS];
 	struct nvt_info info;
+	struct nvt_frame_diag frame_diag;
 	uint8_t frame[NVT_POINT_DATA_LEN];
 	uint8_t fwinfo[39] = {0};
 
@@ -109,11 +110,20 @@ main(void)
 	set_contact(1, 10, 2, 1599, 2559);
 	finish_frame();
 	assert(nvt_validate_point_frame(fake_frame) == 0);
+	assert(nvt_read_point_frame_diag(&bus, frame, &frame_diag) == 0);
+	assert(frame_diag.stage == 5 && frame_diag.page_status == 0);
+	assert(frame_diag.transfer_status == 0);
+	assert(frame_diag.checksum_expected == frame_diag.checksum_observed);
 	assert(nvt_read_point_frame(&bus, frame) == 0);
 	assert(fake_page == (NVT_EVENT_BUF_ADDR >> 7));
 	assert(nvt_parse_points(frame, 1599, 2559, contacts, NVT_MAX_FINGERS) == 2);
 	assert(contacts[0].id == 1 && contacts[0].x == 0 && contacts[0].y == 0);
 	assert(contacts[1].id == 10 && contacts[1].x == 1599 && contacts[1].y == 2559);
+	fake_frame[NVT_POINT_DATA_LEN - 1] ^= 1u;
+	assert(nvt_read_point_frame_diag(&bus, frame, &frame_diag) == -1);
+	assert(frame_diag.stage == 3);
+	assert(frame_diag.checksum_expected != frame_diag.checksum_observed);
+	finish_frame();
 
 	set_contact(1, 1, 2, 10, 20);
 	finish_frame();

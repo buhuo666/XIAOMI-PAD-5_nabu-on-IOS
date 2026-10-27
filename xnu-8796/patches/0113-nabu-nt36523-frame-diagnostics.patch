@@ -1,0 +1,178 @@
+diff --git a/bsd/dev/nabu_nt36523.c b/bsd/dev/nabu_nt36523.c
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -10,7 +10,7 @@
+ 	if (bus == NULL || bus->xfer == NULL || len == 0) {
+ 		return -1;
+ 	}
+-	return bus->xfer(bus->ctx, tx, rx, len) == 0 ? 0 : -1;
++	return bus->xfer(bus->ctx, tx, rx, len);
+ }
+ 
+ int
+@@ -86,17 +86,37 @@
+ int
+ nvt_read_point_frame(const struct nvt_bus *bus, uint8_t frame[NVT_POINT_DATA_LEN])
+ {
+-	if (frame == NULL || nvt_set_page(bus, NVT_EVENT_BUF_ADDR) != 0) {
+-		return -1;
+-	}
+-	uint8_t tx[NVT_POINT_DATA_LEN + 2];
+-	uint8_t rx[NVT_POINT_DATA_LEN + 2];
++	return nvt_read_point_frame_diag(bus, frame, NULL);
++}
++
++int
++nvt_read_point_frame_diag(const struct nvt_bus *bus,
++    uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag)
++{
++	if (diag != NULL) { memset(diag, 0, sizeof(*diag)); diag->stage = 1; }
++	if (frame == NULL) return -1;
++	int rc = nvt_set_page(bus, NVT_EVENT_BUF_ADDR);
++	if (diag != NULL) diag->page_status = rc;
++	if (rc != 0) return rc;
++	uint8_t tx[NVT_POINT_DATA_LEN + 2], rx[NVT_POINT_DATA_LEN + 2];
+ 	memset(tx, 0, sizeof(tx));
+-	if (nvt_xfer(bus, tx, rx, sizeof(tx)) != 0) {
+-		return -1;
+-	}
++	if (diag != NULL) diag->stage = 2;
++	rc = nvt_xfer(bus, tx, rx, sizeof(tx));
++	if (diag != NULL) diag->transfer_status = rc;
++	if (rc != 0) return rc;
+ 	memcpy(frame, rx + 2, NVT_POINT_DATA_LEN);
+-	return nvt_validate_point_frame(frame);
++	unsigned sum = 0;
++	for (size_t i = 0; i + 1 < NVT_POINT_DATA_LEN; ++i) sum += frame[i];
++	uint8_t expected = (uint8_t)(0u - sum);
++	if (diag != NULL) { diag->stage = 3; diag->checksum_sum = (uint8_t)sum;
++		diag->checksum_expected = expected; diag->checksum_observed = frame[NVT_POINT_DATA_LEN - 1]; }
++	if (expected != frame[NVT_POINT_DATA_LEN - 1]) return -1;
++	bool recovery_77 = true, recovery_fd_fe = true;
++	for (size_t i = 0; i < 6; ++i) { recovery_77 &= frame[i] == 0x77u;
++		recovery_fd_fe &= frame[i] == 0xfdu || frame[i] == 0xfeu; }
++	if (recovery_77 || recovery_fd_fe) { if (diag != NULL) diag->stage = 4; return -1; }
++	if (diag != NULL) diag->stage = 5;
++	return 0;
+ }
+ 
+ int
+diff --git a/bsd/dev/nabu_nt36523.h b/bsd/dev/nabu_nt36523.h
+--- a/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/nabu_nt36523.h
+@@ -40,6 +40,15 @@
+ 	int pressure;
+ };
+ 
++struct nvt_frame_diag {
++	unsigned stage;
++	int page_status;
++	int transfer_status;
++	uint8_t checksum_sum;
++	uint8_t checksum_expected;
++	uint8_t checksum_observed;
++};
++
+ struct nvt_info {
+ 	uint8_t fw_ver;
+ 	uint8_t fw_type;
+@@ -60,6 +69,8 @@
+ 
+ /* Read one 65-byte point frame from the event buffer. */
+ int nvt_read_point_frame(const struct nvt_bus *bus, uint8_t frame[NVT_POINT_DATA_LEN]);
++int nvt_read_point_frame_diag(const struct nvt_bus *bus,
++    uint8_t frame[NVT_POINT_DATA_LEN], struct nvt_frame_diag *diag);
+ int nvt_validate_point_frame(const uint8_t frame[NVT_POINT_DATA_LEN]);
+ 
+ /*
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -405,15 +405,26 @@
+ 	uint8_t frame[NVT_POINT_DATA_LEN];
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+ 	unsigned good = 0, bad = 0, consecutive = 0;
+-	unsigned polls = 0;
+-	uint64_t fallback_deadline;
+-	bool line_consumed = false;
++	unsigned polls = 0, irq_high = 0, irq_low = 0;
++	uint64_t fallback_deadline, status_deadline = 0;
++	bool line_consumed = false, first_frame_dumped = false;
+ 
+ 	clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 	printf("NABU TOUCH: threaded GPIO39 sampling active, native=%ux%u fallback=80ms\n",
+ 	    ts.max_x, ts.max_y);
+ 	for (unsigned i = 0;; i++) {
++		uint64_t now = mach_absolute_time();
+ 		bool line_high = (nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u) != 0;
++		irq_high += line_high;
++		irq_low += !line_high;
++		if (now >= status_deadline) {
++			uint8_t state[5] = {0};
++			int state_rc = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u, state, sizeof(state));
++			printf("NABU TOUCH: poll-status reads=%u state-r=%d reset=%02x %02x %02x %02x %02x irq=%u samples-high=%u samples-low=%u good=%u bad=%u active=%#x\n",
++			    polls, state_rc, state[0], state[1], state[2], state[3], state[4], line_high, irq_high, irq_low, good, bad, ts.slots.active);
++			irq_high = irq_low = 0;
++			clock_interval_to_deadline(1000u, NSEC_PER_MSEC, &status_deadline);
++		}
+ 		if (!line_high) {
+ 			line_consumed = false;
+ 		}
+@@ -431,29 +442,39 @@
+ 		clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 		polls++;
+ 
+-		int n = -1;
+-		int rc = nvt_read_point_frame(&ts.bus, frame);
+-		if (rc == 0) {
++		int n = -1, publish_status = -1;
++		struct nvt_frame_diag diag;
++		int frame_status = nvt_read_point_frame_diag(&ts.bus, frame, &diag);
++		if (frame_status == 0) {
+ 			n = nvt_parse_points(frame, (uint16_t)(ts.max_x - 1u),
+-			    (uint16_t)(ts.max_y - 1u), contacts,
+-			    NVT_MAX_FINGERS);
+-			if (n >= 0) {
+-				rc = nbu_touch_publish(&ts.slots, contacts, n,
+-				    (uint16_t)(ts.max_x - 1u), (uint16_t)(ts.max_y - 1u),
+-				    nbu_hid_touch_native);
++			    (uint16_t)(ts.max_y - 1u), contacts, NVT_MAX_FINGERS);
++			if (n >= 0) publish_status = nbu_touch_publish(&ts.slots, contacts, n,
++			    (uint16_t)(ts.max_x - 1u), (uint16_t)(ts.max_y - 1u), nbu_hid_touch_native);
++		}
++		if (frame_status == 0 && n >= 0 && publish_status == 0) {
++			if (good == 0) {
++				printf("NABU TOUCH: first-valid-frame poll=%u contacts=%d\n", polls, n);
++				for (int k = 0; k < n; ++k)
++					printf("NABU TOUCH: first-point slot=%d down=%d x=%d y=%d\n",
++					    contacts[k].id - 1, contacts[k].down, contacts[k].x, contacts[k].y);
+ 			}
+-		}
+-		if (rc == 0 && n >= 0) {
+-			if (consecutive) {
+-				printf("NABU TOUCH: frame path recovered after %u errors\n", consecutive);
+-			}
++			if (consecutive) printf("NABU TOUCH: frame path recovered after %u errors\n", consecutive);
+ 			consecutive = 0;
+ 			good++;
+ 		} else {
+-			bad++;
+-			consecutive++;
+-			if (ts.slots.active != 0) {
+-				nbu_touch_release(&ts.slots, nbu_hid_touch_native);
++			bad++; consecutive++;
++			if (ts.slots.active != 0) nbu_touch_release(&ts.slots, nbu_hid_touch_native);
++			if (!first_frame_dumped) {
++				if (diag.stage >= 3) {
++					static const char digits[] = "0123456789abcdef";
++					char hex[NVT_POINT_DATA_LEN * 2 + 1];
++					for (unsigned k = 0; k < NVT_POINT_DATA_LEN; ++k) { hex[k*2]=digits[frame[k]>>4]; hex[k*2+1]=digits[frame[k]&15u]; }
++					hex[sizeof(hex)-1]='\0'; printf("NABU TOUCH: first-frame-data=%s\n",hex);
++				}
++				printf("NABU TOUCH: first-frame poll=%u spi=%d stage=%u page=%d xfer=%d parse=%d publish=%d checksum-sum=%#x expected=%#x observed=%#x\n",
++				    polls,frame_status,diag.stage,diag.page_status,diag.transfer_status,n,publish_status,
++				    diag.checksum_sum,diag.checksum_expected,diag.checksum_observed);
++				first_frame_dumped = true;
+ 			}
+ 		}
+ 		if ((polls & 0x3ffu) == 0) {

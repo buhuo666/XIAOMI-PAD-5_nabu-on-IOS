@@ -31,7 +31,10 @@ def main():
     required = (
         "nbu_probe_chip() || nbu_upload_firmware()",
         "nbu_wait_firmware())",
-        "nvt_read_point_frame(&ts.bus, frame)",
+        "nvt_read_point_frame_diag(&ts.bus, frame, &diag)",
+        "poll-status reads=%u",
+        "first-frame-data=%s",
+        "first-valid-frame poll=%u contacts=%d",
         "nbu_touch_publish(",
         "nabu_hid_touch(slot, down, x, y)",
         "nbu_touch_release(&ts.slots, nbu_hid_touch_native)",
