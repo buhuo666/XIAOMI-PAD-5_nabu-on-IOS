@@ -119,6 +119,19 @@ main(void)
 	assert(nvt_parse_points(frame, 1599, 2559, contacts, NVT_MAX_FINGERS) == 2);
 	assert(contacts[0].id == 1 && contacts[0].x == 0 && contacts[0].y == 0);
 	assert(contacts[1].id == 10 && contacts[1].x == 1599 && contacts[1].y == 2559);
+
+	/* A real idle slot is 0xff: invalid ID 31 must be skipped before its
+	 * reserved event value 7 is considered. */
+	memset(fake_frame, 0xff, sizeof(fake_frame));
+	set_contact(0, 1, 1, 559, 1230);
+	set_contact(1, 2, 2, 1000, 2000);
+	finish_frame();
+	assert(nvt_validate_point_frame(fake_frame) == 0);
+	assert(nvt_parse_points(fake_frame, 1599, 2559, contacts,
+	    NVT_MAX_FINGERS) == 2);
+	assert(contacts[0].id == 1 && contacts[0].x == 559 && contacts[0].y == 1230);
+	assert(contacts[1].id == 2 && contacts[1].x == 1000 && contacts[1].y == 2000);
+
 	fake_frame[NVT_POINT_DATA_LEN - 1] ^= 1u;
 	assert(nvt_read_point_frame_diag(&bus, frame, &frame_diag) == -1);
 	assert(frame_diag.stage == 3);

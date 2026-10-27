@@ -1,0 +1,23 @@
+diff --git a/bsd/dev/nabu_nt36523.c b/bsd/dev/nabu_nt36523.c
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -141,13 +141,18 @@
+ 		unsigned id = raw >> 3;
+ 		unsigned event = raw & 7u;
+ 
++		/* Empty point slots are encoded 0xff (ID 31, event 7). Skip IDs
++		 * outside the panel's 10-finger range before validating active events. */
++		if (id == 0 || id > NVT_MAX_FINGERS) {
++			continue;
++		}
+ 		if (event == 0 || event == 3) {
+ 			continue;
+ 		}
+ 		if (event != 1 && event != 2) {
+ 			return -1;
+ 		}
+-		if (id == 0 || id > NVT_MAX_FINGERS || count == max) {
++		if (count == max) {
+ 			return -1;
+ 		}
+ 		uint16_t bit = (uint16_t)(1u << (id - 1u));

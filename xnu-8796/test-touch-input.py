@@ -49,6 +49,12 @@ def main():
         parser.error("touch driver contains a firmware-write or PMIC power path")
     if "nbu_touch_hid_x" in driver or "nbu_touch_hid_y" in driver:
         parser.error("touch driver must preserve the native 1600x2560 HID coordinates")
+    parser_source = source.read_text(encoding="utf-8")
+    skip_invalid_id = parser_source.find("id == 0 || id > NVT_MAX_FINGERS")
+    skip_release = parser_source.find("event == 0 || event == 3")
+    reject_reserved_event = parser_source.find("event != 1 && event != 2")
+    if not (0 <= skip_invalid_id < skip_release < reject_reserved_event):
+        parser.error("touch parser must skip unused slots before rejecting active events")
     hid_required = (
         "fLogicalW = 1600;",
         "fLogicalH = 2560;",
