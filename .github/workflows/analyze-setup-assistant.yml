@@ -1,0 +1,118 @@
+name: analyze-ipados-setup-flow
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/xnu-8796-project-root]
+    paths:
+      - ".github/workflows/analyze-setup-assistant.yml"
+      - "tools/setup-flow/**"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install read-only extraction dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libfuse3-dev zlib1g-dev libbz2-dev
+
+      - name: Acquire pinned analysis tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 -o ghidra.zip https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
+          echo '795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6  ghidra.zip' | sha256sum -c -
+          unzip -q ghidra.zip
+          git clone https://github.com/sgan81/apfs-fuse.git apfs
+          git -C apfs checkout --detach 66b86bd525e8cb90f9012543be89b1f092b75cf3
+          git -C apfs submodule update --init
+          test "$(git -C apfs/3rdparty/lzfse rev-parse HEAD)" = e634ca58b4821d9f3d560cdc6df5dec02ffc93fd
+          cmake -S apfs -B apfs-build
+          cmake --build apfs-build -j2 --target apfs-fuse
+
+      - name: Fetch and verify the official 20G81 OS component
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decompile/fetch_target.py "$RUNNER_TEMP/payload"
+          mkdir -p "$RUNNER_TEMP/mount" "$RUNNER_TEMP/input" "$RUNNER_TEMP/report"
+          "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro "$RUNNER_TEMP/payload/os.dmg" "$RUNNER_TEMP/mount"
+          trap 'fusermount3 -u "$RUNNER_TEMP/mount" 2>/dev/null || true' EXIT
+          cp "$RUNNER_TEMP/mount/root/Applications/Setup.app/Setup" "$RUNNER_TEMP/input/Setup"
+          cp "$RUNNER_TEMP/mount/root/System/Library/PrivateFrameworks/SetupAssistant.framework/budd" "$RUNNER_TEMP/input/budd"
+          cp "$RUNNER_TEMP/mount/root/usr/libexec/mobileactivationd" "$RUNNER_TEMP/input/mobileactivationd"
+          printf '%s  %s\n' \
+            'f6db5987cae8b5aaf5b4050a4ce154716c52d720e61561e8ce779615d55e845f' "$RUNNER_TEMP/input/Setup" \
+            '303810e898ae773e99c9445d30daaf0061b2b9501004e0840380e15c4a50684a' "$RUNNER_TEMP/input/budd" \
+            'd5caf6da09e031cc6b87f4ab9017888de790f519d6d85aa160f61f3d2134a5cd' "$RUNNER_TEMP/input/mobileactivationd" \
+            | sha256sum -c -
+          file "$RUNNER_TEMP/input/Setup" "$RUNNER_TEMP/input/budd" "$RUNNER_TEMP/input/mobileactivationd" \
+            | tee "$RUNNER_TEMP/report/input-file-types.txt"
+          grep -Eiq 'Mach-O.*arm64' "$RUNNER_TEMP/report/input-file-types.txt"
+          sha256sum "$RUNNER_TEMP/input/Setup" "$RUNNER_TEMP/input/budd" "$RUNNER_TEMP/input/mobileactivationd" > "$RUNNER_TEMP/report/input-hashes.txt"
+          fusermount3 -u "$RUNNER_TEMP/mount"
+          trap - EXIT
+
+      - name: Statically analyze the Setup, Buddy, and activation daemons
+        shell: bash
+        run: |
+          set -euo pipefail
+          GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
+          for target in Setup budd mobileactivationd; do
+            project="$RUNNER_TEMP/ghidra-project-$target"
+            "$GHIDRA" "$project" "$target" \
+              -import "$RUNNER_TEMP/input/$target" \
+              -scriptPath tools/setup-flow \
+              -postScript ExportSetupFlow.java "$target" "$RUNNER_TEMP/report" \
+              -analysisTimeoutPerFile 1800 -deleteProject \
+              -log "$RUNNER_TEMP/report/$target-ghidra.log"
+          done
+          printf 'Source commit: %s\nGhidra: 11.4.2\n' "$GITHUB_SHA" > "$RUNNER_TEMP/report/provenance.txt"
+          java -version 2>> "$RUNNER_TEMP/report/provenance.txt"
+          cat "$RUNNER_TEMP/report/input-hashes.txt" >> "$RUNNER_TEMP/report/provenance.txt"
+          for target in Setup budd mobileactivationd; do
+            test -s "$RUNNER_TEMP/report/$target/coverage.txt"
+            test -s "$RUNNER_TEMP/report/$target/strings.tsv"
+            test -s "$RUNNER_TEMP/report/$target/candidate-functions.tsv"
+          done
+
+      - name: Summarize static coverage
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## iPadOS 20G81 Setup-flow analysis"
+            echo
+            echo "Inputs were fetched from the official restore package and hash-checked on this runner. No Apple image or original Mach-O is included in the artifact."
+            echo
+            if test -d "$RUNNER_TEMP/report"; then
+              for target in Setup budd mobileactivationd; do
+                if test -f "$RUNNER_TEMP/report/$target/coverage.txt"; then
+                  echo "### $target"
+                  echo '```text'
+                  cat "$RUNNER_TEMP/report/$target/coverage.txt"
+                  echo '```'
+                fi
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && !cancelled()
+        with:
+          name: setup-flow-analysis-${{ github.run_id }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: error
+          retention-days: 7
