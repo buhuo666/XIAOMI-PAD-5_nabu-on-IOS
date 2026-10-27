@@ -31,6 +31,7 @@ on:
       - "xnu-8796/test-early-stage-mask.py"
       - "xnu-8796/test-project-system-root.py"
       - "xnu-8796/test-touch-input.py"
+      - "xnu-8796/test-touch-firmware.py"
       - "xnu-8796/tests/**"
       - "tools/kernel-build-evidence.py"
       - ".github/workflows/build-kernel-8796.yml"
@@ -130,6 +131,7 @@ jobs:
           python3 xnu-8796/test-display-mode.py --xnu-source dxb/xnu --cc clang++ 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-display-scale-trace.py --xnu-source dxb/xnu --cc clang++ 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-touch-input.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/test-touch-firmware.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           KERNEL_CONFIG_LOWER="$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')"
           KERNEL="dxb/build/xnu.obj/kernel.${KERNEL_CONFIG_LOWER}.nabu"
           test -s "$KERNEL"

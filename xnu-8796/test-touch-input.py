@@ -29,7 +29,8 @@ def main():
         parser.error(f"NabuHID source is missing from {args.xnu_source}")
     hid = hid_path.read_text(encoding="utf-8")
     required = (
-        "nbu_probe_chip() && nbu_wait_firmware()",
+        "nbu_probe_chip() || nbu_upload_firmware()",
+        "nbu_wait_firmware())",
         "nvt_read_point_frame(&ts.bus, frame)",
         "nbu_touch_publish(",
         "nabu_hid_touch(slot, down, x, y)",
