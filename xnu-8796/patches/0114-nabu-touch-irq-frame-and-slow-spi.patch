@@ -1,0 +1,86 @@
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -275,7 +275,7 @@
+ 		return false;
+ 	}
+ 	geni_spi_setup(&ts.spi, 0, 0);
+-	r = geni_spi_set_clock(&ts.spi, 9600000, ts.source_hz, ts.clock_level);
++	r = geni_spi_set_clock(&ts.spi, 4800000, ts.source_hz, ts.clock_level);
+ 	printf("NABU TOUCH: geni clock=%d clk_sel=%#x mclk=%#x\n", r,
+ 	    nbu_rd(ts.se, 0x7c), nbu_rd(ts.se, 0x48));
+ 	return r == 0;
+@@ -405,9 +405,9 @@
+ 	uint8_t frame[NVT_POINT_DATA_LEN];
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+ 	unsigned good = 0, bad = 0, consecutive = 0;
+-	unsigned polls = 0, irq_high = 0, irq_low = 0;
++	unsigned polls = 0, irq_high = 0, irq_low = 0, irq_frames = 0, fallback_frames = 0;
+ 	uint64_t fallback_deadline, status_deadline = 0;
+-	bool line_consumed = false, first_frame_dumped = false;
++	bool line_consumed = false, first_frame_dumped = false, first_irq_frame_dumped = false, first_contact_dumped = false;
+ 
+ 	clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 	printf("NABU TOUCH: threaded GPIO39 sampling active, native=%ux%u fallback=80ms\n",
+@@ -420,15 +420,16 @@
+ 		if (now >= status_deadline) {
+ 			uint8_t state[5] = {0};
+ 			int state_rc = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u, state, sizeof(state));
+-			printf("NABU TOUCH: poll-status reads=%u state-r=%d reset=%02x %02x %02x %02x %02x irq=%u samples-high=%u samples-low=%u good=%u bad=%u active=%#x\n",
+-			    polls, state_rc, state[0], state[1], state[2], state[3], state[4], line_high, irq_high, irq_low, good, bad, ts.slots.active);
+-			irq_high = irq_low = 0;
++			printf("NABU TOUCH: poll-status reads=%u irq-frames=%u fallback-frames=%u state-r=%d reset=%02x %02x %02x %02x %02x irq=%u samples-high=%u samples-low=%u good=%u bad=%u active=%#x\n",
++			    polls, irq_frames, fallback_frames, state_rc, state[0], state[1], state[2], state[3], state[4], line_high, irq_high, irq_low, good, bad, ts.slots.active);
++			irq_high = irq_low = irq_frames = fallback_frames = 0;
+ 			clock_interval_to_deadline(1000u, NSEC_PER_MSEC, &status_deadline);
+ 		}
+ 		if (!line_high) {
+ 			line_consumed = false;
+ 		}
+-		bool frame_ready = line_high && !line_consumed;
++		bool irq_hint = line_high && !line_consumed;
++		bool frame_ready = irq_hint;
+ 		if (frame_ready) {
+ 			/* The line is a read hint; frame event fields determine lift state. */
+ 			line_consumed = true;
+@@ -441,6 +442,7 @@
+ 		}
+ 		clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 		polls++;
++		if (irq_hint) irq_frames++; else fallback_frames++;
+ 
+ 		int n = -1, publish_status = -1;
+ 		struct nvt_frame_diag diag;
+@@ -452,11 +454,16 @@
+ 			    (uint16_t)(ts.max_x - 1u), (uint16_t)(ts.max_y - 1u), nbu_hid_touch_native);
+ 		}
+ 		if (frame_status == 0 && n >= 0 && publish_status == 0) {
+-			if (good == 0) {
+-				printf("NABU TOUCH: first-valid-frame poll=%u contacts=%d\n", polls, n);
++			if (good == 0) printf("NABU TOUCH: first-valid-frame poll=%u contacts=%d source=%s\n", polls, n, irq_hint ? "irq" : "fallback");
++			if (n > 0 && !first_contact_dumped) {
+ 				for (int k = 0; k < n; ++k)
+-					printf("NABU TOUCH: first-point slot=%d down=%d x=%d y=%d\n",
+-					    contacts[k].id - 1, contacts[k].down, contacts[k].x, contacts[k].y);
++					printf("NABU TOUCH: first-point slot=%d down=%d x=%d y=%d source=%s\n",
++					    contacts[k].id - 1, contacts[k].down, contacts[k].x, contacts[k].y, irq_hint ? "irq" : "fallback");
++				first_contact_dumped = true;
++			}
++			if (irq_hint && !first_irq_frame_dumped) {
++				printf("NABU TOUCH: first-valid-irq-frame poll=%u contacts=%d\n", polls, n);
++				first_irq_frame_dumped = true;
+ 			}
+ 			if (consecutive) printf("NABU TOUCH: frame path recovered after %u errors\n", consecutive);
+ 			consecutive = 0;
+@@ -464,6 +471,11 @@
+ 		} else {
+ 			bad++; consecutive++;
+ 			if (ts.slots.active != 0) nbu_touch_release(&ts.slots, nbu_hid_touch_native);
++			if (irq_hint && !first_irq_frame_dumped) {
++				printf("NABU TOUCH: first-irq-frame poll=%u spi=%d stage=%u checksum-sum=%#x expected=%#x observed=%#x\n",
++				    polls, frame_status, diag.stage, diag.checksum_sum, diag.checksum_expected, diag.checksum_observed);
++				first_irq_frame_dumped = true;
++			}
+ 			if (!first_frame_dumped) {
+ 				if (diag.stage >= 3) {
+ 					static const char digits[] = "0123456789abcdef";

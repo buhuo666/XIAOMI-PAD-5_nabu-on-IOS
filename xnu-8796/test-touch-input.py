@@ -31,10 +31,12 @@ def main():
     required = (
         "nbu_probe_chip() || nbu_upload_firmware()",
         "nbu_wait_firmware())",
+        "geni_spi_set_clock(&ts.spi, 4800000, ts.source_hz, ts.clock_level)",
         "nvt_read_point_frame_diag(&ts.bus, frame, &diag)",
-        "poll-status reads=%u",
+        "poll-status reads=%u irq-frames=%u fallback-frames=%u",
         "first-frame-data=%s",
         "first-valid-frame poll=%u contacts=%d",
+        "first-irq-frame poll=%u",
         "nbu_touch_publish(",
         "nabu_hid_touch(slot, down, x, y)",
         "nbu_touch_release(&ts.slots, nbu_hid_touch_native)",
