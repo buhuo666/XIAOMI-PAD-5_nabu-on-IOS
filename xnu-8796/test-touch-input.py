@@ -24,11 +24,15 @@ def main():
     if not source.is_file():
         parser.error(f"touch sources are missing from {args.xnu_source}")
     driver = (args.xnu_source / "bsd/dev/nabu_touch.c").read_text(encoding="utf-8")
+    hid_path = args.xnu_source / "iokit/Kernel/arm/hid/NabuHID.cpp"
+    if not hid_path.is_file():
+        parser.error(f"NabuHID source is missing from {args.xnu_source}")
+    hid = hid_path.read_text(encoding="utf-8")
     required = (
         "nbu_probe_chip() && nbu_wait_firmware()",
         "nvt_read_point_frame(&ts.bus, frame)",
         "nbu_touch_publish(",
-        "nabu_hid_touch(",
+        "nabu_hid_touch(slot, down, x, y)",
         "nbu_touch_release(&ts.slots, nbu_hid_touch_native)",
         "fallback=80ms",
     )
@@ -37,8 +41,26 @@ def main():
         parser.error("touch driver is missing a required gated input-path stage")
     if any(token in driver for token in forbidden):
         parser.error("touch driver contains a firmware-write or PMIC power path")
-    if "nabu_hid_touch_native" in driver:
-        parser.error("touch driver has an inconsistent HID callback symbol")
+    if "nbu_touch_hid_x" in driver or "nbu_touch_hid_y" in driver:
+        parser.error("touch driver must preserve the native 1600x2560 HID coordinates")
+    hid_required = (
+        "fLogicalW = 1600;",
+        "fLogicalH = 2560;",
+        "fOffX = fOffY = 0;",
+        "x >= fLogicalW ? fLogicalW - 1 : x",
+        "y >= fLogicalH ? fLogicalH - 1 : y",
+        "((int64_t)x << 16) / (fLogicalW - 1)",
+        "((int64_t)y << 16) / (fLogicalH - 1)",
+        "x > fLogicalW - 1 - NABU_TOUCH_EDGE_PX",
+        "y > fLogicalH - 1 - NABU_TOUCH_EDGE_PX",
+    )
+    hid_forbidden = ("native ? 1080 : 1600", "x > 1079 ? 1079 : x",
+                     "y > 2399 ? 2399 : y",
+                     "x + fOffX", "y + fOffY")
+    if any(token not in hid for token in hid_required):
+        parser.error("NabuHID does not use full-panel 1600x2560 coordinates")
+    if any(token in hid for token in hid_forbidden):
+        parser.error("NabuHID still contains the legacy phone-sized touch transform")
 
     test = ROOT / "tests/nabu-touch-input.c"
     includes = ROOT / "tests/include"

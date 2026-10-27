@@ -389,8 +389,8 @@ index 7de8766..336b7e3 100644
 +static void
 +nbu_hid_touch_native(int slot, int down, int x, int y)
 +{
-+	/* The baseline HID service exposes the 1080x2400 logical digitizer. */
-+	nabu_hid_touch(slot, down, nbu_touch_hid_x(x), nbu_touch_hid_y(y));
++	/* NT36523 and NabuHIDTouch both use the native 1600x2560 panel space. */
++	nabu_hid_touch(slot, down, x, y);
 +}
 +
  static void
@@ -629,7 +629,7 @@ new file mode 100644
 index 0000000..843e840
 --- /dev/null
 +++ b/bsd/dev/nabu_touch_input.h
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,89 @@
 +/*
 + * Stable NT36523 contact ids mapped to Nabu HID slots.
 + *
@@ -650,30 +650,6 @@ index 0000000..843e840
 +};
 +
 +typedef void (*nbu_touch_emit_fn)(int slot, int down, int x, int y);
-+
-+static inline int
-+nbu_touch_hid_x(int x)
-+{
-+	if (x <= 0) {
-+		return 0;
-+	}
-+	if ((unsigned)x >= NBU_TOUCH_WIDTH - 1u) {
-+		return 1079;
-+	}
-+	return (int)((int64_t)x * 1079 / (NBU_TOUCH_WIDTH - 1u));
-+}
-+
-+static inline int
-+nbu_touch_hid_y(int y)
-+{
-+	if (y <= 0) {
-+		return 0;
-+	}
-+	if ((unsigned)y >= NBU_TOUCH_HEIGHT - 1u) {
-+		return 2399;
-+	}
-+	return (int)((int64_t)y * 2399 / (NBU_TOUCH_HEIGHT - 1u));
-+}
 +
 +static inline int
 +nbu_touch_publish(struct nbu_touch_slots *slots, const struct nvt_contact *contacts,

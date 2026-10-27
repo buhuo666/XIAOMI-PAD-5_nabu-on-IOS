@@ -90,10 +90,6 @@ main(void)
 	assert(!nbu_touch_branch_ready(NBU_TOUCH_M_AHB, 0,
 	    NBU_TOUCH_VOTES & ~(1u << 2)));
 	assert(nbu_touch_xo_level((uint32_t[8]){0x106, 0x106, 0x100001}) == 2);
-	assert(nbu_touch_hid_x(0) == 0);
-	assert(nbu_touch_hid_x(1599) == 1079);
-	assert(nbu_touch_hid_y(0) == 0);
-	assert(nbu_touch_hid_y(2559) == 2399);
 
 	fwinfo[0] = 0x12;
 	fwinfo[1] = 0xed;
@@ -142,16 +138,20 @@ main(void)
 	    NVT_MAX_FINGERS) == 2);
 	assert(nbu_touch_publish(&slots, contacts, 2, 1599, 2559, emit) == 0);
 	assert(event_count == 2 && slots.active == 0x201u);
-	assert(events[0].slot == 0 && events[0].down);
-	assert(events[1].slot == 9 && events[1].down);
+	assert(events[0].slot == 0 && events[0].down &&
+	    events[0].x == 0 && events[0].y == 0);
+	assert(events[1].slot == 9 && events[1].down &&
+	    events[1].x == 1599 && events[1].y == 2559);
 	assert(nbu_touch_publish(&slots, contacts, 2, 1599, 2559, emit) == 0);
 	assert(event_count == 4); /* Snapshot replay lets a late HID service catch up. */
 
 	contacts[0].x = 800;
+	contacts[0].y = 1200;
 	assert(nbu_touch_publish(&slots, contacts, 1, 1599, 2559, emit) == 0);
 	assert(event_count == 6);
 	assert(events[4].slot == 9 && !events[4].down);
-	assert(events[5].slot == 0 && events[5].down && events[5].x == 800);
+	assert(events[5].slot == 0 && events[5].down &&
+	    events[5].x == 800 && events[5].y == 1200);
 	assert(slots.active == 1u);
 
 	struct nvt_contact invalid[2] = {
