@@ -32,6 +32,18 @@ DYLD_CACHE_TARGETS = {
     "systemconfiguration": "SystemConfiguration",
     "managedconfiguration": "ManagedConfiguration",
 }
+ANALYSIS_ORDER = (
+    "profiled",
+    "nehelper",
+    "networkextension",
+    "sharedwebcredentials",
+    "systemconfiguration",
+    "swcd",
+    "configd",
+    "nesessionmanager",
+    "managedconfiguration",
+    "notifyd",
+)
 LAUNCH_DAEMONS = (
     "com.apple.managedconfiguration.profiled.plist",
     "com.apple.nehelper-embedded.plist",
@@ -162,6 +174,10 @@ def prepare(root, dyld_targets, output, source_sha, systemos_sha):
         targets.append(copy_target(root, output, target_id, relative, expected_sha))
     for target_id, filename in DYLD_CACHE_TARGETS.items():
         targets.append(copy_cache_target(dyld_targets, output, target_id, filename))
+    targets_by_id = {row["id"]: row for row in targets}
+    if set(targets_by_id) != set(ANALYSIS_ORDER):
+        raise ValueError("analysis target inventory differs from the pinned target plan")
+    targets = [targets_by_id[target_id] for target_id in ANALYSIS_ORDER]
 
     launchd = [summarize_launchd(root, name) for name in LAUNCH_DAEMONS]
     preferences = []

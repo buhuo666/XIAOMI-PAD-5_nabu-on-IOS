@@ -15,7 +15,16 @@ jobs:
   analyze:
     if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - group: core
+            targets: "profiled nehelper networkextension sharedwebcredentials"
+          - group: dependencies
+            targets: "configd notifyd swcd nesessionmanager systemconfiguration managedconfiguration"
     steps:
       - uses: actions/checkout@v4
 
@@ -105,19 +114,35 @@ jobs:
         run: |
           set -euo pipefail
           GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
-          while IFS=$'\t' read -r target input; do
+          failures=0
+          completed=0
+          : > "$RUNNER_TEMP/report/target-status.tsv"
+          for target in ${{ matrix.targets }}; do
+            input="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(x["analysis_path"] for x in d["targets"] if x["id"]==sys.argv[2]))' "$RUNNER_TEMP/input/targets.json" "$target")"
             project="$RUNNER_TEMP/ghidra-project-$target"
             mkdir -p "$project"
-            "$GHIDRA" "$project" "$target" \
-              -import "$input" \
-              -scriptPath tools/networkextension \
-              -postScript ExportNetworkExtension.java "$target" "$RUNNER_TEMP/report" \
-              -analysisTimeoutPerFile 900 -deleteProject \
-              -log "$RUNNER_TEMP/report/$target-ghidra.log"
-            test -s "$RUNNER_TEMP/report/$target/coverage.txt"
-            test -s "$RUNNER_TEMP/report/$target/candidate-functions.tsv"
-            test -s "$RUNNER_TEMP/report/$target/candidate-decompilation.txt"
-          done < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(x["id"]+"\t"+x["analysis_path"]) for x in d["targets"]]' "$RUNNER_TEMP/input/targets.json")
+            if timeout --signal=TERM 12m "$GHIDRA" "$project" "$target" \
+                -import "$input" \
+                -scriptPath tools/networkextension \
+                -postScript ExportNetworkExtension.java "$target" "$RUNNER_TEMP/report" \
+                -analysisTimeoutPerFile 420 -deleteProject \
+                -log "$RUNNER_TEMP/report/$target-ghidra.log"; then
+              if test -s "$RUNNER_TEMP/report/$target/coverage.txt" &&
+                 test -s "$RUNNER_TEMP/report/$target/functions.tsv" &&
+                 test -s "$RUNNER_TEMP/report/$target/candidate-decompilation.txt"; then
+                printf '%s\tsuccess\n' "$target" >> "$RUNNER_TEMP/report/target-status.tsv"
+                completed=$((completed + 1))
+              else
+                printf '%s\tmissing-output\n' "$target" >> "$RUNNER_TEMP/report/target-status.tsv"
+                failures=$((failures + 1))
+              fi
+            else
+              printf '%s\tghidra-failed-or-timeout\n' "$target" >> "$RUNNER_TEMP/report/target-status.tsv"
+              failures=$((failures + 1))
+            fi
+          done
+          test "$completed" -gt 0
+          test "$failures" -eq 0
 
           {
             printf 'source_commit=%s\n' "$GITHUB_SHA"
@@ -149,7 +174,12 @@ jobs:
               print(f"| `{item['id']}` | `{item['architecture']}` | `{item['sha256']}` |")
           PY
             fi
-            for target in profiled nehelper nesessionmanager configd notifyd swcd networkextension sharedwebcredentials systemconfiguration managedconfiguration; do
+            echo
+            echo "### Matrix group: ${{ matrix.group }}"
+            if test -f "$RUNNER_TEMP/report/target-status.tsv"; then
+              cat "$RUNNER_TEMP/report/target-status.tsv"
+            fi
+            for target in ${{ matrix.targets }}; do
               if test -f "$RUNNER_TEMP/report/$target/coverage.txt"; then
                 echo
                 echo "### $target"
@@ -161,9 +191,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
-        if: always() && !cancelled()
+        if: always()
         with:
-          name: networkextension-checkin-analysis-${{ github.run_id }}
+          name: networkextension-checkin-analysis-${{ matrix.group }}-${{ github.run_id }}
           path: ${{ runner.temp }}/report/
           if-no-files-found: error
           retention-days: 7

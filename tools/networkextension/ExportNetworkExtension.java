@@ -37,13 +37,13 @@ public class ExportNetworkExtension extends GhidraScript {
         "default_factors", "network service", "NEConfigurationManager",
         "NEProfileIngestion", "CaptiveNetwork", "NEHelperSession"
     };
-    private static final int MAX_STRINGS = 2000;
-    private static final int MAX_MATCHED_STRINGS = 20000;
-    private static final int MAX_REFS = 20000;
-    private static final int MAX_FUNCTIONS = 40;
-    private static final int MAX_CALLER_FUNCTIONS = 24;
-    private static final int MAX_FUNCTION_CHARS = 9000;
-    private static final int MAX_TABLE_ROWS = 400000;
+    private static final int MAX_STRINGS = 500;
+    private static final int MAX_MATCHED_STRINGS = 5000;
+    private static final int MAX_REFS = 6000;
+    private static final int MAX_FUNCTIONS = 12;
+    private static final int MAX_CALLER_FUNCTIONS = 4;
+    private static final int MAX_FUNCTION_CHARS = 4000;
+    private static final int MAX_TABLE_ROWS = 120000;
 
     private static final class Candidate {
         final Function function;
@@ -134,7 +134,7 @@ public class ExportNetworkExtension extends GhidraScript {
         int stringsScanned = 0;
         boolean scanCapped = false;
         DataIterator data = currentProgram.getListing().getDefinedData(true);
-        while (data.hasNext() && stringsScanned < MAX_STRINGS * 40) {
+        while (data.hasNext() && stringsScanned < MAX_STRINGS * 12) {
             monitor.checkCancelled();
             Data item = data.next();
             Object raw = item.getValue();
@@ -269,7 +269,7 @@ public class ExportNetworkExtension extends GhidraScript {
                                             clean(caller.getName()));
                         }
                     }
-                    DecompileResults result = decompiler.decompileFunction(function, 60, monitor);
+                    DecompileResults result = decompiler.decompileFunction(function, 15, monitor);
                     pseudocode.println("\n=== " + (selectedCandidate ? "priority " : "") +
                                        hex(function.getEntryPoint().getOffset()) + " " +
                                        clean(function.getName()) + " ===");
