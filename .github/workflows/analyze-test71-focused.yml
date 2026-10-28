@@ -1,38 +1,18 @@
 name: Analyze test71 blocking and CPU paths
 
 on:
-  push:
-    branches:
-      - ci/test71-networkextension-client
-      - ci/test71-networkextension-system
-      - ci/test71-mobiletimerd
-    paths:
-      - ".github/workflows/analyze-test71-focused.yml"
-      - "tools/networkextension/ExportFocusedFunctions.java"
-      - "tools/networkextension/ExportTimerCandidates.java"
-      - "tools/networkextension/focused_plan.py"
-      - "tools/networkextension/discover_mobiletimerd.py"
-      - "tools/networkextension/test_*.py"
-  workflow_dispatch:
+  workflow_call:
     inputs:
       group:
         description: Focused target group
         required: true
-        type: choice
-        options:
-          - client
-          - system
-          - timer
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   analyze:
-    if: >-
-      github.ref == 'refs/heads/ci/test71-networkextension-client' ||
-      github.ref == 'refs/heads/ci/test71-networkextension-system' ||
-      github.ref == 'refs/heads/ci/test71-mobiletimerd'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -47,7 +27,7 @@ jobs:
         id: focus
         shell: bash
         env:
-          DISPATCH_GROUP: ${{ github.event.inputs.group }}
+          DISPATCH_GROUP: ${{ inputs.group }}
         run: |
           set -euo pipefail
           if [[ -n "$DISPATCH_GROUP" ]]; then

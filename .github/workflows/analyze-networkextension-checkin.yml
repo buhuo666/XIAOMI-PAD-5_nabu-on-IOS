@@ -3,9 +3,14 @@ name: analyze-ipados-networkextension-checkin
 on:
   workflow_dispatch:
   push:
-    branches: [ci/xnu-8796-project-root]
+    branches:
+      - ci/xnu-8796-project-root
+      - ci/test71-networkextension-client
+      - ci/test71-networkextension-system
+      - ci/test71-mobiletimerd
     paths:
       - ".github/workflows/analyze-networkextension-checkin.yml"
+      - ".github/workflows/analyze-test71-focused.yml"
       - "tools/networkextension/**"
 
 permissions:
@@ -13,7 +18,10 @@ permissions:
 
 jobs:
   analyze:
-    if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
+    if: >-
+      github.ref == 'refs/heads/ci/xnu-8796-project-root' &&
+      (github.event_name != 'push' ||
+       !contains(github.event.head_commit.message, '[test71-focused]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     strategy:
@@ -197,3 +205,33 @@ jobs:
           path: ${{ runner.temp }}/report/
           if-no-files-found: error
           retention-days: 7
+
+  test71-client:
+    if: >-
+      github.ref == 'refs/heads/ci/test71-networkextension-client' ||
+      (github.ref == 'refs/heads/ci/xnu-8796-project-root' &&
+       github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[test71-focused]'))
+    uses: ./.github/workflows/analyze-test71-focused.yml
+    with:
+      group: client
+
+  test71-system:
+    if: >-
+      github.ref == 'refs/heads/ci/test71-networkextension-system' ||
+      (github.ref == 'refs/heads/ci/xnu-8796-project-root' &&
+       github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[test71-focused]'))
+    uses: ./.github/workflows/analyze-test71-focused.yml
+    with:
+      group: system
+
+  test71-mobiletimerd:
+    if: >-
+      github.ref == 'refs/heads/ci/test71-mobiletimerd' ||
+      (github.ref == 'refs/heads/ci/xnu-8796-project-root' &&
+       github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[test71-focused]'))
+    uses: ./.github/workflows/analyze-test71-focused.yml
+    with:
+      group: timer
