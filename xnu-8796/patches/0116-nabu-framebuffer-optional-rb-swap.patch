@@ -1,0 +1,48 @@
+diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -128,6 +128,7 @@
+ 	bool          fFallbackLogged;
+ 	uint32_t      fFallbackTicks;
+ 	uint32_t      fFadeStep;      /* fade-out steps done while off */
++	bool          fSwapRB;        /* nabufb_swap_rb: swap red and blue */
+ 
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
+ 	bool publishDisplayModes(void);
+@@ -225,6 +226,12 @@
+ 	int crop = 0;
+ 	PE_parse_boot_argn("nabufb_crop", &crop, sizeof(crop));
+ 	fCrop = crop != 0;
++	int swap_rb = 0;
++	PE_parse_boot_argn("nabufb_swap_rb", &swap_rb, sizeof(swap_rb));
++	fSwapRB = swap_rb != 0;
++	if (fSwapRB) {
++		IOLog("NABU FB: R/B swap enabled\n");
++	}
+ 	fFallbackLogged = false;
+ 	fFallbackTicks = 0;
+ 	int console_off = 0;
+@@ -559,9 +566,20 @@
+ 		}
+ 		if (src != 0 && bpe == 4) {
+ 			for (int32_t y = 0; y < h; y++) {
+-				memcpy((void *)(fPixels + (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4),
+-				    (const void *)(src + s->offset + (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4),
+-				    (size_t)w * 4);
++				const uint8_t *srow = (const uint8_t *)(src + s->offset +
++				    (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4);
++				uint8_t *drow = (uint8_t *)(fPixels +
++				    (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4);
++				if (!fSwapRB) {
++					memcpy(drow, srow, (size_t)w * 4);
++					continue;
++				}
++				for (int32_t x = 0; x < w; x++) {
++					drow[x * 4 + 0] = srow[x * 4 + 2];
++					drow[x * 4 + 1] = srow[x * 4 + 1];
++					drow[x * 4 + 2] = srow[x * 4 + 0];
++					drow[x * 4 + 3] = srow[x * 4 + 3];
++				}
+ 			}
+ 		}
+ 		s->release();
