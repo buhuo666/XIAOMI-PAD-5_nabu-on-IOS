@@ -1,0 +1,169 @@
+name: analyze-ipados-networkextension-checkin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/xnu-8796-project-root]
+    paths:
+      - ".github/workflows/analyze-networkextension-checkin.yml"
+      - "tools/networkextension/**"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install read-only extraction dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libfuse3-dev zlib1g-dev libbz2-dev
+
+      - name: Acquire pinned analysis tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 -o ghidra.zip https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
+          echo '795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6  ghidra.zip' | sha256sum -c -
+          unzip -q ghidra.zip
+
+          git clone https://github.com/sgan81/apfs-fuse.git apfs
+          git -C apfs checkout --detach 66b86bd525e8cb90f9012543be89b1f092b75cf3
+          git -C apfs submodule update --init
+          test "$(git -C apfs/3rdparty/lzfse rev-parse HEAD)" = e634ca58b4821d9f3d560cdc6df5dec02ffc93fd
+          cmake -S apfs -B apfs-build
+          cmake --build apfs-build -j2 --target apfs-fuse
+
+          curl --fail --location --retry 3 -o ipsw.tar.gz https://github.com/blacktop/ipsw/releases/download/v3.1.730/ipsw_3.1.730_linux_x86_64.tar.gz
+          echo '7a9bb4f0b52046344e540a89f8623206bd2d7ec7a9fc0b9cd27ba41d7a4f9c28  ipsw.tar.gz' | sha256sum -c -
+          mkdir ipsw-bin
+          tar -xzf ipsw.tar.gz -C ipsw-bin
+          IPSW_BIN="$(find "$RUNNER_TEMP/ipsw-bin" -type f -name ipsw -perm /111 | head -n 1)"
+          test -n "$IPSW_BIN"
+          "$IPSW_BIN" version | tee ipsw-version.txt
+          grep -Fq '3.1.730' ipsw-version.txt
+          "$IPSW_BIN" dyld extract --help | tee ipsw-dyld-extract-help.txt
+          grep -Fq 'extract <DSC> <DYLIB>' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--objc' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--slide' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--output' ipsw-dyld-extract-help.txt
+
+      - name: Fetch and verify official 20G81 OS and SystemOS components
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decompile/fetch_target.py "$RUNNER_TEMP/payload"
+          python3 tools/networkextension/fetch_systemos.py "$RUNNER_TEMP/payload"
+          mkdir -p \
+            "$RUNNER_TEMP/os-mount" \
+            "$RUNNER_TEMP/systemos-mount" \
+            "$RUNNER_TEMP/dyld-targets" \
+            "$RUNNER_TEMP/report"
+          "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro \
+            "$RUNNER_TEMP/payload/os.dmg" "$RUNNER_TEMP/os-mount"
+          "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro \
+            "$RUNNER_TEMP/payload/systemos.dmg" "$RUNNER_TEMP/systemos-mount"
+          cleanup() {
+            fusermount3 -u "$RUNNER_TEMP/systemos-mount" 2>/dev/null || true
+            fusermount3 -u "$RUNNER_TEMP/os-mount" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          DYLD_CACHE="$RUNNER_TEMP/systemos-mount/root/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64"
+          test -s "$DYLD_CACHE"
+          IPSW_BIN="$(find "$RUNNER_TEMP/ipsw-bin" -type f -name ipsw -perm /111 | head -n 1)"
+          for dylib in \
+            /System/Library/Frameworks/NetworkExtension.framework/NetworkExtension \
+            /System/Library/PrivateFrameworks/SharedWebCredentials.framework/SharedWebCredentials \
+            /System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration \
+            /System/Library/PrivateFrameworks/ManagedConfiguration.framework/ManagedConfiguration; do
+            "$IPSW_BIN" dyld extract --objc --slide \
+              --output "$RUNNER_TEMP/dyld-targets" "$DYLD_CACHE" "$dylib"
+          done
+
+          python3 tools/networkextension/prepare_targets.py \
+            --root "$RUNNER_TEMP/os-mount/root" \
+            --dyld-targets "$RUNNER_TEMP/dyld-targets" \
+            --out "$RUNNER_TEMP/input" \
+            --os-sha256 449fc8ba53cbf5ccd5946d56586f454b21b7e43335332d3974940eaa7310c49e \
+            --systemos-sha256 bae1f451b77c17f8984980236ab577f89a8a4c5407bdc25c4242a34e11b0e7af
+          cp "$RUNNER_TEMP/input/targets.json" "$RUNNER_TEMP/report/targets.json"
+          cleanup
+          trap - EXIT
+
+      - name: Analyze the 20G81 NetworkExtension service chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
+          while IFS=$'\t' read -r target input; do
+            project="$RUNNER_TEMP/ghidra-project-$target"
+            mkdir -p "$project"
+            "$GHIDRA" "$project" "$target" \
+              -import "$input" \
+              -scriptPath tools/networkextension \
+              -postScript ExportNetworkExtension.java "$target" "$RUNNER_TEMP/report" \
+              -analysisTimeoutPerFile 900 -deleteProject \
+              -log "$RUNNER_TEMP/report/$target-ghidra.log"
+            test -s "$RUNNER_TEMP/report/$target/coverage.txt"
+            test -s "$RUNNER_TEMP/report/$target/candidate-functions.tsv"
+            test -s "$RUNNER_TEMP/report/$target/candidate-decompilation.txt"
+          done < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(x["id"]+"\t"+x["analysis_path"]) for x in d["targets"]]' "$RUNNER_TEMP/input/targets.json")
+
+          {
+            printf 'source_commit=%s\n' "$GITHUB_SHA"
+            printf 'workflow_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'ghidra_version=11.4.2\n'
+            printf 'ipsw_version=3.1.730\n'
+            printf 'ipsw_sha256=7a9bb4f0b52046344e540a89f8623206bd2d7ec7a9fc0b9cd27ba41d7a4f9c28\n'
+            printf 'os_component_sha256=449fc8ba53cbf5ccd5946d56586f454b21b7e43335332d3974940eaa7310c49e\n'
+            printf 'systemos_component_sha256=bae1f451b77c17f8984980236ab577f89a8a4c5407bdc25c4242a34e11b0e7af\n'
+            java -version 2>&1
+          } > "$RUNNER_TEMP/report/provenance.txt"
+
+      - name: Summarize static coverage
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## iPadOS 20G81 NetworkExtension check-in analysis"
+            echo
+            echo "Only static inputs extracted on the runner from hash-pinned official OS/SystemOS components are analyzed. No tablet log, serial, backup, device image, or runtime sample is included."
+            echo
+            if test -f "$RUNNER_TEMP/report/targets.json"; then
+              python3 - "$RUNNER_TEMP/report/targets.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          print("| Target | Architecture | SHA-256 |")
+          print("|---|---|---|")
+          for item in data["targets"]:
+              print(f"| `{item['id']}` | `{item['architecture']}` | `{item['sha256']}` |")
+          PY
+            fi
+            for target in profiled nehelper nesessionmanager configd notifyd swcd networkextension sharedwebcredentials systemconfiguration managedconfiguration; do
+              if test -f "$RUNNER_TEMP/report/$target/coverage.txt"; then
+                echo
+                echo "### $target"
+                echo '```text'
+                cat "$RUNNER_TEMP/report/$target/coverage.txt"
+                echo '```'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && !cancelled()
+        with:
+          name: networkextension-checkin-analysis-${{ github.run_id }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: error
+          retention-days: 7
