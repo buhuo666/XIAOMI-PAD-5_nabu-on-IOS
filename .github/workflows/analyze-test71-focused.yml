@@ -1,0 +1,275 @@
+name: Analyze test71 blocking and CPU paths
+
+on:
+  push:
+    branches:
+      - ci/test71-networkextension-client
+      - ci/test71-networkextension-system
+      - ci/test71-mobiletimerd
+    paths:
+      - ".github/workflows/analyze-test71-focused.yml"
+      - "tools/networkextension/ExportFocusedFunctions.java"
+      - "tools/networkextension/ExportTimerCandidates.java"
+      - "tools/networkextension/focused_plan.py"
+      - "tools/networkextension/discover_mobiletimerd.py"
+      - "tools/networkextension/test_*.py"
+  workflow_dispatch:
+    inputs:
+      group:
+        description: Focused target group
+        required: true
+        type: choice
+        options:
+          - client
+          - system
+          - timer
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: >-
+      github.ref == 'refs/heads/ci/test71-networkextension-client' ||
+      github.ref == 'refs/heads/ci/test71-networkextension-system' ||
+      github.ref == 'refs/heads/ci/test71-mobiletimerd'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Select focused target group
+        id: focus
+        shell: bash
+        env:
+          DISPATCH_GROUP: ${{ github.event.inputs.group }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$DISPATCH_GROUP" ]]; then
+            group="$DISPATCH_GROUP"
+          else
+            case "$GITHUB_REF_NAME" in
+              ci/test71-networkextension-client) group=client ;;
+              ci/test71-networkextension-system) group=system ;;
+              ci/test71-mobiletimerd) group=timer ;;
+              *) echo "Unexpected analysis branch" >&2; exit 2 ;;
+            esac
+          fi
+          printf 'group=%s\n' "$group" >> "$GITHUB_OUTPUT"
+
+      - name: Run local input and plan tests
+        run: python3 -m unittest discover -s tools/networkextension -p 'test_*.py' -v
+
+      - name: Install read-only extraction dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ libfuse3-dev zlib1g-dev libbz2-dev
+
+      - name: Acquire pinned analysis tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 -o ghidra.zip https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.4.2_build/ghidra_11.4.2_PUBLIC_20250826.zip
+          echo '795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6  ghidra.zip' | sha256sum -c -
+          unzip -q ghidra.zip
+
+          git clone https://github.com/sgan81/apfs-fuse.git apfs
+          git -C apfs checkout --detach 66b86bd525e8cb90f9012543be89b1f092b75cf3
+          git -C apfs submodule update --init
+          test "$(git -C apfs/3rdparty/lzfse rev-parse HEAD)" = e634ca58b4821d9f3d560cdc6df5dec02ffc93fd
+          cmake -S apfs -B apfs-build
+          cmake --build apfs-build -j2 --target apfs-fuse
+
+          curl --fail --location --retry 3 -o ipsw.tar.gz https://github.com/blacktop/ipsw/releases/download/v3.1.730/ipsw_3.1.730_linux_x86_64.tar.gz
+          echo '7a9bb4f0b52046344e540a89f8623206bd2d7ec7a9fc0b9cd27ba41d7a4f9c28  ipsw.tar.gz' | sha256sum -c -
+          mkdir ipsw-bin
+          tar -xzf ipsw.tar.gz -C ipsw-bin
+          IPSW_BIN="$(find "$RUNNER_TEMP/ipsw-bin" -type f -name ipsw -perm /111 | head -n 1)"
+          test -n "$IPSW_BIN"
+          "$IPSW_BIN" version | tee ipsw-version.txt
+          grep -Fq '3.1.730' ipsw-version.txt
+          "$IPSW_BIN" dyld extract --help | tee ipsw-dyld-extract-help.txt
+          grep -Fq 'extract <DSC> <DYLIB>' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--objc' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--slide' ipsw-dyld-extract-help.txt
+          grep -Fq -- '--output' ipsw-dyld-extract-help.txt
+
+      - name: Fetch and verify official 20G81 analysis inputs
+        shell: bash
+        env:
+          GROUP: ${{ steps.focus.outputs.group }}
+        run: |
+          set -euo pipefail
+          python3 tools/decompile/fetch_target.py "$RUNNER_TEMP/payload"
+          mkdir -p \
+            "$RUNNER_TEMP/os-mount" \
+            "$RUNNER_TEMP/systemos-mount" \
+            "$RUNNER_TEMP/dyld-targets" \
+            "$RUNNER_TEMP/libdispatch-target" \
+            "$RUNNER_TEMP/report"
+          "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro \
+            "$RUNNER_TEMP/payload/os.dmg" "$RUNNER_TEMP/os-mount"
+          cleanup() {
+            fusermount3 -u "$RUNNER_TEMP/systemos-mount" 2>/dev/null || true
+            fusermount3 -u "$RUNNER_TEMP/os-mount" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          if [[ "$GROUP" == timer ]]; then
+            python3 tools/networkextension/discover_mobiletimerd.py \
+              --root "$RUNNER_TEMP/os-mount/root" \
+              --out "$RUNNER_TEMP/mobiletimerd-input"
+            cp "$RUNNER_TEMP/mobiletimerd-input/mobiletimerd-input.json" \
+              "$RUNNER_TEMP/report/mobiletimerd-input.json"
+          else
+            python3 tools/networkextension/fetch_systemos.py "$RUNNER_TEMP/payload"
+            "$RUNNER_TEMP/apfs-build/apfs-fuse" -o ro \
+              "$RUNNER_TEMP/payload/systemos.dmg" "$RUNNER_TEMP/systemos-mount"
+            DYLD_CACHE="$RUNNER_TEMP/systemos-mount/root/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64"
+            test -s "$DYLD_CACHE"
+            IPSW_BIN="$(find "$RUNNER_TEMP/ipsw-bin" -type f -name ipsw -perm /111 | head -n 1)"
+            for dylib in \
+              /System/Library/Frameworks/NetworkExtension.framework/NetworkExtension \
+              /System/Library/PrivateFrameworks/SharedWebCredentials.framework/SharedWebCredentials \
+              /System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration \
+              /System/Library/PrivateFrameworks/ManagedConfiguration.framework/ManagedConfiguration; do
+              "$IPSW_BIN" dyld extract --objc --slide \
+                --output "$RUNNER_TEMP/dyld-targets" "$DYLD_CACHE" "$dylib"
+            done
+            if [[ "$GROUP" == system ]]; then
+              "$IPSW_BIN" dyld extract --objc --slide \
+                --output "$RUNNER_TEMP/libdispatch-target" "$DYLD_CACHE" \
+                /usr/lib/system/libdispatch.dylib
+              test -n "$(find "$RUNNER_TEMP/libdispatch-target" -type f -print -quit)"
+            fi
+
+            python3 tools/networkextension/prepare_targets.py \
+              --root "$RUNNER_TEMP/os-mount/root" \
+              --dyld-targets "$RUNNER_TEMP/dyld-targets" \
+              --out "$RUNNER_TEMP/input" \
+              --os-sha256 449fc8ba53cbf5ccd5946d56586f454b21b7e43335332d3974940eaa7310c49e \
+              --systemos-sha256 bae1f451b77c17f8984980236ab577f89a8a4c5407bdc25c4242a34e11b0e7af
+            cp "$RUNNER_TEMP/input/targets.json" "$RUNNER_TEMP/report/targets.json"
+          fi
+          cleanup
+          trap - EXIT
+
+      - name: Analyze test71 runtime-matched functions
+        if: steps.focus.outputs.group != 'timer'
+        shell: bash
+        env:
+          GROUP: ${{ steps.focus.outputs.group }}
+        run: |
+          set -euo pipefail
+          plan_args=(
+            --group "$GROUP"
+            --targets-json "$RUNNER_TEMP/input/targets.json"
+          )
+          if [[ "$GROUP" == system ]]; then
+            libdispatch="$(find "$RUNNER_TEMP/libdispatch-target" -type f -print -quit)"
+            test -n "$libdispatch"
+            plan_args+=(--libdispatch "$libdispatch")
+          fi
+          python3 tools/networkextension/focused_plan.py \
+            "${plan_args[@]}" > "$RUNNER_TEMP/focused-plan.tsv"
+
+          GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
+          failures=0
+          completed=0
+          : > "$RUNNER_TEMP/report/focused-target-status.tsv"
+          while IFS=$'\t' read -r target input addresses digest; do
+            project="$RUNNER_TEMP/ghidra-focused-$target"
+            mkdir -p "$project"
+            if timeout --signal=TERM 9m "$GHIDRA" "$project" "$target" \
+                -import "$input" \
+                -scriptPath tools/networkextension \
+                -postScript ExportFocusedFunctions.java "$target" \
+                  "$RUNNER_TEMP/report" "$addresses" \
+                -analysisTimeoutPerFile 420 -deleteProject \
+                -log "$RUNNER_TEMP/report/$target-focused-ghidra.log"; then
+              if test -s "$RUNNER_TEMP/report/$target/focused-coverage.txt" &&
+                 test -s "$RUNNER_TEMP/report/$target/focused-decompilation.txt" &&
+                 test -s "$RUNNER_TEMP/report/$target/focused-assembly.txt"; then
+                printf '%s\tsuccess\t%s\n' "$target" "$digest" \
+                  >> "$RUNNER_TEMP/report/focused-target-status.tsv"
+                completed=$((completed + 1))
+              else
+                printf '%s\tmissing-output\t%s\n' "$target" "$digest" \
+                  >> "$RUNNER_TEMP/report/focused-target-status.tsv"
+                failures=$((failures + 1))
+              fi
+            else
+              printf '%s\tghidra-failed-or-timeout\t%s\n' "$target" "$digest" \
+                >> "$RUNNER_TEMP/report/focused-target-status.tsv"
+              failures=$((failures + 1))
+            fi
+          done < "$RUNNER_TEMP/focused-plan.tsv"
+          test "$completed" -gt 0
+          test "$failures" -eq 0
+
+      - name: Analyze mobiletimerd CPU-loop candidates
+        if: steps.focus.outputs.group == 'timer'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/mobiletimerd-input/mobiletimerd-input.json" \
+            "$RUNNER_TEMP/report/mobiletimerd-input.json"
+          input="$RUNNER_TEMP/mobiletimerd-input/mobiletimerd"
+          digest="$(sha256sum "$input" | cut -d ' ' -f 1)"
+          project="$RUNNER_TEMP/ghidra-focused-mobiletimerd"
+          mkdir -p "$project"
+          GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
+          timeout --signal=TERM 12m "$GHIDRA" "$project" mobiletimerd \
+            -import "$input" \
+            -scriptPath tools/networkextension \
+            -postScript ExportTimerCandidates.java mobiletimerd "$RUNNER_TEMP/report" \
+            -analysisTimeoutPerFile 420 -deleteProject \
+            -log "$RUNNER_TEMP/report/mobiletimerd-focused-ghidra.log"
+          printf 'mobiletimerd\tsuccess\t%s\n' "$digest" \
+            > "$RUNNER_TEMP/report/focused-target-status.tsv"
+
+      - name: Record analysis provenance
+        if: always()
+        shell: bash
+        run: |
+          {
+            printf 'source_commit=%s\n' "$GITHUB_SHA"
+            printf 'workflow_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'focus_group=%s\n' '${{ steps.focus.outputs.group }}'
+            printf 'ghidra_version=11.4.2\n'
+            printf 'ipsw_version=3.1.730\n'
+            printf 'ipsw_sha256=7a9bb4f0b52046344e540a89f8623206bd2d7ec7a9fc0b9cd27ba41d7a4f9c28\n'
+            printf 'os_component_sha256=449fc8ba53cbf5ccd5946d56586f454b21b7e43335332d3974940eaa7310c49e\n'
+            printf 'systemos_component_sha256=bae1f451b77c17f8984980236ab577f89a8a4c5407bdc25c4242a34e11b0e7af\n'
+            java -version 2>&1
+          } > "$RUNNER_TEMP/report/provenance.txt"
+
+      - name: Summarize focused static analysis
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## iPadOS 20G81 test71 focused analysis"
+            echo
+            echo "Only hash-pinned official OS/SystemOS images are analyzed. No tablet log, serial, backup, device image, or runtime sample is included."
+            echo
+            echo "Group: ${{ steps.focus.outputs.group }}"
+            if test -f "$RUNNER_TEMP/report/focused-target-status.tsv"; then
+              echo '```text'
+              cat "$RUNNER_TEMP/report/focused-target-status.tsv"
+              echo '```'
+            fi
+            find "$RUNNER_TEMP/report" -name '*coverage.txt' -type f -print -exec cat {} \;
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test71-focused-${{ steps.focus.outputs.group }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: error
+          retention-days: 7
