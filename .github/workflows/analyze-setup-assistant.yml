@@ -72,6 +72,7 @@ jobs:
           GHIDRA="$RUNNER_TEMP/ghidra_11.4.2_PUBLIC/support/analyzeHeadless"
           for target in Setup budd mobileactivationd; do
             project="$RUNNER_TEMP/ghidra-project-$target"
+            mkdir -p "$project"
             "$GHIDRA" "$project" "$target" \
               -import "$RUNNER_TEMP/input/$target" \
               -scriptPath tools/setup-flow \
