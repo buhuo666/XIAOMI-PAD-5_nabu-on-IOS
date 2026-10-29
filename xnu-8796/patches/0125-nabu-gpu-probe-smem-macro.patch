@@ -1,0 +1,49 @@
+diff --git a/bsd/dev/nabu_gpu_probe.c b/bsd/dev/nabu_gpu_probe.c
+--- a/bsd/dev/nabu_gpu_probe.c
++++ b/bsd/dev/nabu_gpu_probe.c
+@@ -84,7 +84,14 @@
+ static struct block blk_gpu = { "gpu", NABU_BLOCK_GPU_BASE, NABU_BLOCK_GPU_SIZE, 0 };
+ static struct block blk_smmu = { "smmu", NABU_BLOCK_SMMU_BASE, NABU_BLOCK_SMMU_SIZE, 0 };
+ static struct block blk_qfprom = { "qfprom", NABU_BLOCK_QFPROM_BASE, NABU_BLOCK_QFPROM_SIZE, 0 };
+-static struct block blk_cmddb = { "cmd-db", NABU_CMD_DB_PHYS, NABU_CMD_DB_SIZE, 0 };
++/*
++ * The device tree's qcom,cmd-db@c3f000c is only an 8-byte doorbell window, not
++ * the resource table: reading it here returned version=0x85f20000 with magic
++ * "48 11 00 00", which is not a cmd-db header. The table lives inside the
++ * shared-memory region the boot loader reserved, so map SMEM and report what is
++ * at its start; locating the table's offset inside SMEM is a later step.
++ */
++static struct block blk_smem = { "smem", NABU_SMEM_BASE, NABU_SMEM_SIZE, 0 };
+ 
+ static uint32_t probe_section;         /* which section is running */
+ static uint32_t newest_section = 5;    /* the last one asked for */
+@@ -284,16 +291,21 @@
+ 	printf("nabugpu: 5: fuses speed_bin=0x%02x gaming_bin=0x%02x\n",
+ 	    speed_bin, gaming_bin);
+ 
+-	/* cmd-db begins with a version word then the four magic bytes. */
+-	if (need(&blk_cmddb)) {
+-		as_bytes = (uint8_t *)blk_cmddb.base;
++	/*
++	 * Report the first words of SMEM. A cmd-db header would begin with a
++	 * version word followed by the bytes "dbcm"; if they are not there, the
++	 * table sits at some offset inside SMEM that a later step must find.
++	 */
++	if (need(&blk_smem)) {
++		as_bytes = (uint8_t *)blk_smem.base;
+ 		header[0] = *(volatile uint32_t *)as_bytes;
+ 		header[1] = *(volatile uint32_t *)(as_bytes + 4);
+-		printf("nabugpu: 5: cmd-db version=0x%08x magic=%02x %02x %02x %02x (%s)\n",
+-		    header[0],
+-		    as_bytes[4], as_bytes[5], as_bytes[6], as_bytes[7],
+-		    as_bytes[4] == 'd' && as_bytes[5] == 'b' &&
+-		    as_bytes[6] == 'c' && as_bytes[7] == 'm' ? "OK" : "UNEXPECTED");
++		printf("nabugpu: 5: smem[0]=0x%08x [4]=0x%08x bytes=%02x %02x %02x %02x (%s)\n",
++		    header[0], header[1],
++		    as_bytes[0], as_bytes[1], as_bytes[2], as_bytes[3],
++		    as_bytes[0] == 'd' && as_bytes[1] == 'b' &&
++		    as_bytes[2] == 'c' && as_bytes[3] == 'm'
++		    ? "cmd-db at offset 0" : "cmd-db not at offset 0");
+ 	}
+ 	return true;
+ }
