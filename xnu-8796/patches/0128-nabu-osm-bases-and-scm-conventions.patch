@@ -1,0 +1,396 @@
+diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
+--- a/bsd/dev/nabu_cpu_freq.c
++++ b/bsd/dev/nabu_cpu_freq.c
+@@ -89,10 +89,33 @@
+ 	vm_offset_t base;
+ };
+ 
++/*
++ * The three frequency tables, with the bases corrected.
++ *
++ * The first three attempts used 0x18321000 / 0x18323000 / 0x18325800 and the
++ * decoded code sequences settled it. Comparing what each base actually reads
++ * against this tablet's own cpufreq lists:
++ *
++ *   base 0x18321000 reads codes 15 21 26 32 37 ...   matches neither cluster
++ *   base 0x18323000 reads codes 15 21 26 30 35 40 44 49   IS the little table
++ *   base 0x18325800 reads codes 37 43 49 55 61 67 73 78   IS the big table
++ *
++ * and Android's own lists decode to exactly those codes:
++ *   little 300000 403200 499200 576000 672000 768000 844800 940800
++ *          -> -, 21, 26, 30, 35, 40, 44, 49
++ *   big    710400 825600 940800 1056000 1171200 1286400 1401600 1497600
++ *          -> 37, 43, 49, 55, 61, 67, 73, 78
++ *
++ * So the bases were one cluster out. 0x18321000 is not a table at all: it is the
++ * OSM clock controller itself (the device tree's qcom,cpucc, whose driver is
++ * clk-cpu-osm), which is why it reads plausible-looking but wrong words.
++ *
++ * The prime cluster therefore begins at the fourth block, 0x18327800.
++ */
+ static struct nabu_cluster clusters[] = {
+-	{ "little", 0x18321000UL, 4, 0 },
+-	{ "big",    0x18323000UL, 3, 0 },
+-	{ "prime",  0x18325800UL, 1, 0 },
++	{ "little", 0x18323000UL, 4, 0 },
++	{ "big",    0x18325800UL, 3, 0 },
++	{ "prime",  0x18327800UL, 1, 0 },
+ };
+ #define NABU_CLUSTERS (sizeof(clusters) / sizeof(clusters[0]))
+ 
+diff --git a/bsd/dev/nabu_gpu_trustzone.c b/bsd/dev/nabu_gpu_trustzone.c
+--- a/bsd/dev/nabu_gpu_trustzone.c
++++ b/bsd/dev/nabu_gpu_trustzone.c
+@@ -1,28 +1,35 @@
+ /*
+- * nabu GPU bring-up, stage 3a: ask TrustZone whether it will help at all.
+- *
+- * Stage 2 switched the GPU's CX half on and its branch clocks with it; all five
+- * clocks went from "OFF bit set" to running. The next step in the reference port
+- * hands the GPU's images to TrustZone for authentication, which needs a secure
+- * monitor call. Before any image is offered, this asks only questions:
+- *
+- *   SCM_IS_CALL_AVAILABLE   does this monitor serve the vendor's call set?
+- *   SCM_PAS_IS_SUPPORTED    does it support the peripheral authenticator, and
+- *                           for which image numbers? The GPU is one of them.
+- *
+- * Neither call changes device state, so a refusal costs nothing. What comes back
+- * decides whether the port can load firmware the vendor signed, or has to look
+- * for another way.
+- *
+- * The call convention follows qcom_scm-smc.c: a fast call in x0 with the service
+- * and command packed together, arguments in x1..x5, a session handle in x6, and
+- * the answer in x1 on return. A call reported as interrupted (x0 == 1) is
+- * repeated with that value as the function, which is how the protocol asks to be
+- * resumed.
++ * nabu GPU bring-up, stage 3a: map what the secure monitor will allow.
++ *
++ * Stage 2 left the GPU powered with its clocks running. The next step of the
++ * reference port hands the GPU's signed images to TrustZone, so this asks what
++ * the monitor permits -- and asks it broadly enough that one boot answers the
++ * question completely instead of raising a new one each time.
++ *
++ * The first attempt concluded "image 13 not supported", then "the call set is
++ * refused (-10)". Both were premature: the first passed a wrong argument
++ * descriptor, and the second used one call convention out of three. The
++ * reference port shows the pattern worth copying -- check the answer and not
++ * just the status, retry with the 32-bit convention, try both the fast and the
++ * preemptible forms, and ask about images the phone is known to load as a
++ * control group. If audio, modem and video all come back unsupported too, the
++ * question is wrong rather than the permission.
++ *
++ * What this does, in order:
++ *
++ *   1  find which convention answers at all (64-bit, 32-bit, legacy; each fast
++ *      and preemptible), using "is the call-available call itself available?"
++ *   2  with the convention that answered, ask which service/command pairs it
++ *      serves, as a matrix, so the boundary is visible rather than inferred
++ *   3  ask PAS_IS_SUPPORTED for image numbers 0..20 in both call forms
++ *   4  ask about the control images the phone loads through this path
++ *
++ * Every call here is a query. No image is offered, no region is set up, nothing
++ * is started or reset; a refusal changes no state on the device.
+  *
+  * Boot arguments:
+  *   nabugpu3=1        run at all
+- *   nabugpu3_pause=MS wait after each announcement (default 1500)
++ *   nabugpu3_pause=MS wait after each announcement (default 800)
+  *   nabugpu3_watch=S  report liveness afterwards
+  */
+ 
+@@ -45,40 +52,35 @@
+ #define NABU_SCM_FAST               (1ull << 31)  /* answered without preemption */
+ #define NABU_SCM_64                 (1ull << 30)
+ #define NABU_SCM_SIP                (2ull << 24)  /* the SoC vendor's call space */
+-#define NABU_SCM_CALL(service, cmd) (((uint64_t)(service) << 8) | (cmd))
+-
+-/* Service numbers (QCOM_SCM_SVC_*). */
+-#define NABU_SCM_SVC_PIL            2   /* peripheral image loader */
+-#define NABU_SCM_SVC_INFO           6   /* the monitor's own information */
+-
+-/* Commands (QCOM_SCM_PIL_PAS_* and QCOM_SCM_INFO_*). */
++
++#define NABU_SCM_SVC_PIL            2    /* peripheral image loader */
++#define NABU_SCM_SVC_INFO           6    /* the monitor's own information */
++
+ #define NABU_SCM_INFO_IS_CALL_AVAIL 0x01
+ #define NABU_SCM_PAS_IS_SUPPORTED   0x07
+ #define NABU_SCM_PAS_INIT_IMAGE     0x01
+ #define NABU_SCM_PAS_MEM_SETUP      0x02
+ #define NABU_SCM_PAS_AUTH_AND_RESET 0x05
+-
+-#define NABU_SCM_FNID(svc, cmd)     NABU_SCM_CALL(svc, cmd)
+-
+-/*
+- * The argument descriptor passed in x1. This was the bug that made the first
+- * attempt report "image 13 not supported": the value is not a plain count.
+- * QCOM_SCM_ARGS(n) packs the number of arguments in the low four bits and one
+- * two-bit type per argument above it (QCOM_SCM_VAL == 1 for a plain number):
+- *
+- *   QCOM_SCM_ARGS(1) = (1 << 4) | 1 = 0x11
+- *
+- * Passing 0x1 described zero arguments of one type, so the monitor saw a
+- * call with no arguments and answered 0.
++#define NABU_SCM_PAS_SHUTDOWN       0x06
++
++#define NABU_SCM_FNID(svc, cmd)     (((uint64_t)(svc) << 8) | (cmd))
++
++/*
++ * The argument descriptor passed in x1. QCOM_SCM_ARGS(n) packs the count in the
++ * low four bits and a two-bit type per argument above it (VAL == 1), so one
++ * plain number is (1 << 4) | 1 = 0x11. Passing 0x1 described zero arguments,
++ * which is what made the first run report a false "supported = 0".
+  */
+ #define NABU_SCM_ARGS_ONE_VAL       0x11u
+-
+-#define NABU_SCM_INTERRUPTED        1  /* x0 == 1 asks the call to be made again */
+-
+-/* Peripheral image numbers this port cares about (qcom_scm.h). */
+-#define NABU_PAS_GPU                13
+-
+-static uint32_t gpu3_pause_ms = 1500;
++#define NABU_SCM_INTERRUPTED        1
++
++/* Images this phone loads through the same path, used as a control group. */
++#define NABU_IMG_AUDIO              1
++#define NABU_IMG_MODEM              4
++#define NABU_IMG_VIDEO              9
++#define NABU_IMG_GPU                13
++
++static uint32_t gpu3_pause_ms = 800;
+ static uint32_t gpu3_watch_secs;
+ 
+ static void
+@@ -100,25 +102,25 @@
+ }
+ 
+ /*
+- * One secure monitor call. Returns the monitor's own status in *status_out and
+- * its answer word in *answer_out; the return value is 0 when a call completed.
++ * One secure monitor call with a single plain-number argument.
++ * Returns the monitor's status; *answer_out receives its answer word.
+  */
+ static int32_t
+-nabu_scm_call(const char *what, uint64_t function, uint64_t arguments,
+-    uint64_t first, uint64_t second, uint64_t *answer_out)
+-{
++nabu_scm_raw(uint64_t how, uint32_t service, uint32_t command,
++    uint64_t argument, uint64_t *answer_out, bool quiet)
++{
++	uint64_t function = how | NABU_SCM_FNID(service, command);
+ 	uint64_t session = 0;
+ 
+-	printf("nabugpu3: about to ask TrustZone %s: smc 0x%llx args 0x%llx, 0x%llx, 0x%llx\n",
+-	    what, function, arguments, first, second);
+-	nabu_gpu3_sleep_ms(gpu3_pause_ms);
+-
++	if (!quiet) {
++		printf("nabugpu3:   smc 0x%llx arg 0x%llx\n", function, argument);
++	}
+ 	for (int attempt = 0; attempt < 100; attempt++) {
+ 		register uint64_t x0 __asm__("x0") =
+ 		    attempt == 0 ? function : NABU_SCM_INTERRUPTED;
+-		register uint64_t x1 __asm__("x1") = arguments;
+-		register uint64_t x2 __asm__("x2") = first;
+-		register uint64_t x3 __asm__("x3") = second;
++		register uint64_t x1 __asm__("x1") = NABU_SCM_ARGS_ONE_VAL;
++		register uint64_t x2 __asm__("x2") = argument;
++		register uint64_t x3 __asm__("x3") = 0;
+ 		register uint64_t x4 __asm__("x4") = 0;
+ 		register uint64_t x5 __asm__("x5") = 0;
+ 		register uint64_t x6 __asm__("x6") = session;
+@@ -133,14 +135,29 @@
+ 
+ 		session = x6;
+ 		if (x0 != NABU_SCM_INTERRUPTED) {
+-			printf("nabugpu3: TrustZone returns %d, answer 0x%llx\n",
+-			    (int32_t)x0, x1);
+ 			*answer_out = x1;
+ 			return (int32_t)x0;
+ 		}
+ 	}
+-	printf("nabugpu3: TrustZone keeps saying the call was interrupted\n");
++	*answer_out = 0;
+ 	return -1;
++}
++
++/*
++ * "Is this service/command pair available?" It is itself a call of the monitor's
++ * information service, so the pair to ask about travels as its argument, with
++ * the vendor owner bits set the way the monitor expects to see them.
++ */
++static bool
++nabu_scm_available(uint64_t how, uint32_t service, uint32_t command,
++    uint64_t *answer_out)
++{
++	uint64_t target = NABU_SCM_SIP | NABU_SCM_FNID(service, command);
++	int32_t status;
++
++	status = nabu_scm_raw(how, NABU_SCM_SVC_INFO,
++	    NABU_SCM_INFO_IS_CALL_AVAIL, target, answer_out, true);
++	return status == 0 && *answer_out == 1;
+ }
+ 
+ /* ---------------------------------------------------------------------------
+@@ -149,9 +166,30 @@
+ void
+ nabu_gpu_trustzone(void)
+ {
++	static const struct {
++		const char *name;
++		uint64_t how;
++	} conventions[] = {
++		{ "64-bit fast",        NABU_SCM_FAST | NABU_SCM_64 | NABU_SCM_SIP },
++		{ "64-bit preemptible", NABU_SCM_64 | NABU_SCM_SIP },
++		{ "32-bit fast",        NABU_SCM_FAST | NABU_SCM_SIP },
++		{ "32-bit preemptible", NABU_SCM_SIP },
++		{ "legacy fast",        NABU_SCM_FAST },
++		{ "legacy plain",       0 },
++	};
++	static const struct {
++		const char *name;
++		uint32_t id;
++	} controls[] = {
++		{ "audio", NABU_IMG_AUDIO },
++		{ "modem", NABU_IMG_MODEM },
++		{ "video", NABU_IMG_VIDEO },
++		{ "GPU zap", NABU_IMG_GPU },
++	};
+ 	uint32_t enable = 0;
+ 	uint64_t answer = 0;
+-	int32_t status;
++	uint64_t how = 0;
++	const char *how_name = NULL;
+ 
+ 	if (!PE_parse_boot_argn("nabugpu3", &enable, sizeof(enable)) || !enable) {
+ 		return;
+@@ -159,45 +197,96 @@
+ 	(void)PE_parse_boot_argn("nabugpu3_pause", &gpu3_pause_ms, sizeof(gpu3_pause_ms));
+ 	(void)PE_parse_boot_argn("nabugpu3_watch", &gpu3_watch_secs, sizeof(gpu3_watch_secs));
+ 
+-	printf("nabugpu3: ask TrustZone what it will do for this kernel (no image is offered)\n");
+-
+-	nabu_gpu3_announce("ask whether the vendor's call set is served at all");
+-	status = nabu_scm_call("is the call set available",
+-	    NABU_SCM_FAST | NABU_SCM_64 | NABU_SCM_SIP |
+-	    NABU_SCM_FNID(NABU_SCM_SVC_INFO, NABU_SCM_INFO_IS_CALL_AVAIL),
+-	    NABU_SCM_ARGS_ONE_VAL,
+-	    NABU_SCM_FNID(NABU_SCM_SVC_PIL, NABU_SCM_PAS_IS_SUPPORTED) |
+-	    NABU_SCM_SIP, 0, &answer);
+-	if (status != 0) {
+-		printf("nabugpu3: the call set is refused (status %d); firmware "
+-		    "loading through TrustZone is not available to this kernel\n",
+-		    status);
++	printf("nabugpu3: map what the secure monitor allows (queries only)\n");
++
++	/* ---- 1. which convention answers ---------------------------------- */
++	nabu_gpu3_announce("1: which call convention does the monitor answer");
++	for (size_t i = 0; i < sizeof(conventions) / sizeof(conventions[0]); i++) {
++		bool ok;
++
++		answer = 0;
++		ok = nabu_scm_available(conventions[i].how, NABU_SCM_SVC_INFO,
++		    NABU_SCM_INFO_IS_CALL_AVAIL, &answer);
++		printf("nabugpu3: 1: %-20s -> answer 0x%llx %s\n",
++		    conventions[i].name, answer, ok ? "ANSWERS" : "");
++		if (ok && how_name == NULL) {
++			how = conventions[i].how;
++			how_name = conventions[i].name;
++		}
++		nabu_gpu3_sleep_ms(20);
++	}
++	if (how_name == NULL) {
++		printf("nabugpu3: 1: no convention answers \"is call available\"; "
++		    "the monitor is not answering this kernel at all\n");
+ 		goto watch;
+ 	}
+-	printf("nabugpu3: the vendor's call set is served (answer 0x%llx)\n",
+-	    answer);
+-
+-	/*
+-	 * Which image numbers the monitor will authenticate. The reference port
+-	 * uses 13 on its SoC; this tablet's own loader names the GPU's zap as a
+-	 * pil-tz image, so the number is worth reading rather than assuming.
+-	 * Querying a range costs nothing and changes no state.
+-	 */
+-	nabu_gpu3_announce("ask which peripheral image numbers can be authenticated");
++	printf("nabugpu3: 1: using the %s convention from here on\n", how_name);
++
++	/* ---- 2. the service/command matrix -------------------------------- */
++	nabu_gpu3_announce("2: which service/command pairs are available");
++	for (uint32_t service = 0; service <= 8; service++) {
++		uint32_t mask = 0;
++
++		for (uint32_t command = 0; command <= 15; command++) {
++			answer = 0;
++			if (nabu_scm_available(how, service, command, &answer)) {
++				mask |= (1u << command);
++			}
++			nabu_gpu3_sleep_ms(4);
++		}
++		printf("nabugpu3: 2: service %u: available commands mask 0x%04x%s\n",
++		    service, mask, mask ? "" : " (none)");
++	}
++
++	/* ---- 3. which image numbers are supported ------------------------- */
++	nabu_gpu3_announce("3: which peripheral image numbers are supported");
+ 	for (uint32_t image = 0; image <= 20; image++) {
+-		status = nabu_scm_call("is this image supported",
+-		    NABU_SCM_FAST | NABU_SCM_64 | NABU_SCM_SIP |
+-		    NABU_SCM_FNID(NABU_SCM_SVC_PIL, NABU_SCM_PAS_IS_SUPPORTED),
+-		    NABU_SCM_ARGS_ONE_VAL, image, 0, &answer);
+-		if (status == 0 && answer) {
+-			printf("nabugpu3: image %u: SUPPORTED%s\n", image,
+-			    image == NABU_PAS_GPU ? " (the reference port's GPU "
+-			    "number)" : "");
+-		}
++		bool fast, slow;
++
++		answer = 0;
++		fast = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, image, &answer, true) == 0 &&
++		    answer != 0;
++		answer = 0;
++		slow = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, image, &answer, true) == 0 &&
++		    answer != 0;
++		if (fast || slow) {
++			printf("nabugpu3: 3: image %2u: supported (fast %u, slow %u)\n",
++			    image, fast, slow);
++		}
++		nabu_gpu3_sleep_ms(6);
++	}
++	printf("nabugpu3: 3: scan done\n");
++
++	/* ---- 4. the control group ----------------------------------------- */
++	nabu_gpu3_announce("4: the images this phone normally loads through this path");
++	for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
++		bool fast, slow;
++
++		answer = 0;
++		fast = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &answer, true) == 0 &&
++		    answer != 0;
++		answer = 0;
++		slow = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &answer, true) == 0 &&
++		    answer != 0;
++		printf("nabugpu3: 4: %-8s (image %2u): fast %u, slow %u\n",
++		    controls[i].name, controls[i].id, fast, slow);
+ 		nabu_gpu3_sleep_ms(20);
+ 	}
+ 
+-	printf("nabugpu3: image scan finished; no image was loaded and no state changed\n");
++	/* ---- 5. are the calls that loading needs available ---------------- */
++	nabu_gpu3_announce("5: are the calls that load an image available");
++	printf("nabugpu3: 5: init_image %u, mem_setup %u, auth_and_reset %u, "
++	    "shutdown %u\n",
++	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_INIT_IMAGE, &answer),
++	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_MEM_SETUP, &answer),
++	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_AUTH_AND_RESET, &answer),
++	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_SHUTDOWN, &answer));
++
++	printf("nabugpu3: survey finished; no image was offered and no state changed\n");
+ 
+ watch:
+ 	if (gpu3_watch_secs) {
