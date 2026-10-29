@@ -40,7 +40,7 @@ diff --git a/bsd/dev/nabu_gpu_smmu_probe.c b/bsd/dev/nabu_gpu_smmu_probe.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_gpu_smmu_probe.c
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,207 @@
 +/*
 + * A read-only look at the GPU's SMMU, the translation unit that decides what
 + * the GPU can reach.
@@ -117,7 +117,9 @@ new file mode 100644
 +
 +/* sCR0.CLIENTPD: set means no client is translated. */
 +#define NABU_SMMU_sCR0_CLIENTPD  (1u << 0)
-+#define NABU_SMMU_sCR0_USFCFG    (1u << 10)
++
++/* sGFSR.USF: an unsupported stream mapping fault is recorded. */
++#define NABU_SMMU_sGFSR_USF      (1u << 1)
 +
 +/* S2CR.TYPE, bits 17:16. */
 +#define NABU_SMMU_S2CR_TYPE(w)   (((w) >> 16) & 0x3u)
@@ -126,6 +128,9 @@ new file mode 100644
 +#define NABU_SMMU_SMR_VALID(w)   (((w) >> 31) & 0x1u)
 +
 +static uint32_t smmu_streams = 8;
++
++/* Called from the NABU machine setup in nabu_ufs.c. */
++void nabu_gpu_smmu_probe(void);
 +
 +static uint32_t
 +smmu_rd(vm_offset_t base, uint32_t off)
