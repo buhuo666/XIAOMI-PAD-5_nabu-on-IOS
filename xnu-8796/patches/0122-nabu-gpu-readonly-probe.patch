@@ -248,7 +248,7 @@ diff --git a/bsd/dev/nabu_gpu_probe.c b/bsd/dev/nabu_gpu_probe.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_gpu_probe.c
-@@ -0,0 +1,332 @@
+@@ -0,0 +1,354 @@
 +/*
 + * nabu GPU bring-up, stage 1: read-only probe.
 + *
@@ -285,17 +285,39 @@ new file mode 100644
 + * decide whether stage 2 (clock and power writes) is safe to attempt.
 + */
 +
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
 +#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
 +#include <libkern/libkern.h>
 +#include <mach/mach_types.h>
 +#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
 +#include <pexpert/pexpert.h>
-+#include <sys/systm.h>
 +#include <vm/vm_kern.h>
 +
 +#include "nabu_gpu.h"
 +
 +extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/*
++ * Sleeping from the BSD layer: IOSleep belongs to IOKit and is not visible
++ * here, so wait on our own channel the way the nabu touch driver does. The
++ * caller runs in a kernel thread during startup, which makes thread_block
++ * legal at this point.
++ */
++static void
++nabu_gpu_sleep_ms(unsigned ms)
++{
++	static int gpu_sleep_chan;
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&gpu_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
 +
 +/* ---------------------------------------------------------------------------
 + * State
@@ -345,7 +367,7 @@ new file mode 100644
 +	if (probe_section == newest_section && pause_ms &&
 +	    (!single_access || fine)) {
 +		/* Let the loader persist what was just said before we go on. */
-+		IOSleep(pause_ms);
++		nabu_gpu_sleep_ms(pause_ms);
 +	}
 +}
 +
@@ -464,7 +486,7 @@ new file mode 100644
 +	/* The GMU's status and a counter, both defined by a6xx_gmu.xml. */
 +	cpu_status = rd32(&blk_gmu, "gmu_core_cgc_status", 0x0000);
 +	first = rd32(&blk_gmu, "gmu_wrapper_cfg", 0x0004);
-+	IOSleep(20);
++	nabu_gpu_sleep_ms(20);
 +	second = rd32(&blk_gmu, "gmu_wrapper_cfg_again", 0x0004);
 +
 +	printf("nabugpu: 3: gmu reachable, status=0x%08x cfg %s (0x%08x -> 0x%08x)\n",
@@ -575,7 +597,7 @@ new file mode 100644
 +
 +	if (watch_secs) {
 +		for (uint32_t second = 1; second <= watch_secs; second++) {
-+			IOSleep(1000);
++			nabu_gpu_sleep_ms(1000);
 +			printf("nabugpu: alive %u/%u s after the probe\n",
 +			    second, watch_secs);
 +		}
