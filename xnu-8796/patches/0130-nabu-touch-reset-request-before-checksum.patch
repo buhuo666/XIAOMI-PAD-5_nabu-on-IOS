@@ -1,0 +1,77 @@
+diff --git a/bsd/dev/nabu_nt36523.c b/bsd/dev/nabu_nt36523.c
+--- a/bsd/dev/nabu_nt36523.c
++++ b/bsd/dev/nabu_nt36523.c
+@@ -110,11 +110,25 @@
+ 	uint8_t expected = (uint8_t)(0u - sum);
+ 	if (diag != NULL) { diag->stage = 3; diag->checksum_sum = (uint8_t)sum;
+ 		diag->checksum_expected = expected; diag->checksum_observed = frame[NVT_POINT_DATA_LEN - 1]; }
+-	if (expected != frame[NVT_POINT_DATA_LEN - 1]) return -1;
++
++	/*
++	 * The controller's recovery request has to be recognised before the
++	 * checksum is judged, not after. When the controller asks to be reset it
++	 * fills the leading bytes with 0x77 or 0xfd/0xfe, so the checksum cannot
++	 * match by construction: testing the checksum first returned -1 at stage 3
++	 * every time, and the recovery markers below could never be reached. That
++	 * is why a run that hit 0xfe kept being polled as if it had merely sent a
++	 * bad frame, and why the status never showed stage 4.
++	 */
+ 	bool recovery_77 = true, recovery_fd_fe = true;
+ 	for (size_t i = 0; i < 6; ++i) { recovery_77 &= frame[i] == 0x77u;
+ 		recovery_fd_fe &= frame[i] == 0xfdu || frame[i] == 0xfeu; }
+-	if (recovery_77 || recovery_fd_fe) { if (diag != NULL) diag->stage = 4; return -1; }
++	if (recovery_77 || recovery_fd_fe) {
++		if (diag != NULL) diag->stage = 4;
++		return -2;      /* distinct from a bad checksum: the chip wants a reset */
++	}
++
++	if (expected != frame[NVT_POINT_DATA_LEN - 1]) return -1;
+ 	if (diag != NULL) diag->stage = 5;
+ 	return 0;
+ }
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -406,6 +406,7 @@
+ 	struct nvt_contact contacts[NVT_MAX_FINGERS];
+ 	unsigned good = 0, bad = 0, consecutive = 0;
+ 	unsigned polls = 0, irq_high = 0, irq_low = 0, irq_frames = 0, fallback_frames = 0;
++	unsigned reset_backoff = 0;   /* consecutive controller-reset requests */
+ 	uint64_t fallback_deadline, status_deadline = 0;
+ 	bool line_consumed = false, first_frame_dumped = false, first_irq_frame_dumped = false, first_contact_dumped = false;
+ 
+@@ -466,11 +467,34 @@
+ 				first_irq_frame_dumped = true;
+ 			}
+ 			if (consecutive) printf("NABU TOUCH: frame path recovered after %u errors\n", consecutive);
++			if (reset_backoff) printf("NABU TOUCH: controller recovered after %u reset requests\n", reset_backoff);
+ 			consecutive = 0;
++			reset_backoff = 0;
+ 			good++;
+ 		} else {
+ 			bad++; consecutive++;
+ 			if (ts.slots.active != 0) nbu_touch_release(&ts.slots, nbu_hid_touch_native);
++
++			/*
++			 * The controller asking to be reset is not an ordinary bad frame.
++			 * Two runs in sixteen ended with the status read stuck at
++			 * "fe fe fe fe fe" and good=0 after starting perfectly, and in both
++			 * the change happened while the fallback poll was hitting the chip
++			 * every 80 ms. Continuing to poll a controller that has asked to be
++			 * reset is the one thing most likely to keep it there, so back off
++			 * instead of hammering it: pause, then resume at a slower cadence.
++			 */
++			if (frame_status == -2) {
++				if (reset_backoff == 0) {
++					printf("NABU TOUCH: controller asked to be reset at poll=%u; "
++					    "backing off instead of polling through it\n", polls);
++				}
++				reset_backoff++;
++				nbu_sleep_ms(reset_backoff < 8 ? 20u : 200u);
++				clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
++				continue;
++			}
++
+ 			if (irq_hint && !first_irq_frame_dumped) {
+ 				printf("NABU TOUCH: first-irq-frame poll=%u spi=%d stage=%u checksum-sum=%#x expected=%#x observed=%#x\n",
+ 				    polls, frame_status, diag.stage, diag.checksum_sum, diag.checksum_expected, diag.checksum_observed);
