@@ -43,6 +43,42 @@ diff --git a/bsd/dev/nabu_gpu.h b/bsd/dev/nabu_gpu.h
  #define NABU_GPUCC_SMMU_VOTE_CBCR   0xFFFFFFFFu
  
  /* A branch clock's control register bits (same encoding on both SoCs). */
+@@ -131,12 +144,29 @@
+  * RPMh
+  * -------------------------------------------------------------------------*/
+ /*
+- * qcom,cmd-db@c3f000c  (changed: reference 0x80860000 is its SoC's placement).
+- * The node's reg is 0x0C3F000C with size 8; the command db itself is the larger
+- * window the boot loader reserved, so keep the reference's working size.
+- */
+-#define NABU_CMD_DB_PHYS        0x0C3F000CUL
+-#define NABU_CMD_DB_SIZE        0x00020000UL
++ * The device tree's qcom,cmd-db@c3f000c is the 8-byte doorbell/register window,
++ * NOT the resource table: reading it returned version=0x85f20000 with magic
++ * "48 11 00 00", which is not a cmd-db header.
++ *
++ * The table itself lives in the shared-memory region the boot loader reserved.
++ * On this SoC that region is reserved-memory/smem@86000000, base 0x86000000,
++ * size 0x200000 (verified from the device tree with 2-cell address encoding).
++ * The reference port's 0x80860000 is its own SoC's placement of the same thing.
++ *
++ * UNVERIFIED: the table's offset inside SMEM is not the region base. The first
++ * write step that needs it must search SMEM for the cmd-db header magic rather
++ * than assume an offset.
++ */
++#define NABU_SMEM_BASE          0x86000000UL
++#define NABU_SMEM_SIZE          0x00200000UL
++
++/* Where the boot loader's AOP message memory lives (xbl_aop_mem@85e00000). */
++#define NABU_AOP_MEM_BASE       0x85E00000UL
++#define NABU_AOP_MEM_SIZE       0x00140000UL
++
++/* GPU firmware staging area reserved by the boot loader. */
++#define NABU_PIL_GPU_BASE       0x98F15000UL
++#define NABU_PIL_GPU_SIZE       0x00002000UL
+ 
+ /* The GPU's CX supply, from the device tree's rpmh-regulator-cxlvl node. */
+ #define NABU_CX_SUPPLY_NAME     "cx"
 diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
 --- a/bsd/dev/nabu_gpu_clocks.c
 +++ b/bsd/dev/nabu_gpu_clocks.c
@@ -102,8 +138,29 @@ diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
 diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
 --- a/bsd/dev/nabu_cpu_freq.c
 +++ b/bsd/dev/nabu_cpu_freq.c
-@@ -65,9 +65,13 @@
-  * Each row is 32 bytes and its first word holds the frequency encoding.
+@@ -48,15 +48,30 @@
+ /* ---------------------------------------------------------------------------
+  * Layout of one OSM block.
+  *
+- * The row table and the "wanted row" register follow Linux's OSM description
+- * (drivers/clk/qcom/clk-cpu-osm.c and the osm hardware description). The
+- * offsets below are the ones this port reads; the read pass prints them so the
+- * real layout can be confirmed before any write is trusted.
++ * This is the "qcom,cpufreq-hw" generation of the driver, NOT the EPSS one.
++ * Upstream Linux describes both in drivers/cpufreq/qcom-cpufreq-hw.c as two
++ * different soc_data tables:
++ *
++ *                        EPSS (what this file wrongly used first)   this SoC
++ *   reg_dcvs_ctrl        0xb0                                      0xbc
++ *   reg_freq_lut         0x100                                     0x110
++ *   reg_volt_lut         0x200                                     0x114
++ *   reg_current_vote     -                                         0x704
++ *   reg_perf_state       0x320                                     0x920
++ *   lut_row_size         4 bytes                                   32 bytes
++ *
++ * The row size is what made the first attempt fail: reading 4 bytes per row
++ * landed on padding, so every word came back 0 or 1 and the table looked empty.
++ * Each row is 32 bytes and its first word holds the frequency encoding.
   * -------------------------------------------------------------------------*/
  #define NABU_OSM_BLOCK_SIZE     0x1400u
 -#define NABU_OSM_FREQ_TABLE     0x100u   /* one 32-bit word per row */
@@ -118,7 +175,7 @@ diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
  
  /* A row word: [31:30] clock source, [7:0] multiplier of the 19.2 MHz crystal. */
  #define NABU_OSM_ROW_SOURCE(w)  (((w) >> 30) & 0x3u)
-@@ -146,7 +150,7 @@
+@@ -135,7 +150,7 @@
  
  	for (uint32_t row = 0; row < NABU_OSM_TABLE_ROWS; row++) {
  		uint32_t word = *(volatile uint32_t *)(cluster->base +
@@ -127,3 +184,25 @@ diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
  		uint32_t khz = nabu_cpu_row_khz(word);
  
  		if (row > 0 && khz <= top_khz) {
+@@ -170,12 +185,16 @@
+ 		printf("nabucpu: %s (0x%llx, %u cores): current row %u, top row %u = %u kHz\n",
+ 		    cluster->name, cluster->phys, cluster->cores, current, top_row,
+ 		    top_khz);
+-		printf("nabucpu: %s: table[0..3] = 0x%08x 0x%08x 0x%08x 0x%08x\n",
++		printf("nabucpu: %s: rows 0..3 = 0x%08x 0x%08x 0x%08x 0x%08x\n",
+ 		    cluster->name,
+-		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE),
+-		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 4),
+-		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 8),
+-		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 12));
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_LUT),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_LUT + NABU_OSM_ROW_SIZE),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_LUT + 2 * NABU_OSM_ROW_SIZE),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_LUT + 3 * NABU_OSM_ROW_SIZE));
++		printf("nabucpu: %s: dcvs_ctrl=0x%08x current_vote=0x%08x\n",
++		    cluster->name,
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_DCVS_CTRL),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_CURRENT_VOTE));
+ 		nabu_cpu_sleep_ms(cpu_pause_ms);
+ 	}
+ 	return true;
