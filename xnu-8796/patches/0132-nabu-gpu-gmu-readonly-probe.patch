@@ -1,0 +1,219 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -58,6 +58,7 @@
+ extern void nabu_gpu_clocks(void);
+ extern void nabu_gpu_trustzone(void);
+ extern void nabu_cpu_freq(void);
++extern void nabu_gpu_gmu_probe(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -706,6 +707,15 @@
+ 	 * writes nothing, so a wrong assumption about the layout is harmless.
+ 	 */
+ 	nabu_cpu_freq();
++	/*
++	 * The GMU (boot-arg nabugmu=1): a read-only look at the GPU's own
++	 * sub-processor. The secure monitor refused the vendor's call set, but the
++	 * device tree shows the GMU is not behind it -- only the 4 KiB zap shader
++	 * goes through pil-tz, while the 37 KiB GMU firmware is written directly by
++	 * the kernel. This maps the GMU window and reports what state it is in,
++	 * writing nothing.
++	 */
++	nabu_gpu_gmu_probe();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -109,6 +109,7 @@
+ bsd/dev/nabu_gpu_clocks.c		standard
+ bsd/dev/nabu_cpu_freq.c			standard
+ bsd/dev/nabu_gpu_trustzone.c		standard
++bsd/dev/nabu_gpu_gmu_probe.c		standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_gmu_probe.c b/bsd/dev/nabu_gpu_gmu_probe.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu_probe.c
+@@ -0,0 +1,176 @@
++/*
++ * A read-only look at the GPU's GMU, the sub-processor that boots the rest of
++ * the GPU.
++ *
++ * The goal is narrow: find out what state this phone's GMU is in on a clean
++ * boot, without writing a register, loading a firmware or turning anything on.
++ * Everything here is a load from a window the device tree already declares, so
++ * the worst case is a failed read.
++ *
++ * Why the GMU at all: on this tablet the 3D core's own node is driven by
++ * qcom,kgsl-3d0, not by the TrustZone loader -- only the 4 KiB a640_zap shader
++ * goes through qcom,pil-tz-generic. The 37 KiB a640_gmu.bin is written straight
++ * into the GMU by the kernel, so the GMU is the one part of the GPU that does
++ * not need the secure monitor's permission. That makes it the right place to
++ * start.
++ *
++ * Where the register numbers come from: envytools' a6xx_gmu.xml, which names
++ * every register by number rather than by offset, so each becomes that number
++ * times four. Where the order comes from: a6xx_gmu_fw_load() and
++ * a6xx_gmu_start() in the Linux driver, read rather than remembered.
++ *
++ * The firmware file was parsed offline and numbers seven blocks:
++ *
++ *   #  address     size     region
++ *   0  0x00000000  0x0030   ITCM  vector table
++ *   1  0x00000200  0x0140   ITCM
++ *   2  0x00000400  0x38bc   ITCM  code
++ *   3  0x00004000  0x3a58   ITCM  code
++ *   4  0x00040000  0x1b20   DTCM  data
++ *   5  0x00043fe0  0x0014   DTCM  data
++ *   6  0x00057000  0x0308   outside both, needs the cache windows
++ *
++ * That is why ITCM is based at 0 and DTCM at 0x40000 here, which matches
++ * a6xx_gmu_fw_load() for a part that is not in the a650 family.
++ *
++ * Boot arguments:
++ *   nabugmu=1            run the probe
++ *   nabugmu_watch=SEC    keep printing liveness lines afterwards
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* qcom,gmu@0x2C6A000, reg[0]: kgsl_gmu_reg. */
++#define NABU_GMU_BASE   0x02C6A000UL
++#define NABU_GMU_SIZE   0x00030000UL
++
++/* Register numbers from a6xx_gmu.xml, multiplied by four to get byte offsets. */
++#define NABU_GMU_ICACHE_CONFIG        0x13000   /* GMU_ICACHE_CONFIG */
++#define NABU_GMU_DCACHE_CONFIG        0x13004   /* GMU_DCACHE_CONFIG */
++#define NABU_GMU_NMI_STATUS           0x08fc0   /* GMU_NMI_CONTROL_STATUS */
++#define NABU_GMU_SLUMBER_OPTION       0x08fe0   /* GMU_BOOT_SLUMBER_OPTION */
++#define NABU_GMU_ITCM_START           0x03000   /* GMU_CM3_ITCM_START */
++#define NABU_GMU_DTCM_START           0x07000   /* GMU_CM3_DTCM_START */
++#define NABU_GMU_CM3_SYSRESET         0x14000   /* GMU_CM3_SYSRESET */
++#define NABU_GMU_CM3_BOOT_CONFIG      0x14004   /* GMU_CM3_BOOT_CONFIG */
++#define NABU_GMU_CM3_FW_BUSY          0x14068   /* GMU_CM3_FW_BUSY */
++#define NABU_GMU_CM3_FW_INIT_RESULT   0x14070   /* GMU_CM3_FW_INIT_RESULT */
++#define NABU_GMU_CM3_CFG              0x140b4   /* GMU_CM3_CFG */
++#define NABU_GMU_POWER_COUNTER_EN     0x14100   /* GMU_CX_GMU_POWER_COUNTER_ENABLE */
++#define NABU_GMU_SPTPRAC_STATUS       0x14340   /* GMU_SPTPRAC_PWR_CLK_STATUS */
++
++/* The word a6xx_gmu_fw_load() writes first for this part: the vector table's
++ * initial stack pointer. Seeing it in ITCM would mean firmware is resident. */
++#define NABU_GMU_ITCM_VECTOR_SP        0x00043f80u
++
++static uint32_t gmu_watch_secs;
++
++static void
++gmu_sleep_ms(unsigned ms)
++{
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	assert_wait_deadline((event_t)&gmu_watch_secs, THREAD_UNINT, deadline);
++	(void)thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++nabu_gpu_gmu_probe(void)
++{
++	uint32_t enable = 0;
++	vm_offset_t gmu;
++	uint32_t fw_init, fw_busy, sysreset, boot_cfg, cfg;
++	uint32_t nmi_status, slumber, itcm0, dtcm0, counter_a, counter_b;
++
++	if (!PE_parse_boot_argn("nabugmu", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugmu_watch", &gmu_watch_secs,
++	    sizeof(gmu_watch_secs));
++
++	printf("nabugmu: read the GMU's state; nothing is written, no firmware "
++	    "is loaded\n");
++
++	gmu = ml_io_map(NABU_GMU_BASE, NABU_GMU_SIZE);
++	if (gmu == 0) {
++		printf("nabugmu: cannot map 0x%x (%u bytes)\n",
++		    (unsigned)NABU_GMU_BASE, (unsigned)NABU_GMU_SIZE);
++		return;
++	}
++
++	/*
++	 * The registers that say whether the GMU is running. After reset A6XX
++	 * leaves these at defined values, so they also say whether the window is
++	 * real: the same all-ones or all-zeros in every register would mean the
++	 * bus returns nothing rather than a GMU that is merely idle.
++	 */
++	fw_init    = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_FW_INIT_RESULT);
++	fw_busy    = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_FW_BUSY);
++	sysreset   = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET);
++	boot_cfg   = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_BOOT_CONFIG);
++	cfg        = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_CFG);
++	nmi_status = *(volatile uint32_t *)(gmu + NABU_GMU_NMI_STATUS);
++	slumber    = *(volatile uint32_t *)(gmu + NABU_GMU_SLUMBER_OPTION);
++
++	printf("nabugmu: fw_init=0x%08x fw_busy=0x%08x sysreset=0x%08x "
++	    "boot_cfg=0x%08x\n", fw_init, fw_busy, sysreset, boot_cfg);
++	printf("nabugmu: cm3_cfg=0x%08x nmi=0x%08x slumber=0x%08x\n",
++	    cfg, nmi_status, slumber);
++
++	/*
++	 * The first word of each tightly coupled memory. On a cold boot these are
++	 * whatever the last power cycle left. The vector table's stack pointer
++	 * would mean a loader has already put firmware there in this power cycle.
++	 */
++	itcm0 = *(volatile uint32_t *)(gmu + NABU_GMU_ITCM_START);
++	dtcm0 = *(volatile uint32_t *)(gmu + NABU_GMU_DTCM_START);
++	printf("nabugmu: itcm[0]=0x%08x dtcm[0]=0x%08x %s\n",
++	    itcm0, dtcm0,
++	    itcm0 == NABU_GMU_ITCM_VECTOR_SP ?
++	    "FIRMWARE ALREADY RESIDENT" : "no firmware in ITCM");
++
++	/*
++	 * A counter that moves separates a live read path from a constant. The
++	 * power counter keeps counting once the CX rail is up, and reading it does
++	 * not start it, so this stays a read-only observation.
++	 */
++	counter_a = *(volatile uint32_t *)(gmu + NABU_GMU_POWER_COUNTER_EN);
++	gmu_sleep_ms(20);
++	counter_b = *(volatile uint32_t *)(gmu + NABU_GMU_POWER_COUNTER_EN);
++	printf("nabugmu: power_counter 0x%08x -> 0x%08x (%s)\n",
++	    counter_a, counter_b, counter_a == counter_b ? "static" : "MOVING");
++
++	printf("nabugmu: icache_cfg=0x%08x dcache_cfg=0x%08x sptprac=0x%08x\n",
++	    *(volatile uint32_t *)(gmu + NABU_GMU_ICACHE_CONFIG),
++	    *(volatile uint32_t *)(gmu + NABU_GMU_DCACHE_CONFIG),
++	    *(volatile uint32_t *)(gmu + NABU_GMU_SPTPRAC_STATUS));
++
++	printf("nabugmu: probe finished; the GMU was only read, never reset or "
++	    "loaded\n");
++
++	if (gmu_watch_secs) {
++		for (uint32_t second = 1; second <= gmu_watch_secs; second++) {
++			gmu_sleep_ms(1000);
++			printf("nabugmu: alive %u/%u s\n", second, gmu_watch_secs);
++		}
++	}
++	printf("nabugmu: finished\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
