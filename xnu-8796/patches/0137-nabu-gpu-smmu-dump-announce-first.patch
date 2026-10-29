@@ -1,0 +1,68 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_dump.c b/bsd/dev/nabu_gpu_smmu_dump.c
+--- a/bsd/dev/nabu_gpu_smmu_dump.c
++++ b/bsd/dev/nabu_gpu_smmu_dump.c
+@@ -113,34 +113,41 @@
+ 	}
+ 
+ 	/*
+-	 * Stability first: two passes over the same words. A register file returns
+-	 * the same value twice in a row; hardware that is not answering does not
+-	 * have to. The count is reported before the dump so the dump can be read
+-	 * with that in mind.
++	 * Read the window in small groups, announcing each group before touching
++	 * it.
++	 *
++	 * The first version of this dump read all 4 KB and printed afterwards,
++	 * which was a mistake worth recording: the boot stopped dead after the
++	 * clock line and never reached the desktop, with the touch thread still
++	 * running, so something in that window blocks the bus instead of returning
++	 * a value. Printing the offset first means the log ends exactly at the
++	 * first address that does not come back, which turns a hang into a
++	 * measurement.
++	 *
++	 * A group is announced, then read, then reported, so a value is only
++	 * claimed for a group that completed. Each word is read twice for the same
++	 * reason as before: a register repeats itself.
+ 	 */
+-	for (uint32_t i = 0; i < words; i++) {
+-		uint32_t a = smmu_rd(smmu, i * 4);
+-		uint32_t b = smmu_rd(smmu, i * 4);
+-		if (a != b) {
+-			changed++;
++	for (uint32_t i = 0; i < words; i += 8) {
++		uint32_t v[8];
++		uint32_t diff = 0;
++
++		printf("nabussmudump: reading 0x%04x\n", i * 4);
++		for (uint32_t k = 0; k < 8; k++) {
++			uint32_t a = smmu_rd(smmu, (i + k) * 4);
++			uint32_t b = smmu_rd(smmu, (i + k) * 4);
++			v[k] = a;
++			if (a != b) {
++				diff++;
++			}
+ 		}
++		changed += diff;
++		printf("nabussmudump: %04x: %08x %08x %08x %08x %08x %08x %08x %08x%s\n",
++		    i * 4, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
++		    diff ? "  (unstable)" : "");
+ 	}
+ 	printf("nabussmudump: %u of %u words differ between two immediate reads\n",
+ 	    changed, words);
+-
+-	/*
+-	 * The dump itself, eight words per line, offset in front. Nothing is
+-	 * interpreted here: the point is to have the numbers, so the arrays can be
+-	 * found by their shape afterwards.
+-	 */
+-	for (uint32_t i = 0; i < words; i += 8) {
+-		printf("nabussmudump: %04x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+-		    i * 4,
+-		    smmu_rd(smmu, (i + 0) * 4), smmu_rd(smmu, (i + 1) * 4),
+-		    smmu_rd(smmu, (i + 2) * 4), smmu_rd(smmu, (i + 3) * 4),
+-		    smmu_rd(smmu, (i + 4) * 4), smmu_rd(smmu, (i + 5) * 4),
+-		    smmu_rd(smmu, (i + 6) * 4), smmu_rd(smmu, (i + 7) * 4));
+-	}
+ 
+ 	printf("nabussmudump: finished; nothing was written\n");
+ }
