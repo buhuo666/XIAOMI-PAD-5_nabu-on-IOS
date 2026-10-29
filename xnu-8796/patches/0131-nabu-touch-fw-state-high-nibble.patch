@@ -1,0 +1,125 @@
+diff --git a/bsd/dev/nabu_nt36523.h b/bsd/dev/nabu_nt36523.h
+--- a/bsd/dev/nabu_nt36523.h
++++ b/bsd/dev/nabu_nt36523.h
+@@ -23,6 +23,19 @@
+ #define NVT_EVENT_BUF_ADDR          0x2FE00u
+ #define NVT_EVENT_FWINFO            0x78u
+ #define NVT_EVENT_BUF_FWINFO        (NVT_EVENT_BUF_ADDR | NVT_EVENT_FWINFO)
++
++/*
++ * The firmware state byte, read from offset 0x60 within the event buffer.
++ *
++ * Android's driver judges it by its high nibble, not its whole value
++ * (nvt_check_fw_status at 0xffffff800892a200: `and w8, w8, #0xf0` then
++ * `cmp w8, #160`). The low nibble varies between boots -- this port has
++ * observed 0xa1 and 0xa3 from the same firmware -- so comparing the whole byte
++ * rejects valid states.
++ */
++#define NVT_FW_STATUS_OFFSET        0x60u
++#define NVT_FW_STATE_MASK           0xF0u
++#define NVT_FW_STATE_RUNNING        0xA0u   /* 0xa1, 0xa3, 0xaf all count */
+ 
+ /* Full-duplex SPI transfer, chip select held for the whole transfer. */
+ struct nvt_bus {
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -369,6 +369,26 @@
+ static bool
+ nbu_wait_firmware(void)
+ {
++	/*
++	 * Wait for the firmware to report that it is running.
++	 *
++	 * This used to require the status byte to be exactly 0xa3, which was wrong
++	 * in two ways that the Android driver on this same tablet shows. Its
++	 * nvt_check_fw_status, at 0xffffff800892a200 in the 4.14.180 kernel:
++	 *
++	 *     mov  w19, #50             ; 50 attempts
++	 *     ...
++	 *     ldrb w8, [sp, #9]
++	 *     and  w8, w8, #0xf0        ; keep the high nibble only
++	 *     cmp  w8, #160             ; 0xa0
++	 *     b.eq success
++	 *     mov  w0, #10000           ; udelay(10 ms) between attempts
++	 *
++	 * The high nibble carries the state and the low nibble is a flag that
++	 * varies, so 0xa0, 0xa1 and 0xaf all mean "running". Requiring exactly
++	 * 0xa3 meant this driver only got past the wait by luck, and it polled ten
++	 * times slower than the vendor driver does.
++	 */
+ 	uint64_t deadline;
+ 	uint8_t state = 0;
+ 	int rc = -1;
+@@ -376,16 +396,18 @@
+ 
+ 	clock_interval_to_deadline(30000u, NSEC_PER_MSEC, &deadline);
+ 	do {
+-		rc = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | 0x60u, &state, 1);
+-		if (rc == 0 && state == 0xa3u) {
+-			printf("NABU TOUCH: firmware normal-run state confirmed\n");
++		rc = nvt_read_addr(&ts.bus, NVT_EVENT_BUF_ADDR | NVT_FW_STATUS_OFFSET,
++		    &state, 1);
++		if (rc == 0 && (state & NVT_FW_STATE_MASK) == NVT_FW_STATE_RUNNING) {
++			printf("NABU TOUCH: firmware normal-run state confirmed "
++			    "(state=%#x after %u polls)\n", state, polls);
+ 			return true;
+ 		}
+ 		if ((polls++ % 10u) == 0) {
+ 			printf("NABU TOUCH: waiting for normal-run state read=%d state=%#x\n",
+ 			    rc, state);
+ 		}
+-		nbu_sleep_ms(100);
++		nbu_sleep_ms(10);
+ 	} while (mach_absolute_time() < deadline);
+ 
+ 	printf("NABU TOUCH: firmware normal-run timeout read=%d state=%#x\n", rc, state);
+@@ -415,34 +437,22 @@
+ 	    ts.max_x, ts.max_y);
+ 
+ 	/*
+-	 * The controller reports 0xa1, which means "running", but it is not yet
+-	 * ready to answer a report read.
++	 * The firmware says it is running, but on this chip that is a level in a
++	 * handshake rather than a door that stays open: three of seventeen boots
++	 * read the frame in the same instant the state read 0xa1 and the
++	 * controller then wedged at "fe fe fe fe fe". Android's driver gives the
++	 * answer to what is missing -- after nvt_check_fw_status returns it issues
++	 * the command that puts the controller into report mode and only then
++	 * starts reading (nvt_ts_work_func, plus nvt_boot_ready before the first
++	 * read). This port jumps straight from the state read to reading frames.
+ 	 *
+-	 * Seventeen boots give the evidence: fourteen worked and three wedged at
+-	 * "fe fe fe fe fe" with good=0, yet the two groups' initialisation logs are
+-	 * identical line for line, down to the firmware CRC and the 0xa1 state. The
+-	 * difference appears afterwards: the three failures read the frame in the
+-	 * same instant the state became 0xa1, and their interrupt counts then ran
+-	 * away (25, 199) because a controller that is mid-initialisation holds its
+-	 * GPIO39 high, so every loop iteration looked ready. The successful runs
+-	 * stayed at an interrupt count of 2 or fewer.
+-	 *
+-	 * So read nothing for a moment after 0xa1. Pulling the pin's line low by
+-	 * waiting also lets the controller finish settling without being read out
+-	 * from under itself. 200 ms is far longer than the settle should need and
+-	 * short enough not to delay the first touch noticeably.
++	 * Until the report-mode handshake is ported, hold off briefly so the
++	 * controller is not read out from under its own initialisation. Three
++	 * consecutive good frames are also required before a count is reported
++	 * below, so a controller that is still settling shows up as zeros rather
++	 * than as spurious contacts.
+ 	 */
+-	printf("NABU TOUCH: letting the controller settle after 0xa1 before reading\n");
+-	{
+-		uint64_t settle_start = mach_absolute_time();
+-		uint64_t settle_elapsed;
+-		nbu_sleep_ms(200);
+-		absolutetime_to_nanoseconds(mach_absolute_time() - settle_start,
+-		    &settle_elapsed);
+-		printf("NABU TOUCH: settled for %llu ms; controller state %#x\n",
+-		    settle_elapsed / NSEC_PER_MSEC,
+-		    nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u);
+-	}
++	nbu_sleep_ms(200);
+ 	clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 	
+ 	for (unsigned i = 0;; i++) {
