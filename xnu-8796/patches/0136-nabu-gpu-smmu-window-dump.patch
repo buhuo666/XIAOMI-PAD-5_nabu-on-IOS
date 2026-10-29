@@ -1,0 +1,190 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -61,6 +61,7 @@
+ extern void nabu_gpu_gmu_probe(void);
+ extern void nabu_gpu_gmu_load(void);
+ extern void nabu_gpu_smmu_probe(void);
++extern void nabu_gpu_smmu_dump(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -734,6 +735,14 @@
+ 	 * decides whether a page table is needed at all.
+ 	 */
+ 	nabu_gpu_smmu_probe();
++	/*
++	 * GPU SMMU window dump (boot-arg nabussmudump=1): the probe above showed a
++	 * working identification block but a stream-mapping array whose values
++	 * contradict it. This prints the whole first 4 KB, counts how many words
++	 * change between two immediate reads, and reports the clocks that gate the
++	 * block, so the arrays can be located by shape instead of inferred.
++	 */
++	nabu_gpu_smmu_dump();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -112,6 +112,7 @@
+ bsd/dev/nabu_gpu_gmu_probe.c		standard
+ bsd/dev/nabu_gpu_gmu_load.c	standard
+ bsd/dev/nabu_gpu_smmu_probe.c	standard
++bsd/dev/nabu_gpu_smmu_dump.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_smmu_dump.c b/bsd/dev/nabu_gpu_smmu_dump.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_dump.c
+@@ -0,0 +1,148 @@
++/*
++ * Dump the GPU SMMU's register window so the stream-mapping arrays can be
++ * located by observation instead of by inference.
++ *
++ * Why this exists: the previous probe read the identification registers and got
++ * values that describe a working ARM SMMU-500 -- but the stream-mapping array
++ * at the offset arm-smmu.h gives (0xc00) returned numbers that contradict those
++ * same identification registers. Either that offset is not where this variant
++ * keeps the array, or the reads are not reaching registers at all. Both are
++ * testable by looking at more of the window rather than by reasoning about it.
++ *
++ * Three measurements, all read-only:
++ *
++ *   1. the whole first 0x1000 bytes, eight words per line, so the arrays can be
++ *      recognised by their shape: an SMR entry has bit 31 as a valid flag and a
++ *      16-bit stream id above bit 16, and an S2CR entry is a small value whose
++ *      type field is 0..3.
++ *   2. the same window read twice, counting how many words changed. A register
++ *      file is stable across two immediate reads; a bus that is not answering
++ *      is not.
++ *   3. the GPU clock registers that gate this block, so a window that reads
++ *      badly can be matched against a clock that is off.
++ *
++ * The GPU clock offsets used in the last part are the ones this port has already
++ * verified against gpucc-sm8150.c, not new guesses.
++ *
++ * Boot arguments:
++ *   nabussmudump=1        run the dump
++ *   nabussmudump_words=N  how many 32-bit words from the window, default 1024
++ *
++ * Read-only: every access is a load.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* kgsl-smmu@0x02ca0000, reg[0] "base". */
++#define NABU_SMMU_BASE          0x02CA0000UL
++#define NABU_SMMU_SIZE          0x00010000UL
++
++/* GPU_CC, for the clocks that gate the SMMU block. */
++#define NABU_GPUCC_BASE         0x02C90000UL
++#define NABU_GPUCC_SIZE         0x00009000UL
++
++/* Verified against gpucc-sm8150.c by earlier stages of this port. */
++#define NABU_GPUCC_CXO_AON_CBCR 0x1004
++#define NABU_GPUCC_GX_GMU_CBCR  0x1064
++#define NABU_GPUCC_AHB_CBCR     0x1078
++#define NABU_GPUCC_CX_GMU_CBCR  0x1098
++
++#define NABU_DUMP_MAX_WORDS     1024u
++
++void nabu_gpu_smmu_dump(void);
++
++static uint32_t
++smmu_rd(vm_offset_t base, uint32_t off)
++{
++	return *(volatile uint32_t *)(base + off);
++}
++
++void
++nabu_gpu_smmu_dump(void)
++{
++	uint32_t enable = 0;
++	uint32_t words = NABU_DUMP_MAX_WORDS;
++	vm_offset_t smmu, gpucc;
++	uint32_t changed = 0;
++
++	if (!PE_parse_boot_argn("nabussmudump", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabussmudump_words", &words, sizeof(words));
++	if (words == 0 || words > NABU_DUMP_MAX_WORDS) {
++		words = NABU_DUMP_MAX_WORDS;
++	}
++
++	printf("nabussmudump: dump 0x%x bytes of the SMMU window\n", words * 4u);
++
++	smmu = ml_io_map(NABU_SMMU_BASE, NABU_SMMU_SIZE);
++	if (smmu == 0) {
++		printf("nabussmudump: cannot map 0x%x\n", (unsigned)NABU_SMMU_BASE);
++		return;
++	}
++
++	/*
++	 * The clocks that gate this block, read first so the dump below can be
++	 * interpreted against them. Bit 31 set means the branch is off.
++	 */
++	gpucc = ml_io_map(NABU_GPUCC_BASE, NABU_GPUCC_SIZE);
++	if (gpucc != 0) {
++		printf("nabussmudump: gpucc cxo_aon(0x%x)=0x%08x gx_gmu(0x%x)=0x%08x "
++		    "ahb(0x%x)=0x%08x cx_gmu(0x%x)=0x%08x\n",
++		    NABU_GPUCC_CXO_AON_CBCR, smmu_rd(gpucc, NABU_GPUCC_CXO_AON_CBCR),
++		    NABU_GPUCC_GX_GMU_CBCR, smmu_rd(gpucc, NABU_GPUCC_GX_GMU_CBCR),
++		    NABU_GPUCC_AHB_CBCR, smmu_rd(gpucc, NABU_GPUCC_AHB_CBCR),
++		    NABU_GPUCC_CX_GMU_CBCR, smmu_rd(gpucc, NABU_GPUCC_CX_GMU_CBCR));
++	} else {
++		printf("nabussmudump: cannot map GPU_CC; clock state unknown\n");
++	}
++
++	/*
++	 * Stability first: two passes over the same words. A register file returns
++	 * the same value twice in a row; hardware that is not answering does not
++	 * have to. The count is reported before the dump so the dump can be read
++	 * with that in mind.
++	 */
++	for (uint32_t i = 0; i < words; i++) {
++		uint32_t a = smmu_rd(smmu, i * 4);
++		uint32_t b = smmu_rd(smmu, i * 4);
++		if (a != b) {
++			changed++;
++		}
++	}
++	printf("nabussmudump: %u of %u words differ between two immediate reads\n",
++	    changed, words);
++
++	/*
++	 * The dump itself, eight words per line, offset in front. Nothing is
++	 * interpreted here: the point is to have the numbers, so the arrays can be
++	 * found by their shape afterwards.
++	 */
++	for (uint32_t i = 0; i < words; i += 8) {
++		printf("nabussmudump: %04x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
++		    i * 4,
++		    smmu_rd(smmu, (i + 0) * 4), smmu_rd(smmu, (i + 1) * 4),
++		    smmu_rd(smmu, (i + 2) * 4), smmu_rd(smmu, (i + 3) * 4),
++		    smmu_rd(smmu, (i + 4) * 4), smmu_rd(smmu, (i + 5) * 4),
++		    smmu_rd(smmu, (i + 6) * 4), smmu_rd(smmu, (i + 7) * 4));
++	}
++
++	printf("nabussmudump: finished; nothing was written\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
