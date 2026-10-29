@@ -40,7 +40,7 @@ diff --git a/bsd/dev/nabu_gpu_smmu_probe.c b/bsd/dev/nabu_gpu_smmu_probe.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_gpu_smmu_probe.c
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,202 @@
 +/*
 + * A read-only look at the GPU's SMMU, the translation unit that decides what
 + * the GPU can reach.
@@ -183,16 +183,21 @@ new file mode 100644
 +	sacr = smmu_rd(smmu, NABU_SMMU_GR0_sACR);
 +	gfsr = smmu_rd(smmu, NABU_SMMU_GR0_sGFSR);
 +
++	/*
++	 * Field positions from arm-smmu.h: ID0.NUMSMRG is bits 7:0 and
++	 * ID0.NUMIRPT bits 23:16; ID1.NUMCB is bits 7:0 and ID1.NUMS2CB bits
++	 * 23:16. The stage-2 count comes from ID1, not ID0.
++	 */
 +	num_smr  = id0 & 0xffu;
-+	num_s2cb = (id0 >> 16) & 0xffu;
-+	num_cb   = id1 & 0xffu;
 +	num_irpt = (id0 >> 16) & 0xffu;
++	num_cb   = id1 & 0xffu;
++	num_s2cb = (id1 >> 16) & 0xffu;
 +
 +	printf("nabusammu: id0=0x%08x id1=0x%08x id2=0x%08x id7=0x%08x\n",
 +	    id0, id1, id2, id7);
 +	printf("nabusammu: model %u.%u, %u stream entries, %u context banks "
 +	    "(%u stage-2), %u interrupts\n",
-+	    (id7 >> 4) & 0xf, id7 & 0xf, num_smr, num_cb, num_s2cb, num_irpt);
++	    (id7 >> 4) & 0xfu, id7 & 0xfu, num_smr, num_cb, num_s2cb, num_irpt);
 +	printf("nabusammu: sCR0=0x%08x sACR=0x%08x sGFSR=0x%08x\n",
 +	    scr0, sacr, gfsr);
 +
