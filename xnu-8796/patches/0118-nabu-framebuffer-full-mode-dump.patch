@@ -1,0 +1,73 @@
+diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -750,6 +750,48 @@
+ 
+ static uint64_t nabu_fb_logged;        /* selectors already logged (< 64) */
+ 
++/*
++ * nabufb_dump_mode=1: print the complete 3084-byte display-mode structure.
++ * The bounded selector-17 diagnostic below prints only its first 64 bytes,
++ * and those are zero even when backboardd supplies a real structure, so the
++ * payload has never been observed. Chunks are zero padded so a short tail
++ * never reads past the caller buffer.
++ */
++#define NABU_FB_MODE_BYTES     3084u
++#define NABU_FB_DUMP_CHUNK     16u
++
++static void
++nabu_fb_dump_mode_structure(const char *tag, const uint8_t *base, uint32_t length)
++{
++	static int enabled = -1;
++	uint8_t chunk[NABU_FB_DUMP_CHUNK];
++	uint32_t shown = 0;
++
++	if (enabled < 0) {
++		int arg = 0;
++		(void)PE_parse_boot_argn("nabufb_dump_mode", &arg, sizeof(arg));
++		enabled = arg != 0;
++	}
++	if (!enabled || base == NULL) {
++		return;
++	}
++	if (length > NABU_FB_MODE_BYTES) {
++		length = NABU_FB_MODE_BYTES;
++	}
++	while (shown < length) {
++		for (uint32_t i = 0; i < NABU_FB_DUMP_CHUNK; i++) {
++			chunk[i] = (shown + i < length) ? base[shown + i] : 0;
++		}
++		IOLog("NABU %s @%03x %02x %02x %02x %02x %02x %02x %02x %02x "
++		    "%02x %02x %02x %02x %02x %02x %02x %02x\n", tag, shown,
++		    chunk[0], chunk[1], chunk[2], chunk[3],
++		    chunk[4], chunk[5], chunk[6], chunk[7],
++		    chunk[8], chunk[9], chunk[10], chunk[11],
++		    chunk[12], chunk[13], chunk[14], chunk[15]);
++		shown += NABU_FB_DUMP_CHUNK;
++	}
++}
++
+ IOReturn
+ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMethodArguments *args,
+     __unused IOExternalMethodDispatch *dispatch, __unused OSObject *target,
+@@ -770,6 +812,8 @@
+ 			    args->structureInputSize, words[0], words[1], words[2], words[3],
+ 			    words[4], words[5], words[6], words[7], words[8], words[9],
+ 			    words[10], words[11], words[12], words[13], words[14], words[15]);
++			nabu_fb_dump_mode_structure("MODE17",
++			    (const uint8_t *)args->structureInput, args->structureInputSize);
+ 		}
+ 	}
+ 
+@@ -851,6 +895,11 @@
+ 		args->scalarOutput[i] = i < outCount ? out[i] : 0;
+ 	}
+ 	if (args->structureOutputDescriptor == NULL && args->structureOutput != NULL) {
++		if (selector == 27) {
++			nabu_fb_dump_mode_structure("MODE27",
++			    (const uint8_t *)args->structureOutput,
++			    args->structureOutputSize);
++		}
+ 		bzero(args->structureOutput, args->structureOutputSize);
+ 	}
+ 	if (selector == kNabuFBGetBlock) {
