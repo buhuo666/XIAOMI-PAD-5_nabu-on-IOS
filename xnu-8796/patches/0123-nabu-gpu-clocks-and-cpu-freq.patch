@@ -1,0 +1,522 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -55,6 +55,8 @@
+ extern void nabu_touch_init(void);
+ extern void nabu_usb_probe(void);
+ extern void nabu_gpu_probe(void);
++extern void nabu_gpu_clocks(void);
++extern void nabu_cpu_freq(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -685,6 +687,19 @@
+ 	 * kernel access to the GPU at all before any write is attempted.
+ 	 */
+ 	nabu_gpu_probe();
++	/*
++	 * Stage 2 of the GPU port (boot-arg nabugpu2=1): the first register
++	 * writes, switching the CX half on and the GPU's branch clocks on.
++	 * It stops before any firmware is loaded, and it refuses to touch the
++	 * CX power switch while that offset is unverified for SM8150.
++	 */
++	nabu_gpu_clocks();
++	/*
++	 * CPU frequency (boot-arg nabucpu=1): read the OSM tables, and with
++	 * nabucpu_raise=1 ask each cluster for its top row. The read pass
++	 * writes nothing, so a wrong assumption about the layout is harmless.
++	 */
++	nabu_cpu_freq();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -106,6 +106,8 @@
+ bsd/dev/memdev.c			standard
+ bsd/dev/nabu_ufs.c			standard
+ bsd/dev/nabu_gpu_probe.c		standard
++bsd/dev/nabu_gpu_clocks.c		standard
++bsd/dev/nabu_cpu_freq.c			standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -0,0 +1,225 @@
++/*
++ * nabu GPU bring-up, stage 2: clock and power writes.
++ *
++ * Stage 1 proved this hypervisor lets the kernel read every GPU register block.
++ * This stage performs the first writes: switch the CX half on and turn the GPU's
++ * branch clocks on. It stops before any firmware is loaded.
++ *
++ * What stage 1 measured, and what this stage therefore has to change:
++ *
++ *   gpucc 0x1064 gx_gmu_cbcr   = 0x80000000   OFF bit set, GMU clock off
++ *   gpucc 0x1078 ahb_cbcr      = 0x80000001   OFF bit set
++ *   gpucc 0x1098 cx_gmu_cbcr   = 0x80004220   OFF bit set
++ *   gpucc 0x109c cxo_cbcr      = 0x80000001   OFF bit set
++ *   gpucc 0x1004 cxo_aon_cbcr  = 0x00000000   not configured
++ *   gpucc 0x0100 pll1_mode     = 0x00000000   PLL1 not locked
++ *   gmu   0x0000 status        = 0x00000000   GMU not running
++ *
++ * The CX power switch (gdsc) is deliberately NOT written here: on SM8150 the
++ * power switches live in the gdsc provider rather than in the clock table, and
++ * their offsets are still unverified in this port (nabu_gpu.h marks them
++ * 0xFFFFFFFF). Writing a guessed power-switch offset is the single most
++ * dangerous thing this file could do, so the write pass refuses to run until
++ * that offset is filled in.
++ *
++ * Boot arguments:
++ *   nabugpu2=1        run at all
++ *   nabugpu2_pause=MS wait after each announcement (default 2200)
++ *   nabugpu2_watch=S  report liveness for S seconds afterwards
++ *
++ * Every write is announced first and read back afterwards, so a reset leaves a
++ * record of the last thing attempted.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#include "nabu_gpu.h"
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++static uint32_t gpu2_pause_ms = 2200;
++static uint32_t gpu2_watch_secs;
++static vm_offset_t gpucc_base;
++
++static void
++nabu_gpu2_sleep_ms(unsigned ms)
++{
++	static int gpu2_sleep_chan;
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&gpu2_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++static void
++nabu_gpu2_announce(const char *what)
++{
++	printf("nabugpu2: %s\n", what);
++	nabu_gpu2_sleep_ms(gpu2_pause_ms);
++}
++
++static bool
++nabu_gpu2_map(void)
++{
++	if (gpucc_base == 0) {
++		gpucc_base = ml_io_map(NABU_BLOCK_GPUCC_BASE, NABU_BLOCK_GPUCC_SIZE);
++		if (gpucc_base == 0) {
++			printf("nabugpu2: cannot map gpucc at 0x%lx\n",
++			    (unsigned long)NABU_BLOCK_GPUCC_BASE);
++			return false;
++		}
++	}
++	return true;
++}
++
++static uint32_t
++nabu_gpu2_read(uint32_t offset)
++{
++	return *(volatile uint32_t *)(gpucc_base + offset);
++}
++
++static void
++nabu_gpu2_write(uint32_t offset, uint32_t value)
++{
++	*(volatile uint32_t *)(gpucc_base + offset) = value;
++}
++
++/*
++ * Turn one branch clock on and wait for its OFF bit to clear.
++ * Returns true when the clock reports running.
++ */
++static bool
++nabu_gpu2_clock_on(const char *name, uint32_t offset, bool must)
++{
++	uint32_t before = nabu_gpu2_read(offset);
++	uint32_t after;
++
++	printf("nabugpu2: clock %s at 0x%x: 0x%08x -> enable\n", name, offset, before);
++	nabu_gpu2_write(offset, before | NABU_CBCR_ENABLE);
++
++	for (int tries = 0; tries < 50; tries++) {
++		after = nabu_gpu2_read(offset);
++		if ((after & NABU_CBCR_OFF) == 0) {
++			printf("nabugpu2: clock %s is on (0x%08x)\n", name, after);
++			return true;
++		}
++		nabu_gpu2_sleep_ms(2);
++	}
++	after = nabu_gpu2_read(offset);
++	printf("nabugpu2: clock %s stays off (0x%08x)%s\n", name, after,
++	    must ? " -- REQUIRED" : "; status bit not reliable, continuing");
++	return !must;
++}
++
++/*
++ * Switch the CX half on by clearing the software-collapse bit of its power
++ * switch. Refused while the offset is unknown.
++ */
++static bool
++nabu_gpu2_cx_power(void)
++{
++	uint32_t gdscr;
++
++	if (NABU_GPUCC_CX_GDSCR == 0xFFFFFFFFu) {
++		printf("nabugpu2: CX power switch offset is not known for SM8150; "
++		    "refusing to guess (see nabu_gpu.h)\n");
++		return false;
++	}
++	gdscr = nabu_gpu2_read(NABU_GPUCC_CX_GDSCR);
++	printf("nabugpu2: cx_gdscr (0x%x) = 0x%08x\n", NABU_GPUCC_CX_GDSCR, gdscr);
++	if ((gdscr & (1u << 31)) != 0) {
++		printf("nabugpu2: the CX switch is under hardware control; not ours\n");
++		return false;
++	}
++	/* GDSC_SW_COLLAPSE: clearing it lets the domain come up. */
++	nabu_gpu2_write(NABU_GPUCC_CX_GDSCR, gdscr & ~(1u << 4));
++	nabu_gpu2_sleep_ms(50);
++	printf("nabugpu2: cx_gdscr after = 0x%08x\n",
++	    nabu_gpu2_read(NABU_GPUCC_CX_GDSCR));
++	return true;
++}
++
++/* Read back the state of every clock this stage cares about. */
++static void
++nabu_gpu2_report(void)
++{
++	printf("nabugpu2: state: pll1=0x%08x cxo_aon=0x%08x gx_gmu=0x%08x "
++	    "ahb=0x%08x cx_gmu=0x%08x cxo=0x%08x\n",
++	    nabu_gpu2_read(NABU_GPUCC_PLL1_MODE),
++	    nabu_gpu2_read(NABU_GPUCC_CXO_AON_CBCR),
++	    nabu_gpu2_read(NABU_GPUCC_GX_GMU_CBCR),
++	    nabu_gpu2_read(NABU_GPUCC_AHB_CBCR),
++	    nabu_gpu2_read(NABU_GPUCC_CX_GMU_CBCR),
++	    nabu_gpu2_read(NABU_GPUCC_CXO_CBCR));
++}
++
++/* ---------------------------------------------------------------------------
++ * Entry point
++ * -------------------------------------------------------------------------*/
++void
++nabu_gpu_clocks(void)
++{
++	uint32_t enable = 0;
++
++	if (!PE_parse_boot_argn("nabugpu2", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugpu2_pause", &gpu2_pause_ms, sizeof(gpu2_pause_ms));
++	(void)PE_parse_boot_argn("nabugpu2_watch", &gpu2_watch_secs, sizeof(gpu2_watch_secs));
++
++	printf("nabugpu2: SM8150 %s stage 2: clock and power writes\n",
++	    NABU_GPU_NAME);
++	if (!nabu_gpu2_map()) {
++		return;
++	}
++	nabu_gpu2_report();
++
++	/* The register bus inside the GPU block must be alive before anything else. */
++	nabu_gpu2_announce("turn on the GPU block's register bus (ahb)");
++	if (!nabu_gpu2_clock_on("ahb", NABU_GPUCC_AHB_CBCR, false)) {
++		printf("nabugpu2: stopping: no register bus\n");
++		return;
++	}
++
++	nabu_gpu2_announce("turn on the crystal clock and its always-on gate");
++	nabu_gpu2_clock_on("cxo", NABU_GPUCC_CXO_CBCR, false);
++	nabu_gpu2_clock_on("cxo_aon", NABU_GPUCC_CXO_AON_CBCR, false);
++
++	/*
++	 * CX power comes before the GMU clock: the GMU lives in the CX half, so
++	 * its clock cannot run while that half is collapsed.
++	 */
++	nabu_gpu2_announce("switch the CX half of the GPU block on");
++	if (!nabu_gpu2_cx_power()) {
++		printf("nabugpu2: CX half not switched on; reporting and stopping\n");
++		nabu_gpu2_report();
++		goto watch;
++	}
++
++	nabu_gpu2_announce("turn on the GMU's clock");
++	nabu_gpu2_clock_on("cx_gmu", NABU_GPUCC_CX_GMU_CBCR, false);
++	nabu_gpu2_clock_on("gx_gmu", NABU_GPUCC_GX_GMU_CBCR, false);
++
++	nabu_gpu2_report();
++	printf("nabugpu2: stage 2 finished; no firmware was loaded\n");
++
++watch:
++	if (gpu2_watch_secs) {
++		for (uint32_t second = 1; second <= gpu2_watch_secs; second++) {
++			nabu_gpu2_sleep_ms(1000);
++			printf("nabugpu2: alive %u/%u s\n", second, gpu2_watch_secs);
++		}
++	}
++}
+diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_cpu_freq.c
+@@ -0,0 +1,243 @@
++/*
++ * nabu CPU frequency: read the OSM performance tables, optionally raise a cluster.
++ *
++ * SM8150 does not use the reference port's EPSS. Its scaling driver is
++ * osm-cpufreq ("Operating State Manager"): each cluster has its own register
++ * block behind qcom,clk-cpu-osm, with a table of frequency rows and a register
++ * that names the wanted row. That is the same idea as EPSS but a different
++ * layout, so the reference implementation cannot be reused verbatim.
++ *
++ * Cluster blocks, from this tablet's device tree (qcom,cpucc,
++ * compatible = "qcom,clk-cpu-osm", #address-cells = #size-cells = 1):
++ *
++ *   0x18321000   0x1400   little cluster  (cpu0-3)
++ *   0x18323000   0x1400   big cluster     (cpu4-6)
++ *   0x18325800   0x1400   prime cluster   (cpu7)
++ *   0x18327800   0x1400   fourth block, purpose not yet identified
++ *
++ * Frequencies this tablet reports (from /sys .../scaling_available_frequencies):
++ *   little up to 1785.6 MHz, big up to 2419.2 MHz, prime up to 2956.8 MHz.
++ *
++ * Boot arguments:
++ *   nabucpu=1        run at all; without it nothing happens
++ *   nabucpu_read=1   read-only: dump each cluster's table and current row,
++ *                    write nothing (safe first step, like the GPU probe)
++ *   nabucpu_raise=1  additionally ask every cluster for its top row
++ *   nabucpu_pause=MS wait after each announcement (default 1200)
++ *
++ * The read pass exists for the same reason the GPU probe does: the OSM blocks
++ * are described by the device tree but have never been touched from this
++ * kernel, and a wrong access under this hypervisor ends the run silently.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* ---------------------------------------------------------------------------
++ * Layout of one OSM block.
++ *
++ * The row table and the "wanted row" register follow Linux's OSM description
++ * (drivers/clk/qcom/clk-cpu-osm.c and the osm hardware description). The
++ * offsets below are the ones this port reads; the read pass prints them so the
++ * real layout can be confirmed before any write is trusted.
++ * -------------------------------------------------------------------------*/
++#define NABU_OSM_BLOCK_SIZE     0x1400u
++#define NABU_OSM_FREQ_TABLE     0x100u   /* one 32-bit word per row */
++#define NABU_OSM_TABLE_ROWS     40u
++#define NABU_OSM_PERF_STATE     0x320u   /* the row that is wanted */
++
++/* A row word: [31:30] clock source, [7:0] multiplier of the 19.2 MHz crystal. */
++#define NABU_OSM_ROW_SOURCE(w)  (((w) >> 30) & 0x3u)
++#define NABU_OSM_ROW_MULT(w)    ((w) & 0xFFu)
++#define NABU_XO_KHZ             19200u
++#define NABU_ALT_KHZ            300000u  /* source 0 is a fixed 300 MHz tap */
++
++struct nabu_cluster {
++	const char *name;
++	uint64_t phys;
++	uint32_t cores;      /* how many of our cores live here, informational */
++	vm_offset_t base;
++};
++
++static struct nabu_cluster clusters[] = {
++	{ "little", 0x18321000UL, 4, 0 },
++	{ "big",    0x18323000UL, 3, 0 },
++	{ "prime",  0x18325800UL, 1, 0 },
++};
++#define NABU_CLUSTERS (sizeof(clusters) / sizeof(clusters[0]))
++
++static uint32_t cpu_pause_ms = 1200;
++
++static void
++nabu_cpu_sleep_ms(unsigned ms)
++{
++	static int cpu_sleep_chan;
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&cpu_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++static void
++nabu_cpu_announce(const char *what)
++{
++	printf("nabucpu: %s\n", what);
++	nabu_cpu_sleep_ms(cpu_pause_ms);
++}
++
++/* Map a cluster block on first use. */
++static bool
++nabu_cpu_map(struct nabu_cluster *cluster)
++{
++	if (cluster->base == 0) {
++		cluster->base = ml_io_map(cluster->phys, NABU_OSM_BLOCK_SIZE);
++		if (cluster->base == 0) {
++			printf("nabucpu: %s: cannot map 0x%llx\n",
++			    cluster->name, cluster->phys);
++			return false;
++		}
++	}
++	return true;
++}
++
++/* Turn one table row into kHz, the way the reference port decodes EPSS rows. */
++static uint32_t
++nabu_cpu_row_khz(uint32_t row)
++{
++	if (NABU_OSM_ROW_SOURCE(row) == 0) {
++		return NABU_ALT_KHZ;
++	}
++	return NABU_XO_KHZ * NABU_OSM_ROW_MULT(row);
++}
++
++/*
++ * Walk a cluster's table. Returns the index of its fastest row and that row's
++ * frequency. The table ends by repeating its last entry, so stop at the first
++ * row that does not increase.
++ */
++static uint32_t
++nabu_cpu_scan(struct nabu_cluster *cluster, uint32_t *top_khz_out)
++{
++	uint32_t top_row = 0, top_khz = 0;
++
++	for (uint32_t row = 0; row < NABU_OSM_TABLE_ROWS; row++) {
++		uint32_t word = *(volatile uint32_t *)(cluster->base +
++		    NABU_OSM_FREQ_TABLE + 4 * row);
++		uint32_t khz = nabu_cpu_row_khz(word);
++
++		if (row > 0 && khz <= top_khz) {
++			break;
++		}
++		top_row = row;
++		top_khz = khz;
++	}
++	*top_khz_out = top_khz;
++	return top_row;
++}
++
++/*
++ * Read-only pass: for every cluster, report the current row, the top row and
++ * its frequency, plus the first few raw table words. Nothing is written, so a
++ * wrong assumption about the layout cannot damage anything.
++ */
++static bool
++nabu_cpu_read_only(void)
++{
++	nabu_cpu_announce("read each cluster's OSM table and current row (no writes)");
++
++	for (size_t i = 0; i < NABU_CLUSTERS; i++) {
++		struct nabu_cluster *cluster = &clusters[i];
++		uint32_t top_khz = 0, current, top_row;
++
++		if (!nabu_cpu_map(cluster)) {
++			return false;
++		}
++		top_row = nabu_cpu_scan(cluster, &top_khz);
++		current = *(volatile uint32_t *)(cluster->base + NABU_OSM_PERF_STATE);
++		printf("nabucpu: %s (0x%llx, %u cores): current row %u, top row %u = %u kHz\n",
++		    cluster->name, cluster->phys, cluster->cores, current, top_row,
++		    top_khz);
++		printf("nabucpu: %s: table[0..3] = 0x%08x 0x%08x 0x%08x 0x%08x\n",
++		    cluster->name,
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 4),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 8),
++		    *(volatile uint32_t *)(cluster->base + NABU_OSM_FREQ_TABLE + 12));
++		nabu_cpu_sleep_ms(cpu_pause_ms);
++	}
++	return true;
++}
++
++/*
++ * Write pass: ask each cluster for its top row. The hardware switches the clock
++ * source and the supply voltage by itself, as the reference port notes, so this
++ * is one register write per cluster.
++ */
++static bool
++nabu_cpu_raise(void)
++{
++	nabu_cpu_announce("ask every cluster for its top performance row");
++
++	for (size_t i = 0; i < NABU_CLUSTERS; i++) {
++		struct nabu_cluster *cluster = &clusters[i];
++		uint32_t top_khz = 0, before, top_row;
++
++		if (!nabu_cpu_map(cluster)) {
++			return false;
++		}
++		top_row = nabu_cpu_scan(cluster, &top_khz);
++		before = *(volatile uint32_t *)(cluster->base + NABU_OSM_PERF_STATE);
++		if (before == top_row) {
++			printf("nabucpu: %s: already at top row %u (%u kHz)\n",
++			    cluster->name, top_row, top_khz);
++			continue;
++		}
++		*(volatile uint32_t *)(cluster->base + NABU_OSM_PERF_STATE) = top_row;
++		nabu_cpu_sleep_ms(20);
++		printf("nabucpu: %s: row %u -> %u (%u kHz)\n",
++		    cluster->name, before, top_row, top_khz);
++		nabu_cpu_sleep_ms(cpu_pause_ms);
++	}
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Entry point
++ * -------------------------------------------------------------------------*/
++void
++nabu_cpu_freq(void)
++{
++	uint32_t enable = 0, read_only = 0, raise = 0;
++
++	if (!PE_parse_boot_argn("nabucpu", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabucpu_read", &read_only, sizeof(read_only));
++	(void)PE_parse_boot_argn("nabucpu_raise", &raise, sizeof(raise));
++	(void)PE_parse_boot_argn("nabucpu_pause", &cpu_pause_ms, sizeof(cpu_pause_ms));
++
++	printf("nabucpu: SM8150 OSM frequency control, %s%s\n",
++	    read_only ? "read-only" : "read+write",
++	    raise ? ", raising to top row" : "");
++
++	if (read_only || !raise) {
++		nabu_cpu_read_only();
++	}
++	if (raise) {
++		nabu_cpu_raise();
++	}
++	printf("nabucpu: finished\n");
++}
