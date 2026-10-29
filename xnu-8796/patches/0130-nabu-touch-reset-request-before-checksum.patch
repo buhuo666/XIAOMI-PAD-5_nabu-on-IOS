@@ -32,7 +32,7 @@ diff --git a/bsd/dev/nabu_nt36523.c b/bsd/dev/nabu_nt36523.c
 diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
 --- a/bsd/dev/nabu_touch.c
 +++ b/bsd/dev/nabu_touch.c
-@@ -406,6 +406,7 @@
+@@ -406,12 +406,45 @@
  	struct nvt_contact contacts[NVT_MAX_FINGERS];
  	unsigned good = 0, bad = 0, consecutive = 0;
  	unsigned polls = 0, irq_high = 0, irq_low = 0, irq_frames = 0, fallback_frames = 0;
@@ -40,7 +40,45 @@ diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
  	uint64_t fallback_deadline, status_deadline = 0;
  	bool line_consumed = false, first_frame_dumped = false, first_irq_frame_dumped = false, first_contact_dumped = false;
  
-@@ -466,11 +467,34 @@
+ 	clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
+ 	printf("NABU TOUCH: threaded GPIO39 sampling active, native=%ux%u fallback=80ms\n",
+ 	    ts.max_x, ts.max_y);
++
++	/*
++	 * The controller reports 0xa1, which means "running", but it is not yet
++	 * ready to answer a report read.
++	 *
++	 * Seventeen boots give the evidence: fourteen worked and three wedged at
++	 * "fe fe fe fe fe" with good=0, yet the two groups' initialisation logs are
++	 * identical line for line, down to the firmware CRC and the 0xa1 state. The
++	 * difference appears afterwards: the three failures read the frame in the
++	 * same instant the state became 0xa1, and their interrupt counts then ran
++	 * away (25, 199) because a controller that is mid-initialisation holds its
++	 * GPIO39 high, so every loop iteration looked ready. The successful runs
++	 * stayed at an interrupt count of 2 or fewer.
++	 *
++	 * So read nothing for a moment after 0xa1. Pulling the pin's line low by
++	 * waiting also lets the controller finish settling without being read out
++	 * from under itself. 200 ms is far longer than the settle should need and
++	 * short enough not to delay the first touch noticeably.
++	 */
++	printf("NABU TOUCH: letting the controller settle after 0xa1 before reading\n");
++	{
++		uint64_t settle_start = mach_absolute_time();
++		uint64_t settle_elapsed;
++		nbu_sleep_ms(200);
++		absolutetime_to_nanoseconds(mach_absolute_time() - settle_start,
++		    &settle_elapsed);
++		printf("NABU TOUCH: settled for %llu ms; controller state %#x\n",
++		    settle_elapsed / NSEC_PER_MSEC,
++		    nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u);
++	}
++	clock_interval_to_deadline(80u, NSEC_PER_MSEC, &fallback_deadline);
++	
+ 	for (unsigned i = 0;; i++) {
+ 		uint64_t now = mach_absolute_time();
+ 		bool line_high = (nbu_rd(ts.north, NABU_TLMM_IO(NABU_TOUCH_IRQ_GPIO)) & 1u) != 0;
+@@ -466,11 +499,34 @@
  				first_irq_frame_dumped = true;
  			}
  			if (consecutive) printf("NABU TOUCH: frame path recovered after %u errors\n", consecutive);
