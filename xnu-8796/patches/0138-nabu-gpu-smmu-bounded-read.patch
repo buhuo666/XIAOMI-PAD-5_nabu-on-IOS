@@ -1,0 +1,187 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -61,7 +61,7 @@
+ extern void nabu_gpu_gmu_probe(void);
+ extern void nabu_gpu_gmu_load(void);
+ extern void nabu_gpu_smmu_probe(void);
+-extern void nabu_gpu_smmu_dump(void);
++extern void nabu_gpu_smmu_read(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -736,13 +736,12 @@
+ 	 */
+ 	nabu_gpu_smmu_probe();
+ 	/*
+-	 * GPU SMMU window dump (boot-arg nabussmudump=1): the probe above showed a
+-	 * working identification block but a stream-mapping array whose values
+-	 * contradict it. This prints the whole first 4 KB, counts how many words
+-	 * change between two immediate reads, and reports the clocks that gate the
+-	 * block, so the arrays can be located by shape instead of inferred.
++	 * GPU SMMU bounded read (boot-arg nabussmuread=1): only offsets already
++	 * observed to answer are read, one time each, with each one announced
++	 * before it is touched. The full-window walk this replaces read 0x0100
++	 * and never returned, which stopped the root device and the desktop.
+ 	 */
+-	nabu_gpu_smmu_dump();
++	nabu_gpu_smmu_read();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -112,7 +112,7 @@
+ bsd/dev/nabu_gpu_gmu_probe.c		standard
+ bsd/dev/nabu_gpu_gmu_load.c	standard
+ bsd/dev/nabu_gpu_smmu_probe.c	standard
+-bsd/dev/nabu_gpu_smmu_dump.c	standard
++bsd/dev/nabu_gpu_smmu_read.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -0,0 +1,139 @@
++/*
++ * A bounded read of the GPU SMMU's registers, restricted to offsets this port
++ * has already read without trouble.
++ *
++ * What went wrong before, and why this shape: an earlier version walked the whole
++ * first 4 KB of the window. Test 89 showed it reading 0x0000 through 0x00e0 and
++ * then stopping dead at 0x0100 -- no fault, no panic, no further output, while
++ * the touch thread kept running. The read of that offset did not return, so the
++ * caller never returned, so the root device never came up and the desktop never
++ * started. Reading is not free on this block: unimplemented offsets apparently
++ * stall the bus transaction rather than reading as zero.
++ *
++ * A volatile MMIO load that is stuck in a bus transaction cannot be timed out
++ * from the same thread, so the only safe rule is to not issue the read. Hence:
++ *
++ *   - only offsets already known to answer are touched;
++ *   - each is read exactly once. Reading twice was meant to separate a register
++ *     file from a dead bus, but on this hardware it only doubles the chance of
++ *     touching something that does not come back;
++ *   - the list is explicit and short, and growing it means adding one address
++ *     that has been observed to work, not widening a range.
++ *
++ * Safe offsets, established by the two earlier probes:
++ *
++ *   0x000 sCR0      read in test 87
++ *   0x010 sACR      read in test 87
++ *   0x020 sID0      read in test 87
++ *   0x024 sID1      read in test 87
++ *   0x028 sID2      read in test 87
++ *   0x03c sID7      read in test 87
++ *   0x048 sGFSR     read in test 87
++ *   0x800..0x81c    SMR[0..7]   read in test 87
++ *   0xc00..0xc1c    S2CR[0..7]  read in test 87
++ *
++ * Everything else in the window is unknown and is not touched.
++ *
++ * This runs from the root-device path, which is the reason for the caution: a
++ * stuck read here stops the whole boot. Moving it to a thread started after the
++ * root device is up would contain the damage, but it would not make a bad
++ * read safe -- the bus and the GPU would still be affected -- so the whitelist
++ * matters more than the placement.
++ *
++ * Boot arguments:
++ *   nabussmuread=1   perform the bounded read (separate from nabusammu)
++ *
++ * Read-only: every access is a load, and only the listed offsets are loaded.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* kgsl-smmu@0x02ca0000, reg[0] "base". */
++#define NABU_SMMU_BASE          0x02CA0000UL
++#define NABU_SMMU_SIZE          0x00010000UL
++
++/* The identification and control block, all confirmed readable in test 87. */
++struct smmu_word {
++	uint32_t offset;
++	const char *name;
++};
++
++static const struct smmu_word fixed_words[] = {
++	{ 0x000, "sCR0" },
++	{ 0x010, "sACR" },
++	{ 0x020, "sID0" },
++	{ 0x024, "sID1" },
++	{ 0x028, "sID2" },
++	{ 0x03c, "sID7" },
++	{ 0x048, "sGFSR" },
++};
++
++/* How many SMR/S2CR entries to read. Test 87 read eight of each. */
++#define NABU_SMMU_ENTRIES       8u
++
++void nabu_gpu_smmu_read(void);
++
++void
++nabu_gpu_smmu_read(void)
++{
++	uint32_t enable = 0;
++	vm_offset_t smmu;
++
++	if (!PE_parse_boot_argn("nabussmuread", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++
++	printf("nabussmuread: read the confirmed SMMU offsets only\n");
++
++	smmu = ml_io_map(NABU_SMMU_BASE, NABU_SMMU_SIZE);
++	if (smmu == 0) {
++		printf("nabussmuread: cannot map 0x%x\n", (unsigned)NABU_SMMU_BASE);
++		return;
++	}
++
++	for (unsigned i = 0; i < sizeof(fixed_words) / sizeof(fixed_words[0]); i++) {
++		printf("nabussmuread: reading %s 0x%03x\n",
++		    fixed_words[i].name, fixed_words[i].offset);
++		printf("nabussmuread: %-6s 0x%03x = 0x%08x\n",
++		    fixed_words[i].name, fixed_words[i].offset,
++		    *(volatile uint32_t *)(smmu + fixed_words[i].offset));
++	}
++
++	/*
++	 * The stream-mapping arrays. Each is read once, index by index, with the
++	 * index announced first so a stall names its own entry rather than
++	 * swallowing the rest of the sweep.
++	 */
++	for (uint32_t i = 0; i < NABU_SMMU_ENTRIES; i++) {
++		uint32_t off = 0x800 + i * 4;
++		printf("nabussmuread: reading SMR[%u] 0x%03x\n", i, off);
++		printf("nabussmuread: SMR[%u]  0x%03x = 0x%08x\n", i, off,
++		    *(volatile uint32_t *)(smmu + off));
++	}
++	for (uint32_t i = 0; i < NABU_SMMU_ENTRIES; i++) {
++		uint32_t off = 0xc00 + i * 4;
++		printf("nabussmuread: reading S2CR[%u] 0x%03x\n", i, off);
++		printf("nabussmuread: S2CR[%u] 0x%03x = 0x%08x\n", i, off,
++		    *(volatile uint32_t *)(smmu + off));
++	}
++
++	printf("nabussmuread: finished; nothing was written and no other offset "
++	    "was touched\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
