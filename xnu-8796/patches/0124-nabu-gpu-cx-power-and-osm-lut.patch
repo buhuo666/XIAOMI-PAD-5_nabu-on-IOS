@@ -1,0 +1,129 @@
+diff --git a/bsd/dev/nabu_gpu.h b/bsd/dev/nabu_gpu.h
+--- a/bsd/dev/nabu_gpu.h
++++ b/bsd/dev/nabu_gpu.h
+@@ -95,19 +95,32 @@
+ #define NABU_GPUCC_EXTRA_CBCR       0x107c  /* unnamed branch in sm8150's table */
+ 
+ /*
+- * Power switches (GDSCR) are NOT in SM8150's clock table: the reference reached
+- * them directly at gpucc 0x100c / 0x106c, but on this SoC they belong to the
+- * gdsc provider and their offsets come from the device tree's qcom,gdsc node.
+- * UNVERIFIED: fill in once the gdsc node is read; do not reuse the reference
+- * values, which are for a different SoC generation.
+- */
+-#define NABU_GPUCC_GX_GDSCR         0xFFFFFFFFu
+-#define NABU_GPUCC_CX_GDSCR         0xFFFFFFFFu
++ * Power switches (GDSCR). Verified against upstream Linux gpucc-sm8150.c, which
++ * declares gpu_cx_gdsc.gdscr = 0x106c and gpu_gx_gdsc.gdscr = 0x100c. These are
++ * the SAME offsets the reference port uses, so no adaptation is needed after all:
++ * the earlier note that they belonged to a separate provider was wrong, they are
++ * simply declared there and reached through the same clock-controller block.
++ */
++#define NABU_GPUCC_GX_GDSCR         0x100c  /* the 3D core's power switch */
++#define NABU_GPUCC_CX_GDSCR         0x106c  /* the CX half's power switch */
++
++/* Companion registers declared next to the switches in gpucc-sm8150.c. */
++#define NABU_GPUCC_CX_HW_CTRL       0x1540  /* gds_hw_ctrl for the CX switch */
++#define NABU_GPUCC_GX_CLAMP_IO      0x1508  /* clamp_io_ctrl for the GX switch */
++
++/*
++ * GDSC control bits, from Linux's gdsc.c as the reference port also uses them:
++ *   bit0  software collapse (set = off, clear = on)
++ *   bit1  the switch is under hardware control, not ours to operate
++ *   bit31 the domain's power state as it is now
++ */
++#define NABU_GDSC_SW_COLLAPSE       (1u << 0)
++#define NABU_GDSC_HW_CONTROL        (1u << 1)
++#define NABU_GDSC_POWER_ON          (1u << 31)
+ 
+ /* Not present in SM8150's clock table; confirm per step before use. */
+ #define NABU_GPUCC_GMU_RCGR         0xFFFFFFFFu
+ #define NABU_GPUCC_CB_CBCR          0xFFFFFFFFu
+-#define NABU_GPUCC_CX_HW_CTRL       0xFFFFFFFFu
+ #define NABU_GPUCC_SMMU_VOTE_CBCR   0xFFFFFFFFu
+ 
+ /* A branch clock's control register bits (same encoding on both SoCs). */
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+--- a/bsd/dev/nabu_gpu_clocks.c
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -125,30 +125,40 @@
+ 
+ /*
+  * Switch the CX half on by clearing the software-collapse bit of its power
+- * switch. Refused while the offset is unknown.
++ * switch, then wait for the domain to report powered.
+  */
+ static bool
+ nabu_gpu2_cx_power(void)
+ {
+ 	uint32_t gdscr;
+ 
+-	if (NABU_GPUCC_CX_GDSCR == 0xFFFFFFFFu) {
+-		printf("nabugpu2: CX power switch offset is not known for SM8150; "
+-		    "refusing to guess (see nabu_gpu.h)\n");
+-		return false;
+-	}
+ 	gdscr = nabu_gpu2_read(NABU_GPUCC_CX_GDSCR);
+ 	printf("nabugpu2: cx_gdscr (0x%x) = 0x%08x\n", NABU_GPUCC_CX_GDSCR, gdscr);
+-	if ((gdscr & (1u << 31)) != 0) {
++
++	if ((gdscr & NABU_GDSC_HW_CONTROL) != 0) {
+ 		printf("nabugpu2: the CX switch is under hardware control; not ours\n");
+ 		return false;
+ 	}
+-	/* GDSC_SW_COLLAPSE: clearing it lets the domain come up. */
+-	nabu_gpu2_write(NABU_GPUCC_CX_GDSCR, gdscr & ~(1u << 4));
+-	nabu_gpu2_sleep_ms(50);
+-	printf("nabugpu2: cx_gdscr after = 0x%08x\n",
++	if ((gdscr & NABU_GDSC_POWER_ON) != 0) {
++		printf("nabugpu2: CX is on already\n");
++		return true;
++	}
++
++	printf("nabugpu2: clearing the software-collapse bit of cx_gdscr\n");
++	nabu_gpu2_write(NABU_GPUCC_CX_GDSCR, gdscr & ~NABU_GDSC_SW_COLLAPSE);
++
++	for (int tries = 0; tries < 100; tries++) {
++		gdscr = nabu_gpu2_read(NABU_GPUCC_CX_GDSCR);
++		if ((gdscr & NABU_GDSC_POWER_ON) != 0) {
++			printf("nabugpu2: CX is on (cx_gdscr=0x%08x, hw_ctrl=0x%08x)\n",
++			    gdscr, nabu_gpu2_read(NABU_GPUCC_CX_HW_CTRL));
++			return true;
++		}
++		nabu_gpu2_sleep_ms(2);
++	}
++	printf("nabugpu2: CX does not come on (cx_gdscr=0x%08x)\n",
+ 	    nabu_gpu2_read(NABU_GPUCC_CX_GDSCR));
+-	return true;
++	return false;
+ }
+ 
+ /* Read back the state of every clock this stage cares about. */
+diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
+--- a/bsd/dev/nabu_cpu_freq.c
++++ b/bsd/dev/nabu_cpu_freq.c
+@@ -65,9 +65,13 @@
+  * Each row is 32 bytes and its first word holds the frequency encoding.
+  * -------------------------------------------------------------------------*/
+ #define NABU_OSM_BLOCK_SIZE     0x1400u
+-#define NABU_OSM_FREQ_TABLE     0x100u   /* one 32-bit word per row */
++#define NABU_OSM_FREQ_LUT       0x110u   /* start of the frequency table */
++#define NABU_OSM_VOLT_LUT       0x114u   /* start of the voltage table */
++#define NABU_OSM_ROW_SIZE       32u      /* bytes per row */
+ #define NABU_OSM_TABLE_ROWS     40u
+-#define NABU_OSM_PERF_STATE     0x320u   /* the row that is wanted */
++#define NABU_OSM_PERF_STATE     0x920u   /* the row that is wanted */
++#define NABU_OSM_DCVS_CTRL      0xBCu
++#define NABU_OSM_CURRENT_VOTE   0x704u   /* the voltage vote currently in force */
+ 
+ /* A row word: [31:30] clock source, [7:0] multiplier of the 19.2 MHz crystal. */
+ #define NABU_OSM_ROW_SOURCE(w)  (((w) >> 30) & 0x3u)
+@@ -146,7 +150,7 @@
+ 
+ 	for (uint32_t row = 0; row < NABU_OSM_TABLE_ROWS; row++) {
+ 		uint32_t word = *(volatile uint32_t *)(cluster->base +
+-		    NABU_OSM_FREQ_TABLE + 4 * row);
++		    NABU_OSM_FREQ_LUT + NABU_OSM_ROW_SIZE * row);
+ 		uint32_t khz = nabu_cpu_row_khz(word);
+ 
+ 		if (row > 0 && khz <= top_khz) {
