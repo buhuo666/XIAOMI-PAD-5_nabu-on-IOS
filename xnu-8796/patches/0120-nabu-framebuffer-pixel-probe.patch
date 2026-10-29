@@ -1,0 +1,96 @@
+diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -418,6 +418,84 @@
+ static uint32_t nabu_fb_swaps_logged;
+ static uint64_t nabu_fb_swap_count;
+ 
++/*
++ * nabufb_pixprobe=<n>: every n-th swap, sample the submitted surface so its
++ * content can be classified instead of inferred. Each layer 0 swap carries
++ * only one surface whose id alternates between two values, so without a pixel
++ * sample the panel content is unknown: the log shows which surface was used
++ * but never what it contained.
++ *
++ * Five probe points are read (corners inset and centre) plus a coarse count of
++ * non-black pixels along one row, which is enough to separate a lock screen
++ * from a blank frame from a home screen. Default 60 swaps keeps the cost low.
++ */
++#define NABU_PIX_POINTS 5
++
++static uint32_t
++nabu_fb_pixel_probe_period(void)
++{
++	static int period = -1;
++	if (period < 0) {
++		int arg = 0;
++		if (PE_parse_boot_argn("nabufb_pixprobe", &arg, sizeof(arg))) {
++			period = arg > 0 ? arg : 0;
++		} else {
++			period = 60;
++		}
++	}
++	return (uint32_t)period;
++}
++
++static void
++nabu_fb_sample_surface(NabuSurface *s, uint64_t swap_no, uint32_t layer,
++    uintptr_t src)
++{
++	uint32_t period = nabu_fb_pixel_probe_period();
++	if (period == 0 || s == NULL || src == 0 || swap_no % period != 0) {
++		return;
++	}
++	if (s->bytesPerElement != 4 || s->width == 0 || s->height == 0 ||
++	    s->bytesPerRow == 0) {
++		return;
++	}
++	uint32_t w = s->width, h = s->height, bpr = s->bytesPerRow;
++	uint32_t px[NABU_PIX_POINTS][2] = {
++		{ w / 8, h / 8 },
++		{ w / 2, h / 2 },
++		{ w - w / 8, h / 8 },
++		{ w / 2, h - h / 8 },
++		{ w / 8, h / 2 },
++	};
++	uint32_t vals[NABU_PIX_POINTS];
++	for (uint32_t i = 0; i < NABU_PIX_POINTS; i++) {
++		uint32_t x = px[i][0], y = px[i][1];
++		uint64_t off = (uint64_t)s->offset + (uint64_t)y * bpr + (uint64_t)x * 4;
++		if (off + 4 > s->memory->getLength()) {
++			vals[i] = 0xffffffffu;
++			continue;
++		}
++		memcpy(&vals[i], (const void *)(src + off), 4);
++	}
++	/* Coarse coverage: how many of 64 samples along the middle row are non-black. */
++	uint32_t nonblack = 0;
++	uint32_t y = h / 2;
++	for (uint32_t i = 0; i < 64; i++) {
++		uint32_t x = (uint32_t)(((uint64_t)i * (w - 1)) / 63);
++		uint64_t off = (uint64_t)s->offset + (uint64_t)y * bpr + (uint64_t)x * 4;
++		if (off + 4 > s->memory->getLength()) {
++			continue;
++		}
++		uint32_t v;
++		memcpy(&v, (const void *)(src + off), 4);
++		if ((v & 0x00ffffffu) != 0) {
++			nonblack++;
++		}
++	}
++	IOLog("NABU PIX: swap %llu layer %u surf %u %ux%u pts %08x %08x %08x %08x "
++	    "%08x nonblack %u/64\n", swap_no, layer, s->id, w, h,
++	    vals[0], vals[1], vals[2], vals[3], vals[4], nonblack);
++}
++
+ /* Copy each enabled layer's surface into the panel memory (no scaling). */
+ /*
+  * A swap only records the frame: copying 10 MB into the panel on every
+@@ -571,6 +649,7 @@
+ 		    s->memory == NULL || last > s->memory->getLength()) {
+ 			src = 0;
+ 		}
++		nabu_fb_sample_surface(s, get32(rec, 0x50), layer, src);
+ 		if (src != 0 && bpe == 4) {
+ 			for (int32_t y = 0; y < h; y++) {
+ 				const uint8_t *srow = (const uint8_t *)(src + s->offset +
