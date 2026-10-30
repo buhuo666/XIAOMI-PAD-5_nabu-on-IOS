@@ -12,7 +12,7 @@ diff --git a/bsd/dev/nabu_gpu_smmu_joint.c b/bsd/dev/nabu_gpu_smmu_joint.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_gpu_smmu_joint.c
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,144 @@
 +/*
 + * Read CM3 reset, CB0 SCTLR and CB0 FSR in this boot, once each.
 + * Every target intent must be committed before its four resource checks.
@@ -30,6 +30,7 @@ new file mode 100644
 +#if defined(ARM64_BOARD_CONFIG_NABU)
 +
 +extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern kern_return_t thread_terminate(thread_t);
 +extern uint64_t nabu_log_position(void);
 +extern uint64_t nabu_log_committed_position(void);
 +extern int hz;
