@@ -1,0 +1,353 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -87,7 +87,17 @@
+ bool nabu_gpu_smmu_snapshot_get(struct nabu_smmu_snapshot *snapshot);
+ void nabu_gpu_smmu_clocks(void);
+ bool nabu_gpu_smmu_clocks_ready(void);
++bool nabu_gpu_smmu_clocks_recheck(void);
+ bool nabu_gpu_gmu_memory_root(uint64_t *table_root);
+ void nabu_gpu_smmu_plan(void);
+ 
++struct nabu_smmu_cb_observation {
++	uint32_t bank, offset, sctlr;
++	bool captured;
++};
++
++bool nabu_smmu_cb_probe_address(const struct nabu_smmu_snapshot *snapshot,
++    uint32_t *bank, uint32_t *offset);
++void nabu_gpu_smmu_cb_after_root(void);
++
+ #endif /* NABU_GPU_SMMU_PLAN_H */
+diff --git a/bsd/dev/nabu_gpu_smmu_clocks.c b/bsd/dev/nabu_gpu_smmu_clocks.c
+--- a/bsd/dev/nabu_gpu_smmu_clocks.c
++++ b/bsd/dev/nabu_gpu_smmu_clocks.c
+@@ -59,12 +59,56 @@
+ 	return clock_confirmed;
+ }
+ 
++static bool
++smmu_clock_observe(const char *prefix)
++{
++	vm_offset_t gcc, gpucc;
++	bool confirmed = true;
++
++	gcc = ml_io_map(SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE);
++	if (gcc == 0) {
++		printf("%s: cannot map GCC; SMMU remains blocked\n", prefix);
++		return false;
++	}
++	gpucc = ml_io_map(SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE);
++	if (gpucc == 0) {
++		printf("%s: cannot map GPUCC; SMMU remains blocked\n", prefix);
++		return false;
++	}
++	printf("%s: read four known power/clock words once; no writes\n", prefix);
++	for (unsigned i = 0; i < sizeof(clock_words) / sizeof(clock_words[0]); i++) {
++		const struct smmu_clock_word *word = &clock_words[i];
++		uint32_t value;
++		bool ready;
++		unsigned long physical = (word->gcc ? SMMU_CLOCK_GCC_BASE :
++		    SMMU_CLOCK_GPUCC_BASE) + word->offset;
++		printf("%s: reading %s pa=0x%lx\n", prefix, word->name, physical);
++		value = smmu_clock_load(word->gcc ? gcc : gpucc, word->offset);
++		if (word->supply) {
++			ready = (value & (SMMU_CX_ON | SMMU_CX_COLLAPSE)) == SMMU_CX_ON;
++		} else {
++			ready = (value & (SMMU_CLOCK_ENABLE | SMMU_CLOCK_OFF)) == SMMU_CLOCK_ENABLE;
++		}
++		confirmed = confirmed && ready;
++		printf("%s: %s pa=0x%lx value=0x%08x confirmed=%u\n",
++		    prefix, word->name, physical, value, ready ? 1u : 0u);
++	}
++	printf("%s: result=%s; four reads, zero writes\n",
++	    prefix, confirmed ? "CONFIRMED" : "BLOCKED");
++	return confirmed;
++}
++
++bool
++nabu_gpu_smmu_clocks_recheck(void)
++{
++	/* A separate, explicit post-root probe needs current clock evidence. */
++	return smmu_clock_observe("nabugmucbclk");
++}
++
+ void
+ nabu_gpu_smmu_clocks(void)
+ {
+ 	uint32_t enable = 0;
+-	vm_offset_t gcc, gpucc;
+-	bool confirmed = true;
+ 
+ 	if (!PE_parse_boot_argn("nabussmuclk", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+@@ -79,38 +123,7 @@
+ 		return;
+ 	}
+ 	clock_observed = true;
+-	gcc = ml_io_map(SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE);
+-	if (gcc == 0) {
+-		printf("nabussmuclk: cannot map GCC; SMMU remains blocked\n");
+-		return;
+-	}
+-	gpucc = ml_io_map(SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE);
+-	if (gpucc == 0) {
+-		printf("nabussmuclk: cannot map GPUCC; SMMU remains blocked\n");
+-		return;
+-	}
+-	printf("nabussmuclk: read four known power/clock words once; no writes\n");
+-	for (unsigned i = 0; i < sizeof(clock_words) / sizeof(clock_words[0]); i++) {
+-		const struct smmu_clock_word *word = &clock_words[i];
+-		uint32_t value;
+-		bool ready;
+-		unsigned long physical = (word->gcc ? SMMU_CLOCK_GCC_BASE :
+-		    SMMU_CLOCK_GPUCC_BASE) + word->offset;
+-		printf("nabussmuclk: reading %s pa=0x%lx\n", word->name, physical);
+-		value = smmu_clock_load(word->gcc ? gcc : gpucc, word->offset);
+-		if (word->supply) {
+-			ready = (value & (SMMU_CX_ON | SMMU_CX_COLLAPSE)) == SMMU_CX_ON;
+-		} else {
+-			ready = (value & (SMMU_CLOCK_ENABLE | SMMU_CLOCK_OFF)) == SMMU_CLOCK_ENABLE;
+-		}
+-		confirmed = confirmed && ready;
+-		printf("nabussmuclk: %s pa=0x%lx value=0x%08x confirmed=%u\n",
+-		    word->name, physical, value, ready ? 1u : 0u);
+-	}
+-	clock_confirmed = confirmed;
+-	printf("nabussmuclk: result=%s; four reads, zero writes; "
+-	    "context-bank access remains disabled\n",
+-	    confirmed ? "CONFIRMED" : "BLOCKED");
++	clock_confirmed = smmu_clock_observe("nabussmuclk");
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_gpu_smmu_cb.c b/bsd/dev/nabu_gpu_smmu_cb.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_cb.c
+@@ -0,0 +1,163 @@
++/*
++ * First context-bank observation: one SCTLR load after the root is mounted.
++ *
++ * ID1 and the pinned nabu FDT give a 64 KiB window, 4 KiB register pages,
++ * five banks and no stage-2-only banks. Observe the first stage-1 candidate,
++ * not a bank inferred from SID5 or Android's software indices.
++ *
++ * No S2CR/GR1/FSR reads, no scan, no writes, no ownership claim. A zero SCTLR
++ * cannot establish that a bank is nonsecure, unowned or safe to program.
++ * An MMIO transaction can still stall; scheduling it separately is not a
++ * bus timeout. Persist the intent before the new address is touched.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <mach/mach_types.h>
++#include <pexpert/pexpert.h>
++#include "nabu_gpu_smmu_plan.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
++extern kern_return_t thread_terminate(thread_t);
++extern void thread_deallocate(thread_t);
++extern uint64_t nabu_log_position(void);
++extern uint64_t nabu_log_committed_position(void);
++extern int hz;
++
++#define SMMU_CB_PROBE_BASE 0x02ca0000UL
++#define SMMU_CB_PROBE_SIZE 0x00010000u
++#define SMMU_CB_PROBE_DELAY 30
++#define SMMU_CB_PROBE_LOG_WAIT 25
++
++static bool cb_scheduled;
++static int cb_sleep_channel;
++static struct nabu_smmu_cb_observation cb_observation;
++
++bool
++nabu_smmu_cb_probe_address(const struct nabu_smmu_snapshot *snapshot,
++    uint32_t *bank, uint32_t *offset)
++{
++	uint32_t page_shift, global_size, banks, first;
++
++	if (snapshot == NULL || bank == NULL || offset == NULL ||
++	    !snapshot->complete || snapshot->stream_count != NABU_SMMU_PLAN_STREAMS ||
++	    snapshot->id0 != 0x4c017e06u || snapshot->id1 != 0x20000005u ||
++	    snapshot->id2 != 0x5555u || snapshot->gfsr != 0 ||
++	    (snapshot->scr0 & 9u) != 0) {
++		return false;
++	}
++	for (unsigned i = 0; i < NABU_SMMU_PLAN_STREAMS; i++) {
++		if (snapshot->smr[i] != 0) {
++			return false; /* Do not observe a candidate alongside an active/unknown stream. */
++		}
++	}
++	page_shift = (snapshot->id1 & (1u << 31)) ? 16u : 12u;
++	global_size = 1u << (((snapshot->id1 >> 28) & 7u) + 1u + page_shift);
++	banks = snapshot->id1 & 0xffu;
++	first = (snapshot->id1 >> 16) & 0xffu;
++	if (global_size != SMMU_CB_PROBE_SIZE / 2 || banks != NABU_SMMU_PLAN_BANKS ||
++	    first >= banks || global_size + (first << page_shift) + sizeof(uint32_t) >
++	    SMMU_CB_PROBE_SIZE) {
++		return false;
++	}
++	*bank = first;
++	*offset = global_size + (first << page_shift); /* CB_SCTLR = 0. */
++	return true;
++}
++
++static void
++cb_observe_once(void)
++{
++	struct nabu_smmu_snapshot snapshot;
++	uint32_t bank, offset;
++	uint64_t table_root, intent;
++	vm_offset_t address;
++
++	(void)tsleep(&cb_sleep_channel, PZERO, "gmucbdelay", SMMU_CB_PROBE_DELAY * hz);
++	if (!nabu_gpu_gmu_memory_root(&table_root) ||
++	    !nabu_gpu_smmu_snapshot_get(&snapshot) ||
++	    !nabu_smmu_cb_probe_address(&snapshot, &bank, &offset) ||
++	    !nabu_gpu_smmu_clocks_ready()) {
++		printf("nabugmucb: aborted; this boot lacks the required RAM/snapshot/clock baseline\n");
++		return;
++	}
++	printf("nabugmucb: intent bank=%u offset=0x%x pa=0x%lx register=SCTLR reads=1 "
++	    "writes=0; ownership unproven\n", bank, offset, SMMU_CB_PROBE_BASE + offset);
++	intent = nabu_log_position();
++	if (intent == 0) {
++		printf("nabugmucb: aborted; console ring has no recorded intent\n");
++		return;
++	}
++	for (unsigned waited = 0; nabu_log_committed_position() < intent; waited++) {
++		if (waited == SMMU_CB_PROBE_LOG_WAIT) {
++			printf("nabugmucb: aborted; intent was not committed to the existing log region\n");
++			return;
++		}
++		(void)tsleep(&cb_sleep_channel, PZERO, "gmucblog", hz);
++	}
++	if (nabu_log_committed_position() - intent >= (4ULL << 20) - 1024) {
++		printf("nabugmucb: aborted; intent may have been overwritten in the console ring\n");
++		return;
++	}
++	printf("nabugmucb: intent committed; refreshing the four known resource words\n");
++	if (!nabu_gpu_smmu_clocks_recheck()) {
++		printf("nabugmucb: aborted; current resource conditions are unconfirmed\n");
++		return;
++	}
++	address = ml_io_map(SMMU_CB_PROBE_BASE + offset, sizeof(uint32_t));
++	if (address == 0) {
++		printf("nabugmucb: aborted; cannot map the single SCTLR word\n");
++		return;
++	}
++	printf("nabugmucb: reading bank=%u SCTLR offset=0x%x pa=0x%lx\n",
++	    bank, offset, SMMU_CB_PROBE_BASE + offset);
++	cb_observation.sctlr = *(volatile uint32_t *)address;
++	cb_observation.bank = bank;
++	cb_observation.offset = offset;
++	cb_observation.captured = true;
++	printf("nabugmucb: observed bank=%u SCTLR=0x%08x enabled=%u zero=%u "
++	    "ownership_proven=0; no context configured\n",
++	    bank, cb_observation.sctlr, cb_observation.sctlr & 1u,
++	    cb_observation.sctlr == 0 ? 1u : 0u);
++}
++
++static void
++cb_observer_thread(__unused void *arg, __unused wait_result_t wr)
++{
++	cb_observe_once();
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++nabu_gpu_smmu_cb_after_root(void)
++{
++	uint32_t enable = 0, logging = 0;
++	char root[32];
++	thread_t thread;
++
++	if (!PE_parse_boot_argn("nabugmucb", &enable, sizeof(enable)) || enable == 0) {
++		return;
++	}
++	if (enable != 1 || cb_scheduled ||
++	    !PE_parse_boot_argn("nabulog", &logging, sizeof(logging)) || logging != 1 ||
++	    !PE_parse_boot_argn("ufsroot", root, sizeof(root)) ||
++	    strncmp(root, "nabu_system", sizeof(root)) != 0) {
++		printf("nabugmucb: not scheduled; require one-shot mode, project root and persistent logging\n");
++		return;
++	}
++	cb_scheduled = true;
++	if (kernel_thread_start(cb_observer_thread, NULL, &thread) != KERN_SUCCESS) {
++		printf("nabugmucb: observer thread creation failed; no CB access\n");
++		return;
++	}
++	thread_deallocate(thread);
++	printf("nabugmucb: scheduled after root mount; delay=%us; one SCTLR observation only\n",
++	    SMMU_CB_PROBE_DELAY);
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -774,6 +774,7 @@
+ 
+ static char nabu_log_ring[NABU_LOG_SIZE];
+ static uint64_t _Atomic nabu_log_total;
++static uint64_t _Atomic nabu_log_committed;
+ static int nabu_log_chan;
+ static uint32_t nabu_log_secs = NABU_LOG_SECS;
+ 
+@@ -820,6 +821,16 @@
+ nabu_log_position(void)
+ {
+ 	return os_atomic_load(&nabu_log_total, relaxed);
++}
++
++
++/* Position covered by a successfully written header and UFS cache sync. */
++uint64_t nabu_log_committed_position(void);
++
++uint64_t
++nabu_log_committed_position(void)
++{
++	return os_atomic_load(&nabu_log_committed, acquire);
+ }
+ 
+ struct nabu_log_header {
+@@ -874,6 +885,7 @@
+ 			printf("NABU LOG: write failed (%d), stopping\n", error);
+ 			return;
+ 		}
++		os_atomic_store(&nabu_log_committed, total, release);
+ 		flushed = total;
+ 	}
+ }
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1072,6 +1072,11 @@
+ 	machine_timeout_bsd_init();
+ #endif /* DEVELOPMENT || DEBUG */
+ 
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	/* Root mounting has finished; this only schedules an opt-in observer. */
++	extern void nabu_gpu_smmu_cb_after_root(void);
++	nabu_gpu_smmu_cb_after_root();
++#endif
+ 	bsd_init_kprintf("done\n");
+ }
+ 
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -116,6 +116,7 @@
+ bsd/dev/nabu_gpu_smmu_clocks.c	standard
+ bsd/dev/nabu_gpu_gmu_memory.c	standard
+ bsd/dev/nabu_gpu_smmu_plan.c	standard
++bsd/dev/nabu_gpu_smmu_cb.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
