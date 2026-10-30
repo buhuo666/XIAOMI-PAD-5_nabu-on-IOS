@@ -139,7 +139,7 @@ diff --git a/bsd/dev/nabu_gpu_gmu.h b/bsd/dev/nabu_gpu_gmu.h
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_gpu_gmu.h
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,70 @@
 +/* Interfaces shared by the GMU memory, SMMU executor and firmware startup. */
 +#ifndef NABU_GPU_GMU_H
 +#define NABU_GPU_GMU_H
@@ -187,8 +187,8 @@ new file mode 100644
 +	NABU_GMU_BOOT_MEMORY,
 +	NABU_GMU_BOOT_RESOURCES,
 +	NABU_GMU_BOOT_DOMAIN,
-+	NABU_GMU_BOOT_FIRMWARE,
 +	NABU_GMU_BOOT_POWER,
++	NABU_GMU_BOOT_FIRMWARE,
 +	NABU_GMU_BOOT_RELEASED,
 +	NABU_GMU_BOOT_READY,
 +	NABU_GMU_BOOT_HFI_READY,
@@ -203,6 +203,7 @@ new file mode 100644
 +};
 +
 +/* Cold takeover only: CM3 reset, GX off, no inherited SMR, ordinary nabu CBs. */
++/* The result must be zero initialized; attempted prevents replaying a start. */
 +bool nabu_gpu_gmu_cold_start(const struct nabu_gmu_memory_view *memory,
 +    const uint8_t *firmware, uint32_t bytes, const struct nabu_gmu_io *io,
 +    struct nabu_gmu_boot_result *result);
@@ -659,18 +660,18 @@ new file mode 100644
 +	}
 +	result->state = NABU_GMU_BOOT_DOMAIN;
 +	gmu_event(&boot, "domain-installed", 0);
-+	if (!gmu_firmware(&boot, firmware, bytes, true)) {
-+		gmu_abort(&boot);
-+		return false;
-+	}
-+	result->state = NABU_GMU_BOOT_FIRMWARE;
-+	gmu_event(&boot, "firmware-staged", result->tcm_words);
 +	if (!gmu_power_prepare(&boot)) {
 +		gmu_abort(&boot);
 +		return false;
 +	}
 +	result->state = NABU_GMU_BOOT_POWER;
 +	gmu_event(&boot, "power-sequencers-ready", 0);
++	if (!gmu_firmware(&boot, firmware, bytes, true)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_FIRMWARE;
++	gmu_event(&boot, "firmware-staged", result->tcm_words);
 +	if (!gmu_firmware_start(&boot)) {
 +		gmu_abort(&boot);
 +		return false;
