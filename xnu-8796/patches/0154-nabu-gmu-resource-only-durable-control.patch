@@ -1,0 +1,218 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_joint.c b/bsd/dev/nabu_gpu_smmu_joint.c
+--- a/bsd/dev/nabu_gpu_smmu_joint.c
++++ b/bsd/dev/nabu_gpu_smmu_joint.c
+@@ -9,6 +9,7 @@
+  * Mode 5 adds a third intent/log wait after those two reads, without FSR MMIO.
+  * Mode 6 reads FSR once only after reset=1 and this boot's SCTLR.M=0.
+  * Mode 7 performs the third resource check/mapping, but never loads FSR.
++ * Mode 8 traces only the third resource group, without mapping or loading FSR.
+  */
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -36,6 +37,7 @@
+ static int joint_sleep_channel;
+ static uint32_t joint_values[3];
+ static uint32_t joint_valid_mask;
++static bool joint_resource_wait_failed;
+ 
+ static const char *
+ joint_prefix(void)
+@@ -55,7 +57,10 @@
+ 	if (joint_mode == 6) {
+ 		return "nabugmujointfsrread";
+ 	}
+-	return joint_mode == 7 ? "nabugmujointfsrmap" : "nabugmujoint";
++	if (joint_mode == 7) {
++		return "nabugmujointfsrmap";
++	}
++	return joint_mode == 8 ? "nabugmujointresources" : "nabugmujoint";
+ }
+ 
+ static bool
+@@ -102,7 +107,7 @@
+ 		printf("%s: aborted step=%u; current resources are unconfirmed\n", prefix, step);
+ 		return false;
+ 	}
+-	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5 || joint_mode == 6 || joint_mode == 7) {
++	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5 || joint_mode == 6 || joint_mode == 7 || joint_mode == 8) {
+ 		printf("%s: mapping step=%u register=%s pa=0x%lx bytes=4\n",
+ 		    prefix, step, name, (unsigned long)physical);
+ 	}
+@@ -111,7 +116,7 @@
+ 		printf("%s: aborted step=%u; cannot map the single word\n", prefix, step);
+ 		return false;
+ 	}
+-	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5 || joint_mode == 6 || joint_mode == 7) {
++	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5 || joint_mode == 6 || joint_mode == 7 || joint_mode == 8) {
+ 		printf("%s: mapping ready step=%u\n", prefix, step);
+ 	}
+ 	if (joint_mode == 7 && step == 3) {
+@@ -156,6 +161,42 @@
+ 	printf("nabugmujointfsrwait: complete reset=0x%08x SCTLR=0x%08x m=%u "
+ 	    "target_reads=2 resource_reads=8 valid=0x%x bank_reads=1 fsr_reads=0 "
+ 	    "log_waits=3 writes=0 ownership_proven=0 clients_quiesced=0\n",
++	    joint_values[0], joint_values[1], joint_values[1] & 1u, joint_valid_mask);
++}
++
++static bool
++joint_resource_checkpoint(unsigned stage, bool complete)
++{
++	const char *phase = complete ? "complete" : "intent";
++
++	printf("nabugmujointresources: checkpoint stage=%u phase=%s\n", stage, phase);
++	if (!joint_wait_for_commit(nabu_log_position(), 3, joint_prefix())) {
++		joint_resource_wait_failed = true;
++		return false;
++	}
++	printf("nabugmujointresources: checkpoint committed stage=%u phase=%s\n", stage, phase);
++	return true;
++}
++
++static void
++joint_resources_only(void)
++{
++	printf("nabugmujointresources: intent step=3 resource_only=1 target_reads=0 "
++	    "fsr_mappings=0 fsr_reads=0 writes=0\n");
++	if (!joint_wait_for_commit(nabu_log_position(), 3, joint_prefix())) {
++		return;
++	}
++	printf("nabugmujointresources: intent committed step=3; refreshing four known resource words\n");
++	if (!nabu_gpu_smmu_clocks_recheck_traced(joint_resource_checkpoint)) {
++		if (!joint_resource_wait_failed) {
++			printf("nabugmujointresources: aborted step=3; resource trace did not complete\n");
++		}
++		return;
++	}
++	printf("nabugmujointresources: complete reset=0x%08x SCTLR=0x%08x m=%u "
++	    "target_reads=2 resource_reads=12 valid=0x%x bank_reads=1 fsr_reads=0 "
++	    "fsr_mappings=0 resource_checkpoints=12 log_waits=15 writes=0 "
++	    "ownership_proven=0 clients_quiesced=0\n",
+ 	    joint_values[0], joint_values[1], joint_values[1] & 1u, joint_valid_mask);
+ }
+ 
+@@ -208,8 +249,12 @@
+ 		joint_fsr_wait_only();
+ 		return;
+ 	}
+-	if ((joint_mode == 6 || joint_mode == 7) && (joint_values[1] & 1u) != 0) {
++	if ((joint_mode == 6 || joint_mode == 7 || joint_mode == 8) && (joint_values[1] & 1u) != 0) {
+ 		printf("%s: aborted step=2; SCTLR.M is set; no FSR access\n", joint_prefix());
++		return;
++	}
++	if (joint_mode == 8) {
++		joint_resources_only();
+ 		return;
+ 	}
+ 	if (!joint_read(3, "CB0_FSR", JOINT_SMMU_BASE + offset + 0x58u, &joint_values[2])) {
+@@ -254,7 +299,7 @@
+ 	if (!PE_parse_boot_argn("nabugmujoint", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+ 	}
+-	if ((enable < 1 || enable > 7) || joint_scheduled ||
++	if ((enable < 1 || enable > 8) || joint_scheduled ||
+ 	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmu", &other, sizeof(other)) ||
+@@ -287,6 +332,9 @@
+ 	} else if (joint_mode == 7) {
+ 		printf("nabugmujointfsrmap: scheduled after root mount; delay=30s; "
+ 		    "reset then SCTLR then FSR mapping only; require reset=1 and SCTLR.M=0; max_reads=2\n");
++	} else if (joint_mode == 8) {
++		printf("nabugmujointresources: scheduled after root mount; delay=30s; "
++		    "reset then SCTLR then traced resources only; require reset=1 and SCTLR.M=0; max_reads=2\n");
+ 	} else {
+ 		printf("nabugmujoint: scheduled after root mount; delay=30s; reset then SCTLR then FSR; max_reads=3\n");
+ 	}
+diff --git a/bsd/dev/nabu_gpu_smmu_clocks.c b/bsd/dev/nabu_gpu_smmu_clocks.c
+--- a/bsd/dev/nabu_gpu_smmu_clocks.c
++++ b/bsd/dev/nabu_gpu_smmu_clocks.c
+@@ -60,19 +60,28 @@
+ }
+ 
+ static bool
+-smmu_clock_observe(const char *prefix)
++smmu_clock_observe(const char *prefix, nabu_smmu_clock_checkpoint_t checkpoint)
+ {
+ 	vm_offset_t gcc, gpucc;
+ 	bool confirmed = true;
+ 
++	if (checkpoint != NULL && !checkpoint(1, false)) {
++		return false;
++	}
+ 	gcc = ml_io_map(SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE);
+ 	if (gcc == 0) {
+ 		printf("%s: cannot map GCC; SMMU remains blocked\n", prefix);
+ 		return false;
+ 	}
++	if (checkpoint != NULL && (!checkpoint(1, true) || !checkpoint(2, false))) {
++		return false;
++	}
+ 	gpucc = ml_io_map(SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE);
+ 	if (gpucc == 0) {
+ 		printf("%s: cannot map GPUCC; SMMU remains blocked\n", prefix);
++		return false;
++	}
++	if (checkpoint != NULL && !checkpoint(2, true)) {
+ 		return false;
+ 	}
+ 	printf("%s: read four known power/clock words once; no writes\n", prefix);
+@@ -82,6 +91,9 @@
+ 		bool ready;
+ 		unsigned long physical = (word->gcc ? SMMU_CLOCK_GCC_BASE :
+ 		    SMMU_CLOCK_GPUCC_BASE) + word->offset;
++		if (checkpoint != NULL && !checkpoint(i + 3, false)) {
++			return false;
++		}
+ 		printf("%s: reading %s pa=0x%lx\n", prefix, word->name, physical);
+ 		value = smmu_clock_load(word->gcc ? gcc : gpucc, word->offset);
+ 		if (word->supply) {
+@@ -92,6 +104,9 @@
+ 		confirmed = confirmed && ready;
+ 		printf("%s: %s pa=0x%lx value=0x%08x confirmed=%u\n",
+ 		    prefix, word->name, physical, value, ready ? 1u : 0u);
++		if (checkpoint != NULL && !checkpoint(i + 3, true)) {
++			return false;
++		}
+ 	}
+ 	printf("%s: result=%s; four reads, zero writes\n",
+ 	    prefix, confirmed ? "CONFIRMED" : "BLOCKED");
+@@ -102,7 +117,16 @@
+ nabu_gpu_smmu_clocks_recheck(void)
+ {
+ 	/* A separate, explicit post-root probe needs current clock evidence. */
+-	return smmu_clock_observe("nabugmucbclk");
++	return smmu_clock_observe("nabugmucbclk", NULL);
++}
++
++bool
++nabu_gpu_smmu_clocks_recheck_traced(nabu_smmu_clock_checkpoint_t checkpoint)
++{
++	if (checkpoint == NULL) {
++		return false;
++	}
++	return smmu_clock_observe("nabugmucbclk", checkpoint);
+ }
+ 
+ void
+@@ -123,7 +147,7 @@
+ 		return;
+ 	}
+ 	clock_observed = true;
+-	clock_confirmed = smmu_clock_observe("nabussmuclk");
++	clock_confirmed = smmu_clock_observe("nabussmuclk", NULL);
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -88,6 +88,9 @@
+ void nabu_gpu_smmu_clocks(void);
+ bool nabu_gpu_smmu_clocks_ready(void);
+ bool nabu_gpu_smmu_clocks_recheck(void);
++/* A false checkpoint result stops before the next map or load. */
++typedef bool (*nabu_smmu_clock_checkpoint_t)(unsigned stage, bool complete);
++bool nabu_gpu_smmu_clocks_recheck_traced(nabu_smmu_clock_checkpoint_t checkpoint);
+ bool nabu_gpu_gmu_memory_root(uint64_t *table_root);
+ void nabu_gpu_smmu_plan(void);
+ 
