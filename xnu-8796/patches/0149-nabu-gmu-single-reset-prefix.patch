@@ -1,0 +1,127 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_joint.c b/bsd/dev/nabu_gpu_smmu_joint.c
+--- a/bsd/dev/nabu_gpu_smmu_joint.c
++++ b/bsd/dev/nabu_gpu_smmu_joint.c
+@@ -4,6 +4,7 @@
+  * Reset=1 is a CM3 observation, not proof that every SMMU client is quiet.
+  * Nothing here writes hardware or grants a bank to the software planner.
+  * Mode 2 exercises only scheduling and one durable-log wait, without MMIO.
++ * Mode 3 returns after one CM3 reset observation, without any bank access.
+  */
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -32,6 +33,15 @@
+ static uint32_t joint_values[3];
+ static uint32_t joint_valid_mask;
+ 
++static const char *
++joint_prefix(void)
++{
++	if (joint_mode == 2) {
++		return "nabugmujointwait";
++	}
++	return joint_mode == 3 ? "nabugmujointreset" : "nabugmujoint";
++}
++
+ static bool
+ joint_wait_for_commit(uint64_t intent, unsigned step, const char *prefix)
+ {
+@@ -58,28 +68,36 @@
+ {
+ 	uint64_t intent;
+ 	vm_offset_t address;
+-
+-	printf("nabugmujoint: intent step=%u register=%s pa=0x%lx reads=1 writes=0\n",
+-	    step, name, (unsigned long)physical);
++	const char *prefix = joint_prefix();
++
++	printf("%s: intent step=%u register=%s pa=0x%lx reads=1 writes=0\n",
++	    prefix, step, name, (unsigned long)physical);
+ 	intent = nabu_log_position();
+-	if (!joint_wait_for_commit(intent, step, "nabugmujoint")) {
+-		return false;
+-	}
+-	printf("nabugmujoint: intent committed step=%u; refreshing four known resource words\n", step);
++	if (!joint_wait_for_commit(intent, step, prefix)) {
++		return false;
++	}
++	printf("%s: intent committed step=%u; refreshing four known resource words\n", prefix, step);
+ 	if (!nabu_gpu_smmu_clocks_recheck()) {
+-		printf("nabugmujoint: aborted step=%u; current resources are unconfirmed\n", step);
+-		return false;
++		printf("%s: aborted step=%u; current resources are unconfirmed\n", prefix, step);
++		return false;
++	}
++	if (joint_mode == 3) {
++		printf("%s: mapping step=%u register=%s pa=0x%lx bytes=4\n",
++		    prefix, step, name, (unsigned long)physical);
+ 	}
+ 	address = ml_io_map(physical, sizeof(uint32_t));
+ 	if (address == 0) {
+-		printf("nabugmujoint: aborted step=%u; cannot map the single word\n", step);
+-		return false;
+-	}
+-	printf("nabugmujoint: reading step=%u register=%s pa=0x%lx\n",
+-	    step, name, (unsigned long)physical);
++		printf("%s: aborted step=%u; cannot map the single word\n", prefix, step);
++		return false;
++	}
++	if (joint_mode == 3) {
++		printf("%s: mapping ready step=%u\n", prefix, step);
++	}
++	printf("%s: reading step=%u register=%s pa=0x%lx\n",
++	    prefix, step, name, (unsigned long)physical);
+ 	*value = *(volatile uint32_t *)address;
+ 	joint_valid_mask |= 1u << (step - 1);
+-	printf("nabugmujoint: observed step=%u register=%s value=0x%08x\n", step, name, *value);
++	printf("%s: observed step=%u register=%s value=0x%08x\n", prefix, step, name, *value);
+ 	return true;
+ }
+ 
+@@ -111,7 +129,7 @@
+ 	    !nabu_smmu_cb_probe_address(&snapshot, &bank, &offset) ||
+ 	    bank != 0 || offset != 0x8000 || !nabu_gpu_smmu_clocks_ready()) {
+ 		printf("%s: aborted step=0; required RAM/snapshot/clock baseline is absent\n",
+-		    joint_mode == 2 ? "nabugmujointwait" : "nabugmujoint");
++		    joint_prefix());
+ 		return;
+ 	}
+ 	if (joint_mode == 2) {
+@@ -119,6 +137,13 @@
+ 		return;
+ 	}
+ 	if (!joint_read(1, "GMU_CM3_SYSRESET", JOINT_GMU_RESET_PA, &joint_values[0])) {
++		return;
++	}
++	if (joint_mode == 3) {
++		printf("nabugmujointreset: complete reset=0x%08x asserted=%u target_reads=1 "
++		    "resource_reads=4 valid=0x%x bank_reads=0 writes=0 ownership_proven=0 "
++		    "clients_quiesced=0\n", joint_values[0],
++		    joint_values[0] == 1 ? 1u : 0u, joint_valid_mask);
+ 		return;
+ 	}
+ 	if (joint_values[0] != 1) {
+@@ -153,7 +178,7 @@
+ 	if (!PE_parse_boot_argn("nabugmujoint", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+ 	}
+-	if ((enable != 1 && enable != 2) || joint_scheduled ||
++	if ((enable != 1 && enable != 2 && enable != 3) || joint_scheduled ||
+ 	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmu", &other, sizeof(other)) ||
+@@ -167,12 +192,14 @@
+ 	joint_mode = enable;
+ 	if (kernel_thread_start(joint_thread, NULL, &thread) != KERN_SUCCESS) {
+ 		printf("%s: thread creation failed; no joint MMIO\n",
+-		    joint_mode == 2 ? "nabugmujointwait" : "nabugmujoint");
++		    joint_prefix());
+ 		return;
+ 	}
+ 	thread_deallocate(thread);
+ 	if (joint_mode == 2) {
+ 		printf("nabugmujointwait: scheduled after root mount; delay=30s; log-only control; max_reads=0\n");
++	} else if (joint_mode == 3) {
++		printf("nabugmujointreset: scheduled after root mount; delay=30s; CM3 reset only; max_reads=1\n");
+ 	} else {
+ 		printf("nabugmujoint: scheduled after root mount; delay=30s; reset then SCTLR then FSR; max_reads=3\n");
+ 	}
