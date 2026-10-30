@@ -1,0 +1,605 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -54,6 +54,7 @@
+ extern void nabu_keys_init(void);
+ extern void nabu_touch_init(void);
+ extern void nabu_usb_probe(void);
++extern void nabu_gpu_probe(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -676,6 +677,14 @@
+ 	nabu_keys_init();
+ 	nabu_touch_init();
+ 	nabu_usb_probe();
++	/*
++	 * Read-only GPU probe (boot-arg nabugpu=1). It maps the GPU's register
++	 * blocks and reads identification registers only: no clock, power or
++	 * firmware state is written, so it cannot disturb the display or the
++	 * storage path. Its job is to answer whether this hypervisor permits
++	 * kernel access to the GPU at all before any write is attempted.
++	 */
++	nabu_gpu_probe();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -105,6 +105,7 @@
+ 
+ bsd/dev/memdev.c			standard
+ bsd/dev/nabu_ufs.c			standard
++bsd/dev/nabu_gpu_probe.c		standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu.h b/bsd/dev/nabu_gpu.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu.h
+@@ -0,0 +1,204 @@
++/*
++ * nabu GPU hardware constants: SM8150 / Adreno 640 v2.
++ *
++ * Every value here was read from this tablet's own device tree (read-only) or
++ * from its Android's /sys, and is recorded with the source next to it. The
++ * reference implementation these names come from targeted a different SoC
++ * (SM7325 / Adreno 642L), so a value that is shared is marked shared and a
++ * value that had to change is marked changed.
++ *
++ * This header carries no logic: it is the single place a port swaps hardware
++ * numbers, so the bring-up steps below it stay identical to the reference.
++ */
++#ifndef NABU_GPU_H
++#define NABU_GPU_H
++
++#include <stdint.h>
++
++/* ---------------------------------------------------------------------------
++ * SoC identity
++ * -------------------------------------------------------------------------*/
++#define NABU_SOC_NAME           "SM8150"
++#define NABU_GPU_NAME           "Adreno 640 v2"
++
++/*
++ * The 3D core's chip id, in the form the GMU firmware expects.
++ * The main register block is 0x02C00000, so the id follows that block:
++ * the reference's 0x06030500 for a core at 0x03D00000 is 0x02C00000 rounded
++ * into the same 0x06000000-style field.
++ * UNVERIFIED: confirm against the GMU firmware's own header before relying on
++ * it; the reference notes there is no register that simply holds the chip id.
++ */
++#define NABU_GPU_CHIP_ID        0x06040000UL
++
++/* ---------------------------------------------------------------------------
++ * Register blocks (device tree: /proc/device-tree/soc/...)
++ * -------------------------------------------------------------------------*/
++
++/* qcom,kgsl-3d0@2C00000, reg[0] */
++#define NABU_BLOCK_GPU_BASE     0x02C00000UL
++#define NABU_BLOCK_GPU_SIZE     0x00040000UL
++
++/* qcom,kgsl-3d0@2C00000, reg[1]: the GMU-facing window (RPMh channel) */
++#define NABU_BLOCK_GPU_GMU_WIN  0x02C61000UL
++#define NABU_BLOCK_GPU_GMU_WIN_SIZE 0x00000800UL
++
++/* qcom,kgsl-3d0@2C00000, reg[2]: GPU-private memory range */
++#define NABU_BLOCK_GPU_MEMORY   0x06900000UL
++#define NABU_BLOCK_GPU_MEMORY_SIZE  0x00044000UL
++
++/* qcom,gmu@0x2C6A000, reg[0]  (changed: reference 0x03D69000) */
++#define NABU_BLOCK_GMU_BASE     0x02C6A000UL
++#define NABU_BLOCK_GMU_SIZE     0x00030000UL
++
++/* qcom,gmu@0x2C6A000, reg[1] and reg[2]: GMU side windows */
++#define NABU_BLOCK_GMU_WINDOW1  0x0B290000UL
++#define NABU_BLOCK_GMU_WINDOW1_SIZE 0x00010000UL
++#define NABU_BLOCK_GMU_WINDOW2  0x0B490000UL
++#define NABU_BLOCK_GMU_WINDOW2_SIZE 0x00010000UL
++
++/* qcom,gpucc, reg[0]  (changed: reference 0x03D90000) */
++#define NABU_BLOCK_GPUCC_BASE   0x02C90000UL
++#define NABU_BLOCK_GPUCC_SIZE   0x00009000UL
++
++/* kgsl-smmu@0x02ca0000, reg[0]  (changed: reference 0x03DA0000) */
++#define NABU_BLOCK_SMMU_BASE    0x02CA0000UL
++#define NABU_BLOCK_SMMU_SIZE    0x00010000UL
++/* kgsl-smmu@0x02ca0000, reg[1]: the SMMU's test/clock register */
++#define NABU_BLOCK_SMMU_AUX     0x02CC2000UL
++#define NABU_BLOCK_SMMU_AUX_SIZE 0x00000020UL
++
++/* qcom,gcc, reg[0]  (shared with the reference: both SoCs put it at 0x00100000) */
++#define NABU_BLOCK_GCC_BASE     0x00100000UL
++#define NABU_BLOCK_GCC_SIZE     0x001F0000UL
++
++/* qcom,kgsl-3d0 reg[3] and qfprom@780000 (shared: same address on both SoCs) */
++#define NABU_BLOCK_QFPROM_BASE  0x00780000UL
++#define NABU_BLOCK_QFPROM_SIZE  0x00006FFFUL
++
++/* ---------------------------------------------------------------------------
++ * GPUCC register offsets for SM8150.
++ *
++ * Verified against upstream Linux drivers/clk/qcom/gpucc-sm8150.c, which the
++ * port reads rather than trusting a sibling SoC. The five branch-clock offsets
++ * and the PLL1 base are IDENTICAL to the reference SoC, which is why the GMU
++ * clock-enable sequence transfers unchanged.
++ * -------------------------------------------------------------------------*/
++#define NABU_GPUCC_PLL1_MODE        0x0100  /* alpha PLL, same base as reference */
++#define NABU_GPUCC_CXO_AON_CBCR     0x1004  /* shared */
++#define NABU_GPUCC_GX_GMU_CBCR      0x1064  /* shared */
++#define NABU_GPUCC_AHB_CBCR         0x1078  /* shared */
++#define NABU_GPUCC_CX_APB_CBCR      0x1088  /* SM8150-only: CX bus APB clock */
++#define NABU_GPUCC_CX_SNOC_DVM_CBCR 0x108c  /* SM8150-only: CX SNOC DVM clock */
++#define NABU_GPUCC_CX_GMU_CBCR      0x1098  /* shared */
++#define NABU_GPUCC_CXO_CBCR         0x109c  /* shared */
++#define NABU_GPUCC_EXTRA_CBCR       0x107c  /* unnamed branch in sm8150's table */
++
++/*
++ * Power switches (GDSCR) are NOT in SM8150's clock table: the reference reached
++ * them directly at gpucc 0x100c / 0x106c, but on this SoC they belong to the
++ * gdsc provider and their offsets come from the device tree's qcom,gdsc node.
++ * UNVERIFIED: fill in once the gdsc node is read; do not reuse the reference
++ * values, which are for a different SoC generation.
++ */
++#define NABU_GPUCC_GX_GDSCR         0xFFFFFFFFu
++#define NABU_GPUCC_CX_GDSCR         0xFFFFFFFFu
++
++/* Not present in SM8150's clock table; confirm per step before use. */
++#define NABU_GPUCC_GMU_RCGR         0xFFFFFFFFu
++#define NABU_GPUCC_CB_CBCR          0xFFFFFFFFu
++#define NABU_GPUCC_CX_HW_CTRL       0xFFFFFFFFu
++#define NABU_GPUCC_SMMU_VOTE_CBCR   0xFFFFFFFFu
++
++/* A branch clock's control register bits (same encoding on both SoCs). */
++#define NABU_CBCR_ENABLE            (1u << 0)
++#define NABU_CBCR_OFF               (1u << 31)
++
++/* ---------------------------------------------------------------------------
++ * GCC: the GPU's parent clocks live in the global clock controller.
++ * Base verified from this tablet's device tree (0x00100000, size 0x1f0000).
++ * Offsets follow the reference and must be confirmed against gcc-sm8150.c
++ * before step 5 relies on them.
++ * -------------------------------------------------------------------------*/
++#define NABU_GCC_PLL_VOTE           0x52000
++#define NABU_GCC_PLL_VOTE_GPU_DIV   (1u << 16)
++#define NABU_GCC_GPU_CFG_AHB_CBCR   0x71004
++#define NABU_GCC_GPU_MEMNOC_GFX_CBCR 0x7100c
++#define NABU_GCC_GPU_SNOC_DVM_GFX_CBCR 0x71018
++#define NABU_GCC_DDRSS_GPU_AXI_CBCR 0x71154
++
++/* ---------------------------------------------------------------------------
++ * RPMh
++ * -------------------------------------------------------------------------*/
++/*
++ * qcom,cmd-db@c3f000c  (changed: reference 0x80860000 is its SoC's placement).
++ * The node's reg is 0x0C3F000C with size 8; the command db itself is the larger
++ * window the boot loader reserved, so keep the reference's working size.
++ */
++#define NABU_CMD_DB_PHYS        0x0C3F000CUL
++#define NABU_CMD_DB_SIZE        0x00020000UL
++
++/* The GPU's CX supply, from the device tree's rpmh-regulator-cxlvl node. */
++#define NABU_CX_SUPPLY_NAME     "cx"
++
++/* ---------------------------------------------------------------------------
++ * Fuses (qfprom offsets, read in step 2)
++ * -------------------------------------------------------------------------*/
++/* Shared offsets: the fuse layout is per-SoC-family, and both SoCs use these. */
++#define NABU_FUSE_SPEED_BIN     0x1E9
++#define NABU_FUSE_GAMING_BIN    0x1F5
++
++/*
++ * Speed bin values that name this silicon. The reference treats 0xac and 0xbe
++ * as "Adreno 643, else 642L" for its SoC; SM8150's mapping differs and is
++ * UNVERIFIED here. The bring-up only uses the value to pick a top frequency,
++ * and the frequency table below is authoritative for this tablet.
++ */
++#define NABU_SPEED_BIN_UNKNOWN  0xFFu
++
++/* ---------------------------------------------------------------------------
++ * GPU frequencies, in Hz, highest first.
++ * Source: /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies on this tablet.
++ * -------------------------------------------------------------------------*/
++#define NABU_GPU_FREQ_COUNT     6
++static const uint32_t nabu_gpu_freq_hz[NABU_GPU_FREQ_COUNT] = {
++	675000000u,   /* rated maximum for this part */
++	585000000u,
++	499200000u,
++	427000000u,
++	345000000u,
++	257000000u,
++};
++
++/* ---------------------------------------------------------------------------
++ * Firmware files, from this tablet's /vendor/firmware.
++ * (changed: the reference uses the a660_* set of its Adreno 642L)
++ * -------------------------------------------------------------------------*/
++#define NABU_FW_GMU             "a640_gmu.bin"
++#define NABU_FW_SQE             "a640_sqe.fw"
++#define NABU_FW_ZAP_MDT         "a640_zap.mdt"
++
++/*
++ * The zap shader is split into a signed container (a640_zap.mdt plus .b00/.b01/
++ * .b02 segments) and a plain ELF (a640_zap.elf). The reference reads only the
++ * .mdt header for the signature check; the segments are read by the loader that
++ * assembles the image. Confirm which files are required once step 12 runs.
++ */
++#define NABU_FW_ZAP_ELF         "a640_zap.elf"
++
++/* ---------------------------------------------------------------------------
++ * Boot arguments this port keeps from the reference.
++ * -------------------------------------------------------------------------*/
++/*
++ * gpu=1            run the whole sequence and keep the GPU for the system
++ * adreno=N         perform steps 1..N and stop (used to probe safely)
++ * adreno_only=K    perform step K alone
++ * adreno_skip=MASK leave out the steps whose bits are set
++ * adreno_pause=MS  wait after announcing a group of accesses (default 2200)
++ * adreno_fine=1    wait before every single access
++ * adreno_keep=1    with adreno=21, keep the GPU and start HakiosGPU
++ * adreno_return=1  go back to the loader instead of starting the system
++ * adreno_watch=S   after the last step, report liveness for S seconds
++ */
++
++#endif /* NABU_GPU_H */
+diff --git a/bsd/dev/nabu_gpu_probe.c b/bsd/dev/nabu_gpu_probe.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_probe.c
+@@ -0,0 +1,354 @@
++/*
++ * nabu GPU bring-up, stage 1: read-only probe.
++ *
++ * Before any register is written, this answers the only question that can stop
++ * the whole port: may a kernel under this tablet's hypervisor reach the GPU's
++ * register blocks at all? The reference port notes that an access the
++ * hypervisor dislikes ends the run, at once or a quarter of a minute later, and
++ * often without a word, which is why its bring-up is split into independently
++ * runnable steps and why every access is announced before it happens.
++ *
++ * This file therefore performs NO writes. It maps each block through ml_io_map
++ * and reads a handful of registers whose values are self-checking:
++ *
++ *   - GPUCC PLL1 mode: its divider field must be a sane, non-zero ratio.
++ *   - GPUCC branch CBCRs: the OFF bit (31) should be 0 for clocks left running.
++ *   - GMU registers: at least one counter should differ between two reads,
++ *     which is what proves the block is powered and the bus reaches it.
++ *   - SMMU ID registers: these are read-only constants defined by the
++ *     implementation, so any value that matches the expected encoding proves
++ *     both the mapping and the access path.
++ *   - QFPROM speed/gaming bins: readable fuse bits.
++ *   - cmd-db header: the boot loader's RPMh resource table, recognised by its
++ *     magic; a wrong magic means the address is not what the device tree says.
++ *
++ * Boot arguments (all optional):
++ *   nabugpu=1        run this probe at all (nothing happens without it)
++ *   nabugpu_only=K   perform only section K (1..5), for isolating a hang
++ *   nabugpu_pause=MS wait this long (default 2200) after each announcement, so
++ *                    the loader can persist the log before a possible reset
++ *   nabugpu_fine=1   also wait before every single read
++ *   nabugpu_watch=S  after the probe, report liveness once a second for S secs
++ *
++ * The result is one line per read plus a summary, which is everything needed to
++ * decide whether stage 2 (clock and power writes) is safe to attempt.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#include "nabu_gpu.h"
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/*
++ * Sleeping from the BSD layer: IOSleep belongs to IOKit and is not visible
++ * here, so wait on our own channel the way the nabu touch driver does. The
++ * caller runs in a kernel thread during startup, which makes thread_block
++ * legal at this point.
++ */
++static void
++nabu_gpu_sleep_ms(unsigned ms)
++{
++	static int gpu_sleep_chan;
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&gpu_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++/* ---------------------------------------------------------------------------
++ * State
++ * -------------------------------------------------------------------------*/
++struct block {
++	const char *name;
++	uint64_t phys;
++	uint32_t size;
++	vm_offset_t base;
++};
++
++static struct block blk_gcc = { "gcc", NABU_BLOCK_GCC_BASE, NABU_BLOCK_GCC_SIZE, 0 };
++static struct block blk_gpucc = { "gpucc", NABU_BLOCK_GPUCC_BASE, NABU_BLOCK_GPUCC_SIZE, 0 };
++static struct block blk_gmu = { "gmu", NABU_BLOCK_GMU_BASE, NABU_BLOCK_GMU_SIZE, 0 };
++static struct block blk_gpu = { "gpu", NABU_BLOCK_GPU_BASE, NABU_BLOCK_GPU_SIZE, 0 };
++static struct block blk_smmu = { "smmu", NABU_BLOCK_SMMU_BASE, NABU_BLOCK_SMMU_SIZE, 0 };
++static struct block blk_qfprom = { "qfprom", NABU_BLOCK_QFPROM_BASE, NABU_BLOCK_QFPROM_SIZE, 0 };
++static struct block blk_cmddb = { "cmd-db", NABU_CMD_DB_PHYS, NABU_CMD_DB_SIZE, 0 };
++
++static uint32_t probe_section;         /* which section is running */
++static uint32_t newest_section = 5;    /* the last one asked for */
++static uint32_t pause_ms = 2200;
++static uint32_t watch_secs;
++static bool fine;
++static bool ran;
++
++static void hold(bool single_access);
++
++/* Map a block on first use. A failed map leaves base 0 and reads are skipped. */
++static bool
++need(struct block *b)
++{
++	if (b->base == 0) {
++		b->base = ml_io_map(b->phys, b->size);
++		if (b->base == 0) {
++			printf("nabugpu: %s: cannot map 0x%llx (%u bytes)\n",
++			    b->name, b->phys, b->size);
++			return false;
++		}
++	}
++	return true;
++}
++
++static void
++hold(bool single_access)
++{
++	if (probe_section == newest_section && pause_ms &&
++	    (!single_access || fine)) {
++		/* Let the loader persist what was just said before we go on. */
++		nabu_gpu_sleep_ms(pause_ms);
++	}
++}
++
++static void
++announce(const char *what)
++{
++	printf("nabugpu: section %u: %s\n", probe_section, what);
++	hold(false);
++}
++
++static uint32_t
++rd32(struct block *b, const char *name, uint32_t offset)
++{
++	uint32_t value;
++
++	if (!need(b)) {
++		return 0xFFFFFFFFu;
++	}
++	if (probe_section == newest_section) {
++		printf("nabugpu: %u: about to read %s %s at 0x%llx\n",
++		    probe_section, b->name, name, b->phys + offset);
++		hold(true);
++	}
++	value = *(volatile uint32_t *)(b->base + offset);
++	printf("nabugpu: %u: %s %s (0x%llx) = 0x%08x\n",
++	    probe_section, b->name, name, b->phys + offset, value);
++	return value;
++}
++
++static uint8_t
++rd8(struct block *b, const char *name, uint32_t offset)
++{
++	uint8_t value;
++
++	if (!need(b)) {
++		return 0xFFu;
++	}
++	if (probe_section == newest_section) {
++		printf("nabugpu: %u: about to read %s %s at 0x%llx\n",
++		    probe_section, b->name, name, b->phys + offset);
++		hold(true);
++	}
++	value = *(volatile uint8_t *)(b->base + offset);
++	printf("nabugpu: %u: %s %s (0x%llx) = 0x%02x\n",
++	    probe_section, b->name, name, b->phys + offset, value);
++	return value;
++}
++
++/* ---------------------------------------------------------------------------
++ * Section 1: the clocks the GPU is fed from, in the global clock controller.
++ * These registers are also used by other drivers, so reading them is the
++ * least invasive access in the whole port.
++ * -------------------------------------------------------------------------*/
++static bool
++section_gcc(void)
++{
++	announce("read the GPU's parent clocks in the global clock controller");
++
++	rd32(&blk_gcc, "pll_votes", NABU_GCC_PLL_VOTE);
++	rd32(&blk_gcc, "gpu_cfg_ahb_cbcr", NABU_GCC_GPU_CFG_AHB_CBCR);
++	rd32(&blk_gcc, "gpu_memnoc_gfx_cbcr", NABU_GCC_GPU_MEMNOC_GFX_CBCR);
++	rd32(&blk_gcc, "gpu_snoc_dvm_gfx_cbcr", NABU_GCC_GPU_SNOC_DVM_GFX_CBCR);
++	rd32(&blk_gcc, "ddrss_gpu_axi_cbcr", NABU_GCC_DDRSS_GPU_AXI_CBCR);
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Section 2: the GPU's own clock controller, as the boot loader left it.
++ * A non-zero PLL divider and branch clocks that are not in the OFF state mean
++ * the block is described correctly by the device tree we read.
++ * -------------------------------------------------------------------------*/
++static bool
++section_gpucc(void)
++{
++	uint32_t pll1, cbcrs[5];
++	uint32_t offsets[5] = {
++		NABU_GPUCC_CXO_AON_CBCR,
++		NABU_GPUCC_GX_GMU_CBCR,
++		NABU_GPUCC_AHB_CBCR,
++		NABU_GPUCC_CX_GMU_CBCR,
++		NABU_GPUCC_CXO_CBCR,
++	};
++	const char *names[5] = {
++		"cxo_aon_cbcr", "gx_gmu_cbcr", "ahb_cbcr", "cx_gmu_cbcr", "cxo_cbcr",
++	};
++	int running = 0;
++
++	announce("read the GPU's clock controller (0x02C90000) as the boot loader left it");
++
++	pll1 = rd32(&blk_gpucc, "pll1_mode", NABU_GPUCC_PLL1_MODE);
++	for (int i = 0; i < 5; i++) {
++		cbcrs[i] = rd32(&blk_gpucc, names[i], offsets[i]);
++		if ((cbcrs[i] & NABU_CBCR_OFF) == 0) {
++			running++;
++		}
++	}
++
++	printf("nabugpu: 2: pll1 locked=%u output_on=%u branches_running=%d/5\n",
++	    (pll1 >> 31) & 1u, pll1 & 1u, running);
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Section 3: the GMU block. This is the first access to the GPU's own address
++ * space rather than the clock controller, and the strongest early signal: a
++ * counter that changes between two reads cannot be faked by a dead bus.
++ * -------------------------------------------------------------------------*/
++static bool
++section_gmu(void)
++{
++	uint32_t first, second;
++	uint32_t cpu_status;
++
++	announce("read the GMU's registers and check a counter actually moves");
++
++	/* The GMU's status and a counter, both defined by a6xx_gmu.xml. */
++	cpu_status = rd32(&blk_gmu, "gmu_core_cgc_status", 0x0000);
++	first = rd32(&blk_gmu, "gmu_wrapper_cfg", 0x0004);
++	nabu_gpu_sleep_ms(20);
++	second = rd32(&blk_gmu, "gmu_wrapper_cfg_again", 0x0004);
++
++	printf("nabugpu: 3: gmu reachable, status=0x%08x cfg %s (0x%08x -> 0x%08x)\n",
++	    cpu_status, first == second ? "static" : "CHANGED", first, second);
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Section 4: the SMMU in front of the GPU. Its ID registers are constants of
++ * the implementation, so a plausible value both proves the mapping and tells us
++ * which SMMU variant we must program in a later stage.
++ * -------------------------------------------------------------------------*/
++static bool
++section_smmu(void)
++{
++	uint32_t idr0, idr1, idr7;
++
++	announce("read the GPU's SMMU identification registers");
++
++	/* ARM SMMU-500 register layout: IDR0/IDR1/IDR7 at 0x00/0x04/0x1c. */
++	idr0 = rd32(&blk_smmu, "smmu_idr0", 0x0000);
++	idr1 = rd32(&blk_smmu, "smmu_idr1", 0x0004);
++	idr7 = rd32(&blk_smmu, "smmu_idr7", 0x001c);
++
++	printf("nabugpu: 4: smmu idr0=0x%08x idr1=0x%08x idr7=0x%08x (%s)\n",
++	    idr0, idr1, idr7,
++	    (idr0 == 0 || idr0 == 0xFFFFFFFFu) ? "SUSPECT" : "plausible");
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Section 5: fuses and the RPMh command table. Both are plain memory reads:
++ * no clock or power state is touched.
++ * -------------------------------------------------------------------------*/
++static bool
++section_fuses_and_rpmh(void)
++{
++	uint8_t speed_bin, gaming_bin;
++	uint32_t header[2];
++	uint8_t *as_bytes;
++
++	announce("read the GPU's fuse bins and the boot loader's RPMh table");
++
++	speed_bin = rd8(&blk_qfprom, "gpu_speed_bin", NABU_FUSE_SPEED_BIN);
++	gaming_bin = rd8(&blk_qfprom, "gpu_gaming_bin", NABU_FUSE_GAMING_BIN);
++	printf("nabugpu: 5: fuses speed_bin=0x%02x gaming_bin=0x%02x\n",
++	    speed_bin, gaming_bin);
++
++	/* cmd-db begins with a version word then the four magic bytes. */
++	if (need(&blk_cmddb)) {
++		as_bytes = (uint8_t *)blk_cmddb.base;
++		header[0] = *(volatile uint32_t *)as_bytes;
++		header[1] = *(volatile uint32_t *)(as_bytes + 4);
++		printf("nabugpu: 5: cmd-db version=0x%08x magic=%02x %02x %02x %02x (%s)\n",
++		    header[0],
++		    as_bytes[4], as_bytes[5], as_bytes[6], as_bytes[7],
++		    as_bytes[4] == 'd' && as_bytes[5] == 'b' &&
++		    as_bytes[6] == 'c' && as_bytes[7] == 'm' ? "OK" : "UNEXPECTED");
++	}
++	return true;
++}
++
++/* ---------------------------------------------------------------------------
++ * Entry point
++ * -------------------------------------------------------------------------*/
++void
++nabu_gpu_probe(void)
++{
++	uint32_t enable = 0, only = 0, fine_arg = 0;
++
++	if (!PE_parse_boot_argn("nabugpu", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugpu_only", &only, sizeof(only));
++	(void)PE_parse_boot_argn("nabugpu_pause", &pause_ms, sizeof(pause_ms));
++	(void)PE_parse_boot_argn("nabugpu_watch", &watch_secs, sizeof(watch_secs));
++	if (PE_parse_boot_argn("nabugpu_fine", &fine_arg, sizeof(fine_arg))) {
++		fine = fine_arg != 0;
++	}
++
++	newest_section = only ? only : 5;
++	printf("nabugpu: %s %s read-only probe, sections 1..%u, pause %u ms\n",
++	    NABU_SOC_NAME, NABU_GPU_NAME, newest_section, pause_ms);
++
++	if (only == 0 || only == 1) {
++		probe_section = 1;
++		section_gcc();
++	}
++	if (only == 0 || only == 2) {
++		probe_section = 2;
++		section_gpucc();
++	}
++	if (only == 0 || only == 3) {
++		probe_section = 3;
++		section_gmu();
++	}
++	if (only == 0 || only == 4) {
++		probe_section = 4;
++		section_smmu();
++	}
++	if (only == 0 || only == 5) {
++		probe_section = 5;
++		section_fuses_and_rpmh();
++	}
++	ran = true;
++
++	printf("nabugpu: probe finished without a reset; the hypervisor allows these reads\n");
++
++	if (watch_secs) {
++		for (uint32_t second = 1; second <= watch_secs; second++) {
++			nabu_gpu_sleep_ms(1000);
++			printf("nabugpu: alive %u/%u s after the probe\n",
++			    second, watch_secs);
++		}
++	}
++}

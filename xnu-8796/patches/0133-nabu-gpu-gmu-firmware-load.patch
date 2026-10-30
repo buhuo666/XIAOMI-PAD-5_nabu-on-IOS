@@ -1,0 +1,393 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -59,6 +59,7 @@
+ extern void nabu_gpu_trustzone(void);
+ extern void nabu_cpu_freq(void);
+ extern void nabu_gpu_gmu_probe(void);
++extern void nabu_gpu_gmu_load(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -716,6 +717,13 @@
+ 	 * writing nothing.
+ 	 */
+ 	nabu_gpu_gmu_probe();
++	/*
++	 * GMU firmware (boot-arg nabugmuload=1): place the GPU's sub-processor
++	 * firmware and release its core. The probe above found the window live and
++	 * the part idle; this is the step that starts it. It writes only the GMU's
++	 * own memory and reset register, never flash or the root filesystem.
++	 */
++	nabu_gpu_gmu_load();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -110,6 +110,7 @@
+ bsd/dev/nabu_cpu_freq.c			standard
+ bsd/dev/nabu_gpu_trustzone.c		standard
+ bsd/dev/nabu_gpu_gmu_probe.c		standard
++bsd/dev/nabu_gpu_gmu_load.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_gmu_load.c b/bsd/dev/nabu_gpu_gmu_load.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu_load.c
+@@ -0,0 +1,352 @@
++/*
++ * Load the GPU's GMU firmware and start it.
++ *
++ * The GMU is the small processor that owns the rest of the GPU: DCVS, the
++ * power rails, and the HFI channel the 3D core is spoken to over. Nothing on
++ * this GPU works until it is running, and it is the one part of the GPU whose
++ * firmware this kernel is allowed to place -- the device's own tree binds
++ * qcom,kgsl-3d0 for the 3D core while only the 4 KiB zap shader goes through
++ * qcom,pil-tz-generic, so the 37 KiB GMU image is host-loaded by design.
++ *
++ * Everything below is taken from sources rather than guessed:
++ *
++ *   register numbers   envytools a6xx_gmu.xml, each multiplied by four
++ *   boot order         a6xx_gmu_fw_load() and a6xx_gmu_start() in the Linux
++ *                      driver
++ *   firmware layout    a640_gmu.bin itself, parsed: seven blocks covering all
++ *                      37680 bytes with no slack
++ *   register windows   qcom,gmu@0x2C6A000 reg[] as this tablet declares it
++ *
++ * The sequence, in the order the driver performs it:
++ *
++ *   1. walk the firmware's blocks, writing each into ITCM (based at 0) or DTCM
++ *      (based at 0x40000 for this part), and into the instruction and data
++ *      cache windows for the one block that is in neither;
++ *   2. pulse GMU_CM3_SYSRESET high then low to release the CM3 core;
++ *   3. wait for GMU_CM3_FW_INIT_RESULT to reach the value this firmware
++ *      reports, which is how the core says it has finished its own init.
++ *
++ * The firmware itself arrives in /chosen, put there when the boot image was
++ * assembled, because the root filesystem is not readable yet at this point.
++ *
++ * Boot arguments:
++ *   nabugmuload=1        perform step 1 and step 2 (writing to the GMU)
++ *   nabugmuload_wait=MS  how long to wait for init, default 100 ms
++ *   nabugmuload_watch=S  hold afterwards, so a hang is visible as a hang
++ *
++ * This writes only to the GMU's own memory and reset register. It does not
++ * touch flash, the root filesystem, or any other block.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* qcom,gmu@0x2C6A000, reg[0]: kgsl_gmu_reg. */
++#define NABU_GMU_BASE           0x02C6A000UL
++#define NABU_GMU_SIZE           0x00030000UL
++
++/* Byte offsets, from a6xx_gmu.xml register numbers times four. */
++#define NABU_GMU_ICACHE_WINDOW  0x13000   /* GMU_ICACHE_CONFIG */
++#define NABU_GMU_DCACHE_WINDOW  0x13004   /* GMU_DCACHE_CONFIG */
++#define NABU_GMU_ITCM_WINDOW    0x03000   /* GMU_CM3_ITCM_START */
++#define NABU_GMU_DTCM_WINDOW    0x07000   /* GMU_CM3_DTCM_START */
++#define NABU_GMU_CM3_SYSRESET   0x14000   /* GMU_CM3_SYSRESET */
++#define NABU_GMU_FW_INIT_RESULT 0x14070   /* GMU_CM3_FW_INIT_RESULT */
++
++/*
++ * The two ranges the firmware's blocks fall into, and the window each is
++ * written through. Both are 16 KiB, which is what a6xx_gmu_fw_load() tests
++ * against before choosing a window.
++ */
++#define NABU_GMU_ITCM_BASE      0x00000000u
++#define NABU_GMU_DTCM_BASE      0x00040000u
++#define NABU_GMU_TCM_SIZE       0x00004000u
++
++#define NABU_GMU_FW_DT_PROP     "nabu-gmu-firmware"
++#define NABU_GMU_RAM_SIZE       0x00080000u   /* ITCM plus DTCM headroom */
++
++static uint32_t gmu_load_wait_ms = 100;
++static uint32_t gmu_load_watch_secs;
++
++static void
++gmu_sleep_ms(unsigned ms)
++{
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	assert_wait_deadline((event_t)&gmu_load_watch_secs, THREAD_UNINT, deadline);
++	(void)thread_block(THREAD_CONTINUE_NULL);
++}
++
++/*
++ * Write a run of words into one of the GMU's memory windows.
++ *
++ * The window presents the memory four bytes at a time: word N of the region
++ * sits at window + N*4, which is why the caller divides the address by four
++ * before getting here. Writes are 32-bit because that is the width the window
++ * accepts.
++ */
++static void
++gmu_write_block(vm_offset_t window, uint32_t word_index,
++    const uint8_t *data, uint32_t size)
++{
++	volatile uint32_t *target = (volatile uint32_t *)(window + (word_index * 4));
++	uint32_t words = size / 4u;
++	uint32_t leftover = size % 4u;
++
++	for (uint32_t i = 0; i < words; i++) {
++		uint32_t value = (uint32_t)data[i * 4 + 0]
++		    | ((uint32_t)data[i * 4 + 1] << 8)
++		    | ((uint32_t)data[i * 4 + 2] << 16)
++		    | ((uint32_t)data[i * 4 + 3] << 24);
++		target[i] = value;
++	}
++	if (leftover) {
++		/* The last few bytes go in as a word padded with zeros; the block
++		 * sizes in this firmware are all multiples of four, so this is a
++		 * guard rather than a path taken. */
++		uint32_t value = 0;
++		for (uint32_t i = 0; i < leftover; i++) {
++			value |= (uint32_t)data[words * 4 + i] << (i * 8);
++		}
++		target[words] = value;
++	}
++}
++
++/*
++ * Place every block of the firmware into the memory the GMU will execute from.
++ *
++ * The container is not the plain (address, size, data) triple the Linux driver's
++ * block_header describes. Every block here carries two extra words between the
++ * size and the payload, both 0xefbeadde, and the payload starts after them:
++ *
++ *   offset 0   address
++ *   offset 4   size
++ *   offset 8   0xefbeadde
++ *   offset 12  0xefbeadde
++ *   offset 16  payload, size bytes
++ *
++ * Parsing this file as the plain form stops dead at the second block, because
++ * the value after the first block's payload is 0x200 (a plausible address) and
++ * the value after that is 0xe000ed08 (not a plausible size). Reading it as the
++ * form above walks all seven blocks and consumes the file exactly, 37680 bytes
++ * with nothing left over, which is what makes the layout certain rather than
++ * merely plausible.
++ *
++ * Returns the number of blocks placed, or a negative count if one could not be
++ * placed, so a partial image is never started.
++ */
++static int
++gmu_load_blocks(vm_offset_t gmu, const uint8_t *fw, size_t fw_size)
++{
++	size_t at = 0;
++	int placed = 0, unplaced = 0;
++
++	while (at + 16 <= fw_size) {
++		uint32_t addr = (uint32_t)fw[at + 0]
++		    | ((uint32_t)fw[at + 1] << 8)
++		    | ((uint32_t)fw[at + 2] << 16)
++		    | ((uint32_t)fw[at + 3] << 24);
++		uint32_t size = (uint32_t)fw[at + 4]
++		    | ((uint32_t)fw[at + 5] << 8)
++		    | ((uint32_t)fw[at + 6] << 16)
++		    | ((uint32_t)fw[at + 7] << 24);
++		uint32_t magic0 = (uint32_t)fw[at + 8]
++		    | ((uint32_t)fw[at + 9] << 8)
++		    | ((uint32_t)fw[at + 10] << 16)
++		    | ((uint32_t)fw[at + 11] << 24);
++		uint32_t magic1 = (uint32_t)fw[at + 12]
++		    | ((uint32_t)fw[at + 13] << 8)
++		    | ((uint32_t)fw[at + 14] << 16)
++		    | ((uint32_t)fw[at + 15] << 24);
++		const uint8_t *payload = fw + at + 16;
++
++		if (magic0 != 0xefbeaddeu || magic1 != 0xefbeaddeu) {
++			printf("nabugmuload: block at %u has no marker "
++			    "(0x%08x 0x%08x); stopping\n",
++			    (unsigned)at, magic0, magic1);
++			break;
++		}
++		if (size == 0 || size > fw_size || at + 16 + size > fw_size) {
++			printf("nabugmuload: block at %u is malformed "
++			    "(addr=0x%x size=0x%x); stopping\n",
++			    (unsigned)at, addr, size);
++			return unplaced ? -(unplaced + 1) : placed;
++		}
++
++		if (addr >= NABU_GMU_ITCM_BASE
++		    && addr <= NABU_GMU_ITCM_BASE + NABU_GMU_TCM_SIZE) {
++			gmu_write_block(gmu + NABU_GMU_ITCM_WINDOW,
++			    (addr - NABU_GMU_ITCM_BASE) >> 2, payload, size);
++			placed++;
++		} else if (addr >= NABU_GMU_DTCM_BASE
++		    && addr <= NABU_GMU_DTCM_BASE + NABU_GMU_TCM_SIZE) {
++			gmu_write_block(gmu + NABU_GMU_DTCM_WINDOW,
++			    (addr - NABU_GMU_DTCM_BASE) >> 2, payload, size);
++			placed++;
++		} else {
++			/*
++			 * Outside both tightly coupled memories. a6xx_gmu_fw_load()
++			 * would place these through the instruction and data cache
++			 * windows, which is a further step this port does not take
++			 * yet; report the address so the next step has the fact.
++			 */
++			printf("nabugmuload: block addr=0x%08x size=0x%x is outside "
++			    "ITCM and DTCM; not placed\n", addr, size);
++			unplaced++;
++		}
++		at += 16 + size;
++	}
++
++	if (at != fw_size) {
++		printf("nabugmuload: firmware has %u trailing bytes after the "
++		    "last block\n", (unsigned)(fw_size - at));
++	}
++	return unplaced ? -(unplaced + 1) : placed;
++}
++
++void
++nabu_gpu_gmu_load(void)
++{
++	uint32_t enable = 0;
++	DTEntry chosen;
++	const uint8_t *fw = NULL;
++	unsigned int fw_size = 0;
++	vm_offset_t gmu;
++	int blocks;
++	uint32_t init_result = 0, sysreset;
++	bool ready = false;
++
++	if (!PE_parse_boot_argn("nabugmuload", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugmuload_wait", &gmu_load_wait_ms,
++	    sizeof(gmu_load_wait_ms));
++	(void)PE_parse_boot_argn("nabugmuload_watch", &gmu_load_watch_secs,
++	    sizeof(gmu_load_watch_secs));
++
++	printf("nabugmuload: place the GMU firmware and release its core\n");
++
++	/*
++	 * The image was put in /chosen when the boot image was assembled, for the
++	 * same reason the touch firmware is there: the root filesystem is not
++	 * readable yet, and the volume holding /vendor/firmware is on it.
++	 */
++	if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess
++	    || SecureDTGetProperty(chosen, NABU_GMU_FW_DT_PROP,
++	    (void const **)&fw, &fw_size) != kSuccess) {
++		printf("nabugmuload: no GMU firmware in /chosen; nothing placed\n");
++		return;
++	}
++	printf("nabugmuload: firmware is %u bytes\n", fw_size);
++	if (fw_size < 16) {
++		printf("nabugmuload: firmware is too small to hold a block header\n");
++		return;
++	}
++
++	gmu = ml_io_map(NABU_GMU_BASE, NABU_GMU_SIZE);
++	if (gmu == 0) {
++		printf("nabugmuload: cannot map the GMU window\n");
++		return;
++	}
++
++	/*
++	 * Put the core in reset before writing anything, so it cannot be running
++	 * from half-written memory. The Linux driver does the same thing at the
++	 * same point, and it is also the state the previous probe found this GMU
++	 * already in.
++	 */
++	sysreset = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET);
++	printf("nabugmuload: cm3_sysreset before loading = %u\n", sysreset & 1u);
++	*(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET) = 1;
++
++	blocks = gmu_load_blocks(gmu, fw, fw_size);
++	if (blocks < 0) {
++		printf("nabugmuload: %d block(s) could not be placed; leaving the "
++		    "core in reset rather than starting it on partial memory\n",
++		    -blocks - 1);
++		return;
++	}
++	printf("nabugmuload: %d blocks placed\n", blocks);
++
++	/* Read the first word back out of ITCM: it should now be the firmware's
++	 * own vector table, which is the cheapest check that the write path and
++	 * the read path see the same memory. */
++	printf("nabugmuload: itcm[0] now 0x%08x\n",
++	    *(volatile uint32_t *)(gmu + NABU_GMU_ITCM_WINDOW));
++
++	/*
++	 * Release the core. The Linux driver writes one, does other setup, then
++	 * writes zero; the setup in between is the log write pointer, which is
++	 * not needed to start. The expected value below depends on a word the
++	 * firmware leaves in DTCM, so it is read rather than assumed.
++	 */
++	{
++		uint32_t marker = *(volatile uint32_t *)
++		    (gmu + NABU_GMU_DTCM_WINDOW + (0xff8 >> 2) * 4);
++		uint32_t mask, expect;
++
++		if (marker <= 0x20010004u) {
++			mask = 0xffffffffu;
++			expect = 0xbabefaceu;
++		} else {
++			mask = 0x1ffu;
++			expect = 0x100u;
++		}
++		printf("nabugmuload: dtcm marker=0x%08x, so expecting 0x%08x "
++		    "masked by 0x%08x\n", marker, expect, mask);
++
++		*(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET) = 0;
++
++		/*
++		 * The Linux driver polls every 100 us for up to 100 ms. Poll the
++		 * same register with the same cadence and stop at the same
++		 * deadline, so a success here means what it means there.
++		 */
++		for (uint32_t waited = 0; waited < gmu_load_wait_ms; waited++) {
++			init_result = *(volatile uint32_t *)
++			    (gmu + NABU_GMU_FW_INIT_RESULT);
++			if ((init_result & mask) == expect) {
++				ready = true;
++				break;
++			}
++			/* 1 ms per round; the vendor polls ten times finer, which
++			 * this cannot do without a microsecond delay primitive. */
++			gmu_sleep_ms(1);
++		}
++	}
++
++	printf("nabugmuload: fw_init_result=0x%08x -> %s\n", init_result,
++	    ready ? "GMU IS RUNNING" : "no init within the wait");
++	if (!ready) {
++		printf("nabugmuload: leaving the core released but uninitialised; "
++		    "the next run can retry without a power cycle\n");
++	}
++
++	if (gmu_load_watch_secs) {
++		for (uint32_t s = 1; s <= gmu_load_watch_secs; s++) {
++			gmu_sleep_ms(1000);
++			printf("nabugmuload: alive %u/%u s (fw_init=0x%08x)\n",
++			    s, gmu_load_watch_secs,
++			    *(volatile uint32_t *)(gmu + NABU_GMU_FW_INIT_RESULT));
++		}
++	}
++	printf("nabugmuload: finished\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */

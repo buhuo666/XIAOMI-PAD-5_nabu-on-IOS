@@ -1,0 +1,757 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -62,6 +62,7 @@
+ extern void nabu_gpu_gmu_load(void);
+ extern void nabu_gpu_smmu_probe(void);
+ extern void nabu_gpu_smmu_read(void);
++extern void nabu_gpu_gmu_memory_plan(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -742,6 +743,8 @@
+ 	 * and never returned, which stopped the root device and the desktop.
+ 	 */
+ 	nabu_gpu_smmu_read();
++	/* nabugmumem=1: allocate/check GMU backing RAM; no MMIO writes. */
++	nabu_gpu_gmu_memory_plan();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/dev/nabu_gpu_gmu_load.c b/bsd/dev/nabu_gpu_gmu_load.c
+--- a/bsd/dev/nabu_gpu_gmu_load.c
++++ b/bsd/dev/nabu_gpu_gmu_load.c
+@@ -1,5 +1,5 @@
+ /*
+- * Load the GPU's GMU firmware and start it.
++ * Stage the GPU's GMU TCM firmware without starting the core.
+  *
+  * The GMU is the small processor that owns the rest of the GPU: DCVS, the
+  * power rails, and the HFI channel the 3D core is spoken to over. Nothing on
+@@ -19,20 +19,20 @@
+  *
+  * The sequence, in the order the driver performs it:
+  *
+- *   1. walk the firmware's blocks, writing each into ITCM (based at 0) or DTCM
+- *      (based at 0x40000 for this part), and into the instruction and data
+- *      cache windows for the one block that is in neither;
+- *   2. pulse GMU_CM3_SYSRESET high then low to release the CM3 core;
+- *   3. wait for GMU_CM3_FW_INIT_RESULT to reach the value this firmware
+- *      reports, which is how the core says it has finished its own init.
++ *   1. hold the CM3 core in reset;
++ *   2. write only firmware blocks that belong in ITCM or DTCM;
++ *   3. read back the ITCM vector word and DTCM firmware marker.
++ *
++ * The icache/dcache blocks, SMMU context, HFI queues, RPMh handoff and complete
++ * start sequence are not yet connected. Releasing the core before those pieces
++ * are ready is not a useful test, so this diagnostic deliberately leaves reset
++ * asserted.
+  *
+  * The firmware itself arrives in /chosen, put there when the boot image was
+  * assembled, because the root filesystem is not readable yet at this point.
+  *
+  * Boot arguments:
+- *   nabugmuload=1        perform step 1 and step 2 (writing to the GMU)
+- *   nabugmuload_wait=MS  how long to wait for init, default 100 ms
+- *   nabugmuload_watch=S  hold afterwards, so a hang is visible as a hang
++ *   nabugmuload=1        stage/read back TCM blocks, leave the core in reset
+  *
+  * This writes only to the GMU's own memory and reset register. It does not
+  * touch flash, the root filesystem, or any other block.
+@@ -41,9 +41,6 @@
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <sys/errno.h>
+-#include <kern/clock.h>
+-#include <kern/thread.h>
+-#include <kern/sched_prim.h>
+ #include <libkern/libkern.h>
+ #include <mach/mach_types.h>
+ #include <mach/vm_param.h>
+@@ -66,7 +63,6 @@
+ #define NABU_GMU_ITCM_WINDOW    0x03000   /* GMU_CM3_ITCM_START */
+ #define NABU_GMU_DTCM_WINDOW    0x07000   /* GMU_CM3_DTCM_START */
+ #define NABU_GMU_CM3_SYSRESET   0x14000   /* GMU_CM3_SYSRESET */
+-#define NABU_GMU_FW_INIT_RESULT 0x14070   /* GMU_CM3_FW_INIT_RESULT */
+ 
+ /*
+  * Where each part of the firmware goes.
+@@ -110,23 +106,10 @@
+  * convention it expects. a6xx_gmu_start() reads GMU_CM3_DTCM_START + 0xff8 in
+  * register units, so the byte offset within DTCM is 0xff8 * 4.
+  */
+-#define NABU_GMU_FW_VERSION_OFFSET  0x3fe0u
++#define NABU_GMU_FW_MARKER_OFFSET   0x3fe0u
+ 
+ #define NABU_GMU_FW_DT_PROP     "nabu-gmu-firmware"
+ #define NABU_GMU_RAM_SIZE       0x00080000u   /* ITCM plus DTCM headroom */
+-
+-static uint32_t gmu_load_wait_ms = 100;
+-static uint32_t gmu_load_watch_secs;
+-
+-static void
+-gmu_sleep_ms(unsigned ms)
+-{
+-	uint64_t deadline;
+-
+-	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
+-	assert_wait_deadline((event_t)&gmu_load_watch_secs, THREAD_UNINT, deadline);
+-	(void)thread_block(THREAD_CONTINUE_NULL);
+-}
+ 
+ /*
+  * Write a run of words into one of the GMU's memory windows.
+@@ -277,18 +260,13 @@
+ 	unsigned int fw_size = 0;
+ 	vm_offset_t gmu;
+ 	int blocks;
+-	uint32_t init_result = 0, sysreset;
+-	bool ready = false;
++	uint32_t sysreset, itcm_vector, dtcm_marker;
+ 
+ 	if (!PE_parse_boot_argn("nabugmuload", &enable, sizeof(enable)) || !enable) {
+ 		return;
+ 	}
+-	(void)PE_parse_boot_argn("nabugmuload_wait", &gmu_load_wait_ms,
+-	    sizeof(gmu_load_wait_ms));
+-	(void)PE_parse_boot_argn("nabugmuload_watch", &gmu_load_watch_secs,
+-	    sizeof(gmu_load_watch_secs));
+-
+-	printf("nabugmuload: place the GMU firmware and release its core\n");
++
++	printf("nabugmuload: stage TCM firmware and keep the GMU core in reset\n");
+ 
+ 	/*
+ 	 * The image was put in /chosen when the boot image was assembled, for the
+@@ -331,85 +309,22 @@
+ 	}
+ 	printf("nabugmuload: %d blocks placed\n", blocks);
+ 
+-	/*
+-	 * Starting with the mapped regions still empty is what the vendor driver
+-	 * does: a6xx_gmu_fw_load() logs an error for a block it cannot place and
+-	 * carries on to a6xx_gmu_start(). Its own comment on the a640's icache and
+-	 * dcache allocations says they "may not actually be necessary ... if you
+-	 * omit this step and you don't get random pagefaults, you are likely good
+-	 * to go without this". So the question of whether the CM3 needs them is
+-	 * answered by what FW_INIT_RESULT does next, not by refusing to start.
+-	 */
+-
+ 	/* Read the first word back out of ITCM: it should now be the firmware's
+ 	 * own vector table, which is the cheapest check that the write path and
+ 	 * the read path see the same memory. */
+-	printf("nabugmuload: itcm[0] now 0x%08x\n",
+-	    *(volatile uint32_t *)(gmu + NABU_GMU_ITCM_WINDOW));
+-
+-	/*
+-	 * Release the core. The Linux driver writes one, does other setup, then
+-	 * writes zero; the setup in between is the log write pointer, which is
+-	 * not needed to start. The expected value below depends on a word the
+-	 * firmware leaves in DTCM, so it is read rather than assumed.
+-	 */
+-	{
+-		/*
+-		 * a6xx_gmu_start() reads GMU_CM3_DTCM_START + 0xff8 in register
+-		 * units, so the word is 0xff8 * 4 bytes into DTCM. That is also
+-		 * where the firmware's own last block lands (address 0x43fe0), so
+-		 * this reads back the value just written rather than a leftover.
+-		 */
+-		uint32_t marker = *(volatile uint32_t *)
+-		    (gmu + NABU_GMU_DTCM_WINDOW + NABU_GMU_FW_VERSION_OFFSET);
+-		uint32_t mask, expect;
+-
+-		if (marker <= 0x20010004u) {
+-			mask = 0xffffffffu;
+-			expect = 0xbabefaceu;
+-		} else {
+-			mask = 0x1ffu;
+-			expect = 0x100u;
+-		}
+-		printf("nabugmuload: dtcm marker=0x%08x, so expecting 0x%08x "
+-		    "masked by 0x%08x\n", marker, expect, mask);
+-
+-		*(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET) = 0;
+-
+-		/*
+-		 * The Linux driver polls every 100 us for up to 100 ms. Poll the
+-		 * same register with the same cadence and stop at the same
+-		 * deadline, so a success here means what it means there.
+-		 */
+-		for (uint32_t waited = 0; waited < gmu_load_wait_ms; waited++) {
+-			init_result = *(volatile uint32_t *)
+-			    (gmu + NABU_GMU_FW_INIT_RESULT);
+-			if ((init_result & mask) == expect) {
+-				ready = true;
+-				break;
+-			}
+-			/* 1 ms per round; the vendor polls ten times finer, which
+-			 * this cannot do without a microsecond delay primitive. */
+-			gmu_sleep_ms(1);
+-		}
+-	}
+-
+-	printf("nabugmuload: fw_init_result=0x%08x -> %s\n", init_result,
+-	    ready ? "GMU IS RUNNING" : "no init within the wait");
+-	if (!ready) {
+-		printf("nabugmuload: leaving the core released but uninitialised; "
+-		    "the next run can retry without a power cycle\n");
+-	}
+-
+-	if (gmu_load_watch_secs) {
+-		for (uint32_t s = 1; s <= gmu_load_watch_secs; s++) {
+-			gmu_sleep_ms(1000);
+-			printf("nabugmuload: alive %u/%u s (fw_init=0x%08x)\n",
+-			    s, gmu_load_watch_secs,
+-			    *(volatile uint32_t *)(gmu + NABU_GMU_FW_INIT_RESULT));
+-		}
+-	}
+-	printf("nabugmuload: finished\n");
++	itcm_vector = *(volatile uint32_t *)(gmu + NABU_GMU_ITCM_WINDOW);
++	dtcm_marker = *(volatile uint32_t *)(gmu + NABU_GMU_DTCM_WINDOW +
++	    NABU_GMU_FW_MARKER_OFFSET);
++	sysreset = *(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET);
++	printf("nabugmuload: itcm[0]=0x%08x dtcm_marker=0x%08x "
++	    "sysreset=%u\n", itcm_vector, dtcm_marker, sysreset & 1u);
++	if ((sysreset & 1u) == 0) {
++		printf("nabugmuload: core did not remain in reset; refusing any "
++		    "further operation\n");
++		return;
++	}
++	printf("nabugmuload: TCM staging complete; core remains in reset; "
++	    "no firmware start was attempted\n");
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -113,6 +113,7 @@
+ bsd/dev/nabu_gpu_gmu_load.c	standard
+ bsd/dev/nabu_gpu_smmu_probe.c	standard
+ bsd/dev/nabu_gpu_smmu_read.c	standard
++bsd/dev/nabu_gpu_gmu_memory.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_gmu_memory.c b/bsd/dev/nabu_gpu_gmu_memory.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu_memory.c
+@@ -0,0 +1,517 @@
++/*
++ * Prepare the A640 GMU's backing memory and stage-1 page tables.
++ *
++ * This is deliberately a host-memory-only phase. It allocates one contiguous
++ * CPU-visible pool, copies the firmware blocks that belong in the GMU icache
++ * and dcache windows, builds a three-level 4 KiB translation tree, and checks
++ * the resulting translations in software. It does not touch SMMU or GMU
++ * registers, change a stream mapping, or release the GMU from reset.
++ *
++ * The IOVAs and region sizes follow the A640 path in a6xx_gmu.c. The log and
++ * HFI buffers use the first two 16 KiB slots after the fixed dummy page in the
++ * Linux driver's dynamic GMU IOVA range. Their placement is a deterministic
++ * proposal for inspection, not evidence that the SMMU accepts it.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++#define NABU_GMU_FW_DT_PROP          "nabu-gmu-firmware"
++#define NABU_GMU_PAGE_SIZE           0x1000u
++
++#define NABU_GMU_ITCM_BASE           0x00000000u
++#define NABU_GMU_ITCM_LIMIT          0x00004000u
++#define NABU_GMU_ICACHE_BASE         0x00004000u
++#define NABU_GMU_ICACHE_LIMIT        0x00040000u
++#define NABU_GMU_DTCM_BASE           0x00040000u
++#define NABU_GMU_DTCM_LIMIT          0x00044000u
++#define NABU_GMU_DCACHE_BASE         0x00044000u
++#define NABU_GMU_DCACHE_LIMIT        0x00080000u
++
++#define NABU_GMU_ICACHE_SIZE         (NABU_GMU_ICACHE_LIMIT - NABU_GMU_ICACHE_BASE)
++#define NABU_GMU_DCACHE_SIZE         (NABU_GMU_DCACHE_LIMIT - NABU_GMU_DCACHE_BASE)
++#define NABU_GMU_ICACHE_DATA_SIZE    0x00003a58u
++#define NABU_GMU_DCACHE_DATA_SIZE    0x00000308u
++#define NABU_GMU_DUMMY_IOVA          0x60000000u
++#define NABU_GMU_DUMMY_SIZE          0x00001000u
++#define NABU_GMU_LOG_IOVA            0x60001000u
++#define NABU_GMU_LOG_SIZE            0x00004000u
++#define NABU_GMU_HFI_IOVA            0x60005000u
++#define NABU_GMU_HFI_SIZE            0x00004000u
++
++#define NABU_GMU_POOL_ICACHE         0x00000000u
++#define NABU_GMU_POOL_DCACHE         0x0003c000u
++#define NABU_GMU_POOL_DUMMY          0x00078000u
++#define NABU_GMU_POOL_LOG            0x00079000u
++#define NABU_GMU_POOL_HFI            0x0007d000u
++#define NABU_GMU_POOL_PT             0x00081000u
++#define NABU_GMU_PT_PAGE_COUNT       5u
++#define NABU_GMU_PT_SIZE             (NABU_GMU_PT_PAGE_COUNT * NABU_GMU_PAGE_SIZE)
++/* Round the 4 KiB layout up to XNU's 16 KiB software page size. */
++#define NABU_GMU_POOL_SIZE           0x00088000u
++
++#define NABU_GMU_IOVA_BITS           39u
++#define NABU_GMU_PA_LIMIT            0x0001000000000000ULL
++#define NABU_GMU_PA_MASK             0x0000fffffffff000ULL
++#define NABU_GMU_PTE_VALID           (1ULL << 0)
++#define NABU_GMU_PTE_TABLE           3ULL
++#define NABU_GMU_PTE_PAGE            3ULL
++#define NABU_GMU_PTE_SH_OUTER        (2ULL << 8)
++#define NABU_GMU_PTE_AF              (1ULL << 10)
++#define NABU_GMU_PTE_NG              (1ULL << 11)
++#define NABU_GMU_PTE_GMU             (NABU_GMU_PTE_SH_OUTER | NABU_GMU_PTE_AF | NABU_GMU_PTE_NG)
++
++struct nabu_gmu_hfi_queue {
++	uint32_t status;
++	uint32_t start;
++	uint32_t type;
++	uint32_t words;
++	uint32_t message_words;
++	uint32_t unused[5];
++	uint32_t read;
++	uint32_t write;
++};
++
++struct nabu_gmu_hfi_table {
++	uint32_t version;
++	uint32_t words;
++	uint32_t first_queue;
++	uint32_t queue_words;
++	uint32_t queues;
++	uint32_t active_queues;
++	struct nabu_gmu_hfi_queue queue[17];
++};
++
++struct nabu_gmu_memory_plan {
++	vm_offset_t pool_va;
++	addr64_t pool_pa;
++	uint64_t *pt_root;
++	uint64_t pt_pa;
++	uint32_t pt_pages_used;
++	uint32_t firmware_blocks;
++	uint32_t itcm_blocks;
++	uint32_t dtcm_blocks;
++	uint32_t icache_blocks;
++	uint32_t dcache_blocks;
++	uint32_t icache_bytes;
++	uint32_t dcache_bytes;
++	bool ready;
++};
++
++static struct nabu_gmu_memory_plan nabu_gmu_plan;
++
++extern addr64_t kvtophys(vm_offset_t va);
++extern void flush_dcache64(addr64_t addr, unsigned count, int phys);
++
++static uint8_t *
++gmu_pool_ptr(uint32_t offset)
++{
++	return (uint8_t *)(nabu_gmu_plan.pool_va + offset);
++}
++
++static addr64_t
++gmu_pool_pa(uint32_t offset)
++{
++	return nabu_gmu_plan.pool_pa + offset;
++}
++
++static uint64_t *
++gmu_pt_page(uint32_t index)
++{
++	if (index >= NABU_GMU_PT_PAGE_COUNT) {
++		return NULL;
++	}
++	return (uint64_t *)(nabu_gmu_plan.pool_va + NABU_GMU_POOL_PT +
++	    (index * NABU_GMU_PAGE_SIZE));
++}
++
++static uint64_t
++gmu_pt_page_pa(uint32_t index)
++{
++	return nabu_gmu_plan.pool_pa + NABU_GMU_POOL_PT +
++	    ((uint64_t)index * NABU_GMU_PAGE_SIZE);
++}
++
++static bool
++gmu_pool_allocate(void)
++{
++	if (kmem_alloc_contig(kernel_map, &nabu_gmu_plan.pool_va,
++	    NABU_GMU_POOL_SIZE, PAGE_MASK, 0, 0,
++	    KMA_DATA | KMA_ZERO | KMA_PERMANENT,
++	    VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) {
++		printf("nabugmumem: cannot allocate %u contiguous bytes\n",
++		    NABU_GMU_POOL_SIZE);
++		return false;
++	}
++
++	nabu_gmu_plan.pool_pa = kvtophys(nabu_gmu_plan.pool_va);
++	if (nabu_gmu_plan.pool_pa == 0) {
++		printf("nabugmumem: pool has no physical mapping\n");
++		return false;
++	}
++
++	if ((nabu_gmu_plan.pool_pa & (NABU_GMU_PAGE_SIZE - 1)) != 0 ||
++	    nabu_gmu_plan.pool_pa + NABU_GMU_POOL_SIZE > NABU_GMU_PA_LIMIT) {
++		printf("nabugmumem: pool physical range is not representable "
++		    "by the planned SMMU descriptors\n");
++		return false;
++	}
++
++	for (uint32_t offset = 0; offset < NABU_GMU_POOL_SIZE;
++	    offset += NABU_GMU_PAGE_SIZE) {
++		addr64_t page_pa = kvtophys(nabu_gmu_plan.pool_va + offset);
++		if (page_pa != nabu_gmu_plan.pool_pa + offset) {
++			printf("nabugmumem: pool is not physically contiguous at "
++			    "+0x%x\n", offset);
++			return false;
++		}
++	}
++
++	return true;
++}
++
++static uint64_t *
++gmu_child_table(uint64_t *entry)
++{
++	uint64_t child_pa;
++
++	if ((*entry & NABU_GMU_PTE_VALID) != 0) {
++		child_pa = *entry & NABU_GMU_PA_MASK;
++		if ((child_pa < nabu_gmu_plan.pt_pa) ||
++		    (child_pa >= nabu_gmu_plan.pt_pa + NABU_GMU_PT_SIZE) ||
++		    ((child_pa - nabu_gmu_plan.pt_pa) & (NABU_GMU_PAGE_SIZE - 1)) != 0) {
++			return NULL;
++		}
++		return (uint64_t *)(nabu_gmu_plan.pool_va + NABU_GMU_POOL_PT +
++		    (child_pa - nabu_gmu_plan.pt_pa));
++	}
++
++	if (*entry != 0 || nabu_gmu_plan.pt_pages_used >= NABU_GMU_PT_PAGE_COUNT) {
++		return NULL;
++	}
++
++	uint32_t page_index = nabu_gmu_plan.pt_pages_used++;
++	uint64_t *table = gmu_pt_page(page_index);
++	if (table == NULL) {
++		return NULL;
++	}
++	*entry = (gmu_pt_page_pa(page_index) & NABU_GMU_PA_MASK) |
++	    NABU_GMU_PTE_TABLE;
++	return table;
++}
++
++static bool
++gmu_pt_map_page(uint64_t iova, uint64_t phys)
++{
++	uint64_t *l1, *l2;
++	uint64_t *root = nabu_gmu_plan.pt_root;
++	uint64_t *slot;
++
++	if ((iova >> NABU_GMU_IOVA_BITS) != 0 ||
++	    (iova & (NABU_GMU_PAGE_SIZE - 1)) != 0 ||
++	    (phys & (NABU_GMU_PAGE_SIZE - 1)) != 0 ||
++	    (phys & ~NABU_GMU_PA_MASK) != 0 || phys >= NABU_GMU_PA_LIMIT) {
++		return false;
++	}
++
++	l1 = gmu_child_table(&root[(iova >> 30) & 0x1ff]);
++	if (l1 == NULL) {
++		return false;
++	}
++	l2 = gmu_child_table(&l1[(iova >> 21) & 0x1ff]);
++	if (l2 == NULL) {
++		return false;
++	}
++	slot = &l2[(iova >> 12) & 0x1ff];
++	if (*slot != 0) {
++		return false;
++	}
++	*slot = (phys & NABU_GMU_PA_MASK) | NABU_GMU_PTE_PAGE |
++	    NABU_GMU_PTE_GMU;
++	return true;
++}
++
++static bool
++gmu_pt_map_range(uint32_t iova, uint32_t pool_offset, uint32_t size)
++{
++	if (((iova | pool_offset | size) & (NABU_GMU_PAGE_SIZE - 1)) != 0) {
++		return false;
++	}
++	if ((uint64_t)iova + size > (1ULL << NABU_GMU_IOVA_BITS) ||
++	    (uint64_t)pool_offset + size > NABU_GMU_POOL_SIZE) {
++		return false;
++	}
++
++	for (uint32_t offset = 0; offset < size; offset += NABU_GMU_PAGE_SIZE) {
++		if (!gmu_pt_map_page((uint64_t)iova + offset,
++		    gmu_pool_pa(pool_offset + offset))) {
++			return false;
++		}
++	}
++	return true;
++}
++
++static bool
++gmu_pt_translate(uint64_t iova, uint64_t *phys_out)
++{
++	uint64_t entry;
++	uint64_t *table = nabu_gmu_plan.pt_root;
++
++	if ((iova >> NABU_GMU_IOVA_BITS) != 0 || table == NULL) {
++		return false;
++	}
++	entry = table[(iova >> 30) & 0x1ff];
++	if ((entry & 3) != NABU_GMU_PTE_TABLE) {
++		return false;
++	}
++	table = gmu_child_table(&entry);
++	if (table == NULL) {
++		return false;
++	}
++
++	entry = table[(iova >> 21) & 0x1ff];
++	if ((entry & 3) != NABU_GMU_PTE_TABLE) {
++		return false;
++	}
++	table = gmu_child_table(&entry);
++	if (table == NULL) {
++		return false;
++	}
++
++	entry = table[(iova >> 12) & 0x1ff];
++	if ((entry & 3) != NABU_GMU_PTE_PAGE) {
++		return false;
++	}
++	*phys_out = (entry & NABU_GMU_PA_MASK) |
++	    (iova & (NABU_GMU_PAGE_SIZE - 1));
++	return true;
++}
++
++static bool
++gmu_validate_range(uint32_t iova, uint32_t pool_offset, uint32_t size)
++{
++	for (uint32_t offset = 0; offset < size; offset += NABU_GMU_PAGE_SIZE) {
++		uint64_t translated;
++		if (!gmu_pt_translate((uint64_t)iova + offset, &translated) ||
++		    translated != gmu_pool_pa(pool_offset + offset)) {
++			printf("nabugmumem: translation check failed at IOVA "
++			    "0x%x\n", iova + offset);
++			return false;
++		}
++	}
++	return true;
++}
++
++static bool
++gmu_copy_firmware_memory(const uint8_t *fw, size_t fw_size)
++{
++	size_t at = 0;
++
++	while (at < fw_size) {
++		uint32_t addr, size, magic0, magic1;
++		const uint8_t *payload;
++
++		if (fw_size - at < 16) {
++			printf("nabugmumem: truncated firmware block header at "
++			    "0x%x\n", (unsigned)at);
++			return false;
++		}
++		addr = (uint32_t)fw[at + 0] | ((uint32_t)fw[at + 1] << 8) |
++		    ((uint32_t)fw[at + 2] << 16) | ((uint32_t)fw[at + 3] << 24);
++		size = (uint32_t)fw[at + 4] | ((uint32_t)fw[at + 5] << 8) |
++		    ((uint32_t)fw[at + 6] << 16) | ((uint32_t)fw[at + 7] << 24);
++		magic0 = (uint32_t)fw[at + 8] | ((uint32_t)fw[at + 9] << 8) |
++		    ((uint32_t)fw[at + 10] << 16) | ((uint32_t)fw[at + 11] << 24);
++		magic1 = (uint32_t)fw[at + 12] | ((uint32_t)fw[at + 13] << 8) |
++		    ((uint32_t)fw[at + 14] << 16) | ((uint32_t)fw[at + 15] << 24);
++		payload = fw + at + 16;
++		if (magic0 != 0xefbeaddeu || magic1 != 0xefbeaddeu ||
++		    size == 0 || (size & 3u) != 0 || size > fw_size - at - 16) {
++			printf("nabugmumem: malformed firmware block at 0x%x\n",
++			    (unsigned)at);
++			return false;
++		}
++
++		if (addr >= NABU_GMU_ITCM_BASE && addr < NABU_GMU_ITCM_LIMIT &&
++		    size <= NABU_GMU_ITCM_LIMIT - addr) {
++			/* ITCM is written later through the GMU's TCM window. */
++			nabu_gmu_plan.itcm_blocks++;
++		} else if (addr >= NABU_GMU_DTCM_BASE &&
++		    addr < NABU_GMU_DTCM_LIMIT &&
++		    size <= NABU_GMU_DTCM_LIMIT - addr) {
++			/* DTCM is written later through the GMU's TCM window. */
++			nabu_gmu_plan.dtcm_blocks++;
++		} else if (addr >= NABU_GMU_ICACHE_BASE &&
++		    addr < NABU_GMU_ICACHE_LIMIT &&
++		    size <= NABU_GMU_ICACHE_LIMIT - addr) {
++			memcpy(gmu_pool_ptr(NABU_GMU_POOL_ICACHE +
++			    addr - NABU_GMU_ICACHE_BASE), payload, size);
++			nabu_gmu_plan.icache_blocks++;
++			nabu_gmu_plan.icache_bytes += size;
++		} else if (addr >= NABU_GMU_DCACHE_BASE &&
++		    addr < NABU_GMU_DCACHE_LIMIT &&
++		    size <= NABU_GMU_DCACHE_LIMIT - addr) {
++			memcpy(gmu_pool_ptr(NABU_GMU_POOL_DCACHE +
++			    addr - NABU_GMU_DCACHE_BASE), payload, size);
++			nabu_gmu_plan.dcache_blocks++;
++			nabu_gmu_plan.dcache_bytes += size;
++		} else {
++			printf("nabugmumem: firmware block 0x%08x+0x%x does not "
++			    "fit a known A640 GMU region\n", addr, size);
++			return false;
++		}
++		at += 16 + size;
++		nabu_gmu_plan.firmware_blocks++;
++	}
++
++	return at == fw_size && nabu_gmu_plan.firmware_blocks == 7 &&
++	    nabu_gmu_plan.itcm_blocks == 3 &&
++	    nabu_gmu_plan.dtcm_blocks == 2 &&
++	    nabu_gmu_plan.icache_blocks == 1 &&
++	    nabu_gmu_plan.dcache_blocks == 1 &&
++	    nabu_gmu_plan.icache_bytes == NABU_GMU_ICACHE_DATA_SIZE &&
++	    nabu_gmu_plan.dcache_bytes == NABU_GMU_DCACHE_DATA_SIZE;
++}
++
++static uint32_t
++gmu_hfi_queue_at(uint32_t queue)
++{
++	uint32_t table_end = (uint32_t)((sizeof(struct nabu_gmu_hfi_table) + 15u) & ~15u);
++	return table_end + NABU_GMU_PAGE_SIZE * queue;
++}
++
++static bool
++gmu_initialize_hfi(void)
++{
++	static const uint32_t priority[3] = { 10, 10, 40 };
++	struct nabu_gmu_hfi_table *hfi =
++	    (struct nabu_gmu_hfi_table *)gmu_pool_ptr(NABU_GMU_POOL_HFI);
++
++	if (gmu_hfi_queue_at(2) + NABU_GMU_PAGE_SIZE > NABU_GMU_HFI_SIZE) {
++		printf("nabugmumem: HFI queue layout exceeds its 16 KiB buffer\n");
++		return false;
++	}
++	hfi->words = sizeof(*hfi) / sizeof(uint32_t);
++	hfi->first_queue = 6;
++	hfi->queue_words = sizeof(struct nabu_gmu_hfi_queue) / sizeof(uint32_t);
++	hfi->queues = 3;
++	hfi->active_queues = 3;
++	for (uint32_t i = 0; i < 3; i++) {
++		hfi->queue[i].start = NABU_GMU_HFI_IOVA + gmu_hfi_queue_at(i);
++		hfi->queue[i].type = i | (priority[i] << 8);
++		hfi->queue[i].words = 1024;
++		hfi->queue[i].status = 1;
++	}
++	return true;
++}
++
++void
++nabu_gpu_gmu_memory_plan(void)
++{
++	uint32_t enable = 0;
++	DTEntry chosen;
++	const uint8_t *fw = NULL;
++	unsigned int fw_size = 0;
++	uint64_t translated;
++	uint64_t *root;
++
++	if (!PE_parse_boot_argn("nabugmumem", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	if (nabu_gmu_plan.ready) {
++		printf("nabugmumem: memory plan already exists at 0x%llx\n",
++		    nabu_gmu_plan.pool_pa);
++		return;
++	}
++
++	printf("nabugmumem: build and validate CPU-memory-only GMU plan; "
++	    "SMMU/GMU registers remain untouched\n");
++	if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess ||
++	    SecureDTGetProperty(chosen, NABU_GMU_FW_DT_PROP,
++	    (void const **)&fw, &fw_size) != kSuccess || fw_size == 0) {
++		printf("nabugmumem: GMU firmware property is unavailable\n");
++		return;
++	}
++	if (!gmu_pool_allocate()) {
++		return;
++	}
++
++	nabu_gmu_plan.pt_pa = gmu_pool_pa(NABU_GMU_POOL_PT);
++	nabu_gmu_plan.pt_root = gmu_pt_page(0);
++	nabu_gmu_plan.pt_pages_used = 1;
++	root = nabu_gmu_plan.pt_root;
++	if (root == NULL ||
++	    !gmu_pt_map_range(NABU_GMU_ICACHE_BASE, NABU_GMU_POOL_ICACHE,
++	    NABU_GMU_ICACHE_SIZE) ||
++	    !gmu_pt_map_range(NABU_GMU_DCACHE_BASE, NABU_GMU_POOL_DCACHE,
++	    NABU_GMU_DCACHE_SIZE) ||
++	    !gmu_pt_map_range(NABU_GMU_DUMMY_IOVA, NABU_GMU_POOL_DUMMY,
++	    NABU_GMU_DUMMY_SIZE) ||
++	    !gmu_pt_map_range(NABU_GMU_LOG_IOVA, NABU_GMU_POOL_LOG,
++	    NABU_GMU_LOG_SIZE) ||
++	    !gmu_pt_map_range(NABU_GMU_HFI_IOVA, NABU_GMU_POOL_HFI,
++	    NABU_GMU_HFI_SIZE)) {
++		printf("nabugmumem: could not build the planned three-level page "
++		    "tables\n");
++		return;
++	}
++
++	if (nabu_gmu_plan.pt_pages_used != NABU_GMU_PT_PAGE_COUNT) {
++		printf("nabugmumem: page-table count mismatch: built %u, expected "
++		    "%u\n", nabu_gmu_plan.pt_pages_used, NABU_GMU_PT_PAGE_COUNT);
++		return;
++	}
++	if (!gmu_copy_firmware_memory(fw, fw_size) ||
++	    !gmu_initialize_hfi()) {
++		printf("nabugmumem: firmware/HFI memory validation failed\n");
++		return;
++	}
++
++	if (!gmu_validate_range(NABU_GMU_ICACHE_BASE, NABU_GMU_POOL_ICACHE,
++	    NABU_GMU_ICACHE_SIZE) ||
++	    !gmu_validate_range(NABU_GMU_DCACHE_BASE, NABU_GMU_POOL_DCACHE,
++	    NABU_GMU_DCACHE_SIZE) ||
++	    !gmu_validate_range(NABU_GMU_DUMMY_IOVA, NABU_GMU_POOL_DUMMY,
++	    NABU_GMU_DUMMY_SIZE) ||
++	    !gmu_validate_range(NABU_GMU_LOG_IOVA, NABU_GMU_POOL_LOG,
++	    NABU_GMU_LOG_SIZE) ||
++	    !gmu_validate_range(NABU_GMU_HFI_IOVA, NABU_GMU_POOL_HFI,
++	    NABU_GMU_HFI_SIZE) ||
++	    gmu_pt_translate(0x60009000u, &translated)) {
++		printf("nabugmumem: page-table software validation failed\n");
++		return;
++	}
++
++	flush_dcache64(gmu_pool_pa(NABU_GMU_POOL_ICACHE),
++	    NABU_GMU_POOL_SIZE - NABU_GMU_POOL_ICACHE, TRUE);
++	__asm__ volatile ("dsb sy" ::: "memory");
++	nabu_gmu_plan.ready = true;
++
++	printf("nabugmumem: firmware=%u bytes blocks=%u TCM=%u/%u "
++	    "icache=%u bytes dcache=%u bytes\n", fw_size,
++	    nabu_gmu_plan.firmware_blocks, nabu_gmu_plan.itcm_blocks,
++	    nabu_gmu_plan.dtcm_blocks,
++	    nabu_gmu_plan.icache_bytes, nabu_gmu_plan.dcache_bytes);
++	printf("nabugmumem: IOVA icache=0x%x+0x%x dcache=0x%x+0x%x "
++	    "dummy=0x%x log=0x%x+0x%x hfi=0x%x+0x%x\n",
++	    NABU_GMU_ICACHE_BASE, NABU_GMU_ICACHE_SIZE,
++	    NABU_GMU_DCACHE_BASE, NABU_GMU_DCACHE_SIZE,
++	    NABU_GMU_DUMMY_IOVA, NABU_GMU_LOG_IOVA, NABU_GMU_LOG_SIZE,
++	    NABU_GMU_HFI_IOVA, NABU_GMU_HFI_SIZE);
++	printf("nabugmumem: pool_pa=0x%llx root_ttbr0_pa=0x%llx "
++	    "pt_pages=%u; no SMMU or GMU register was written\n",
++	    nabu_gmu_plan.pool_pa, nabu_gmu_plan.pt_pa,
++	    nabu_gmu_plan.pt_pages_used);
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */

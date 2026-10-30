@@ -1,0 +1,41 @@
+diff --git a/bsd/dev/nabu_touch.c b/bsd/dev/nabu_touch.c
+--- a/bsd/dev/nabu_touch.c
++++ b/bsd/dev/nabu_touch.c
+@@ -392,9 +392,37 @@
+ 	return false;
+ }
+ 
++/* nabutouchmove=1: bounded log of coordinates that changed while down. */
++static int nbu_move_log = -1;
++static unsigned nbu_move_logged;
++static int nbu_move_x[NVT_MAX_FINGERS];
++static int nbu_move_y[NVT_MAX_FINGERS];
++
+ static void
+ nbu_hid_touch_native(int slot, int down, int x, int y)
+ {
++	if (nbu_move_log < 0) {
++		int enabled = 0;
++		(void)PE_parse_boot_argn("nabutouchmove", &enabled, sizeof(enabled));
++		nbu_move_log = enabled != 0;
++		for (int k = 0; k < NVT_MAX_FINGERS; k++) {
++			nbu_move_x[k] = nbu_move_y[k] = -1;
++		}
++		printf("NABU TOUCH: move-log=%d\n", nbu_move_log);
++	}
++	if (nbu_move_log) {
++		if (down && nbu_move_x[slot] >= 0 &&
++		    (nbu_move_x[slot] != x || nbu_move_y[slot] != y) && nbu_move_logged < 64) {
++			nbu_move_logged++;
++			printf("NABU TOUCH: move slot=%d %d,%d\n", slot, x, y);
++		}
++		if (down) {
++			nbu_move_x[slot] = x;
++			nbu_move_y[slot] = y;
++		} else {
++			nbu_move_x[slot] = nbu_move_y[slot] = -1;
++		}
++	}
+ 	/* NT36523 and NabuHIDTouch both use the native 1600x2560 panel space. */
+ 	nabu_hid_touch(slot, down, x, y);
+ }

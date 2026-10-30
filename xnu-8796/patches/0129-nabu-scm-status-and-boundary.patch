@@ -1,0 +1,258 @@
+diff --git a/bsd/dev/nabu_gpu_trustzone.c b/bsd/dev/nabu_gpu_trustzone.c
+--- a/bsd/dev/nabu_gpu_trustzone.c
++++ b/bsd/dev/nabu_gpu_trustzone.c
+@@ -145,20 +145,37 @@
+ 
+ /*
+  * "Is this service/command pair available?" It is itself a call of the monitor's
+- * information service, so the pair to ask about travels as its argument, with
+- * the vendor owner bits set the way the monitor expects to see them.
+- */
+-static bool
+-nabu_scm_available(uint64_t how, uint32_t service, uint32_t command,
+-    uint64_t *answer_out)
+-{
+-	uint64_t target = NABU_SCM_SIP | NABU_SCM_FNID(service, command);
+-	int32_t status;
+-
+-	status = nabu_scm_raw(how, NABU_SCM_SVC_INFO,
+-	    NABU_SCM_INFO_IS_CALL_AVAIL, target, answer_out, true);
+-	return status == 0 && *answer_out == 1;
+-}
++ * information service, so the pair to ask about travels as its argument.
++ *
++ * Return both facts rather than one: whether the call was carried out at all,
++ * and what it answered. The previous run recorded only the answer, so "0" could
++ * not be told apart from "the monitor refused to run the call", and that is
++ * exactly the distinction that decides whether firmware loading is possible.
++ */
++struct nabu_scm_probe {
++	int32_t status;     /* what the monitor returned; 0 means it ran the call */
++	uint64_t answer;    /* the answer word */
++};
++
++/*
++ * Ask the monitor whether one of its own calls is available.
++ *
++ * `target` is the function id to ask about, already carrying the vendor owner
++ * bits. The question itself is a call of the information service's
++ * IS_CALL_AVAILABLE, with the target passed as its single argument.
++ */
++static struct nabu_scm_probe
++nabu_scm_ask(uint64_t how, uint64_t target)
++{
++	struct nabu_scm_probe probe;
++
++	probe.answer = 0;
++	probe.status = nabu_scm_raw(how, NABU_SCM_SVC_INFO,
++	    NABU_SCM_INFO_IS_CALL_AVAIL, NABU_SCM_SIP | target, &probe.answer,
++	    true);
++	return probe;
++}
++
+ 
+ /* ---------------------------------------------------------------------------
+  * Entry point
+@@ -181,110 +198,120 @@
+ 		const char *name;
+ 		uint32_t id;
+ 	} controls[] = {
+-		{ "audio", NABU_IMG_AUDIO },
+-		{ "modem", NABU_IMG_MODEM },
+-		{ "video", NABU_IMG_VIDEO },
++		{ "audio",   NABU_IMG_AUDIO },
++		{ "modem",   NABU_IMG_MODEM },
++		{ "video",   NABU_IMG_VIDEO },
+ 		{ "GPU zap", NABU_IMG_GPU },
+ 	};
+ 	uint32_t enable = 0;
+-	uint64_t answer = 0;
+ 	uint64_t how = 0;
+ 	const char *how_name = NULL;
++	struct nabu_scm_probe probe;
+ 
+ 	if (!PE_parse_boot_argn("nabugpu3", &enable, sizeof(enable)) || !enable) {
+ 		return;
+ 	}
+-	(void)PE_parse_boot_argn("nabugpu3_pause", &gpu3_pause_ms, sizeof(gpu3_pause_ms));
+-	(void)PE_parse_boot_argn("nabugpu3_watch", &gpu3_watch_secs, sizeof(gpu3_watch_secs));
++	(void)PE_parse_boot_argn("nabugpu3_pause", &gpu3_pause_ms,
++	    sizeof(gpu3_pause_ms));
++	(void)PE_parse_boot_argn("nabugpu3_watch", &gpu3_watch_secs,
++	    sizeof(gpu3_watch_secs));
+ 
+ 	printf("nabugpu3: map what the secure monitor allows (queries only)\n");
+ 
+-	/* ---- 1. which convention answers ---------------------------------- */
+-	nabu_gpu3_announce("1: which call convention does the monitor answer");
++	/*
++	 * 1. Which calling convention does the monitor answer at all?
++	 *
++	 * Ask whether the PIL service's own "is an image supported" call is
++	 * available -- a question with an expected yes -- rather than asking
++	 * whether the info service can describe itself, which may legitimately
++	 * answer no. The status is printed too: a refusal to run the call and a
++	 * plain negative answer mean different things and the previous run could
++	 * not tell them apart.
++	 */
++	nabu_gpu3_announce("1: which convention answers, and does it run the call");
+ 	for (size_t i = 0; i < sizeof(conventions) / sizeof(conventions[0]); i++) {
+-		bool ok;
+-
+-		answer = 0;
+-		ok = nabu_scm_available(conventions[i].how, NABU_SCM_SVC_INFO,
+-		    NABU_SCM_INFO_IS_CALL_AVAIL, &answer);
+-		printf("nabugpu3: 1: %-20s -> answer 0x%llx %s\n",
+-		    conventions[i].name, answer, ok ? "ANSWERS" : "");
+-		if (ok && how_name == NULL) {
++		probe = nabu_scm_ask(conventions[i].how,
++		    NABU_SCM_FNID(NABU_SCM_SVC_PIL, NABU_SCM_PAS_IS_SUPPORTED));
++		printf("nabugpu3: 1: %-20s status %-4d answer 0x%llx  %s\n",
++		    conventions[i].name, probe.status, probe.answer,
++		    probe.status == 0 ? "RUNS THE CALL" : "REFUSED");
++		if (probe.status == 0 && how_name == NULL) {
+ 			how = conventions[i].how;
+ 			how_name = conventions[i].name;
+ 		}
+ 		nabu_gpu3_sleep_ms(20);
+ 	}
+ 	if (how_name == NULL) {
+-		printf("nabugpu3: 1: no convention answers \"is call available\"; "
+-		    "the monitor is not answering this kernel at all\n");
++		printf("nabugpu3: 1: no convention runs the call at all; the monitor "
++		    "is not answering this kernel's SMC at all\n");
+ 		goto watch;
+ 	}
+-	printf("nabugpu3: 1: using the %s convention from here on\n", how_name);
+-
+-	/* ---- 2. the service/command matrix -------------------------------- */
+-	nabu_gpu3_announce("2: which service/command pairs are available");
+-	for (uint32_t service = 0; service <= 8; service++) {
+-		uint32_t mask = 0;
+-
+-		for (uint32_t command = 0; command <= 15; command++) {
+-			answer = 0;
+-			if (nabu_scm_available(how, service, command, &answer)) {
+-				mask |= (1u << command);
+-			}
+-			nabu_gpu3_sleep_ms(4);
+-		}
+-		printf("nabugpu3: 2: service %u: available commands mask 0x%04x%s\n",
+-		    service, mask, mask ? "" : " (none)");
+-	}
+-
+-	/* ---- 3. which image numbers are supported ------------------------- */
+-	nabu_gpu3_announce("3: which peripheral image numbers are supported");
++	printf("nabugpu3: 1: the %s convention runs the call; using it\n", how_name);
++
++	/*
++	 * 2. What does the monitor answer about the images this phone loads?
++	 *
++	 * The control group decides how to read everything else. If audio, modem
++	 * and video -- which this phone definitely starts through this path -- also
++	 * come back negative, the question is wrong rather than the permission.
++	 */
++	nabu_gpu3_announce("2: ask about the images this phone loads (control group)");
++	for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
++		struct nabu_scm_probe fast, slow;
++
++		fast.status = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &fast.answer, true);
++		slow.status = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &slow.answer, true);
++		printf("nabugpu3: 2: %-8s (image %2u): fast status %d answer 0x%llx | "
++		    "slow status %d answer 0x%llx\n",
++		    controls[i].name, controls[i].id,
++		    fast.status, fast.answer, slow.status, slow.answer);
++		nabu_gpu3_sleep_ms(20);
++	}
++
++	/*
++	 * 3. Every image number, so the boundary is visible rather than inferred.
++	 */
++	nabu_gpu3_announce("3: every image number, both call forms");
+ 	for (uint32_t image = 0; image <= 20; image++) {
+-		bool fast, slow;
+-
+-		answer = 0;
+-		fast = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
+-		    NABU_SCM_PAS_IS_SUPPORTED, image, &answer, true) == 0 &&
+-		    answer != 0;
+-		answer = 0;
+-		slow = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
+-		    NABU_SCM_PAS_IS_SUPPORTED, image, &answer, true) == 0 &&
+-		    answer != 0;
+-		if (fast || slow) {
+-			printf("nabugpu3: 3: image %2u: supported (fast %u, slow %u)\n",
+-			    image, fast, slow);
+-		}
+-		nabu_gpu3_sleep_ms(6);
+-	}
+-	printf("nabugpu3: 3: scan done\n");
+-
+-	/* ---- 4. the control group ----------------------------------------- */
+-	nabu_gpu3_announce("4: the images this phone normally loads through this path");
+-	for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
+-		bool fast, slow;
+-
+-		answer = 0;
+-		fast = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
+-		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &answer, true) == 0 &&
+-		    answer != 0;
+-		answer = 0;
+-		slow = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
+-		    NABU_SCM_PAS_IS_SUPPORTED, controls[i].id, &answer, true) == 0 &&
+-		    answer != 0;
+-		printf("nabugpu3: 4: %-8s (image %2u): fast %u, slow %u\n",
+-		    controls[i].name, controls[i].id, fast, slow);
+-		nabu_gpu3_sleep_ms(20);
+-	}
+-
+-	/* ---- 5. are the calls that loading needs available ---------------- */
+-	nabu_gpu3_announce("5: are the calls that load an image available");
+-	printf("nabugpu3: 5: init_image %u, mem_setup %u, auth_and_reset %u, "
+-	    "shutdown %u\n",
+-	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_INIT_IMAGE, &answer),
+-	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_MEM_SETUP, &answer),
+-	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_AUTH_AND_RESET, &answer),
+-	    nabu_scm_available(how, NABU_SCM_SVC_PIL, NABU_SCM_PAS_SHUTDOWN, &answer));
++		struct nabu_scm_probe fast, slow;
++
++		fast.status = nabu_scm_raw(how, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, image, &fast.answer, true);
++		slow.status = nabu_scm_raw(how & ~NABU_SCM_FAST, NABU_SCM_SVC_PIL,
++		    NABU_SCM_PAS_IS_SUPPORTED, image, &slow.answer, true);
++		if (fast.status == 0 || slow.status == 0) {
++			printf("nabugpu3: 3: image %2u: fast %d/0x%llx slow %d/0x%llx\n",
++			    image, fast.status, fast.answer, slow.status, slow.answer);
++		}
++		nabu_gpu3_sleep_ms(8);
++	}
++	printf("nabugpu3: 3: image scan done\n");
++
++	/*
++	 * 4. The calls that load an image, by the same test.
++	 */
++	nabu_gpu3_announce("4: the calls that loading an image needs");
++	{
++		static const struct {
++			const char *name;
++			uint32_t command;
++		} calls[] = {
++			{ "init_image",     NABU_SCM_PAS_INIT_IMAGE },
++			{ "mem_setup",      NABU_SCM_PAS_MEM_SETUP },
++			{ "auth_and_reset", NABU_SCM_PAS_AUTH_AND_RESET },
++			{ "shutdown",       NABU_SCM_PAS_SHUTDOWN },
++		};
++
++		for (size_t i = 0; i < sizeof(calls) / sizeof(calls[0]); i++) {
++			probe = nabu_scm_ask(how,
++			    NABU_SCM_FNID(NABU_SCM_SVC_PIL, calls[i].command));
++			printf("nabugpu3: 4: %-14s status %d answer 0x%llx\n",
++			    calls[i].name, probe.status, probe.answer);
++			nabu_gpu3_sleep_ms(12);
++		}
++	}
+ 
+ 	printf("nabugpu3: survey finished; no image was offered and no state changed\n");
+ 

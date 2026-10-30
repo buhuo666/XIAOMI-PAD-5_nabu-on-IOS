@@ -1,0 +1,295 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -56,6 +56,7 @@
+ extern void nabu_usb_probe(void);
+ extern void nabu_gpu_probe(void);
+ extern void nabu_gpu_clocks(void);
++extern void nabu_gpu_trustzone(void);
+ extern void nabu_cpu_freq(void);
+ 
+ #define REG_CAP         0x00
+@@ -689,11 +690,16 @@
+ 	nabu_gpu_probe();
+ 	/*
+ 	 * Stage 2 of the GPU port (boot-arg nabugpu2=1): the first register
+-	 * writes, switching the CX half on and the GPU's branch clocks on.
+-	 * It stops before any firmware is loaded, and it refuses to touch the
+-	 * CX power switch while that offset is unverified for SM8150.
++	 * writes. It switches the CX half on (cx_gdscr at 0x106c, verified
++	 * against gpucc-sm8150.c) and with it the GPU's branch clocks.
+ 	 */
+ 	nabu_gpu_clocks();
++	/*
++	 * Stage 3a (boot-arg nabugpu3=1): ask the secure monitor whether it
++	 * serves the vendor's call set and whether it can authenticate the GPU's
++	 * image. Both are queries; no image is offered and no state changes.
++	 */
++	nabu_gpu_trustzone();
+ 	/*
+ 	 * CPU frequency (boot-arg nabucpu=1): read the OSM tables, and with
+ 	 * nabucpu_raise=1 ask each cluster for its top row. The read pass
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -108,6 +108,7 @@
+ bsd/dev/nabu_gpu_probe.c		standard
+ bsd/dev/nabu_gpu_clocks.c		standard
+ bsd/dev/nabu_cpu_freq.c			standard
++bsd/dev/nabu_gpu_trustzone.c		standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_cpu_freq.c b/bsd/dev/nabu_cpu_freq.c
+--- a/bsd/dev/nabu_cpu_freq.c
++++ b/bsd/dev/nabu_cpu_freq.c
+@@ -73,8 +73,11 @@
+ #define NABU_OSM_DCVS_CTRL      0xBCu
+ #define NABU_OSM_CURRENT_VOTE   0x704u   /* the voltage vote currently in force */
+ 
+-/* A row word: [31:30] clock source, [7:0] multiplier of the 19.2 MHz crystal. */
++/* A row word: [31:30] clock source, [15:8] the row's own index, [7:0] multiplier
++ * of the 19.2 MHz crystal. The index field was found by reading rows 0..3 on this
++ * tablet: 0x0004000f, 0x50040115, 0x5004021a -- byte 1 equals the row number. */
+ #define NABU_OSM_ROW_SOURCE(w)  (((w) >> 30) & 0x3u)
++#define NABU_OSM_ROW_INDEX(w)   (((w) >> 8) & 0xFFu)
+ #define NABU_OSM_ROW_MULT(w)    ((w) & 0xFFu)
+ #define NABU_XO_KHZ             19200u
+ #define NABU_ALT_KHZ            300000u  /* source 0 is a fixed 300 MHz tap */
+@@ -128,7 +131,14 @@
+ 	return true;
+ }
+ 
+-/* Turn one table row into kHz, the way the reference port decodes EPSS rows. */
++/*
++ * Turn one table row into kHz.
++ *
++ * Source 0 is the fixed 300 MHz tap rather than a multiple of the crystal, and
++ * the little and big clusters both start their table with it (row 0 reads
++ * 0x0004000f, source 0, multiplier 15). That row is a real operating point, so it
++ * is reported as 300 MHz, not as 15 x 19.2 MHz.
++ */
+ static uint32_t
+ nabu_cpu_row_khz(uint32_t row)
+ {
+@@ -140,8 +150,17 @@
+ 
+ /*
+  * Walk a cluster's table. Returns the index of its fastest row and that row's
+- * frequency. The table ends by repeating its last entry, so stop at the first
+- * row that does not increase.
++ * frequency.
++ *
++ * The first attempt stopped at the first row whose frequency did not increase,
++ * which cut every table short: the measured top rows were 1612800 / 1785600 /
++ * 2419200 kHz where this tablet's own cpufreq reports 1785600 / 2419200 /
++ * 2956800. The table does not simply repeat its last row.
++ *
++ * Each row word carries its own index in bits [15:8] -- row 0 reads 0x0004000f,
++ * row 1 reads 0x50040115, row 2 reads 0x5004021a -- so the table's real end is
++ * the first row whose index no longer matches its position. That is a fact read
++ * from the hardware rather than a guess about the ending.
+  */
+ static uint32_t
+ nabu_cpu_scan(struct nabu_cluster *cluster, uint32_t *top_khz_out)
+@@ -151,9 +170,14 @@
+ 	for (uint32_t row = 0; row < NABU_OSM_TABLE_ROWS; row++) {
+ 		uint32_t word = *(volatile uint32_t *)(cluster->base +
+ 		    NABU_OSM_FREQ_LUT + NABU_OSM_ROW_SIZE * row);
+-		uint32_t khz = nabu_cpu_row_khz(word);
+-
+-		if (row > 0 && khz <= top_khz) {
++		uint32_t index = NABU_OSM_ROW_INDEX(word);
++		uint32_t khz;
++
++		if (index != row) {
++			break;          /* past the end: this row is not the table's */
++		}
++		khz = nabu_cpu_row_khz(word);
++		if (khz == 0) {
+ 			break;
+ 		}
+ 		top_row = row;
+diff --git a/bsd/dev/nabu_gpu_trustzone.c b/bsd/dev/nabu_gpu_trustzone.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_trustzone.c
+@@ -0,0 +1,178 @@
++/*
++ * nabu GPU bring-up, stage 3a: ask TrustZone whether it will help at all.
++ *
++ * Stage 2 switched the GPU's CX half on and its branch clocks with it; all five
++ * clocks went from "OFF bit set" to running. The next step in the reference port
++ * hands the GPU's images to TrustZone for authentication, which needs a secure
++ * monitor call. Before any image is offered, this asks only questions:
++ *
++ *   SCM_IS_CALL_AVAILABLE   does this monitor serve the vendor's call set?
++ *   SCM_PAS_IS_SUPPORTED    does it support the peripheral authenticator, and
++ *                           for which image numbers? The GPU is one of them.
++ *
++ * Neither call changes device state, so a refusal costs nothing. What comes back
++ * decides whether the port can load firmware the vendor signed, or has to look
++ * for another way.
++ *
++ * The call convention follows qcom_scm-smc.c: a fast call in x0 with the service
++ * and command packed together, arguments in x1..x5, a session handle in x6, and
++ * the answer in x1 on return. A call reported as interrupted (x0 == 1) is
++ * repeated with that value as the function, which is how the protocol asks to be
++ * resumed.
++ *
++ * Boot arguments:
++ *   nabugpu3=1        run at all
++ *   nabugpu3_pause=MS wait after each announcement (default 1500)
++ *   nabugpu3_watch=S  report liveness afterwards
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++/* ---------------------------------------------------------------------------
++ * The secure monitor's call encoding (qcom_scm-smc.c).
++ * -------------------------------------------------------------------------*/
++#define NABU_SCM_FAST               (1ull << 31)  /* answered without preemption */
++#define NABU_SCM_64                 (1ull << 30)
++#define NABU_SCM_SIP                (2ull << 24)  /* the SoC vendor's call space */
++#define NABU_SCM_CALL(service, cmd) (((uint64_t)(service) << 8) | (cmd))
++
++#define NABU_SCM_IS_CALL_AVAILABLE  NABU_SCM_CALL(6, 1)
++#define NABU_SCM_PAS_IS_SUPPORTED   NABU_SCM_CALL(2, 7)
++
++/* The word that describes a call's arguments: one plain number. */
++#define NABU_SCM_ONE_VALUE          1
++#define NABU_SCM_INTERRUPTED        1  /* x0 == 1 asks the call to be made again */
++
++/* Peripheral image numbers this port cares about (qcom_scm.h). */
++#define NABU_PAS_GPU                13
++
++static uint32_t gpu3_pause_ms = 1500;
++static uint32_t gpu3_watch_secs;
++
++static void
++nabu_gpu3_sleep_ms(unsigned ms)
++{
++	static int gpu3_sleep_chan;
++	uint64_t deadline;
++
++	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&gpu3_sleep_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++static void
++nabu_gpu3_announce(const char *what)
++{
++	printf("nabugpu3: %s\n", what);
++	nabu_gpu3_sleep_ms(gpu3_pause_ms);
++}
++
++/*
++ * One secure monitor call. Returns the monitor's own status in *status_out and
++ * its answer word in *answer_out; the return value is 0 when a call completed.
++ */
++static int32_t
++nabu_scm_call(const char *what, uint64_t function, uint64_t arguments,
++    uint64_t first, uint64_t second, uint64_t *answer_out)
++{
++	uint64_t session = 0;
++
++	printf("nabugpu3: about to ask TrustZone %s: smc 0x%llx args 0x%llx, 0x%llx, 0x%llx\n",
++	    what, function, arguments, first, second);
++	nabu_gpu3_sleep_ms(gpu3_pause_ms);
++
++	for (int attempt = 0; attempt < 100; attempt++) {
++		register uint64_t x0 __asm__("x0") =
++		    attempt == 0 ? function : NABU_SCM_INTERRUPTED;
++		register uint64_t x1 __asm__("x1") = arguments;
++		register uint64_t x2 __asm__("x2") = first;
++		register uint64_t x3 __asm__("x3") = second;
++		register uint64_t x4 __asm__("x4") = 0;
++		register uint64_t x5 __asm__("x5") = 0;
++		register uint64_t x6 __asm__("x6") = session;
++		register uint64_t x7 __asm__("x7") = 0;
++
++		__asm__ volatile ("smc #0"
++		    : "+r" (x0), "+r" (x1), "+r" (x2), "+r" (x3),
++		      "+r" (x4), "+r" (x5), "+r" (x6), "+r" (x7)
++		    :
++		    : "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
++		      "x16", "x17", "memory");
++
++		session = x6;
++		if (x0 != NABU_SCM_INTERRUPTED) {
++			printf("nabugpu3: TrustZone returns %d, answer 0x%llx\n",
++			    (int32_t)x0, x1);
++			*answer_out = x1;
++			return (int32_t)x0;
++		}
++	}
++	printf("nabugpu3: TrustZone keeps saying the call was interrupted\n");
++	return -1;
++}
++
++/* ---------------------------------------------------------------------------
++ * Entry point
++ * -------------------------------------------------------------------------*/
++void
++nabu_gpu_trustzone(void)
++{
++	uint32_t enable = 0;
++	uint64_t answer = 0;
++	int32_t status;
++
++	if (!PE_parse_boot_argn("nabugpu3", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugpu3_pause", &gpu3_pause_ms, sizeof(gpu3_pause_ms));
++	(void)PE_parse_boot_argn("nabugpu3_watch", &gpu3_watch_secs, sizeof(gpu3_watch_secs));
++
++	printf("nabugpu3: ask TrustZone what it will do for this kernel (no image is offered)\n");
++
++	nabu_gpu3_announce("ask whether the vendor's call set is served at all");
++	status = nabu_scm_call("is the call set available",
++	    NABU_SCM_FAST | NABU_SCM_64 | NABU_SCM_SIP |
++	    NABU_SCM_IS_CALL_AVAILABLE,
++	    NABU_SCM_ONE_VALUE, NABU_SCM_CALL(6, 1), 0, &answer);
++	if (status != 0) {
++		printf("nabugpu3: the call set is refused (status %d); firmware "
++		    "loading through TrustZone is not available to this kernel\n",
++		    status);
++		goto watch;
++	}
++	printf("nabugpu3: the vendor's call set is served (answer 0x%llx)\n",
++	    answer);
++
++	nabu_gpu3_announce("ask whether the GPU's image can be authenticated");
++	status = nabu_scm_call("is peripheral authentication supported",
++	    NABU_SCM_FAST | NABU_SCM_64 | NABU_SCM_SIP |
++	    NABU_SCM_PAS_IS_SUPPORTED,
++	    NABU_SCM_ONE_VALUE, NABU_PAS_GPU, 0, &answer);
++	if (status != 0) {
++		printf("nabugpu3: peripheral authentication refused (status %d)\n",
++		    status);
++	} else {
++		printf("nabugpu3: image %d (GPU) supported = %llu\n",
++		    NABU_PAS_GPU, answer);
++	}
++
++watch:
++	if (gpu3_watch_secs) {
++		for (uint32_t second = 1; second <= gpu3_watch_secs; second++) {
++			nabu_gpu3_sleep_ms(1000);
++			printf("nabugpu3: alive %u/%u s\n", second, gpu3_watch_secs);
++		}
++	}
++	printf("nabugpu3: finished\n");
++}

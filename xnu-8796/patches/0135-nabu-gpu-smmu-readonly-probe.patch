@@ -1,0 +1,250 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -60,6 +60,7 @@
+ extern void nabu_cpu_freq(void);
+ extern void nabu_gpu_gmu_probe(void);
+ extern void nabu_gpu_gmu_load(void);
++extern void nabu_gpu_smmu_probe(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -724,6 +725,15 @@
+ 	 * own memory and reset register, never flash or the root filesystem.
+ 	 */
+ 	nabu_gpu_gmu_load();
++	/*
++	 * GPU SMMU (boot-arg nabusammu=1): a read-only look at the translation unit
++	 * in front of the GPU. The GMU reached ITCM but not its init value, and the
++	 * driver shows why: the HFI table and the log buffer are handed to it as GPU
++	 * virtual addresses, so translation has to work before it can finish. This
++	 * reads the instance's shape and whether it is in global bypass, which
++	 * decides whether a page table is needed at all.
++	 */
++	nabu_gpu_smmu_probe();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -111,6 +111,7 @@
+ bsd/dev/nabu_gpu_trustzone.c		standard
+ bsd/dev/nabu_gpu_gmu_probe.c		standard
+ bsd/dev/nabu_gpu_gmu_load.c	standard
++bsd/dev/nabu_gpu_smmu_probe.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+diff --git a/bsd/dev/nabu_gpu_smmu_probe.c b/bsd/dev/nabu_gpu_smmu_probe.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_probe.c
+@@ -0,0 +1,207 @@
++/*
++ * A read-only look at the GPU's SMMU, the translation unit that decides what
++ * the GPU can reach.
++ *
++ * Why this comes next: the GMU came up with the firmware in ITCM but never
++ * reached its init value, and the reason is now clear from the driver. Before
++ * releasing the core, a6xx_gmu_fw_start() writes two addresses that only mean
++ * something to the GMU if memory is reachable at them:
++ *
++ *     GMU_HFI_QTBL_ADDR      = gmu->hfi.iova     the HFI queue table
++ *     GMU_PWR_COL_CP_MSG     = gmu->log.iova     the log buffer
++ *
++ * and one of the firmware's own blocks (0x4000, 0x3a58 bytes) belongs in the
++ * icache window at that address rather than in ITCM. All three are ordinary
++ * memory at a GPU virtual address, so the SMMU has to be able to translate
++ * before any of them can be supplied.
++ *
++ * What this probe has to establish, before a page table is written:
++ *
++ *   - whether translation is on at all. ARM SMMU-500 reports that as
++ *     GR0_sCR0.CLIENTPD: set means no client is translated, so a GPU address is
++ *     a physical address and the three regions can simply be physical.
++ *   - how many context banks and stream IDs the instance has, which sets the
++ *     size of what would have to be programmed.
++ *   - how the streams feeding the GPU are currently configured, since the
++ *     bootloader may already have set them up ("qcom,skip-init" in this
++ *     tablet's tree says it may have).
++ *
++ * Register offsets are from arm-smmu.h, not from memory: GR0_sCR0 0x000,
++ * GR0_ID0 0x020, GR0_ID1 0x024, GR0_ID2 0x028, GR0_ID7 0x03c, GR0_sGFSR 0x048,
++ * SMR(n) 0x800 + n*4, S2CR(n) 0xc00 + n*4.
++ *
++ * The window is the one the tablet declares: kgsl-smmu@0x02ca0000, reg[0]
++ * "base" 0x02CA0000 for 0x10000 bytes.
++ *
++ * Boot arguments:
++ *   nabusammu=1            run the probe
++ *   nabusammu_streams=N    how many stream mapping entries to read, default 8
++ *
++ * Read-only: every access is a load.
++ */
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <libkern/libkern.h>
++#include <mach/mach_types.h>
++#include <mach/vm_param.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_kern.h>
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* kgsl-smmu@0x02ca0000, reg[0] "base". */
++#define NABU_SMMU_BASE          0x02CA0000UL
++#define NABU_SMMU_SIZE          0x00010000UL
++
++/* GR0 offsets, from arm-smmu.h. */
++#define NABU_SMMU_GR0_sCR0      0x000
++#define NABU_SMMU_GR0_sACR      0x010
++#define NABU_SMMU_GR0_ID0       0x020
++#define NABU_SMMU_GR0_ID1       0x024
++#define NABU_SMMU_GR0_ID2       0x028
++#define NABU_SMMU_GR0_ID7       0x03c
++#define NABU_SMMU_GR0_sGFSR     0x048
++#define NABU_SMMU_GR0_SMR(n)    (0x800 + ((n) << 2))
++#define NABU_SMMU_GR0_S2CR(n)   (0xc00 + ((n) << 2))
++
++/* sCR0.CLIENTPD: set means no client is translated. */
++#define NABU_SMMU_sCR0_CLIENTPD  (1u << 0)
++
++/* sGFSR.USF: an unsupported stream mapping fault is recorded. */
++#define NABU_SMMU_sGFSR_USF      (1u << 1)
++
++/* S2CR.TYPE, bits 17:16. */
++#define NABU_SMMU_S2CR_TYPE(w)   (((w) >> 16) & 0x3u)
++#define NABU_SMMU_S2CR_CBNDX(w)  (((w) >> 8) & 0xffu)
++/* SMR.CFG, bit 31: entry valid. */
++#define NABU_SMMU_SMR_VALID(w)   (((w) >> 31) & 0x1u)
++
++static uint32_t smmu_streams = 8;
++
++/* Called from the NABU machine setup in nabu_ufs.c. */
++void nabu_gpu_smmu_probe(void);
++
++static uint32_t
++smmu_rd(vm_offset_t base, uint32_t off)
++{
++	return *(volatile uint32_t *)(base + off);
++}
++
++static const char *
++s2cr_type_name(uint32_t type)
++{
++	switch (type) {
++	case 0:
++		return "FAULT";
++	case 1:
++		return "BYPASS";
++	case 2:
++		return "S2-tran";
++	case 3:
++		return "S1-tran";
++	default:
++		return "?";
++	}
++}
++
++void
++nabu_gpu_smmu_probe(void)
++{
++	uint32_t enable = 0;
++	vm_offset_t smmu;
++	uint32_t scr0, sacr, id0, id1, id2, id7, gfsr;
++	uint32_t num_smr, num_cb, num_s2cb, num_irpt;
++
++	if (!PE_parse_boot_argn("nabusammu", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabusammu_streams", &smmu_streams,
++	    sizeof(smmu_streams));
++	if (smmu_streams > 64) {
++		smmu_streams = 64;
++	}
++
++	printf("nabusammu: read the GPU SMMU's identification and bypass state\n");
++
++	smmu = ml_io_map(NABU_SMMU_BASE, NABU_SMMU_SIZE);
++	if (smmu == 0) {
++		printf("nabusammu: cannot map 0x%x\n", (unsigned)NABU_SMMU_BASE);
++		return;
++	}
++
++	id0 = smmu_rd(smmu, NABU_SMMU_GR0_ID0);
++	id1 = smmu_rd(smmu, NABU_SMMU_GR0_ID1);
++	id2 = smmu_rd(smmu, NABU_SMMU_GR0_ID2);
++	id7 = smmu_rd(smmu, NABU_SMMU_GR0_ID7);
++	scr0 = smmu_rd(smmu, NABU_SMMU_GR0_sCR0);
++	sacr = smmu_rd(smmu, NABU_SMMU_GR0_sACR);
++	gfsr = smmu_rd(smmu, NABU_SMMU_GR0_sGFSR);
++
++	/*
++	 * Field positions from arm-smmu.h: ID0.NUMSMRG is bits 7:0 and
++	 * ID0.NUMIRPT bits 23:16; ID1.NUMCB is bits 7:0 and ID1.NUMS2CB bits
++	 * 23:16. The stage-2 count comes from ID1, not ID0.
++	 */
++	num_smr  = id0 & 0xffu;
++	num_irpt = (id0 >> 16) & 0xffu;
++	num_cb   = id1 & 0xffu;
++	num_s2cb = (id1 >> 16) & 0xffu;
++
++	printf("nabusammu: id0=0x%08x id1=0x%08x id2=0x%08x id7=0x%08x\n",
++	    id0, id1, id2, id7);
++	printf("nabusammu: model %u.%u, %u stream entries, %u context banks "
++	    "(%u stage-2), %u interrupts\n",
++	    (id7 >> 4) & 0xfu, id7 & 0xfu, num_smr, num_cb, num_s2cb, num_irpt);
++	printf("nabusammu: sCR0=0x%08x sACR=0x%08x sGFSR=0x%08x\n",
++	    scr0, sacr, gfsr);
++
++	/*
++	 * The one line that decides the next step. CLIENTPD set means the SMMU
++	 * lets every client through untranslated, so a GPU address is a physical
++	 * address and the HFI, log and icache regions can be described with their
++	 * physical addresses; clear means they need a page table first.
++	 */
++	printf("nabusammu: translation is %s (CLIENTPD=%u)\n",
++	    (scr0 & NABU_SMMU_sCR0_CLIENTPD) ?
++	    "OFF - GPU addresses are physical" : "ON - a page table is needed",
++	    (scr0 & NABU_SMMU_sCR0_CLIENTPD) ? 1u : 0u);
++
++	if (gfsr) {
++		printf("nabusammu: a fault is recorded, sGFSR=0x%08x "
++		    "(USF=%u)\n", gfsr, (gfsr & NABU_SMMU_sGFSR_USF) ? 1u : 0u);
++	}
++
++	/*
++	 * How the streams are wired. If the bootloader already pointed the GPU's
++	 * streams at a context bank, that tells us both that the instance is
++	 * usable and which bank the vendor chose, which a replacement would have
++	 * to agree with.
++	 */
++	printf("nabusammu: first %u stream mappings\n", smmu_streams);
++	for (uint32_t i = 0; i < smmu_streams; i++) {
++		uint32_t smr = smmu_rd(smmu, NABU_SMMU_GR0_SMR(i));
++		uint32_t s2cr = smmu_rd(smmu, NABU_SMMU_GR0_S2CR(i));
++
++		if (!NABU_SMMU_SMR_VALID(smr) && s2cr == 0) {
++			continue;
++		}
++		printf("nabusammu:   sid[%u] smr=0x%08x (valid=%u id=0x%04x) "
++		    "s2cr=0x%08x (type=%u/%s cb=%u)\n",
++		    i, smr, NABU_SMMU_SMR_VALID(smr), (smr >> 16) & 0xffffu,
++		    s2cr, NABU_SMMU_S2CR_TYPE(s2cr),
++		    s2cr_type_name(NABU_SMMU_S2CR_TYPE(s2cr)),
++		    NABU_SMMU_S2CR_CBNDX(s2cr));
++	}
++
++	printf("nabusammu: probe finished; the SMMU was only read\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */

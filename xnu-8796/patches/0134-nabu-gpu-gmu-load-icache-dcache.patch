@@ -1,0 +1,181 @@
+diff --git a/bsd/dev/nabu_gpu_gmu_load.c b/bsd/dev/nabu_gpu_gmu_load.c
+--- a/bsd/dev/nabu_gpu_gmu_load.c
++++ b/bsd/dev/nabu_gpu_gmu_load.c
+@@ -69,13 +69,48 @@
+ #define NABU_GMU_FW_INIT_RESULT 0x14070   /* GMU_CM3_FW_INIT_RESULT */
+ 
+ /*
+- * The two ranges the firmware's blocks fall into, and the window each is
+- * written through. Both are 16 KiB, which is what a6xx_gmu_fw_load() tests
+- * against before choosing a window.
++ * Where each part of the firmware goes.
++ *
++ * The GMU's address space is four regions, and which one a block belongs to
++ * decides how it is placed:
++ *
++ *   0x00000..0x04000   ITCM     the CM3's instruction memory, written through
++ *                              GMU_CM3_ITCM_START
++ *   0x04000..0x40000   icache   ordinary memory the GMU fetches through, only
++ *                              reachable once it is mapped at this address
++ *   0x40000..0x44000   DTCM     the CM3's data memory, written through
++ *                              GMU_CM3_DTCM_START
++ *   0x44000..0x80000   dcache   ordinary memory the GMU reads through, mapped
++ *                              at this address
++ *
++ * The two ordinary regions are not guesses: a6xx_gmu_memory_probe() allocates
++ * exactly these for an a640 -- icache at iova 0x04000 and dcache at iova
++ * 0x44000, each SZ_256K - SZ_16K bytes, which is 0x3c000 and so fills out to
++ * 0x40000 and 0x80000 respectively. Against that, this firmware's seven blocks
++ * divide as three into ITCM, one into icache, two into DTCM and one into
++ * dcache, with every block landing wholly inside its region.
++ *
++ * The boundary at 0x4000 matters and was nearly a bug: a block starts exactly
++ * there, so a range test that accepts its upper endpoint would send 0x3a58
++ * bytes of icache content through the ITCM window, which begins 0x3000 and is
++ * only 0x4000 long, and would spill into the DTCM window that begins at 0x7000.
++ * The test below is half-open for that reason.
+  */
+ #define NABU_GMU_ITCM_BASE      0x00000000u
++#define NABU_GMU_ITCM_LIMIT     0x00004000u
++#define NABU_GMU_ICACHE_BASE    0x00004000u
++#define NABU_GMU_ICACHE_LIMIT   0x00040000u
+ #define NABU_GMU_DTCM_BASE      0x00040000u
+-#define NABU_GMU_TCM_SIZE       0x00004000u
++#define NABU_GMU_DTCM_LIMIT     0x00044000u
++#define NABU_GMU_DCACHE_BASE    0x00044000u
++#define NABU_GMU_DCACHE_LIMIT   0x00080000u
++
++/*
++ * The word the firmware leaves near the end of DTCM to say which initialisation
++ * convention it expects. a6xx_gmu_start() reads GMU_CM3_DTCM_START + 0xff8 in
++ * register units, so the byte offset within DTCM is 0xff8 * 4.
++ */
++#define NABU_GMU_FW_VERSION_OFFSET  0x3fe0u
+ 
+ #define NABU_GMU_FW_DT_PROP     "nabu-gmu-firmware"
+ #define NABU_GMU_RAM_SIZE       0x00080000u   /* ITCM plus DTCM headroom */
+@@ -148,14 +183,16 @@
+  * with nothing left over, which is what makes the layout certain rather than
+  * merely plausible.
+  *
+- * Returns the number of blocks placed, or a negative count if one could not be
+- * placed, so a partial image is never started.
++ * Returns the number of blocks written into ITCM or DTCM. Blocks belonging to
++ * the mapped regions are counted in bytes and reported, not written, and the
++ * caller decides whether what is present is enough to try starting the core.
+  */
+ static int
+ gmu_load_blocks(vm_offset_t gmu, const uint8_t *fw, size_t fw_size)
+ {
+ 	size_t at = 0;
+-	int placed = 0, unplaced = 0;
++	int placed = 0;
++	uint32_t external = 0;
+ 
+ 	while (at + 16 <= fw_size) {
+ 		uint32_t addr = (uint32_t)fw[at + 0]
+@@ -186,29 +223,38 @@
+ 			printf("nabugmuload: block at %u is malformed "
+ 			    "(addr=0x%x size=0x%x); stopping\n",
+ 			    (unsigned)at, addr, size);
+-			return unplaced ? -(unplaced + 1) : placed;
++			return placed;
+ 		}
+ 
+ 		if (addr >= NABU_GMU_ITCM_BASE
+-		    && addr <= NABU_GMU_ITCM_BASE + NABU_GMU_TCM_SIZE) {
++		    && addr < NABU_GMU_ITCM_LIMIT) {
+ 			gmu_write_block(gmu + NABU_GMU_ITCM_WINDOW,
+ 			    (addr - NABU_GMU_ITCM_BASE) >> 2, payload, size);
+ 			placed++;
+ 		} else if (addr >= NABU_GMU_DTCM_BASE
+-		    && addr <= NABU_GMU_DTCM_BASE + NABU_GMU_TCM_SIZE) {
++		    && addr < NABU_GMU_DTCM_LIMIT) {
+ 			gmu_write_block(gmu + NABU_GMU_DTCM_WINDOW,
+ 			    (addr - NABU_GMU_DTCM_BASE) >> 2, payload, size);
+ 			placed++;
++		} else if ((addr >= NABU_GMU_ICACHE_BASE
++		    && addr < NABU_GMU_ICACHE_LIMIT)
++		    || (addr >= NABU_GMU_DCACHE_BASE
++		    && addr < NABU_GMU_DCACHE_LIMIT)) {
++			/*
++			 * Ordinary memory the GMU fetches or reads through. Placing
++			 * these needs the region mapped at this address first, which
++			 * is a step this port has not taken; report the size so the
++			 * next step knows what is missing rather than assuming it is
++			 * small.
++			 */
++			printf("nabugmuload: block addr=0x%08x size=0x%x needs the "
++			    "%s region mapped; not placed\n", addr, size,
++			    addr < NABU_GMU_ICACHE_LIMIT ? "icache" : "dcache");
++			external += size;
+ 		} else {
+-			/*
+-			 * Outside both tightly coupled memories. a6xx_gmu_fw_load()
+-			 * would place these through the instruction and data cache
+-			 * windows, which is a further step this port does not take
+-			 * yet; report the address so the next step has the fact.
+-			 */
+-			printf("nabugmuload: block addr=0x%08x size=0x%x is outside "
+-			    "ITCM and DTCM; not placed\n", addr, size);
+-			unplaced++;
++			printf("nabugmuload: block addr=0x%08x size=0x%x is in no "
++			    "known region; not placed\n", addr, size);
++			external += size;
+ 		}
+ 		at += 16 + size;
+ 	}
+@@ -217,7 +263,9 @@
+ 		printf("nabugmuload: firmware has %u trailing bytes after the "
+ 		    "last block\n", (unsigned)(fw_size - at));
+ 	}
+-	return unplaced ? -(unplaced + 1) : placed;
++	printf("nabugmuload: %d block(s) written to ITCM/DTCM, %u byte(s) left "
++	    "for the mapped regions\n", placed, external);
++	return placed;
+ }
+ 
+ void
+@@ -276,13 +324,22 @@
+ 	*(volatile uint32_t *)(gmu + NABU_GMU_CM3_SYSRESET) = 1;
+ 
+ 	blocks = gmu_load_blocks(gmu, fw, fw_size);
+-	if (blocks < 0) {
+-		printf("nabugmuload: %d block(s) could not be placed; leaving the "
+-		    "core in reset rather than starting it on partial memory\n",
+-		    -blocks - 1);
++	if (blocks == 0) {
++		printf("nabugmuload: no block reached ITCM or DTCM; leaving the "
++		    "core in reset rather than starting it on nothing\n");
+ 		return;
+ 	}
+ 	printf("nabugmuload: %d blocks placed\n", blocks);
++
++	/*
++	 * Starting with the mapped regions still empty is what the vendor driver
++	 * does: a6xx_gmu_fw_load() logs an error for a block it cannot place and
++	 * carries on to a6xx_gmu_start(). Its own comment on the a640's icache and
++	 * dcache allocations says they "may not actually be necessary ... if you
++	 * omit this step and you don't get random pagefaults, you are likely good
++	 * to go without this". So the question of whether the CM3 needs them is
++	 * answered by what FW_INIT_RESULT does next, not by refusing to start.
++	 */
+ 
+ 	/* Read the first word back out of ITCM: it should now be the firmware's
+ 	 * own vector table, which is the cheapest check that the write path and
+@@ -297,8 +354,14 @@
+ 	 * firmware leaves in DTCM, so it is read rather than assumed.
+ 	 */
+ 	{
++		/*
++		 * a6xx_gmu_start() reads GMU_CM3_DTCM_START + 0xff8 in register
++		 * units, so the word is 0xff8 * 4 bytes into DTCM. That is also
++		 * where the firmware's own last block lands (address 0x43fe0), so
++		 * this reads back the value just written rather than a leftover.
++		 */
+ 		uint32_t marker = *(volatile uint32_t *)
+-		    (gmu + NABU_GMU_DTCM_WINDOW + (0xff8 >> 2) * 4);
++		    (gmu + NABU_GMU_DTCM_WINDOW + NABU_GMU_FW_VERSION_OFFSET);
+ 		uint32_t mask, expect;
+ 
+ 		if (marker <= 0x20010004u) {

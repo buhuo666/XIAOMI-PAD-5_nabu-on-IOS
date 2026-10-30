@@ -1,0 +1,39 @@
+diff --git a/iokit/Kernel/arm/NabuFramebuffer.cpp b/iokit/Kernel/arm/NabuFramebuffer.cpp
+--- a/iokit/Kernel/arm/NabuFramebuffer.cpp
++++ b/iokit/Kernel/arm/NabuFramebuffer.cpp
+@@ -444,7 +444,12 @@
+ 			}
+ 		}
+ 	}
+-	if (n <= 16) {
++	/*
++	 * Every swap is logged. A swap line is about 300 bytes and the panel
++	 * presents at 30 Hz, so this costs roughly 0.5 MiB per minute against
++	 * the 4 MiB persistent ring, which covers a whole test run.
++	 */
++	{
+ 		uint32_t mask = get32(rec, 0x104);
+ 		IOLog("NABU FB: SwapEnd %llu swap %u mask 0x%x\n", n,
+ 		    get32(rec, 0x50), mask);
+@@ -462,8 +467,10 @@
+ 			    (int32_t)get32(b, 8), (int32_t)get32(b, 12));
+ 		}
+ 	}
+-	if ((n % 1000) == 0) {
+-		IOLog("NABU FB: %llu swaps\n", n);
++	if ((n % 100) == 0) {
++		uint32_t smask = get32(rec, 0x104);
++		IOLog("NABU FB: %llu swaps, mask 0x%x surf %u/%u/%u\n", n, smask,
++		    get32(rec, 0x54), get32(rec, 0x58), get32(rec, 0x5c));
+ 	}
+ }
+ 
+@@ -510,7 +517,7 @@
+ 			continue;
+ 		}
+ 		NabuSurface *s = nabu_surface_copy(id);
+-		if (nabu_fb_swaps_logged < 16) {
++		{
+ 			nabu_fb_swaps_logged++;
+ 			IOLog("NABU FB: swap %u layer %u surface %u %ux%u fmt 0x%x bpr %u a %d,%d %ux%u b %d,%d %dx%d\n",
+ 			    get32(rec, 0x50), layer, id, s ? s->width : 0, s ? s->height : 0,
