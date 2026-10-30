@@ -1,0 +1,181 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -102,5 +102,6 @@
+ bool nabu_smmu_cb_probe_address(const struct nabu_smmu_snapshot *snapshot,
+     uint32_t *bank, uint32_t *offset);
+ void nabu_gpu_smmu_cb_after_root(void);
++void nabu_gpu_smmu_joint_after_root(void);
+ 
+ #endif /* NABU_GPU_SMMU_PLAN_H */
+diff --git a/bsd/dev/nabu_gpu_smmu_joint.c b/bsd/dev/nabu_gpu_smmu_joint.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_joint.c
+@@ -0,0 +1,143 @@
++/*
++ * Read CM3 reset, CB0 SCTLR and CB0 FSR in this boot, once each.
++ * Every target intent must be committed before its four resource checks.
++ * Reset=1 is a CM3 observation, not proof that every SMMU client is quiet.
++ * Nothing here writes hardware or grants a bank to the software planner.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <mach/mach_types.h>
++#include <pexpert/pexpert.h>
++#include "nabu_gpu_smmu_plan.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern uint64_t nabu_log_position(void);
++extern uint64_t nabu_log_committed_position(void);
++extern int hz;
++
++#define JOINT_DELAY_SECONDS 30
++#define JOINT_LOG_WAIT_SECONDS 25
++#define JOINT_GMU_RESET_PA 0x02c7e000UL
++#define JOINT_SMMU_BASE 0x02ca0000UL
++
++static bool joint_scheduled;
++static int joint_sleep_channel;
++static uint32_t joint_values[3];
++static uint32_t joint_valid_mask;
++
++static bool
++joint_read(unsigned step, const char *name, vm_offset_t physical, uint32_t *value)
++{
++	uint64_t intent;
++	vm_offset_t address;
++
++	printf("nabugmujoint: intent step=%u register=%s pa=0x%lx reads=1 writes=0\n",
++	    step, name, (unsigned long)physical);
++	intent = nabu_log_position();
++	if (intent == 0) {
++		printf("nabugmujoint: aborted step=%u; console ring has no recorded intent\n", step);
++		return false;
++	}
++	for (unsigned waited = 0; nabu_log_committed_position() < intent; waited++) {
++		if (waited == JOINT_LOG_WAIT_SECONDS) {
++			printf("nabugmujoint: aborted step=%u; intent was not committed\n", step);
++			return false;
++		}
++		(void)tsleep(&joint_sleep_channel, PZERO, "gmujointlog", hz);
++	}
++	if (nabu_log_committed_position() - intent >= (4ULL << 20) - 1024) {
++		printf("nabugmujoint: aborted step=%u; intent may have been overwritten\n", step);
++		return false;
++	}
++	printf("nabugmujoint: intent committed step=%u; refreshing four known resource words\n", step);
++	if (!nabu_gpu_smmu_clocks_recheck()) {
++		printf("nabugmujoint: aborted step=%u; current resources are unconfirmed\n", step);
++		return false;
++	}
++	address = ml_io_map(physical, sizeof(uint32_t));
++	if (address == 0) {
++		printf("nabugmujoint: aborted step=%u; cannot map the single word\n", step);
++		return false;
++	}
++	printf("nabugmujoint: reading step=%u register=%s pa=0x%lx\n",
++	    step, name, (unsigned long)physical);
++	*value = *(volatile uint32_t *)address;
++	joint_valid_mask |= 1u << (step - 1);
++	printf("nabugmujoint: observed step=%u register=%s value=0x%08x\n", step, name, *value);
++	return true;
++}
++
++static void
++joint_observe(void)
++{
++	struct nabu_smmu_snapshot snapshot;
++	uint32_t bank, offset;
++	uint64_t table_root;
++
++	(void)tsleep(&joint_sleep_channel, PZERO, "gmujointdelay", JOINT_DELAY_SECONDS * hz);
++	if (!nabu_gpu_gmu_memory_root(&table_root) ||
++	    !nabu_gpu_smmu_snapshot_get(&snapshot) ||
++	    !nabu_smmu_cb_probe_address(&snapshot, &bank, &offset) ||
++	    bank != 0 || offset != 0x8000 || !nabu_gpu_smmu_clocks_ready()) {
++		printf("nabugmujoint: aborted step=0; required RAM/snapshot/clock baseline is absent\n");
++		return;
++	}
++	if (!joint_read(1, "GMU_CM3_SYSRESET", JOINT_GMU_RESET_PA, &joint_values[0])) {
++		return;
++	}
++	if (joint_values[0] != 1) {
++		printf("nabugmujoint: aborted step=1; CM3 reset value is not exactly 1; no bank reads\n");
++		return;
++	}
++	if (!joint_read(2, "CB0_SCTLR", JOINT_SMMU_BASE + offset, &joint_values[1]) ||
++	    !joint_read(3, "CB0_FSR", JOINT_SMMU_BASE + offset + 0x58u, &joint_values[2])) {
++		return;
++	}
++	printf("nabugmujoint: complete bank=0 reset=0x%08x SCTLR=0x%08x FSR=0x%08x "
++	    "m=%u fsr_zero=%u valid=0x%x ownership_proven=0 clients_quiesced=0; no registers written\n",
++	    joint_values[0], joint_values[1], joint_values[2], joint_values[1] & 1u,
++	    joint_values[2] == 0 ? 1u : 0u, joint_valid_mask);
++}
++
++static void
++joint_thread(__unused void *arg, __unused wait_result_t wr)
++{
++	joint_observe();
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++nabu_gpu_smmu_joint_after_root(void)
++{
++	uint32_t enable = 0, logging = 0, other = 0;
++	char root[32];
++	thread_t thread;
++
++	if (!PE_parse_boot_argn("nabugmujoint", &enable, sizeof(enable)) || enable == 0) {
++		return;
++	}
++	if (enable != 1 || joint_scheduled ||
++	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
++	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
++	    PE_parse_boot_argn("nabugmu", &other, sizeof(other)) ||
++	    !PE_parse_boot_argn("nabulog", &logging, sizeof(logging)) || logging != 1 ||
++	    !PE_parse_boot_argn("ufsroot", root, sizeof(root)) ||
++	    strncmp(root, "nabu_system", sizeof(root)) != 0) {
++		printf("nabugmujoint: not scheduled; require exclusive mode, project root and persistent logging\n");
++		return;
++	}
++	joint_scheduled = true;
++	if (kernel_thread_start(joint_thread, NULL, &thread) != KERN_SUCCESS) {
++		printf("nabugmujoint: thread creation failed; no joint MMIO\n");
++		return;
++	}
++	thread_deallocate(thread);
++	printf("nabugmujoint: scheduled after root mount; delay=30s; reset then SCTLR then FSR; max_reads=3\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1076,6 +1076,8 @@
+ 	/* Root mounting has finished; this only schedules an opt-in observer. */
+ 	extern void nabu_gpu_smmu_cb_after_root(void);
+ 	nabu_gpu_smmu_cb_after_root();
++	extern void nabu_gpu_smmu_joint_after_root(void);
++	nabu_gpu_smmu_joint_after_root();
+ #endif
+ 	bsd_init_kprintf("done\n");
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -117,6 +117,7 @@
+ bsd/dev/nabu_gpu_gmu_memory.c	standard
+ bsd/dev/nabu_gpu_smmu_plan.c	standard
+ bsd/dev/nabu_gpu_smmu_cb.c	standard
++bsd/dev/nabu_gpu_smmu_joint.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
