@@ -1,0 +1,212 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+--- a/bsd/dev/nabu_gpu_smmu_read.c
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -1,52 +1,21 @@
+ /*
+- * A bounded read of the GPU SMMU's registers, restricted to offsets this port
+- * has already read without trouble.
++ * Capture the SMMU's fixed registers and SMRs, each once after clock preflight.
++ * Test93 returned these thirteen words, then stopped at S2CR[0] while other
++ * threads continued. Older S2CR readbacks do not establish safe access now.
++ * S2CR loads are therefore absent, including when an SMR is valid.
+  *
+- * What went wrong before, and why this shape: an earlier version walked the whole
+- * first 4 KB of the window. Test 89 showed it reading 0x0000 through 0x00e0 and
+- * then stopping dead at 0x0100 -- no fault, no panic, no further output, while
+- * the touch thread kept running. The read of that offset did not return, so the
+- * caller never returned, so the root device never came up and the desktop never
+- * started. Reading is not free on this block: unimplemented offsets apparently
+- * stall the bus transaction rather than reading as zero.
++ * Stock arm_smmu_handoff_cbs() only reads S2CR for VALID SMRs; the six SMRs in
++ * test93 were all invalid. Missing S2CRs stay explicitly unknown, not TRANS
++ * because their RAM slots are zero. An active stream without routing evidence
++ * blocks the software planner. Invalid streams still prove no bank ownership.
+  *
+- * A volatile MMIO load that is stuck in a bus transaction cannot be timed out
+- * from the same thread, so the only safe rule is to not issue the read. Hence:
++ * Allowed offsets: 0x000, 0x010, 0x020, 0x024, 0x028, 0x03c, 0x048, and
++ * 0x800..0x814 bounded by min(ID0.NUMSMRG,6). No S2CR, GR1, context bank,
++ * SMMU write, or GMU start. In particular, 0x100 and 0xc00 remain excluded.
+  *
+- *   - only offsets already known to answer are touched;
+- *   - each is read exactly once. Reading twice was meant to separate a register
+- *     file from a dead bus, but on this hardware it only doubles the chance of
+- *     touching something that does not come back;
+- *   - the list is explicit and short, and growing it means adding one address
+- *     that has been observed to work, not widening a range.
+- *
+- * Safe offsets, established by the two earlier probes:
+- *
+- *   0x000 sCR0      read in test 87
+- *   0x010 sACR      read in test 87
+- *   0x020 sID0      read in test 87
+- *   0x024 sID1      read in test 87
+- *   0x028 sID2      read in test 87
+- *   0x03c sID7      read in test 87
+- *   0x048 sGFSR     read in test 87
+- *   0x800..0x814    SMR[0..5]   read in test 87
+- *   0xc00..0xc14    S2CR[0..5]  read in test 87
+- *
+- * ID0 reports six mapping groups. Entries 6 and 7 were read by an older
+- * probe but lie outside the implemented array and must not be used.
+- *
+- * Everything else in the window is unknown and is not touched.
+- *
+- * This runs from the root-device path, which is the reason for the caution: a
+- * stuck read here stops the whole boot. Moving it to a thread started after the
+- * root device is up would contain the damage, but it would not make a bad
+- * read safe -- the bus and the GPU would still be affected -- so the whitelist
+- * matters more than the placement.
+- *
+- * Boot arguments:
+- *   nabussmuread=1   perform the bounded read (separate from nabusammu)
+- *
+- * Read-only: every access is a load, and only the listed offsets are loaded.
++ * nabussmuread=1 enables this capture. A stuck MMIO transaction cannot be
++ * interrupted by a same-thread timeout; a prior successful read is only
++ * evidence for that boot's conditions, not a universal safety guarantee.
+  */
+ 
+ #include <sys/param.h>
+@@ -109,6 +78,7 @@
+ {
+ 	uint32_t enable = 0;
+ 	uint32_t num_smr = 0;
++	uint32_t valid_mask = 0;
+ 	vm_offset_t smmu;
+ 
+ 	if (!PE_parse_boot_argn("nabussmuread", &enable, sizeof(enable)) || !enable) {
+@@ -125,7 +95,7 @@
+ 	}
+ 	bzero(&smmu_snapshot, sizeof(smmu_snapshot));
+ 
+-	printf("nabussmuread: read the confirmed SMMU offsets only\n");
++	printf("nabussmuread: fixed registers and SMRs only; S2CR access retired after test93\n");
+ 
+ 	smmu = ml_io_map(NABU_SMMU_BASE, NABU_SMMU_SIZE);
+ 	if (smmu == 0) {
+@@ -158,29 +128,25 @@
+ 	}
+ 
+ 	/*
+-	 * The stream-mapping arrays. Each is read once, index by index, with the
+-	 * index announced first so a stall names its own entry rather than
+-	 * swallowing the rest of the sweep.
++	 * Read only the SMR array. Do not inspect S2CR even for a valid SMR;
++	 * the admission function will require its missing routing evidence.
+ 	 */
+ 	for (uint32_t i = 0; i < num_smr; i++) {
+ 		uint32_t off = 0x800 + i * 4;
+ 		printf("nabussmuread: reading SMR[%u] 0x%03x\n", i, off);
+ 		smmu_snapshot.smr[i] = *(volatile uint32_t *)(smmu + off);
++		if ((smmu_snapshot.smr[i] & 0x80000000u) != 0) {
++			valid_mask |= 1u << i;
++		}
+ 		printf("nabussmuread: SMR[%u]  0x%03x = 0x%08x\n", i, off,
+ 		    smmu_snapshot.smr[i]);
+-	}
+-	for (uint32_t i = 0; i < num_smr; i++) {
+-		uint32_t off = 0xc00 + i * 4;
+-		printf("nabussmuread: reading S2CR[%u] 0x%03x\n", i, off);
+-		smmu_snapshot.s2cr[i] = *(volatile uint32_t *)(smmu + off);
+-		printf("nabussmuread: S2CR[%u] 0x%03x = 0x%08x\n", i, off,
+-		    smmu_snapshot.s2cr[i]);
+ 	}
+ 	smmu_snapshot.stream_count = num_smr;
+ 	smmu_snapshot.complete = true;
+ 
+-	printf("nabussmuread: finished; nothing was written and no other offset "
+-	    "was touched\n");
++	printf("nabussmuread: capture complete; fixed=7 smr=%u valid=0x%x "
++	    "s2cr_observed=0x0; no S2CR access or register writes\n",
++	    num_smr, valid_mask);
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -17,7 +17,10 @@
+ 	uint32_t id0, id1, id2, scr0, gfsr;
+ 	uint32_t smr[NABU_SMMU_PLAN_STREAMS];
+ 	uint32_t s2cr[NABU_SMMU_PLAN_STREAMS];
++	/* Zero-initialized s2cr[] slots are not observations. */
++	uint32_t s2cr_known_mask;
+ 	uint32_t stream_count;
++	/* Fixed registers and all stream_count SMRs have been captured. */
+ 	bool complete;
+ 	/*
+ 	 * The current whitelist reader does not populate any of these fields.
+@@ -44,6 +47,7 @@
+ 	NABU_SMMU_PLAN_NEED_QUIESCENCE,
+ 	NABU_SMMU_PLAN_BAD_TABLE,
+ 	NABU_SMMU_PLAN_NEED_MEMORY_PROOF,
++	NABU_SMMU_PLAN_NEED_ACTIVE_STREAM,
+ };
+ 
+ enum nabu_smmu_operation_kind {
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.c b/bsd/dev/nabu_gpu_smmu_plan.c
+--- a/bsd/dev/nabu_gpu_smmu_plan.c
++++ b/bsd/dev/nabu_gpu_smmu_plan.c
+@@ -24,6 +24,7 @@
+ #define SMMU_SID          5u
+ #define SMMU_SID_MASK     0x400u
+ #define SMMU_BANK_MASK    ((1u << NABU_SMMU_PLAN_BANKS) - 1u)
++#define SMMU_STREAM_MASK  ((1u << NABU_SMMU_PLAN_STREAMS) - 1u)
+ #define SMMU_ROOT_MASK    0x0000fffffffff000ULL
+ #define SMMU_TABLE_BYTES  0x6000u
+ 
+@@ -87,6 +88,7 @@
+ 	/* Only the observed non-EXID, enabled, fault-free instance is supported. */
+ 	if ((snapshot->scr0 & ((1u << 0) | (1u << 3))) != 0 ||
+ 	    snapshot->gfsr != 0 ||
++	    (snapshot->s2cr_known_mask & ~SMMU_STREAM_MASK) != 0 ||
+ 	    (snapshot->bank_known_mask & ~SMMU_BANK_MASK) != 0 ||
+ 	    (snapshot->bank_claimable_mask & ~snapshot->bank_known_mask) != 0) {
+ 		return plan_refuse(plan, NABU_SMMU_PLAN_GLOBAL_STATE,
+@@ -105,15 +107,16 @@
+ 	for (uint32_t i = 0; i < NABU_SMMU_PLAN_STREAMS; i++) {
+ 		uint32_t smr = snapshot->smr[i], s2cr = snapshot->s2cr[i];
+ 		uint32_t type = SMMU_S2CR_TYPE(s2cr);
+-		if ((smr & ~SMMU_SMR_FIELDS) != 0 ||
+-		    (s2cr & ~SMMU_S2CR_FIELDS) != 0 || type == 3u) {
++		bool s2cr_known = (snapshot->s2cr_known_mask & (1u << i)) != 0;
++		if ((smr & ~SMMU_SMR_FIELDS) != 0 || (s2cr_known &&
++		    ((s2cr & ~SMMU_S2CR_FIELDS) != 0 || type == 3u))) {
+ 			return plan_refuse(plan, NABU_SMMU_PLAN_UNTRUSTED_STREAM, i);
+ 		}
+ 		/*
+ 		 * Even an invalid SMR with a translating S2CR reserves its bank.
+ 		 * Such a partially published stream must not be repurposed.
+ 		 */
+-		if (type == 0) {
++		if (s2cr_known && type == 0) {
+ 			uint32_t cbndx = s2cr & 0xffu;
+ 			if (cbndx >= NABU_SMMU_PLAN_BANKS) {
+ 				return plan_refuse(plan, NABU_SMMU_PLAN_UNTRUSTED_STREAM, i);
+@@ -125,8 +128,16 @@
+ 			    (smr >> 16) & 0x7fffu, SMMU_SID, SMMU_SID_MASK)) {
+ 				return plan_refuse(plan, NABU_SMMU_PLAN_TARGET_IN_USE, i);
+ 			}
+-		} else if (smr == 0 && type == 2u &&
++			if (!s2cr_known) {
++				return plan_refuse(plan, NABU_SMMU_PLAN_NEED_ACTIVE_STREAM, i);
++			}
++		} else if (smr == 0 && (!s2cr_known || type == 2u) &&
+ 		    stream == NABU_SMMU_PLAN_NO_INDEX) {
++			/*
++			 * An invalid stream can be published only after independent
++			 * bank ownership and client quiescence proofs below.
++			 * Unknown S2CR does not mean FAULT or a free context bank.
++			 */
+ 			stream = i;
+ 		}
+ 	}
+@@ -220,6 +231,7 @@
+ 	case NABU_SMMU_PLAN_NEED_QUIESCENCE: return "client quiescence has not been established";
+ 	case NABU_SMMU_PLAN_BAD_TABLE: return "invalid or unaligned table physical address";
+ 	case NABU_SMMU_PLAN_NEED_MEMORY_PROOF: return "RAM translations and leaf permissions not validated";
++	case NABU_SMMU_PLAN_NEED_ACTIVE_STREAM: return "valid SMR has no observed S2CR routing; bank ownership unknown";
+ 	default: return "unknown admission result";
+ 	}
+ }
