@@ -1,0 +1,45 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -311,14 +311,14 @@
+ }
+ 
+ static int
+-ufs_sync_cache(void)
++ufs_sync_cache_range(uint64_t lba, uint64_t blocks)
+ {
+ 	/* A zero transfer length would flush the whole LUN; use a bounded range. */
+ 	if (!su.writable || !nabu_project_range_allowed(su.lun, su.first_block, su.nblocks,
+-	    su.first_block, su.nblocks)) {
++	    lba, blocks)) {
+ 		return EPERM;
+ 	}
+-	uint64_t lba = su.first_block, remaining = su.nblocks;
++	uint64_t remaining = blocks;
+ 	while (remaining) {
+ 		uint32_t count = remaining > 0xffffu ? 0xffffu : (uint32_t)remaining;
+ 		uint8_t cdb[10] = {
+@@ -332,6 +332,13 @@
+ 		remaining -= count;
+ 	}
+ 	return 0;
++}
++
++static int
++ufs_sync_cache(void)
++{
++	/* Filesystem flush requests retain their full project-partition scope. */
++	return ufs_sync_cache_range(su.first_block, su.nblocks);
+ }
+ 
+ static int
+@@ -878,7 +885,8 @@
+ 			error = ufs_write_blocks(base, 1);
+ 		}
+ 		if (!error) {
+-			error = ufs_sync_cache();
++			/* Only the reserved log blocks were written by this flush. */
++			error = ufs_sync_cache_range(base, NABU_LOG_BLOCKS);
+ 		}
+ 		lck_mtx_unlock(&nabu_ufs_lock);
+ 		if (error) {
