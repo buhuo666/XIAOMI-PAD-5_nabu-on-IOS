@@ -1,0 +1,487 @@
+diff --git a/bsd/dev/nabu_gpu_gmu_memory.c b/bsd/dev/nabu_gpu_gmu_memory.c
+--- a/bsd/dev/nabu_gpu_gmu_memory.c
++++ b/bsd/dev/nabu_gpu_gmu_memory.c
+@@ -24,6 +24,7 @@
+ #include <pexpert/pexpert.h>
+ #include <pexpert/device_tree.h>
+ #include <vm/vm_kern.h>
++#include "nabu_gpu_smmu_plan.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -114,6 +115,16 @@
+ 
+ extern addr64_t kvtophys(vm_offset_t va);
+ extern void flush_dcache64(addr64_t addr, unsigned count, int phys);
++
++bool
++nabu_gpu_gmu_memory_root(uint64_t *table_root)
++{
++	if (table_root == NULL || !nabu_gmu_plan.ready) {
++		return false;
++	}
++	*table_root = nabu_gmu_plan.pt_pa;
++	return true;
++}
+ 
+ static uint8_t *
+ gmu_pool_ptr(uint32_t offset)
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+--- a/bsd/dev/nabu_gpu_smmu_read.c
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -61,6 +61,7 @@
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
+ #include <vm/vm_kern.h>
++#include "nabu_gpu_smmu_plan.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -89,7 +90,19 @@
+ /* The whitelist bounds the array even if an ID register returns garbage. */
+ #define NABU_SMMU_ENTRIES       6u
+ 
++static struct nabu_smmu_snapshot smmu_snapshot;
++
+ void nabu_gpu_smmu_read(void);
++
++bool
++nabu_gpu_smmu_snapshot_get(struct nabu_smmu_snapshot *snapshot)
++{
++	if (snapshot == NULL || !smmu_snapshot.complete) {
++		return false;
++	}
++	*snapshot = smmu_snapshot;
++	return true;
++}
+ 
+ void
+ nabu_gpu_smmu_read(void)
+@@ -101,6 +114,11 @@
+ 	if (!PE_parse_boot_argn("nabussmuread", &enable, sizeof(enable)) || !enable) {
+ 		return;
+ 	}
++	if (smmu_snapshot.complete) {
++		printf("nabussmuread: reusing this boot's completed snapshot; no extra MMIO\n");
++		return;
++	}
++	bzero(&smmu_snapshot, sizeof(smmu_snapshot));
+ 
+ 	printf("nabussmuread: read the confirmed SMMU offsets only\n");
+ 
+@@ -118,6 +136,14 @@
+ 		if (fixed_words[i].offset == 0x020) {
+ 			num_smr = value & 0xffu;
+ 		}
++		switch (fixed_words[i].offset) {
++		case 0x000: smmu_snapshot.scr0 = value; break;
++		case 0x020: smmu_snapshot.id0 = value; break;
++		case 0x024: smmu_snapshot.id1 = value; break;
++		case 0x028: smmu_snapshot.id2 = value; break;
++		case 0x048: smmu_snapshot.gfsr = value; break;
++		default: break;
++		}
+ 		printf("nabussmuread: %-6s 0x%03x = 0x%08x\n",
+ 		    fixed_words[i].name, fixed_words[i].offset,
+ 		    value);
+@@ -134,15 +160,19 @@
+ 	for (uint32_t i = 0; i < num_smr; i++) {
+ 		uint32_t off = 0x800 + i * 4;
+ 		printf("nabussmuread: reading SMR[%u] 0x%03x\n", i, off);
++		smmu_snapshot.smr[i] = *(volatile uint32_t *)(smmu + off);
+ 		printf("nabussmuread: SMR[%u]  0x%03x = 0x%08x\n", i, off,
+-		    *(volatile uint32_t *)(smmu + off));
++		    smmu_snapshot.smr[i]);
+ 	}
+ 	for (uint32_t i = 0; i < num_smr; i++) {
+ 		uint32_t off = 0xc00 + i * 4;
+ 		printf("nabussmuread: reading S2CR[%u] 0x%03x\n", i, off);
++		smmu_snapshot.s2cr[i] = *(volatile uint32_t *)(smmu + off);
+ 		printf("nabussmuread: S2CR[%u] 0x%03x = 0x%08x\n", i, off,
+-		    *(volatile uint32_t *)(smmu + off));
++		    smmu_snapshot.s2cr[i]);
+ 	}
++	smmu_snapshot.stream_count = num_smr;
++	smmu_snapshot.complete = true;
+ 
+ 	printf("nabussmuread: finished; nothing was written and no other offset "
+ 	    "was touched\n");
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -0,0 +1,87 @@
++/*
++ * Software-only admission and register plan for the nabu GMU SID5 domain.
++ * This interface has no MMIO executor. Observations must belong to one boot;
++ * Android context numbers and synthetic host fixtures are not handoff evidence.
++ */
++#ifndef NABU_GPU_SMMU_PLAN_H
++#define NABU_GPU_SMMU_PLAN_H
++
++#include <sys/types.h>
++
++#define NABU_SMMU_PLAN_STREAMS 6u
++#define NABU_SMMU_PLAN_BANKS   5u
++#define NABU_SMMU_PLAN_OPS     24u
++#define NABU_SMMU_PLAN_NO_INDEX 0xffffffffu
++
++struct nabu_smmu_snapshot {
++	uint32_t id0, id1, id2, scr0, gfsr;
++	uint32_t smr[NABU_SMMU_PLAN_STREAMS];
++	uint32_t s2cr[NABU_SMMU_PLAN_STREAMS];
++	uint32_t stream_count;
++	bool complete;
++	/*
++	 * The current whitelist reader does not populate any of these fields.
++	 * A future audited observer must establish nonsecure bank ownership,
++	 * client quiescence and the bank SCTLR state from this same handoff.
++	 */
++	uint32_t bank_sctlr[NABU_SMMU_PLAN_BANKS];
++	uint32_t bank_fsr[NABU_SMMU_PLAN_BANKS];
++	uint32_t bank_known_mask;
++	uint32_t bank_claimable_mask;
++	bool clients_quiesced;
++};
++
++enum nabu_smmu_plan_result {
++	NABU_SMMU_PLAN_READY,
++	NABU_SMMU_PLAN_NEED_SNAPSHOT,
++	NABU_SMMU_PLAN_UNSUPPORTED_ID,
++	NABU_SMMU_PLAN_GLOBAL_STATE,
++	NABU_SMMU_PLAN_UNTRUSTED_STREAM,
++	NABU_SMMU_PLAN_TARGET_IN_USE,
++	NABU_SMMU_PLAN_NO_STREAM,
++	NABU_SMMU_PLAN_NEED_BANK_STATE,
++	NABU_SMMU_PLAN_NO_BANK,
++	NABU_SMMU_PLAN_NEED_QUIESCENCE,
++	NABU_SMMU_PLAN_BAD_TABLE,
++	NABU_SMMU_PLAN_NEED_MEMORY_PROOF,
++};
++
++enum nabu_smmu_operation_kind {
++	NABU_SMMU_OP_CLEAN_TABLES,
++	NABU_SMMU_OP_DSB,
++	NABU_SMMU_OP_WRITE32,
++	NABU_SMMU_OP_WRITE64,
++	NABU_SMMU_OP_CHECK32,
++	NABU_SMMU_OP_POLL32,
++};
++
++struct nabu_smmu_operation {
++	enum nabu_smmu_operation_kind kind;
++	/* Register offset, or byte count for CLEAN_TABLES; value is its PA. */
++	uint32_t offset;
++	uint64_t value;
++	uint32_t mask;
++};
++
++struct nabu_smmu_register_plan {
++	enum nabu_smmu_plan_result result;
++	uint32_t stream_index, bank_index, asid;
++	uint32_t conflict_index, operation_count;
++	uint32_t tcr, tcr2, mair0, mair1, actlr;
++	uint32_t smr, s2cr, sctlr;
++	uint64_t ttbr0;
++	struct nabu_smmu_operation operations[NABU_SMMU_PLAN_OPS];
++};
++
++bool nabu_smmu_stream_overlap(uint32_t id, uint32_t mask,
++    uint32_t other_id, uint32_t other_mask);
++enum nabu_smmu_plan_result nabu_smmu_build_register_plan(
++    const struct nabu_smmu_snapshot *snapshot, uint64_t table_root, bool table_validated,
++    struct nabu_smmu_register_plan *plan);
++const char *nabu_smmu_plan_result_name(enum nabu_smmu_plan_result result);
++
++bool nabu_gpu_smmu_snapshot_get(struct nabu_smmu_snapshot *snapshot);
++bool nabu_gpu_gmu_memory_root(uint64_t *table_root);
++void nabu_gpu_smmu_plan(void);
++
++#endif /* NABU_GPU_SMMU_PLAN_H */
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.c b/bsd/dev/nabu_gpu_smmu_plan.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_plan.c
+@@ -0,0 +1,251 @@
++/*
++ * A register-operation manifest, not a hardware driver.
++ *
++ * Xiaomi nabu-r-oss arm-smmu.c and io-pgtable-arm.c define the encodings below.
++ * Only an unused stream and a disabled, explicitly claimable nonsecure bank
++ * are admitted. Existing SID5 mappings are refused rather than overwritten.
++ * Unknown ownership, untrusted readbacks or missing quiescence produce no
++ * operations. The boot entry prints the decision and never executes the list.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <pexpert/pexpert.h>
++#include "nabu_gpu_smmu_plan.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++#define SMMU_EXPECTED_ID0 0x4c017e06u
++#define SMMU_EXPECTED_ID1 0x20000005u
++#define SMMU_EXPECTED_ID2 0x00005555u
++#define SMMU_SMR_VALID    0x80000000u
++#define SMMU_SMR_FIELDS   0xffff7fffu
++#define SMMU_S2CR_FIELDS  0x030303ffu
++#define SMMU_S2CR_TYPE(v) (((v) >> 16) & 3u)
++#define SMMU_SID          5u
++#define SMMU_SID_MASK     0x400u
++#define SMMU_BANK_MASK    ((1u << NABU_SMMU_PLAN_BANKS) - 1u)
++#define SMMU_ROOT_MASK    0x0000fffffffff000ULL
++#define SMMU_TABLE_BYTES  0x6000u
++
++bool
++nabu_smmu_stream_overlap(uint32_t id, uint32_t mask,
++    uint32_t other_id, uint32_t other_mask)
++{
++	return ((id ^ other_id) & ~(mask | other_mask) & 0x7fffu) == 0;
++}
++
++static enum nabu_smmu_plan_result
++plan_refuse(struct nabu_smmu_register_plan *plan,
++    enum nabu_smmu_plan_result result, uint32_t conflict)
++{
++	/* A refusal must never leave a partially generated write list. */
++	bzero(plan, sizeof(*plan));
++	plan->result = result;
++	plan->stream_index = NABU_SMMU_PLAN_NO_INDEX;
++	plan->bank_index = NABU_SMMU_PLAN_NO_INDEX;
++	plan->conflict_index = conflict;
++	return result;
++}
++
++static void
++plan_operation(struct nabu_smmu_register_plan *plan,
++    enum nabu_smmu_operation_kind kind, uint32_t offset,
++    uint64_t value, uint32_t mask)
++{
++	struct nabu_smmu_operation *operation =
++	    &plan->operations[plan->operation_count++];
++	operation->kind = kind;
++	operation->offset = offset;
++	operation->value = value;
++	operation->mask = mask;
++}
++
++enum nabu_smmu_plan_result
++nabu_smmu_build_register_plan(const struct nabu_smmu_snapshot *snapshot,
++    uint64_t table_root, bool table_validated, struct nabu_smmu_register_plan *plan)
++{
++	uint32_t stream = NABU_SMMU_PLAN_NO_INDEX;
++	uint32_t bank = NABU_SMMU_PLAN_NO_INDEX;
++	uint32_t used = 0, eligible;
++	uint32_t cb, gr1;
++
++	if (plan == NULL) {
++		return NABU_SMMU_PLAN_NEED_SNAPSHOT;
++	}
++	plan_refuse(plan, NABU_SMMU_PLAN_NEED_SNAPSHOT,
++	    NABU_SMMU_PLAN_NO_INDEX);
++	if (snapshot == NULL || !snapshot->complete) {
++		return plan->result;
++	}
++	if (snapshot->id0 != SMMU_EXPECTED_ID0 ||
++	    snapshot->id1 != SMMU_EXPECTED_ID1 ||
++	    snapshot->id2 != SMMU_EXPECTED_ID2 ||
++	    snapshot->stream_count != NABU_SMMU_PLAN_STREAMS) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_UNSUPPORTED_ID,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	/* Only the observed non-EXID, enabled, fault-free instance is supported. */
++	if ((snapshot->scr0 & ((1u << 0) | (1u << 3))) != 0 ||
++	    snapshot->gfsr != 0 ||
++	    (snapshot->bank_known_mask & ~SMMU_BANK_MASK) != 0 ||
++	    (snapshot->bank_claimable_mask & ~snapshot->bank_known_mask) != 0) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_GLOBAL_STATE,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	if (table_root == 0 || (table_root & ~SMMU_ROOT_MASK) != 0 ||
++	    table_root > (1ULL << 48) - SMMU_TABLE_BYTES) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_BAD_TABLE,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	if (!table_validated) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_NEED_MEMORY_PROOF,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++
++	for (uint32_t i = 0; i < NABU_SMMU_PLAN_STREAMS; i++) {
++		uint32_t smr = snapshot->smr[i], s2cr = snapshot->s2cr[i];
++		uint32_t type = SMMU_S2CR_TYPE(s2cr);
++		if ((smr & ~SMMU_SMR_FIELDS) != 0 ||
++		    (s2cr & ~SMMU_S2CR_FIELDS) != 0 || type == 3u) {
++			return plan_refuse(plan, NABU_SMMU_PLAN_UNTRUSTED_STREAM, i);
++		}
++		/*
++		 * Even an invalid SMR with a translating S2CR reserves its bank.
++		 * Such a partially published stream must not be repurposed.
++		 */
++		if (type == 0) {
++			uint32_t cbndx = s2cr & 0xffu;
++			if (cbndx >= NABU_SMMU_PLAN_BANKS) {
++				return plan_refuse(plan, NABU_SMMU_PLAN_UNTRUSTED_STREAM, i);
++			}
++			used |= 1u << cbndx;
++		}
++		if ((smr & SMMU_SMR_VALID) != 0) {
++			if (nabu_smmu_stream_overlap(smr & 0x7fffu,
++			    (smr >> 16) & 0x7fffu, SMMU_SID, SMMU_SID_MASK)) {
++				return plan_refuse(plan, NABU_SMMU_PLAN_TARGET_IN_USE, i);
++			}
++		} else if (smr == 0 && type == 2u &&
++		    stream == NABU_SMMU_PLAN_NO_INDEX) {
++			stream = i;
++		}
++	}
++	if (stream == NABU_SMMU_PLAN_NO_INDEX) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_NO_STREAM,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	eligible = snapshot->bank_claimable_mask & ~used & SMMU_BANK_MASK;
++	if (eligible == 0 &&
++	    (~snapshot->bank_known_mask & ~used & SMMU_BANK_MASK) != 0) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_NEED_BANK_STATE,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	for (uint32_t i = 0; i < NABU_SMMU_PLAN_BANKS; i++) {
++		if ((eligible & (1u << i)) != 0 && snapshot->bank_sctlr[i] == 0 &&
++		    snapshot->bank_fsr[i] == 0) {
++			bank = i;
++			break;
++		}
++	}
++	if (bank == NABU_SMMU_PLAN_NO_INDEX) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_NO_BANK,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++	if (!snapshot->clients_quiesced) {
++		return plan_refuse(plan, NABU_SMMU_PLAN_NEED_QUIESCENCE,
++		           NABU_SMMU_PLAN_NO_INDEX);
++	}
++
++	plan->result = NABU_SMMU_PLAN_READY;
++	plan->stream_index = stream;
++	plan->bank_index = bank;
++	plan->asid = bank + 1u;
++	/*
++	 * Explicit noncoherent policy: NC/outer-shareable page-table walks,
++	 * clean tables to PoC before any table publication. No upstream hint.
++	 * This is an XNU bring-up policy, not a measured Android TCR value.
++	 */
++	plan->tcr = 0x00802019u;       /* EPD1, 4 KiB, 39-bit input, NC/OSH */
++	plan->tcr2 = 0x00038015u;     /* 48-bit output, 16-bit ASID, SEP upstream */
++	plan->mair0 = 0xf404ff44u;
++	plan->mair1 = 0x000000e4u;
++	plan->actlr = 0x303u;         /* DT (SID0,mask0x407) overlaps SID5 */
++	plan->ttbr0 = table_root | ((uint64_t)plan->asid << 48);
++	plan->smr = SMMU_SMR_VALID | (SMMU_SID_MASK << 16) | SMMU_SID;
++	plan->s2cr = 0x300u | bank;   /* TRANS, default privilege, nonshareable */
++	/* Record faults, terminate rather than stall, and leave IRQ disabled. */
++	plan->sctlr = 0x00c01127u;
++
++	cb = 0x8000u + (bank << 12);
++	gr1 = 0x1000u;
++	plan_operation(plan, NABU_SMMU_OP_CLEAN_TABLES, SMMU_TABLE_BYTES, table_root, 0);
++	plan_operation(plan, NABU_SMMU_OP_DSB, 0, 0, 0);
++	plan_operation(plan, NABU_SMMU_OP_CHECK32, cb, 0, 0xffffffffu);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, gr1 + 0x800u + 4u * bank, 1, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, gr1 + 4u * bank, 0x1f300u, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x10u, plan->tcr2, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x30u, plan->tcr, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE64, cb + 0x20u, plan->ttbr0, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE64, cb + 0x28u, 0, 0); /* TTBR1 disabled */
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x38u, plan->mair0, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x3cu, plan->mair1, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x04u, plan->actlr, 0);
++	plan_operation(plan, NABU_SMMU_OP_CHECK32, cb + 0x58u, 0, 0xffffffffu);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x610u, plan->asid, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb + 0x7f0u, 0xffffffffu, 0);
++	plan_operation(plan, NABU_SMMU_OP_POLL32, cb + 0x7f4u, 0, 1);
++	plan_operation(plan, NABU_SMMU_OP_DSB, 0, 0, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, cb, plan->sctlr, 0);
++	plan_operation(plan, NABU_SMMU_OP_CHECK32, cb, plan->sctlr, 0xffffffffu);
++	plan_operation(plan, NABU_SMMU_OP_DSB, 0, 0, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, 0xc00u + 4u * stream, plan->s2cr, 0);
++	plan_operation(plan, NABU_SMMU_OP_DSB, 0, 0, 0);
++	plan_operation(plan, NABU_SMMU_OP_WRITE32, 0x800u + 4u * stream, plan->smr, 0);
++	return plan->result;
++}
++
++const char *
++nabu_smmu_plan_result_name(enum nabu_smmu_plan_result result)
++{
++	switch (result) {
++	case NABU_SMMU_PLAN_READY: return "software plan only; hardware access remains disabled";
++	case NABU_SMMU_PLAN_NEED_SNAPSHOT: return "need complete whitelist snapshot from this boot";
++	case NABU_SMMU_PLAN_UNSUPPORTED_ID: return "unsupported SMMU identity or incomplete stream count";
++	case NABU_SMMU_PLAN_GLOBAL_STATE: return "global fault, unsupported mode or inconsistent evidence";
++	case NABU_SMMU_PLAN_UNTRUSTED_STREAM: return "stream contains reserved bits or invalid bank";
++	case NABU_SMMU_PLAN_TARGET_IN_USE: return "existing mapping overlaps SID5/mask0x400";
++	case NABU_SMMU_PLAN_NO_STREAM: return "no unused faulting stream entry";
++	case NABU_SMMU_PLAN_NEED_BANK_STATE: return "no confirmed nonsecure disabled bank state";
++	case NABU_SMMU_PLAN_NO_BANK: return "no claimable bank with zero SCTLR and FSR";
++	case NABU_SMMU_PLAN_NEED_QUIESCENCE: return "client quiescence has not been established";
++	case NABU_SMMU_PLAN_BAD_TABLE: return "invalid or unaligned table physical address";
++	case NABU_SMMU_PLAN_NEED_MEMORY_PROOF: return "RAM translations and leaf permissions not validated";
++	default: return "unknown admission result";
++	}
++}
++
++void
++nabu_gpu_smmu_plan(void)
++{
++	uint32_t enable = 0;
++	uint64_t root = 0;
++	struct nabu_smmu_snapshot snapshot;
++	struct nabu_smmu_register_plan plan;
++
++	if (!PE_parse_boot_argn("nabugmusmmuplan", &enable, sizeof(enable)) || !enable) {
++		return;
++	}
++	if (!nabu_gpu_gmu_memory_root(&root)) {
++		printf("nabugmusmmuplan: GMU RAM plan is unavailable; enable nabugmumem\n");
++		return;
++	}
++	bzero(&snapshot, sizeof(snapshot));
++	(void)nabu_gpu_smmu_snapshot_get(&snapshot);
++	nabu_smmu_build_register_plan(&snapshot, root, true, &plan);
++	printf("nabugmusmmuplan: %s; operations=%u conflict_index=0x%x\n",
++	    nabu_smmu_plan_result_name(plan.result), plan.operation_count,
++	    plan.conflict_index);
++	printf("nabugmusmmuplan: software admission only; no registers read or written\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -63,6 +63,7 @@
+ extern void nabu_gpu_smmu_probe(void);
+ extern void nabu_gpu_smmu_read(void);
+ extern void nabu_gpu_gmu_memory_plan(void);
++extern void nabu_gpu_smmu_plan(void);
+ 
+ #define REG_CAP         0x00
+ #define REG_IS          0x20
+@@ -745,6 +746,8 @@
+ 	nabu_gpu_smmu_read();
+ 	/* nabugmumem=1: allocate/check GMU backing RAM; no MMIO writes. */
+ 	nabu_gpu_gmu_memory_plan();
++	/* nabugmusmmuplan=1: inspect cached evidence; never access MMIO. */
++	nabu_gpu_smmu_plan();
+ #endif
+ 	return 0;
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -114,6 +114,7 @@
+ bsd/dev/nabu_gpu_smmu_probe.c	standard
+ bsd/dev/nabu_gpu_smmu_read.c	standard
+ bsd/dev/nabu_gpu_gmu_memory.c	standard
++bsd/dev/nabu_gpu_smmu_plan.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
