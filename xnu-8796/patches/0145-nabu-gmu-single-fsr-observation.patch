@@ -1,0 +1,134 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -93,7 +93,10 @@
+ 
+ struct nabu_smmu_cb_observation {
+ 	uint32_t bank, offset, sctlr;
++	uint32_t fsr;
++	/* Keep SCTLR and FSR validity distinct; one mode never observes the other. */
+ 	bool captured;
++	bool fsr_captured;
+ };
+ 
+ bool nabu_smmu_cb_probe_address(const struct nabu_smmu_snapshot *snapshot,
+diff --git a/bsd/dev/nabu_gpu_smmu_cb.c b/bsd/dev/nabu_gpu_smmu_cb.c
+--- a/bsd/dev/nabu_gpu_smmu_cb.c
++++ b/bsd/dev/nabu_gpu_smmu_cb.c
+@@ -1,12 +1,13 @@
+ /*
+- * First context-bank observation: one SCTLR load after the root is mounted.
++ * One context-bank word after root mount: mode 1 SCTLR, mode 2 FSR.
+  *
+  * ID1 and the pinned nabu FDT give a 64 KiB window, 4 KiB register pages,
+  * five banks and no stage-2-only banks. Observe the first stage-1 candidate,
+  * not a bank inferred from SID5 or Android's software indices.
+  *
+- * No S2CR/GR1/FSR reads, no scan, no writes, no ownership claim. A zero SCTLR
+- * cannot establish that a bank is nonsecure, unowned or safe to program.
++ * No S2CR/GR1 reads, no scan, no writes, no ownership claim. A zero SCTLR
++ * or FSR cannot establish that a bank is nonsecure, unowned or safe to program.
++ * Mode 2 does not reread SCTLR or clear FSR; prior boots are not current state.
+  * An MMIO transaction can still stall; scheduling it separately is not a
+  * bus timeout. Persist the intent before the new address is touched.
+  */
+@@ -32,8 +33,10 @@
+ #define SMMU_CB_PROBE_SIZE 0x00010000u
+ #define SMMU_CB_PROBE_DELAY 30
+ #define SMMU_CB_PROBE_LOG_WAIT 25
++#define SMMU_CB_FSR_OFFSET 0x58u /* Pinned stock ARM_SMMU_CB_FSR. */
+ 
+ static bool cb_scheduled;
++static uint32_t cb_mode;
+ static int cb_sleep_channel;
+ static struct nabu_smmu_cb_observation cb_observation;
+ 
+@@ -73,9 +76,10 @@
+ cb_observe_once(void)
+ {
+ 	struct nabu_smmu_snapshot snapshot;
+-	uint32_t bank, offset;
++	uint32_t bank, offset, value;
+ 	uint64_t table_root, intent;
+ 	vm_offset_t address;
++	const char *name = cb_mode == 2 ? "FSR" : "SCTLR";
+ 
+ 	(void)tsleep(&cb_sleep_channel, PZERO, "gmucbdelay", SMMU_CB_PROBE_DELAY * hz);
+ 	if (!nabu_gpu_gmu_memory_root(&table_root) ||
+@@ -85,8 +89,11 @@
+ 		printf("nabugmucb: aborted; this boot lacks the required RAM/snapshot/clock baseline\n");
+ 		return;
+ 	}
+-	printf("nabugmucb: intent bank=%u offset=0x%x pa=0x%lx register=SCTLR reads=1 "
+-	    "writes=0; ownership unproven\n", bank, offset, SMMU_CB_PROBE_BASE + offset);
++	if (cb_mode == 2) {
++		offset += SMMU_CB_FSR_OFFSET;
++	}
++	printf("nabugmucb: intent bank=%u offset=0x%x pa=0x%lx register=%s reads=1 "
++	    "writes=0; ownership unproven\n", bank, offset, SMMU_CB_PROBE_BASE + offset, name);
+ 	intent = nabu_log_position();
+ 	if (intent == 0) {
+ 		printf("nabugmucb: aborted; console ring has no recorded intent\n");
+@@ -110,19 +117,27 @@
+ 	}
+ 	address = ml_io_map(SMMU_CB_PROBE_BASE + offset, sizeof(uint32_t));
+ 	if (address == 0) {
+-		printf("nabugmucb: aborted; cannot map the single SCTLR word\n");
++		printf("nabugmucb: aborted; cannot map the single %s word\n", name);
+ 		return;
+ 	}
+-	printf("nabugmucb: reading bank=%u SCTLR offset=0x%x pa=0x%lx\n",
+-	    bank, offset, SMMU_CB_PROBE_BASE + offset);
+-	cb_observation.sctlr = *(volatile uint32_t *)address;
++	printf("nabugmucb: reading bank=%u %s offset=0x%x pa=0x%lx\n",
++	    bank, name, offset, SMMU_CB_PROBE_BASE + offset);
++	value = *(volatile uint32_t *)address;
+ 	cb_observation.bank = bank;
+ 	cb_observation.offset = offset;
+-	cb_observation.captured = true;
+-	printf("nabugmucb: observed bank=%u SCTLR=0x%08x enabled=%u zero=%u "
+-	    "ownership_proven=0; no context configured\n",
+-	    bank, cb_observation.sctlr, cb_observation.sctlr & 1u,
+-	    cb_observation.sctlr == 0 ? 1u : 0u);
++	if (cb_mode == 2) {
++		cb_observation.fsr = value;
++		cb_observation.fsr_captured = true;
++		printf("nabugmucb: observed bank=%u FSR=0x%08x zero=%u "
++		    "ownership_proven=0; no faults cleared or context configured\n",
++		    bank, value, value == 0 ? 1u : 0u);
++	} else {
++		cb_observation.sctlr = value;
++		cb_observation.captured = true;
++		printf("nabugmucb: observed bank=%u SCTLR=0x%08x enabled=%u zero=%u "
++		    "ownership_proven=0; no context configured\n",
++		    bank, value, value & 1u, value == 0 ? 1u : 0u);
++	}
+ }
+ 
+ static void
+@@ -143,7 +158,7 @@
+ 	if (!PE_parse_boot_argn("nabugmucb", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+ 	}
+-	if (enable != 1 || cb_scheduled ||
++	if ((enable != 1 && enable != 2) || cb_scheduled ||
+ 	    !PE_parse_boot_argn("nabulog", &logging, sizeof(logging)) || logging != 1 ||
+ 	    !PE_parse_boot_argn("ufsroot", root, sizeof(root)) ||
+ 	    strncmp(root, "nabu_system", sizeof(root)) != 0) {
+@@ -151,13 +166,14 @@
+ 		return;
+ 	}
+ 	cb_scheduled = true;
++	cb_mode = enable;
+ 	if (kernel_thread_start(cb_observer_thread, NULL, &thread) != KERN_SUCCESS) {
+ 		printf("nabugmucb: observer thread creation failed; no CB access\n");
+ 		return;
+ 	}
+ 	thread_deallocate(thread);
+-	printf("nabugmucb: scheduled after root mount; delay=%us; one SCTLR observation only\n",
+-	    SMMU_CB_PROBE_DELAY);
++	printf("nabugmucb: scheduled after root mount; delay=%us; one %s observation only\n",
++	    SMMU_CB_PROBE_DELAY, cb_mode == 2 ? "FSR" : "SCTLR");
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
