@@ -1,0 +1,179 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+--- a/bsd/dev/nabu_gpu_smmu_read.c
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -118,6 +118,11 @@
+ 		printf("nabussmuread: reusing this boot's completed snapshot; no extra MMIO\n");
+ 		return;
+ 	}
++	if (!nabu_gpu_smmu_clocks_ready()) {
++		printf("nabussmuread: skipped; nabussmuclk has not confirmed the "
++		    "SMMU power/clock conditions; no SMMU MMIO\n");
++		return;
++	}
+ 	bzero(&smmu_snapshot, sizeof(smmu_snapshot));
+ 
+ 	printf("nabussmuread: read the confirmed SMMU offsets only\n");
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -81,6 +81,8 @@
+ const char *nabu_smmu_plan_result_name(enum nabu_smmu_plan_result result);
+ 
+ bool nabu_gpu_smmu_snapshot_get(struct nabu_smmu_snapshot *snapshot);
++void nabu_gpu_smmu_clocks(void);
++bool nabu_gpu_smmu_clocks_ready(void);
+ bool nabu_gpu_gmu_memory_root(uint64_t *table_root);
+ void nabu_gpu_smmu_plan(void);
+ 
+diff --git a/bsd/dev/nabu_gpu_smmu_clocks.c b/bsd/dev/nabu_gpu_smmu_clocks.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_smmu_clocks.c
+@@ -0,0 +1,116 @@
++/*
++ * Observe the SMMU provider's power and clock resources after GPU stage 2.
++ *
++ * nabu-r-oss gcc-sm8150.c: MEMNOC=0x7100c, SNOC=0x71018, enable bit0.
++ * gpucc-sm8150.c: AHB=0x1078. The FDT's vdd supply is CX GDSC=0x106c.
++ * All four offsets were read by earlier port probes. No register is written,
++ * no polling is performed, and no context-bank window is accessed.
++ *
++ * This gate deliberately requires both a request and a clear CLK_OFF bit.
++ * Stock AHB uses BRANCH_HALT_DELAY, so an AHB refusal means that this stricter
++ * observation is unconfirmed; it does not establish a broken clock.
++ *
++ * nabussmuclk=1 observes once. The cached result gates nabussmuread.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <pexpert/pexpert.h>
++#include <mach/mach_types.h>
++#include "nabu_gpu_smmu_plan.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++#define SMMU_CLOCK_GCC_BASE    0x00100000UL
++#define SMMU_CLOCK_GCC_SIZE    0x001f0000UL
++#define SMMU_CLOCK_GPUCC_BASE  0x02c90000UL
++#define SMMU_CLOCK_GPUCC_SIZE  0x00009000UL
++#define SMMU_CLOCK_ENABLE      1u
++#define SMMU_CLOCK_OFF         (1u << 31)
++#define SMMU_CX_COLLAPSE       1u
++#define SMMU_CX_ON             (1u << 31)
++
++static bool clock_observed;
++static bool clock_confirmed;
++
++struct smmu_clock_word {
++	const char *name;
++	uint32_t offset;
++	bool gcc, supply;
++};
++
++static const struct smmu_clock_word clock_words[] = {
++	{ "cx_gdscr", 0x106c, false, true },
++	{ "gpu_cc_ahb", 0x1078, false, false },
++	{ "gcc_gpu_memnoc_gfx", 0x7100c, true, false },
++	{ "gcc_gpu_snoc_dvm_gfx", 0x71018, true, false },
++};
++
++static uint32_t
++smmu_clock_load(vm_offset_t base, uint32_t offset)
++{
++	return *(volatile uint32_t *)(base + offset);
++}
++
++bool
++nabu_gpu_smmu_clocks_ready(void)
++{
++	return clock_confirmed;
++}
++
++void
++nabu_gpu_smmu_clocks(void)
++{
++	uint32_t enable = 0;
++	vm_offset_t gcc, gpucc;
++	bool confirmed = true;
++
++	if (!PE_parse_boot_argn("nabussmuclk", &enable, sizeof(enable)) || enable == 0) {
++		return;
++	}
++	if (enable != 1) {
++		printf("nabussmuclk: unsupported mode; no MMIO\n");
++		return;
++	}
++	if (clock_observed) {
++		printf("nabussmuclk: cached result=%s; no extra MMIO\n",
++		    clock_confirmed ? "CONFIRMED" : "BLOCKED");
++		return;
++	}
++	clock_observed = true;
++	gcc = ml_io_map(SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE);
++	if (gcc == 0) {
++		printf("nabussmuclk: cannot map GCC; SMMU remains blocked\n");
++		return;
++	}
++	gpucc = ml_io_map(SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE);
++	if (gpucc == 0) {
++		printf("nabussmuclk: cannot map GPUCC; SMMU remains blocked\n");
++		return;
++	}
++	printf("nabussmuclk: read four known power/clock words once; no writes\n");
++	for (unsigned i = 0; i < sizeof(clock_words) / sizeof(clock_words[0]); i++) {
++		const struct smmu_clock_word *word = &clock_words[i];
++		uint32_t value;
++		bool ready;
++		unsigned long physical = (word->gcc ? SMMU_CLOCK_GCC_BASE :
++		    SMMU_CLOCK_GPUCC_BASE) + word->offset;
++		printf("nabussmuclk: reading %s pa=0x%lx\n", word->name, physical);
++		value = smmu_clock_load(word->gcc ? gcc : gpucc, word->offset);
++		if (word->supply) {
++			ready = (value & (SMMU_CX_ON | SMMU_CX_COLLAPSE)) == SMMU_CX_ON;
++		} else {
++			ready = (value & (SMMU_CLOCK_ENABLE | SMMU_CLOCK_OFF)) == SMMU_CLOCK_ENABLE;
++		}
++		confirmed = confirmed && ready;
++		printf("nabussmuclk: %s pa=0x%lx value=0x%08x confirmed=%u\n",
++		    word->name, physical, value, ready ? 1u : 0u);
++	}
++	clock_confirmed = confirmed;
++	printf("nabussmuclk: result=%s; four reads, zero writes; "
++	    "context-bank access remains disabled\n",
++	    confirmed ? "CONFIRMED" : "BLOCKED");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -62,6 +62,7 @@
+ extern void nabu_gpu_gmu_load(void);
+ extern void nabu_gpu_smmu_probe(void);
+ extern void nabu_gpu_smmu_read(void);
++extern void nabu_gpu_smmu_clocks(void);
+ extern void nabu_gpu_gmu_memory_plan(void);
+ extern void nabu_gpu_smmu_plan(void);
+ 
+@@ -743,6 +744,8 @@
+ 	 * before it is touched. The full-window walk this replaces read 0x0100
+ 	 * and never returned, which stopped the root device and the desktop.
+ 	 */
++	/* nabussmuclk=1: observe provider resources, no writes. */
++	nabu_gpu_smmu_clocks();
+ 	nabu_gpu_smmu_read();
+ 	/* nabugmumem=1: allocate/check GMU backing RAM; no MMIO writes. */
+ 	nabu_gpu_gmu_memory_plan();
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -113,6 +113,7 @@
+ bsd/dev/nabu_gpu_gmu_load.c	standard
+ bsd/dev/nabu_gpu_smmu_probe.c	standard
+ bsd/dev/nabu_gpu_smmu_read.c	standard
++bsd/dev/nabu_gpu_smmu_clocks.c	standard
+ bsd/dev/nabu_gpu_gmu_memory.c	standard
+ bsd/dev/nabu_gpu_smmu_plan.c	standard
+ bsd/dev/nabu_sample.c			standard
