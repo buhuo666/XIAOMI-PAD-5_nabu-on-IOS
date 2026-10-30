@@ -1,0 +1,883 @@
+diff --git a/bsd/dev/nabu_gpu_gmu_memory.c b/bsd/dev/nabu_gpu_gmu_memory.c
+--- a/bsd/dev/nabu_gpu_gmu_memory.c
++++ b/bsd/dev/nabu_gpu_gmu_memory.c
+@@ -25,6 +25,7 @@
+ #include <pexpert/device_tree.h>
+ #include <vm/vm_kern.h>
+ #include "nabu_gpu_smmu_plan.h"
++#include "nabu_gpu_gmu.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -136,6 +137,47 @@
+ gmu_pool_pa(uint32_t offset)
+ {
+ 	return nabu_gmu_plan.pool_pa + offset;
++}
++
++static struct nabu_gmu_buffer
++gmu_buffer_view(uint32_t offset, uint32_t iova, uint32_t bytes)
++{
++	struct nabu_gmu_buffer buffer = {
++		.cpu = gmu_pool_ptr(offset),
++		.physical = gmu_pool_pa(offset),
++		.iova = iova,
++		.bytes = bytes,
++	};
++	return buffer;
++}
++
++bool
++nabu_gpu_gmu_memory_get(struct nabu_gmu_memory_view *view)
++{
++	if (view == NULL) {
++		return false;
++	}
++	memset(view, 0, sizeof(*view));
++	if (!nabu_gmu_plan.ready) {
++		return false;
++	}
++	view->pool = (void *)nabu_gmu_plan.pool_va;
++	view->pool_physical = nabu_gmu_plan.pool_pa;
++	view->pool_bytes = NABU_GMU_POOL_SIZE;
++	view->tables = nabu_gmu_plan.pt_root;
++	view->table_root = nabu_gmu_plan.pt_pa;
++	view->table_bytes = NABU_GMU_PT_SIZE;
++	view->icache = gmu_buffer_view(NABU_GMU_POOL_ICACHE,
++	    NABU_GMU_ICACHE_BASE, NABU_GMU_ICACHE_SIZE);
++	view->dcache = gmu_buffer_view(NABU_GMU_POOL_DCACHE,
++	    NABU_GMU_DCACHE_BASE, NABU_GMU_DCACHE_SIZE);
++	view->dummy = gmu_buffer_view(NABU_GMU_POOL_DUMMY,
++	    NABU_GMU_DUMMY_IOVA, NABU_GMU_DUMMY_SIZE);
++	view->hfi = gmu_buffer_view(NABU_GMU_POOL_HFI,
++	    NABU_GMU_HFI_IOVA, NABU_GMU_HFI_SIZE);
++	view->log = gmu_buffer_view(NABU_GMU_POOL_LOG,
++	    NABU_GMU_LOG_IOVA, NABU_GMU_LOG_SIZE);
++	return true;
+ }
+ 
+ static uint64_t *
+diff --git a/bsd/dev/nabu_gpu_smmu_plan.h b/bsd/dev/nabu_gpu_smmu_plan.h
+--- a/bsd/dev/nabu_gpu_smmu_plan.h
++++ b/bsd/dev/nabu_gpu_smmu_plan.h
+@@ -91,6 +91,9 @@
+ /* A false checkpoint result stops before the next map or load. */
+ typedef bool (*nabu_smmu_clock_checkpoint_t)(unsigned stage, bool complete);
+ bool nabu_gpu_smmu_clocks_recheck_traced(nabu_smmu_clock_checkpoint_t checkpoint);
++/* Reuse existing CPU mappings; these accessors perform no mapping or MMIO. */
++bool nabu_gpu_smmu_resources_get(uint64_t *gcc, uint64_t *gpucc);
++bool nabu_gpu_smmu_mapping_get(uint64_t *smmu);
+ bool nabu_gpu_gmu_memory_root(uint64_t *table_root);
+ void nabu_gpu_smmu_plan(void);
+ 
+diff --git a/bsd/dev/nabu_gpu_smmu_clocks.c b/bsd/dev/nabu_gpu_smmu_clocks.c
+--- a/bsd/dev/nabu_gpu_smmu_clocks.c
++++ b/bsd/dev/nabu_gpu_smmu_clocks.c
+@@ -33,6 +33,19 @@
+ 
+ static bool clock_observed;
+ static bool clock_confirmed;
++static vm_offset_t clock_gcc_mapping, clock_gpucc_mapping;
++
++bool
++nabu_gpu_smmu_resources_get(uint64_t *gcc, uint64_t *gpucc)
++{
++	if (gcc == NULL || gpucc == NULL || !clock_confirmed ||
++	    clock_gcc_mapping == 0 || clock_gpucc_mapping == 0) {
++		return false;
++	}
++	*gcc = (uint64_t)clock_gcc_mapping;
++	*gpucc = (uint64_t)clock_gpucc_mapping;
++	return true;
++}
+ 
+ struct smmu_clock_word {
+ 	const char *name;
+@@ -80,6 +93,10 @@
+ 	if (gpucc == 0) {
+ 		printf("%s: cannot map GPUCC; SMMU remains blocked\n", prefix);
+ 		return false;
++	}
++	if (!clock_confirmed) {
++		clock_gcc_mapping = gcc;
++		clock_gpucc_mapping = gpucc;
+ 	}
+ 	if (checkpoint != NULL && !checkpoint(2, true)) {
+ 		return false;
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+--- a/bsd/dev/nabu_gpu_smmu_read.c
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -60,8 +60,19 @@
+ #define NABU_SMMU_ENTRIES       6u
+ 
+ static struct nabu_smmu_snapshot smmu_snapshot;
++static vm_offset_t smmu_cpu_mapping;
+ 
+ void nabu_gpu_smmu_read(void);
++
++bool
++nabu_gpu_smmu_mapping_get(uint64_t *smmu)
++{
++	if (smmu == NULL || !smmu_snapshot.complete || smmu_cpu_mapping == 0) {
++		return false;
++	}
++	*smmu = (uint64_t)smmu_cpu_mapping;
++	return true;
++}
+ 
+ bool
+ nabu_gpu_smmu_snapshot_get(struct nabu_smmu_snapshot *snapshot)
+@@ -142,6 +153,7 @@
+ 		    smmu_snapshot.smr[i]);
+ 	}
+ 	smmu_snapshot.stream_count = num_smr;
++	smmu_cpu_mapping = smmu;
+ 	smmu_snapshot.complete = true;
+ 
+ 	printf("nabussmuread: capture complete; fixed=7 smr=%u valid=0x%x "
+diff --git a/bsd/dev/nabu_gpu_gmu.h b/bsd/dev/nabu_gpu_gmu.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu.h
+@@ -0,0 +1,69 @@
++/* Interfaces shared by the GMU memory, SMMU executor and firmware startup. */
++#ifndef NABU_GPU_GMU_H
++#define NABU_GPU_GMU_H
++
++#include <sys/types.h>
++
++struct nabu_gmu_buffer {
++	void *cpu;
++	uint64_t physical;
++	uint32_t iova;
++	uint32_t bytes;
++};
++
++struct nabu_gmu_memory_view {
++	void *pool;
++	uint64_t pool_physical;
++	uint32_t pool_bytes;
++	void *tables;
++	uint64_t table_root;
++	uint32_t table_bytes;
++	struct nabu_gmu_buffer icache, dcache, dummy, hfi, log;
++};
++
++/* Returns only this boot's fully populated and software-validated allocation. */
++bool nabu_gpu_gmu_memory_get(struct nabu_gmu_memory_view *view);
++
++enum nabu_gmu_region {
++	NABU_GMU_REGS, NABU_GMU_SMMU, NABU_GMU_PDC_CFG, NABU_GMU_PDC_SEQ,
++	NABU_GMU_GPUCC, NABU_GMU_GCC
++};
++
++struct nabu_gmu_io {
++	void *cookie;
++	bool (*read32)(void *, enum nabu_gmu_region, uint32_t, uint32_t *);
++	bool (*write32)(void *, enum nabu_gmu_region, uint32_t, uint32_t);
++	bool (*write64)(void *, enum nabu_gmu_region, uint32_t, uint64_t);
++	void (*clean)(void *, uint64_t, uint32_t);
++	void (*barrier)(void *);
++	void (*delay_us)(void *, uint32_t);
++	void (*event)(void *, const char *, uint32_t);
++};
++
++enum nabu_gmu_boot_state {
++	NABU_GMU_BOOT_REJECTED,
++	NABU_GMU_BOOT_MEMORY,
++	NABU_GMU_BOOT_RESOURCES,
++	NABU_GMU_BOOT_DOMAIN,
++	NABU_GMU_BOOT_FIRMWARE,
++	NABU_GMU_BOOT_POWER,
++	NABU_GMU_BOOT_RELEASED,
++	NABU_GMU_BOOT_READY,
++	NABU_GMU_BOOT_HFI_READY,
++};
++
++struct nabu_gmu_boot_result {
++	enum nabu_gmu_boot_state state;
++	enum nabu_gmu_region failed_region;
++	uint32_t failed_offset, observed;
++	uint32_t writes, tcm_words, firmware_blocks, poll_reads;
++	bool attempted, failed, reset_restored, stream_published, observed_valid;
++};
++
++/* Cold takeover only: CM3 reset, GX off, no inherited SMR, ordinary nabu CBs. */
++bool nabu_gpu_gmu_cold_start(const struct nabu_gmu_memory_view *memory,
++    const uint8_t *firmware, uint32_t bytes, const struct nabu_gmu_io *io,
++    struct nabu_gmu_boot_result *result);
++void nabu_gpu_gmu_start_after_root(void);
++
++#endif /* NABU_GPU_GMU_H */
+diff --git a/bsd/dev/nabu_gpu_gmu_boot.c b/bsd/dev/nabu_gpu_gmu_boot.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu_boot.c
+@@ -0,0 +1,465 @@
++/*
++ * nabu A640 cold startup, through FW_INIT_RESULT and HFI control-ready.
++ *
++ * Register units/order: MiCode nabu-r-oss 71b6eff, a6xx_reg.h and
++ * adreno_a6xx_gmu.c. GMU offsets below subtract 0x1a800 from the stock
++ * GPU-relative dword register number, then multiply by four.
++ *
++ * The ordinary, non-static-CB allocator starts at NUMS2CB and reserves banks
++ * only for valid translating handoff SMRs. This deliberately narrow takeover
++ * accepts no inherited stream at all and requires both CM3 reset and GX off.
++ * It never consumes Android bank numbers, fabricates an old observation, or
++ * changes global SMMU bypass. Other boot states require a different driver.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <libkern/libkern.h>
++#include "nabu_gpu_gmu.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++#define GMU_RESET 0x14000u
++#define GMU_RESULT 0x14070u
++#define GMU_HFI_STATUS 0x14600u
++#define GMU_REG(word) (((word) - 0x1a800u) * 4u)
++#define GMU_POLL_LIMIT 1000u
++
++struct gmu_boot {
++	const struct nabu_gmu_memory_view *memory;
++	const struct nabu_gmu_io *io;
++	struct nabu_gmu_boot_result *result;
++	bool domain_touched, released;
++};
++
++static void
++gmu_event(struct gmu_boot *boot, const char *name, uint32_t value)
++{
++	if (boot->io->event != NULL) {
++		boot->io->event(boot->io->cookie, name, value);
++	}
++}
++
++static bool
++gmu_read(struct gmu_boot *boot, enum nabu_gmu_region region, uint32_t offset, uint32_t *value)
++{
++	if (!boot->io->read32(boot->io->cookie, region, offset, value)) {
++		boot->result->observed_valid = false;
++		boot->result->failed_region = region;
++		boot->result->failed_offset = offset;
++		return false;
++	}
++	return true;
++}
++
++static bool
++gmu_write(struct gmu_boot *boot, enum nabu_gmu_region region, uint32_t offset, uint32_t value)
++{
++	boot->result->writes++;
++	boot->result->observed_valid = false;
++	if (!boot->io->write32(boot->io->cookie, region, offset, value)) {
++		boot->result->failed_region = region;
++		boot->result->failed_offset = offset;
++		return false;
++	}
++	return true;
++}
++
++static bool
++gmu_check(struct gmu_boot *boot, enum nabu_gmu_region region,
++    uint32_t offset, uint32_t mask, uint32_t expected)
++{
++	uint32_t value;
++	if (!gmu_read(boot, region, offset, &value)) {
++		return false;
++	}
++	boot->result->observed = value;
++	boot->result->observed_valid = true;
++	if ((value & mask) != expected) {
++		boot->result->failed_region = region;
++		boot->result->failed_offset = offset;
++		return false;
++	}
++	return true;
++}
++
++static bool
++gmu_poll(struct gmu_boot *boot, enum nabu_gmu_region region,
++    uint32_t offset, uint32_t mask, uint32_t expected)
++{
++	for (uint32_t i = 0; i < GMU_POLL_LIMIT; i++) {
++		uint32_t value;
++		boot->result->poll_reads++;
++		if (!gmu_read(boot, region, offset, &value)) {
++			return false;
++		}
++		boot->result->observed = value;
++		boot->result->observed_valid = true;
++		if ((value & mask) == expected) {
++			return true;
++		}
++		boot->io->delay_us(boot->io->cookie, 100);
++	}
++	boot->result->failed_region = region;
++	boot->result->failed_offset = offset;
++	return false;
++}
++
++static uint32_t
++gmu_u32(const uint8_t *bytes)
++{
++	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
++	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
++}
++
++static bool
++gmu_buffer_matches(const struct nabu_gmu_memory_view *memory,
++    const struct nabu_gmu_buffer *buffer, uint32_t offset, uint32_t iova, uint32_t bytes)
++{
++	return buffer->cpu == (uint8_t *)memory->pool + offset &&
++	       buffer->physical == memory->pool_physical + offset &&
++	       buffer->iova == iova && buffer->bytes == bytes;
++}
++
++static bool
++gmu_memory_matches(const struct nabu_gmu_memory_view *memory)
++{
++	return memory != NULL && memory->pool != NULL &&
++	       memory->pool_bytes == 0x88000 && memory->pool_physical != 0 &&
++	       (memory->pool_physical & 0xfffu) == 0 &&
++	       memory->pool_physical <= (1ULL << 48) - 0x88000 &&
++	       memory->tables == (uint8_t *)memory->pool + 0x81000 &&
++	       memory->table_root == memory->pool_physical + 0x81000 &&
++	       memory->table_bytes == 0x6000 &&
++	       gmu_buffer_matches(memory, &memory->icache, 0, 0x4000, 0x3c000) &&
++	       gmu_buffer_matches(memory, &memory->dcache, 0x3c000, 0x44000, 0x3c000) &&
++	       gmu_buffer_matches(memory, &memory->dummy, 0x78000, 0x60000000, 0x1000) &&
++	       gmu_buffer_matches(memory, &memory->log, 0x79000, 0x60200000, 0x4000) &&
++	       gmu_buffer_matches(memory, &memory->hfi, 0x7d000, 0x60100000, 0x4000);
++}
++
++static bool
++gmu_firmware(struct gmu_boot *boot, const uint8_t *firmware, uint32_t bytes, bool write_tcm)
++{
++	static const uint32_t address[7] = {0, 0x200, 0x400, 0x4000, 0x40000, 0x43fe0, 0x57000};
++	static const uint32_t length[7] = {0x30, 0x140, 0x38bc, 0x3a58, 0x1b20, 0x14, 0x308};
++	uint32_t at = 0;
++
++	if (firmware == NULL || bytes != 37680) {
++		return false;
++	}
++	for (unsigned block = 0; block < 7; block++) {
++		if (bytes - at < 16 || gmu_u32(firmware + at) != address[block] ||
++		    gmu_u32(firmware + at + 4) != length[block] ||
++		    gmu_u32(firmware + at + 8) != 0xefbeaddeu ||
++		    gmu_u32(firmware + at + 12) != 0xefbeaddeu ||
++		    length[block] > bytes - at - 16) {
++			return false;
++		}
++		const uint8_t *payload = firmware + at + 16;
++		if (block == 3 || block == 6) {
++			const struct nabu_gmu_buffer *buffer =
++			    block == 3 ? &boot->memory->icache : &boot->memory->dcache;
++			if (memcmp((uint8_t *)buffer->cpu + address[block] - buffer->iova,
++			    payload, length[block]) != 0) {
++				return false;
++			}
++		} else if (write_tcm) {
++			uint32_t offset = block < 3 ? 0x3000 + address[block] :
++			    0x7000 + address[block] - 0x40000;
++			for (uint32_t i = 0; i < length[block]; i += 4) {
++				uint32_t value = gmu_u32(payload + i);
++				if (!gmu_write(boot, NABU_GMU_REGS, offset + i, value) ||
++				    !gmu_check(boot, NABU_GMU_REGS, offset + i, 0xffffffffu, value)) {
++					return false;
++				}
++				boot->result->tcm_words++;
++			}
++		}
++		at += 16 + length[block];
++	}
++	if (at != bytes) {
++		return false;
++	}
++	boot->result->firmware_blocks = 7;
++	return true;
++}
++
++static bool
++gmu_cold_resources(struct gmu_boot *boot)
++{
++	if (!gmu_check(boot, NABU_GMU_REGS, GMU_RESET, 0xffffffffu, 1) ||
++	    !gmu_check(boot, NABU_GMU_GPUCC, 0x100c, 0x80000000u, 0) ||
++	    !gmu_check(boot, NABU_GMU_GPUCC, 0x106c, 0x80000001u, 0x80000000u) ||
++	    !gmu_check(boot, NABU_GMU_GPUCC, 0x1078, 0x80000001u, 1) ||
++	    !gmu_check(boot, NABU_GMU_GCC, 0x7100c, 0x80000001u, 1) ||
++	    !gmu_check(boot, NABU_GMU_GCC, 0x71018, 0x80000001u, 1) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x20, 0xffffffffu, 0x4c017e06) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x24, 0xffffffffu, 0x20000005) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x28, 0xffffffffu, 0x5555) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0, 9, 0) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x48, 0xffffffffu, 0)) {
++		return false;
++	}
++	for (unsigned i = 0; i < 6; i++) {
++		if (!gmu_check(boot, NABU_GMU_SMMU, 0x800 + 4 * i, 0xffffffffu, 0)) {
++			return false;
++		}
++	}
++	return true;
++}
++
++static bool
++gmu_domain_install(struct gmu_boot *boot)
++{
++	const struct nabu_gmu_memory_view *memory = boot->memory;
++	/* Only the first ordinary bank and first empty stream, after no-handoff proof. */
++	static const struct { uint32_t offset, value; } setup[] = {
++		{0x1800, 1}, {0x1000, 0x1f300}, {0x8010, 0x38015},
++		{0x8030, 0x802019}, {0x8038, 0xf404ff44}, {0x803c, 0xe4},
++		{0x8004, 0x303},
++	};
++
++	boot->io->clean(boot->io->cookie, memory->pool_physical, memory->pool_bytes);
++	boot->io->barrier(boot->io->cookie);
++	boot->domain_touched = true;
++	if (!gmu_write(boot, NABU_GMU_SMMU, 0x8000, 0) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x8000, 1, 0)) {
++		return false;
++	}
++	for (unsigned i = 0; i < sizeof(setup) / sizeof(setup[0]); i++) {
++		if (!gmu_write(boot, NABU_GMU_SMMU, setup[i].offset, setup[i].value)) {
++			return false;
++		}
++	}
++	boot->result->writes++;
++	boot->result->observed_valid = false;
++	if (!boot->io->write64(boot->io->cookie, NABU_GMU_SMMU, 0x8020,
++	    memory->table_root | (1ULL << 48))) {
++		boot->result->failed_region = NABU_GMU_SMMU;
++		boot->result->failed_offset = 0x8020;
++		return false;
++	}
++	boot->result->writes++;
++	boot->result->observed_valid = false;
++	if (!boot->io->write64(boot->io->cookie, NABU_GMU_SMMU, 0x8028, 0)) {
++		boot->result->failed_region = NABU_GMU_SMMU;
++		boot->result->failed_offset = 0x8028;
++		return false;
++	}
++	/* Invalidate only this bank's ASID and wait for its own TLB synchronization. */
++	if (!gmu_write(boot, NABU_GMU_SMMU, 0x8610, 1) ||
++	    !gmu_write(boot, NABU_GMU_SMMU, 0x87f0, 0xffffffffu)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_poll(boot, NABU_GMU_SMMU, 0x87f4, 1, 0) ||
++	    !gmu_write(boot, NABU_GMU_SMMU, 0x8000, 0xc01127)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_check(boot, NABU_GMU_SMMU, 0x8000, 0xffffffffu, 0xc01127) ||
++	    !gmu_write(boot, NABU_GMU_SMMU, 0xc00, 0x300)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_write(boot, NABU_GMU_SMMU, 0x800, 0x84000005)) {
++		return false;
++	}
++	boot->result->stream_published = true;
++	boot->io->barrier(boot->io->cookie);
++	return gmu_check(boot, NABU_GMU_SMMU, 0x800, 0xffffffffu, 0x84000005);
++}
++
++static bool
++gmu_power_prepare(struct gmu_boot *boot)
++{
++	static const struct { uint32_t word, value; } rsc[] = {
++		{0x23404, 1u << 24}, {0x2340b, 1},
++		{0x2340e, 0}, {0x2340d, 0}, {0x23410, 0}, {0x2340f, 0},
++		{0x23412, 0x80000000}, {0x23411, 0},
++		{0x23500, 0}, {0x23408, 0x4520}, {0x23409, 0x4510}, {0x2340a, 0x4514},
++		{0x23580, 0xa7a506a0}, {0x23581, 0xa1e6a6e7}, {0x23582, 0xa2e081e1},
++		{0x23583, 0xe9a982e2}, {0x23584, 0x0020e8a8},
++	};
++	static const uint32_t sequence[] = {0xfebea1e1, 0xa5a4a3a2, 0x8382a6e0, 0xbce3e284, 0x002081fc};
++
++	/* Initial bring-up polls status; no interrupt handler is registered yet. */
++	if (!gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x23b06), 0xffffffffu) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f993), 0xffffffffu) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f9cc), 1)) {
++		return false;
++	}
++	for (unsigned i = 0; i < sizeof(rsc) / sizeof(rsc[0]); i++) {
++		if (!gmu_write(boot, NABU_GMU_REGS, GMU_REG(rsc[i].word), rsc[i].value)) {
++			return false;
++		}
++	}
++	for (unsigned i = 0; i < sizeof(sequence) / sizeof(sequence[0]); i++) {
++		if (!gmu_write(boot, NABU_GMU_PDC_SEQ, i * 4, sequence[i])) {
++			return false;
++		}
++	}
++	for (unsigned bank = 0; bank < 2; bank++) {
++		uint32_t control = bank == 0 ? 0x1572 : 0x15d6;
++		uint32_t command = control + 3;
++		if (!gmu_write(boot, NABU_GMU_PDC_CFG, (control + 1) * 4, 7) ||
++		    !gmu_write(boot, NABU_GMU_PDC_CFG, (control + 2) * 4, 0) ||
++		    !gmu_write(boot, NABU_GMU_PDC_CFG, control * 4, 0)) {
++			return false;
++		}
++		for (unsigned i = 0; i < 3; i++) {
++			uint32_t address = i == 0 ? 0x30010 : i == 1 ? 0x30000 : 0x30090;
++			uint32_t value = bank == 0 ? (i == 0 ? 1 : 0) : (i == 0 ? 2 : 3);
++			if (!gmu_write(boot, NABU_GMU_PDC_CFG, (command + 4 * i) * 4, 0x10108) ||
++			    !gmu_write(boot, NABU_GMU_PDC_CFG, (command + 4 * i + 1) * 4, address) ||
++			    !gmu_write(boot, NABU_GMU_PDC_CFG, (command + 4 * i + 2) * 4, value)) {
++				return false;
++			}
++		}
++	}
++	if (!gmu_write(boot, NABU_GMU_PDC_CFG, 0x1148 * 4, 0) ||
++	    !gmu_write(boot, NABU_GMU_PDC_CFG, 0x1140 * 4, 0x80000001)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	return true;
++}
++
++static bool
++gmu_firmware_start(struct gmu_boot *boot)
++{
++	uint32_t rpmh;
++	if (!gmu_write(boot, NABU_GMU_REGS, GMU_RESULT, 0) ||
++	    !gmu_check(boot, NABU_GMU_REGS, GMU_RESULT, 0xffffffffu, 0) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14004, 2) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14614, boot->memory->hfi.iova) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14610, 1) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x24c44, 0x80a008a0) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x140b4, 0x4052) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14608, 0x06040100) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14400, boot->memory->log.iova | 3) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f40f), 1) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f400), 1) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f401), 1) ||
++	    !gmu_write(boot, NABU_GMU_REGS, GMU_REG(0x1f8c0), 0x09c40400) ||
++	    !gmu_read(boot, NABU_GMU_REGS, 0x143a0, &rpmh) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x143a0, rpmh | 0xf11) ||
++	    !gmu_write(boot, NABU_GMU_REGS, 0x14008, 0)) {
++		return false;
++	}
++	boot->io->clean(boot->io->cookie, boot->memory->pool_physical, boot->memory->pool_bytes);
++	boot->io->barrier(boot->io->cookie);
++	gmu_event(boot, "release-reset", 0);
++	/* Cleanup must treat a failed/uncertain release write as potentially released. */
++	boot->released = true;
++	boot->result->state = NABU_GMU_BOOT_RELEASED;
++	if (!gmu_write(boot, NABU_GMU_REGS, GMU_RESET, 0)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_poll(boot, NABU_GMU_REGS, GMU_RESULT, 0xffffffffu, 0xbabeface)) {
++		return false;
++	}
++	boot->result->state = NABU_GMU_BOOT_READY;
++	gmu_event(boot, "firmware-ready", 0xbabeface);
++	if (!gmu_write(boot, NABU_GMU_REGS, 0x14618, 1)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_poll(boot, NABU_GMU_REGS, GMU_HFI_STATUS, 1, 1)) {
++		return false;
++	}
++	boot->result->state = NABU_GMU_BOOT_HFI_READY;
++	gmu_event(boot, "hfi-ready", 1);
++	return true;
++}
++
++static void
++gmu_abort(struct gmu_boot *boot)
++{
++	struct nabu_gmu_boot_result *result = boot->result;
++	enum nabu_gmu_region region = result->failed_region;
++	uint32_t offset = result->failed_offset, observed = result->observed;
++	bool observed_valid = result->observed_valid;
++	uint32_t reset;
++	bool stopped;
++
++	result->failed = true;
++	gmu_event(boot, "failed", offset);
++	if (!boot->domain_touched) {
++		return;
++	}
++	stopped = !boot->released || gmu_write(boot, NABU_GMU_REGS, GMU_RESET, 1);
++	boot->io->barrier(boot->io->cookie);
++	if (stopped && gmu_read(boot, NABU_GMU_REGS, GMU_RESET, &reset) && reset == 1) {
++		result->reset_restored = true;
++		/* Retire only the stream/bank this cold path allocated. RAM is permanent. */
++		bool unpublished = gmu_write(boot, NABU_GMU_SMMU, 0x800, 0);
++		boot->io->barrier(boot->io->cookie);
++		if (unpublished) {
++			result->stream_published = false;
++			(void)gmu_write(boot, NABU_GMU_SMMU, 0x8000, 0);
++			boot->io->barrier(boot->io->cookie);
++		}
++	}
++	result->failed_region = region;
++	result->failed_offset = offset;
++	result->observed = observed;
++	result->observed_valid = observed_valid;
++}
++
++bool
++nabu_gpu_gmu_cold_start(const struct nabu_gmu_memory_view *memory,
++    const uint8_t *firmware, uint32_t bytes, const struct nabu_gmu_io *io,
++    struct nabu_gmu_boot_result *result)
++{
++	if (result == NULL || result->attempted) {
++		return false;
++	}
++	memset(result, 0, sizeof(*result));
++	result->attempted = true;
++	if (io == NULL || io->read32 == NULL || io->write32 == NULL ||
++	    io->write64 == NULL || io->clean == NULL || io->barrier == NULL ||
++	    io->delay_us == NULL || !gmu_memory_matches(memory)) {
++		result->failed = true;
++		return false;
++	}
++	struct gmu_boot boot = {.memory = memory, .io = io, .result = result};
++	if (!gmu_firmware(&boot, firmware, bytes, false)) {
++		result->failed = true;
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_MEMORY;
++	gmu_event(&boot, "memory-validated", 7);
++	if (!gmu_cold_resources(&boot)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_RESOURCES;
++	gmu_event(&boot, "cold-handoff-empty", 0);
++	if (!gmu_domain_install(&boot)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_DOMAIN;
++	gmu_event(&boot, "domain-installed", 0);
++	if (!gmu_firmware(&boot, firmware, bytes, true)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_FIRMWARE;
++	gmu_event(&boot, "firmware-staged", result->tcm_words);
++	if (!gmu_power_prepare(&boot)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	result->state = NABU_GMU_BOOT_POWER;
++	gmu_event(&boot, "power-sequencers-ready", 0);
++	if (!gmu_firmware_start(&boot)) {
++		gmu_abort(&boot);
++		return false;
++	}
++	return true;
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_gpu_gmu_start.c b/bsd/dev/nabu_gpu_gmu_start.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_gmu_start.c
+@@ -0,0 +1,173 @@
++/*
++ * Opt-in XNU binding for the nabu GMU cold-start engine.
++ * This calls real SMMU/TCM/PDC/RSC/start writes, once, with no probe log waits.
++ * GCC/GPUCC/SMMU mappings come from early initialization and are never remapped.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <mach/mach_types.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include "nabu_gpu_gmu.h"
++#include "nabu_gpu_smmu_plan.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern void flush_dcache64(addr64_t, unsigned, int);
++extern kern_return_t thread_terminate(thread_t);
++
++static bool start_scheduled;
++static struct nabu_gmu_boot_result start_result;
++static vm_offset_t start_mapping[6];
++static const uint32_t start_extent[6] = {0x30000, 0x10000, 0x10000, 0x10000, 0x9000, 0x1f0000};
++
++static vm_offset_t
++start_address(enum nabu_gmu_region region, uint32_t offset, uint32_t width)
++{
++	if ((unsigned)region >= 6 || (offset & (width - 1)) != 0 ||
++	    offset > start_extent[region] - width || start_mapping[region] == 0) {
++		return 0;
++	}
++	return start_mapping[region] + offset;
++}
++
++static bool
++start_read(__unused void *cookie, enum nabu_gmu_region region, uint32_t offset, uint32_t *value)
++{
++	vm_offset_t address = start_address(region, offset, 4);
++	if (address == 0) {
++		return false;
++	}
++	*value = *(volatile uint32_t *)address;
++	return true;
++}
++
++static bool
++start_write(__unused void *cookie, enum nabu_gmu_region region, uint32_t offset, uint32_t value)
++{
++	vm_offset_t address = start_address(region, offset, 4);
++	if (address == 0 || region == NABU_GMU_GPUCC || region == NABU_GMU_GCC) {
++		return false;
++	}
++	*(volatile uint32_t *)address = value;
++	return true;
++}
++
++static bool
++start_write64(__unused void *cookie, enum nabu_gmu_region region, uint32_t offset, uint64_t value)
++{
++	vm_offset_t address = start_address(region, offset, 8);
++	if (address == 0 || region != NABU_GMU_SMMU || (offset != 0x8020 && offset != 0x8028)) {
++		return false;
++	}
++	*(volatile uint64_t *)address = value;
++	return true;
++}
++
++static void
++start_clean(__unused void *cookie, uint64_t physical, uint32_t bytes)
++{
++	flush_dcache64((addr64_t)physical, bytes, TRUE);
++}
++
++static void
++start_barrier(__unused void *cookie)
++{
++	__asm__ volatile ("dsb sy" ::: "memory");
++}
++
++static void
++start_delay(__unused void *cookie, uint32_t microseconds)
++{
++	delay(microseconds);
++}
++
++static void
++start_event(__unused void *cookie, const char *event, uint32_t value)
++{
++	printf("nabugmustart: phase=%s value=0x%08x\n", event, value);
++}
++
++static void
++start_worker(__unused void *arg, __unused wait_result_t wr)
++{
++	struct nabu_gmu_memory_view memory;
++	DTEntry chosen;
++	const uint8_t *firmware = NULL;
++	unsigned int bytes = 0;
++	uint64_t gcc, gpucc, smmu;
++	const struct nabu_gmu_io io = {
++		.read32 = start_read, .write32 = start_write, .write64 = start_write64,
++		.clean = start_clean, .barrier = start_barrier, .delay_us = start_delay,
++		.event = start_event,
++	};
++
++	if (!nabu_gpu_gmu_memory_get(&memory) ||
++	    !nabu_gpu_smmu_resources_get(&gcc, &gpucc) ||
++	    !nabu_gpu_smmu_mapping_get(&smmu) ||
++	    SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess ||
++	    SecureDTGetProperty(chosen, "nabu-gmu-firmware", (void const **)&firmware, &bytes) != kSuccess) {
++		printf("nabugmustart: rejected; validated RAM/early mappings/firmware unavailable; no writes\n");
++		goto finished;
++	}
++	start_mapping[NABU_GMU_GPUCC] = (vm_offset_t)gpucc;
++	start_mapping[NABU_GMU_GCC] = (vm_offset_t)gcc;
++	start_mapping[NABU_GMU_SMMU] = (vm_offset_t)smmu;
++	start_mapping[NABU_GMU_REGS] = ml_io_map(0x02c6a000UL, 0x30000);
++	start_mapping[NABU_GMU_PDC_CFG] = ml_io_map(0x0b290000UL, 0x10000);
++	start_mapping[NABU_GMU_PDC_SEQ] = ml_io_map(0x0b490000UL, 0x10000);
++	if (start_mapping[NABU_GMU_REGS] == 0 || start_mapping[NABU_GMU_PDC_CFG] == 0 ||
++	    start_mapping[NABU_GMU_PDC_SEQ] == 0) {
++		printf("nabugmustart: rejected; GMU/PDC CPU mapping unavailable; no writes\n");
++		goto finished;
++	}
++	printf("nabugmustart: begin cold initialization; reused GCC/GPUCC/SMMU mappings; no probe log waits\n");
++	bool ready = nabu_gpu_gmu_cold_start(&memory, firmware, bytes, &io, &start_result);
++	printf("nabugmustart: outcome=%s state=%u region=%u offset=0x%x observed=0x%08x observed_valid=%u "
++	    "writes=%u tcm_words=%u validated_blocks=%u poll_reads=%u reset_restored=%u stream_published=%u "
++	    "gpu_acceleration=0\n", ready ? "HFI_READY" : "FAILED", (unsigned)start_result.state,
++	    (unsigned)start_result.failed_region, start_result.failed_offset, start_result.observed,
++	    start_result.observed_valid,
++	    start_result.writes, start_result.tcm_words, start_result.firmware_blocks,
++	    start_result.poll_reads, start_result.reset_restored, start_result.stream_published);
++finished:
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++nabu_gpu_gmu_start_after_root(void)
++{
++	uint32_t enable = 0, logging = 0, other = 0;
++	char root[32];
++	thread_t thread;
++
++	if (!PE_parse_boot_argn("nabugmustart", &enable, sizeof(enable)) || enable == 0) {
++		return;
++	}
++	if (enable != 1 || start_scheduled ||
++	    PE_parse_boot_argn("nabugmujoint", &other, sizeof(other)) ||
++	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
++	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
++	    PE_parse_boot_argn("nabugmu", &other, sizeof(other)) ||
++	    !PE_parse_boot_argn("nabulog", &logging, sizeof(logging)) || logging != 1 ||
++	    !PE_parse_boot_argn("ufsroot", root, sizeof(root)) ||
++	    strncmp(root, "nabu_system", sizeof(root)) != 0) {
++		printf("nabugmustart: rejected; require exclusive cold start, project root and logging\n");
++		return;
++	}
++	start_scheduled = true;
++	if (kernel_thread_start(start_worker, NULL, &thread) != KERN_SUCCESS) {
++		printf("nabugmustart: thread creation failed; no writes\n");
++		return;
++	}
++	thread_deallocate(thread);
++	printf("nabugmustart: scheduled after root mount; cold init through FW/HFI ready; one attempt\n");
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1078,6 +1078,8 @@
+ 	nabu_gpu_smmu_cb_after_root();
+ 	extern void nabu_gpu_smmu_joint_after_root(void);
+ 	nabu_gpu_smmu_joint_after_root();
++	extern void nabu_gpu_gmu_start_after_root(void);
++	nabu_gpu_gmu_start_after_root();
+ #endif
+ 	bsd_init_kprintf("done\n");
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -118,6 +118,8 @@
+ bsd/dev/nabu_gpu_smmu_plan.c	standard
+ bsd/dev/nabu_gpu_smmu_cb.c	standard
+ bsd/dev/nabu_gpu_smmu_joint.c	standard
++bsd/dev/nabu_gpu_gmu_boot.c	standard
++bsd/dev/nabu_gpu_gmu_start.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
