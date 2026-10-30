@@ -1,0 +1,96 @@
+diff --git a/bsd/dev/nabu_gpu_smmu_joint.c b/bsd/dev/nabu_gpu_smmu_joint.c
+--- a/bsd/dev/nabu_gpu_smmu_joint.c
++++ b/bsd/dev/nabu_gpu_smmu_joint.c
+@@ -6,6 +6,7 @@
+  * Mode 2 exercises only scheduling and one durable-log wait, without MMIO.
+  * Mode 3 returns after one CM3 reset observation, without any bank access.
+  * Mode 4 reads only reset and SCTLR, then returns before FSR.
++ * Mode 5 adds a third intent/log wait after those two reads, without FSR MMIO.
+  */
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -43,7 +44,10 @@
+ 	if (joint_mode == 3) {
+ 		return "nabugmujointreset";
+ 	}
+-	return joint_mode == 4 ? "nabugmujointsctlr" : "nabugmujoint";
++	if (joint_mode == 4) {
++		return "nabugmujointsctlr";
++	}
++	return joint_mode == 5 ? "nabugmujointfsrwait" : "nabugmujoint";
+ }
+ 
+ static bool
+@@ -85,7 +89,7 @@
+ 		printf("%s: aborted step=%u; current resources are unconfirmed\n", prefix, step);
+ 		return false;
+ 	}
+-	if (joint_mode == 3 || joint_mode == 4) {
++	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5) {
+ 		printf("%s: mapping step=%u register=%s pa=0x%lx bytes=4\n",
+ 		    prefix, step, name, (unsigned long)physical);
+ 	}
+@@ -94,7 +98,7 @@
+ 		printf("%s: aborted step=%u; cannot map the single word\n", prefix, step);
+ 		return false;
+ 	}
+-	if (joint_mode == 3 || joint_mode == 4) {
++	if (joint_mode == 3 || joint_mode == 4 || joint_mode == 5) {
+ 		printf("%s: mapping ready step=%u\n", prefix, step);
+ 	}
+ 	printf("%s: reading step=%u register=%s pa=0x%lx\n",
+@@ -118,6 +122,24 @@
+ 	printf("nabugmujointwait: intent committed step=1; no MMIO or mapping\n");
+ 	printf("nabugmujointwait: complete steps=1 target_reads=0 resource_reads=0 mappings=0 "
+ 	    "writes=0 ownership_proven=0 clients_quiesced=0\n");
++}
++
++static void
++joint_fsr_wait_only(void)
++{
++	uint64_t intent;
++
++	printf("nabugmujointfsrwait: intent step=3 register=CB0_FSR pa=0x2ca8058 "
++	    "log_only=1 target_reads=0 resource_reads=0 writes=0\n");
++	intent = nabu_log_position();
++	if (!joint_wait_for_commit(intent, 3, "nabugmujointfsrwait")) {
++		return;
++	}
++	printf("nabugmujointfsrwait: intent committed step=3; no MMIO or mapping\n");
++	printf("nabugmujointfsrwait: complete reset=0x%08x SCTLR=0x%08x m=%u "
++	    "target_reads=2 resource_reads=8 valid=0x%x bank_reads=1 fsr_reads=0 "
++	    "log_waits=3 writes=0 ownership_proven=0 clients_quiesced=0\n",
++	    joint_values[0], joint_values[1], joint_values[1] & 1u, joint_valid_mask);
+ }
+ 
+ static void
+@@ -165,6 +187,10 @@
+ 		    joint_values[0], joint_values[1], joint_values[1] & 1u, joint_valid_mask);
+ 		return;
+ 	}
++	if (joint_mode == 5) {
++		joint_fsr_wait_only();
++		return;
++	}
+ 	if (!joint_read(3, "CB0_FSR", JOINT_SMMU_BASE + offset + 0x58u, &joint_values[2])) {
+ 		return;
+ 	}
+@@ -192,7 +218,7 @@
+ 	if (!PE_parse_boot_argn("nabugmujoint", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+ 	}
+-	if ((enable != 1 && enable != 2 && enable != 3 && enable != 4) || joint_scheduled ||
++	if ((enable < 1 || enable > 5) || joint_scheduled ||
+ 	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmu", &other, sizeof(other)) ||
+@@ -216,6 +242,9 @@
+ 		printf("nabugmujointreset: scheduled after root mount; delay=30s; CM3 reset only; max_reads=1\n");
+ 	} else if (joint_mode == 4) {
+ 		printf("nabugmujointsctlr: scheduled after root mount; delay=30s; reset then SCTLR; max_reads=2\n");
++	} else if (joint_mode == 5) {
++		printf("nabugmujointfsrwait: scheduled after root mount; delay=30s; "
++		    "reset then SCTLR then log-only FSR intent; max_reads=2\n");
+ 	} else {
+ 		printf("nabugmujoint: scheduled after root mount; delay=30s; reset then SCTLR then FSR; max_reads=3\n");
+ 	}
