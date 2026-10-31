@@ -66,11 +66,13 @@ jobs:
               echo "Build diagnostic: $log"
               tail -100 "$log"
             done
+            test ! -f xnu-build.log || cp xnu-build.log ../out/xnu-inner-build.log
             exit 1
           fi
           test -s hakios-kernel
           cp hakios-kernel ../out/hakios-kernel
           cp .config ../out/nabu.config
+          cp xnu-build.log ../out/xnu-inner-build.log
           python3 tools/kernel-version.py > ../out/kernel-version.txt
           git -C xnu-src/xnu-8796.121.2 rev-parse HEAD > ../out/xnu-source-commit.txt
       - name: Build the RAM-only placeholder HakiOS loader

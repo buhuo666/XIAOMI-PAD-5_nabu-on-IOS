@@ -1,7 +1,7 @@
 {
   "upstream": "a3384e031eb1e605cf37adaefc19991f04f6274b",
   "files": {
-    "apply.patch": "7cb3eed9d38ae116adbda999817d8dd2c18cb6721d0f88925f189bfa628a5e00",
+    "apply.patch": "f66fc0f2681e40e657f262c1a5f734980633e0982b6ccb7ec61024a3a82e84b0",
     "files/devices/nabu/configs/nabu.config": "a7d34e5a2d7b59bca2bd20cfa99e087af976ad0d1bbd288fab32627142e80752",
     "files/devices/nabu/configs/nabu_defconfig": "0a5d4595577f473306f563f9006661fdfd3fdbb3c69327142fa5884eeda7dd41",
     "files/devices/nabu/device.conf": "5f255ab51eb87521b81b31c07fe7764cde42cd675f22fab2648c326cdc9e2e54",
