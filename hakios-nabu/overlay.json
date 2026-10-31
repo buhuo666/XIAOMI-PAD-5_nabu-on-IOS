@@ -11,7 +11,7 @@
     "files/tools/nabu-workspace.py": "7d06743de321010479bbad1a1a13c557fc7ddd0dcfde82d909f7aaaea5529c39",
     "files/xnu/files/osfmk/arm64/hakios_pauth_compat.h": "4473e65f76c55b6bc0f9140e04ef4188f4966ac03cac64fb8e57011d8bc7556d",
     "files/xnu/files/osfmk/arm64/hakios_pauth_xnu.h": "c71518db142b666f0da560eee8e008a6a52a2a8389107d5bfc3eb83be6640bbd",
-    "files/xnu/pauth-test-hook.patch": "59811fffd422f78af4c3b5d19779863ee69c7073e4741701b468303de82b0d37",
+    "files/xnu/pauth-test-hook.patch": "57d5dc4d228a782c10d7d6e5f3f792554d0f435ee937d517deecf16018e70634",
     "files/xnuloader/nabu-platform.h": "75c87f9247d1307966363911cef8b371ab74625d757b25fb8d2fabd694ac5168",
     "record-build.py": "0655bb139a7c11b032a6af0126c53c1009213a1a2f53adea9ac6d86a7fd277fe",
     "verify-overlay.py": "8a13499d968fc2ec43c391a8d92226b2866e0a718bed64309db1418edbb95a87"

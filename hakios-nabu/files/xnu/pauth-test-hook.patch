@@ -15,7 +15,7 @@ diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
  	uint32_t                   instr     = 0;
  
 -	COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr));
-+	if (COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr)) == 0 &&
++	if ((COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr))) == 0 &&
 +	    hakios_pauth_xnu_step(state, instr))
 +		return;
  
