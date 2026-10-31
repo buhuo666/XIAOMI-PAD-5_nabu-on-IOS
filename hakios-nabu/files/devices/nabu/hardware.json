@@ -1,0 +1,648 @@
+{
+  "schema": "HakiOS.NabuHardware.v1",
+  "fdt_sha256": "d987d399724dc2e8253aef2ed2abb3d98123c29277adddeb3449e86f68271017",
+  "source": "Saved Android FDT; hardware fields only; raw FDT is not copied",
+  "installed_ram_bytes": 12884901888,
+  "installed_ram_source": "User-confirmed memory upgrade",
+  "xnu_owned_ram_bytes": null,
+  "memory_note": "Neither installed capacity nor Android ranges authorize an XNU allocation",
+  "android_memory_ranges": [
+    {
+      "name": "",
+      "address": "0x80000000",
+      "bytes": 965738496
+    },
+    {
+      "name": "",
+      "address": "0x180000000",
+      "bytes": 8589934592
+    },
+    {
+      "name": "",
+      "address": "0xc0000000",
+      "bytes": 3221225472
+    }
+  ],
+  "cpus": [
+    {
+      "node": "/cpus/cpu@0",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x0",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@100",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x100",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@200",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x200",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@300",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x300",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@400",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x400",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@500",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x500",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@600",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x600",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    },
+    {
+      "node": "/cpus/cpu@700",
+      "compatible": [
+        "arm,armv8"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x700",
+          "bytes": 0
+        }
+      ],
+      "enable_method": [
+        "psci"
+      ]
+    }
+  ],
+  "blocks": {
+    "/soc/qcom,gcc": {
+      "node": "/soc/qcom,gcc",
+      "compatible": [
+        "qcom,gcc-sm8150-v2",
+        "syscon"
+      ],
+      "reg": [
+        {
+          "name": "cc_base",
+          "address": "0x100000",
+          "bytes": 2031616
+        }
+      ]
+    },
+    "/soc/qcom,gpucc": {
+      "node": "/soc/qcom,gpucc",
+      "compatible": [
+        "qcom,gpucc-sm8150",
+        "syscon"
+      ],
+      "reg": [
+        {
+          "name": "cc_base",
+          "address": "0x2c90000",
+          "bytes": 36864
+        }
+      ]
+    },
+    "/soc/qcom,cmd-db@c3f000c": {
+      "node": "/soc/qcom,cmd-db@c3f000c",
+      "compatible": [
+        "qcom,cmd-db"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0xc3f000c",
+          "bytes": 8
+        }
+      ]
+    },
+    "/soc/apps-smmu@0x15000000": {
+      "node": "/soc/apps-smmu@0x15000000",
+      "compatible": [
+        "qcom,qsmmu-v500"
+      ],
+      "reg": [
+        {
+          "name": "base",
+          "address": "0x15000000",
+          "bytes": 1048576
+        },
+        {
+          "name": "tcu-base",
+          "address": "0x15182000",
+          "bytes": 32
+        }
+      ],
+      "interrupts": [
+        "0x0",
+        "0x41",
+        "0x4",
+        "0x0",
+        "0x61",
+        "0x4",
+        "0x0",
+        "0x62",
+        "0x4",
+        "0x0",
+        "0x63",
+        "0x4",
+        "0x0",
+        "0x64",
+        "0x4",
+        "0x0",
+        "0x65",
+        "0x4",
+        "0x0",
+        "0x66",
+        "0x4",
+        "0x0",
+        "0x67",
+        "0x4",
+        "0x0",
+        "0x68",
+        "0x4",
+        "0x0",
+        "0x69",
+        "0x4",
+        "0x0",
+        "0x6a",
+        "0x4",
+        "0x0",
+        "0x6b",
+        "0x4",
+        "0x0",
+        "0x6c",
+        "0x4",
+        "0x0",
+        "0x6d",
+        "0x4",
+        "0x0",
+        "0x6e",
+        "0x4",
+        "0x0",
+        "0x6f",
+        "0x4",
+        "0x0",
+        "0x70",
+        "0x4",
+        "0x0",
+        "0x71",
+        "0x4",
+        "0x0",
+        "0x72",
+        "0x4",
+        "0x0",
+        "0x73",
+        "0x4",
+        "0x0",
+        "0x74",
+        "0x4",
+        "0x0",
+        "0x75",
+        "0x4",
+        "0x0",
+        "0x76",
+        "0x4",
+        "0x0",
+        "0xb5",
+        "0x4",
+        "0x0",
+        "0xb6",
+        "0x4",
+        "0x0",
+        "0xb7",
+        "0x4",
+        "0x0",
+        "0xb8",
+        "0x4",
+        "0x0",
+        "0xb9",
+        "0x4",
+        "0x0",
+        "0xba",
+        "0x4",
+        "0x0",
+        "0xbb",
+        "0x4",
+        "0x0",
+        "0xbc",
+        "0x4",
+        "0x0",
+        "0xbd",
+        "0x4",
+        "0x0",
+        "0xbe",
+        "0x4",
+        "0x0",
+        "0xbf",
+        "0x4",
+        "0x0",
+        "0xc0",
+        "0x4",
+        "0x0",
+        "0x13b",
+        "0x4",
+        "0x0",
+        "0x13c",
+        "0x4",
+        "0x0",
+        "0x13d",
+        "0x4",
+        "0x0",
+        "0x13e",
+        "0x4",
+        "0x0",
+        "0x13f",
+        "0x4",
+        "0x0",
+        "0x140",
+        "0x4",
+        "0x0",
+        "0x141",
+        "0x4",
+        "0x0",
+        "0x142",
+        "0x4",
+        "0x0",
+        "0x143",
+        "0x4",
+        "0x0",
+        "0x144",
+        "0x4",
+        "0x0",
+        "0x145",
+        "0x4",
+        "0x0",
+        "0x146",
+        "0x4",
+        "0x0",
+        "0x147",
+        "0x4",
+        "0x0",
+        "0x148",
+        "0x4",
+        "0x0",
+        "0x149",
+        "0x4",
+        "0x0",
+        "0x14a",
+        "0x4",
+        "0x0",
+        "0x14b",
+        "0x4",
+        "0x0",
+        "0x14c",
+        "0x4",
+        "0x0",
+        "0x14d",
+        "0x4",
+        "0x0",
+        "0x14e",
+        "0x4",
+        "0x0",
+        "0x14f",
+        "0x4",
+        "0x0",
+        "0x150",
+        "0x4",
+        "0x0",
+        "0x151",
+        "0x4",
+        "0x0",
+        "0x152",
+        "0x4",
+        "0x0",
+        "0x153",
+        "0x4",
+        "0x0",
+        "0x154",
+        "0x4",
+        "0x0",
+        "0x155",
+        "0x4",
+        "0x0",
+        "0x156",
+        "0x4",
+        "0x0",
+        "0x157",
+        "0x4",
+        "0x0",
+        "0x158",
+        "0x4",
+        "0x0",
+        "0x159",
+        "0x4",
+        "0x0",
+        "0x18b",
+        "0x4",
+        "0x0",
+        "0x18c",
+        "0x4",
+        "0x0",
+        "0x18d",
+        "0x4",
+        "0x0",
+        "0x18e",
+        "0x4",
+        "0x0",
+        "0x18f",
+        "0x4",
+        "0x0",
+        "0x190",
+        "0x4",
+        "0x0",
+        "0x191",
+        "0x4",
+        "0x0",
+        "0x192",
+        "0x4",
+        "0x0",
+        "0x193",
+        "0x4",
+        "0x0",
+        "0x194",
+        "0x4",
+        "0x0",
+        "0x195",
+        "0x4",
+        "0x0",
+        "0x196",
+        "0x4",
+        "0x0",
+        "0x197",
+        "0x4",
+        "0x0",
+        "0x198",
+        "0x4",
+        "0x0",
+        "0x199",
+        "0x4"
+      ]
+    },
+    "/soc/spi@c84000/novatek@0": {
+      "node": "/soc/spi@c84000/novatek@0",
+      "compatible": [
+        "novatek,NVT-ts-spi"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x0",
+          "bytes": 0
+        }
+      ],
+      "spi-max-frequency": [
+        "0xe4e1c0"
+      ]
+    },
+    "/soc/spi@c84000": {
+      "node": "/soc/spi@c84000",
+      "reg": [
+        {
+          "name": "se_phys",
+          "address": "0xc84000",
+          "bytes": 16384
+        }
+      ]
+    },
+    "/soc/qcom,kgsl-3d0@2C00000": {
+      "node": "/soc/qcom,kgsl-3d0@2C00000",
+      "compatible": [
+        "qcom,kgsl-3d0",
+        "qcom,kgsl-3d"
+      ],
+      "reg": [
+        {
+          "name": "kgsl_3d0_reg_memory",
+          "address": "0x2c00000",
+          "bytes": 262144
+        },
+        {
+          "name": "cx_dbgc",
+          "address": "0x2c61000",
+          "bytes": 2048
+        },
+        {
+          "name": "qdss_gfx",
+          "address": "0x6900000",
+          "bytes": 278528
+        },
+        {
+          "name": "qfprom_memory",
+          "address": "0x780000",
+          "bytes": 28671
+        }
+      ],
+      "qcom,chipid": [
+        "0x6040001"
+      ],
+      "interrupts": [
+        "0x0",
+        "0x12c",
+        "0x0"
+      ]
+    },
+    "/soc/qcom,kgsl-iommu@0x02CA0000": {
+      "node": "/soc/qcom,kgsl-iommu@0x02CA0000",
+      "compatible": [
+        "qcom,kgsl-smmu-v2"
+      ],
+      "reg": [
+        {
+          "name": "",
+          "address": "0x2ca0000",
+          "bytes": 65536
+        }
+      ]
+    },
+    "/soc/qcom,gmu@0x2C6A000": {
+      "node": "/soc/qcom,gmu@0x2C6A000",
+      "compatible": [
+        "qcom,gpu-gmu"
+      ],
+      "reg": [
+        {
+          "name": "kgsl_gmu_reg",
+          "address": "0x2c6a000",
+          "bytes": 196608
+        },
+        {
+          "name": "kgsl_gmu_pdc_cfg",
+          "address": "0xb290000",
+          "bytes": 65536
+        },
+        {
+          "name": "kgsl_gmu_pdc_seq",
+          "address": "0xb490000",
+          "bytes": 65536
+        }
+      ],
+      "interrupts": [
+        "0x0",
+        "0x130",
+        "0x0",
+        "0x0",
+        "0x131",
+        "0x0"
+      ]
+    },
+    "/soc/kgsl-smmu@0x02ca0000": {
+      "node": "/soc/kgsl-smmu@0x02ca0000",
+      "compatible": [
+        "qcom,qsmmu-v500"
+      ],
+      "reg": [
+        {
+          "name": "base",
+          "address": "0x2ca0000",
+          "bytes": 65536
+        },
+        {
+          "name": "tcu-base",
+          "address": "0x2cc2000",
+          "bytes": 32
+        }
+      ],
+      "interrupts": [
+        "0x0",
+        "0x2a2",
+        "0x4",
+        "0x0",
+        "0x2a9",
+        "0x4",
+        "0x0",
+        "0x2aa",
+        "0x4",
+        "0x0",
+        "0x2ab",
+        "0x4",
+        "0x0",
+        "0x2ac",
+        "0x4",
+        "0x0",
+        "0x2ad",
+        "0x4",
+        "0x0",
+        "0x2ae",
+        "0x4",
+        "0x0",
+        "0x2af",
+        "0x4",
+        "0x0",
+        "0x2b0",
+        "0x4"
+      ]
+    }
+  },
+  "board_facts": {
+    "panel_width": 1600,
+    "panel_height": 2560,
+    "touch_controller": "NT36523",
+    "touch_spi_engine": 18,
+    "touch_pins": [
+      23,
+      24,
+      25,
+      26
+    ],
+    "touch_irq_gpio": 39,
+    "gpu": "Adreno 640 v2",
+    "gmu_firmware_name": "a640_gmu.bin",
+    "sqe_firmware_name": "a630_sqe.fw",
+    "board_facts_source": "Previously recorded hardware observations; no implementation imported"
+  },
+  "cmd_db_note": "SM8150 qcom,cmd-db reg is an address/length dictionary, not the resource table",
+  "project_storage": {
+    "logical_sector_bytes": 4096,
+    "nabu_esp": {
+      "block": "sda35",
+      "first_lba": 107603712,
+      "last_lba": 108652287
+    },
+    "nabu_system": {
+      "block": "sda36",
+      "first_lba": 108652288,
+      "last_lba": 124380927
+    }
+  },
+  "device_tested_by_this_project": false
+}

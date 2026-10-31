@@ -1,0 +1,156 @@
+diff --git a/.gitignore b/.gitignore
+index d9687e1..09cf9fc 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -6,6 +6,8 @@
+ !/.gitattributes
+ !/VERSION
+ !/README.md
++!/README.nabu.md
++!/AGENTS.md
+ !/CONTRIBUTING.md
+ !/CHANGELOG.md
+ !/ci/
+@@ -120,6 +122,7 @@ __pycache__/
+ !/devices/manifest.conf
+ !/devices/README.md
+ !/devices/qemu/
++!/devices/nabu/
+ 
+ # Android platform-tools for xl on a Mac (tools/macos-bin/README.md): not part of the repository
+ /tools/macos-bin/platform-tools
+diff --git a/Makefile b/Makefile
+index 8ecdd0a..d62f0fc 100644
+--- a/Makefile
++++ b/Makefile
+@@ -36,7 +36,7 @@
+ #   SECS=600             the session's length for make phone / make qemu
+ #   JOBS=8               parallel jobs for the kernel build
+ 
+-DEVICE ?= redwood
++DEVICE ?= nabu
+ JOBS ?= 8
+ SECS ?= 600
+ # qemu-open runs the open configuration: configs/defconfig (nothing of a phone's own, one core)
+@@ -72,6 +72,7 @@ images:
+ 	$(IMAGE_OPTS) userland/build.sh
+ 
+ kernel:
++	@test "$$(uname)" = Darwin || { echo "This nabu workspace requires macOS for kernel compilation."; exit 1; }
+ 	[ -d xnu-src/xnu-8796.121.2 ] || xnu/apply.sh
+ 	[ -e xnu-deps/host/bin/ld64 ] || xnu-deps/setup.sh
+ 	tools/make-kernel.sh -j$(JOBS)
+@@ -124,6 +125,7 @@ qemu-u-boot: kernel loader-open hello
+ 	qemu/run-u-boot.sh $(SECS) | tee logs/qemu-u-boot.log
+ 
+ phone:
++	python3 tools/nabu-workspace.py gate --device "$(DEVICE)"
+ 	[ ! -f .config ] || tools/hakios-config.py check
+ 	XL_SB_DELAY=8 $(RUNNER_BASE) tools/modem-cycle.sh "$(ARGS)" $(SECS)
+ 
+diff --git a/devices/manifest.conf b/devices/manifest.conf
+index c2f353f..738f3c2 100644
+--- a/devices/manifest.conf
++++ b/devices/manifest.conf
+@@ -16,6 +16,9 @@ device redwood
+ device qemu
+ 	path        devices/qemu
+ 
++device nabu
++	path        devices/nabu
++
+ uefi hakios-uefi
+ 	repository  https://github.com/oosexgang/hakios-uefi.git
+ 	revision    a450a79a167fb25783fd0f0321478bbc171cae23
+diff --git a/tools/modem-cycle.sh b/tools/modem-cycle.sh
+index 4bbd5af..44df021 100755
+--- a/tools/modem-cycle.sh
++++ b/tools/modem-cycle.sh
+@@ -4,6 +4,7 @@
+ # (or fastboot) for the next run (XL_END=android: back to Android).
+ # The phone is never flashed: the kernel is booted with "fastboot boot"-like upload through xl.
+ cd "$(dirname "$0")/.." || exit 1
++python3 tools/nabu-workspace.py gate --device "${DEVICE:-nabu}" || exit 1
+ PATH=$PWD/tools/macos-bin/platform-tools:$PWD/tools/macos-bin:$PATH
+ ARGS=$1; SECS=${2:-300}
+ # BASE_ARGS: the arguments the runner puts first (default: the reference phone's cores, clock and storage).
+diff --git a/xl b/xl
+index f544465..936a250 100755
+--- a/xl
++++ b/xl
+@@ -53,6 +53,7 @@
+ # when the last upload was not from this copy. The record starts empty -- an upload by a copy without
+ # this change leaves none -- and `run` says so rather than assuming.
+ cd "$(dirname "$(readlink -f "$0")")" || exit 1
++python3 tools/nabu-workspace.py gate --device "${DEVICE:-nabu}" || exit 1
+ # On a Mac: flock, GNU timeout and stat, and Android's platform-tools, from tools/macos-bin (see its README)
+ [ "$(uname)" = Darwin ] && PATH=$PWD/tools/macos-bin:$PWD/tools/macos-bin/platform-tools:$PATH
+ # the kernel and the loader built here, or else the ones that come with the repository
+diff --git a/xnu-build.sh b/xnu-build.sh
+index 673a45f..3437bb5 100755
+--- a/xnu-build.sh
++++ b/xnu-build.sh
+@@ -1,5 +1,6 @@
+ #!/bin/bash
+ # Build XNU for redwood on Linux. Extra make args are passed through.
++[ "$(uname)" = Darwin ] || { echo "This workspace requires macOS for kernel compilation." >&2; exit 1; }
+ source "$(dirname "${BASH_SOURCE[0]}")/xnu-env.sh"
+ cd "$XNU_SRC" || exit 1
+ # The Wi-Fi driver's object (tools/mk-ath11k.sh) is linked into the kernel when it is there; make
+diff --git a/xnuloader/build.sh b/xnuloader/build.sh
+index d8e696a..f068429 100755
+--- a/xnuloader/build.sh
++++ b/xnuloader/build.sh
+@@ -2,11 +2,15 @@
+ # Build the XNU loader as a freestanding AArch64 UEFI application.
+ set -e
+ cd "$(dirname "$0")"
++DEFINES=()
++if grep -q '^CONFIG_DEVICE="nabu"$' ../.config 2>/dev/null || [ "${DEVICE:-nabu}" = nabu ]; then
++	DEFINES+=(-DHAKIOS_NABU_RAM_ONLY=1)
++fi
+ # the iPhone's identity for XNU, from the device tree of the builder's own IPSW (not in the repository)
+ [ -f identity.h ] || ./mkidentity.sh
+ 
+ clang --target=aarch64-unknown-windows -ffreestanding -fno-builtin -fno-stack-protector -fshort-wchar \
+-  -mgeneral-regs-only -O1 -Wall -Wextra -Wno-unused-parameter -c loader.c -o loader.obj
++  -mgeneral-regs-only -O1 -Wall -Wextra -Wno-unused-parameter "${DEFINES[@]}" -c loader.c -o loader.obj
+ # /base: UEFI loads an image at its preferred address when that is free. The PE default (0x140000000)
+ # is in the middle of the phone's largest block of RAM, which XNU needs in one piece.
+ lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /base:0xA1000000 /out:loader.efi loader.obj
+diff --git a/xnuloader/loader.c b/xnuloader/loader.c
+index 422f9d3..6db298e 100644
+--- a/xnuloader/loader.c
++++ b/xnuloader/loader.c
+@@ -35,6 +35,9 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
+ #define PAGE_SIZE_MAX       0x4000ULL
+ 
+ #define LOG_PARTITION       u"logdump"
++#ifndef HAKIOS_NABU_RAM_ONLY
++#define HAKIOS_NABU_RAM_ONLY 0
++#endif
+ #define CHECKPOINT_SELFTEST 999
+ #define PANIC_LOG_SIZE      0x80000u
+ #define NVRAM_BANK_SIZE     0x2000u
+@@ -264,6 +267,10 @@ clean_dcache(uint64_t start, uint64_t end)
+ static efi_block_io *
+ find_log_partition(void)
+ {
++#if HAKIOS_NABU_RAM_ONLY
++	/* This board has no authorization to write the vendor's logdump partition. */
++	return NULL;
++#endif
+ 	static const efi_guid part_guid = EFI_PARTITION_INFO_GUID;
+ 	static const efi_guid blk_guid = EFI_BLOCK_IO_GUID;
+ 	static const char16 want[] = LOG_PARTITION;
+@@ -1876,6 +1883,10 @@ block_tables(void)
+ static int
+ block_is_darwin(const efi_partition_info *info, const efi_block_io *bio, const struct loader_block_part *bp)
+ {
++#if HAKIOS_NABU_RAM_ONLY
++	/* nabu has a different reviewed partition boundary; no block writes yet. */
++	return 0;
++#endif
+ 	static const efi_guid type = BLOCK_DARWIN_TYPE;
+ 	const uint8_t *u = (const uint8_t *)&info->unique_guid;
+ 	static const char name[] = "darwin";

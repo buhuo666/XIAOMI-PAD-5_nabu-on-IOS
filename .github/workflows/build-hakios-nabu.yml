@@ -1,0 +1,81 @@
+name: build-hakios-nabu
+
+on:
+  push:
+    branches: [ci/xnu-8796-project-root]
+    paths:
+      - hakios-nabu/**
+      - .github/workflows/build-hakios-nabu.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hakios-nabu-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/ci/xnu-8796-project-root'
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned HakiOS and apply the nabu source overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 hakios-nabu/verify-overlay.py
+          git init -q hakios
+          git -C hakios fetch -q --depth 1 https://github.com/oosexgang/hakios-xnu-kernel.git a3384e031eb1e605cf37adaefc19991f04f6274b
+          git -C hakios checkout -q FETCH_HEAD
+          test "$(git -C hakios rev-parse HEAD)" = a3384e031eb1e605cf37adaefc19991f04f6274b
+          git -C hakios apply --check ../hakios-nabu/apply.patch
+          git -C hakios apply ../hakios-nabu/apply.patch
+          cp -R hakios-nabu/files/. hakios/
+          cd hakios
+          python3 tools/hakios-config.py defconfig nabu
+          python3 tools/hakios-device.py check nabu sm8150
+          python3 tools/nabu-workspace.py check
+      - name: macOS toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          sw_vers > out/toolchain.txt
+          xcodebuild -version >> out/toolchain.txt
+          clang --version >> out/toolchain.txt
+          if ! brew --prefix llvm >/dev/null 2>&1; then brew install llvm; fi
+          if ! brew --prefix coreutils >/dev/null 2>&1; then brew install coreutils; fi
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Build the HakiOS kernel on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname)" = Darwin
+          cd hakios
+          make kernel JOBS=3 2>&1 | tee ../out/kernel-build.log
+          test -s hakios-kernel
+          cp hakios-kernel ../out/hakios-kernel
+          cp .config ../out/nabu.config
+          python3 tools/kernel-version.py > ../out/kernel-version.txt
+          git -C xnu-src/xnu-8796.121.2 rev-parse HEAD > ../out/xnu-source-commit.txt
+      - name: Build the RAM-only placeholder HakiOS loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hakios
+          PLACEHOLDER=1 DEVICE=nabu bash xnuloader/mkidentity.sh
+          DEVICE=nabu bash -x xnuloader/build.sh 2>&1 | tee ../out/loader-build.log
+          cp xnuloader/loader.efi ../out/nabu-loader-open.efi
+          grep -q -- '-DHAKIOS_NABU_RAM_ONLY=1' ../out/loader-build.log
+          file ../out/hakios-kernel ../out/nabu-loader-open.efi > ../out/file-types.txt
+          python3 ../hakios-nabu/record-build.py ../out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hakios-nabu-macos
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
