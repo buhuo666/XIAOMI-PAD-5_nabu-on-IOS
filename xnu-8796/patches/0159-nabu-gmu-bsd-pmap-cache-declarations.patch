@@ -1,0 +1,13 @@
+diff --git a/bsd/dev/nabu_gpu_gmu_memory.c b/bsd/dev/nabu_gpu_gmu_memory.c
+--- a/bsd/dev/nabu_gpu_gmu_memory.c
++++ b/bsd/dev/nabu_gpu_gmu_memory.c
+@@ -99,6 +99,9 @@
+ 
+ extern addr64_t kvtophys(vm_offset_t va);
+ extern void flush_dcache64(addr64_t addr, unsigned count, int phys);
++/* vm/pmap.h hides these implemented interfaces behind MACH_KERNEL_PRIVATE. */
++extern void pmap_set_cache_attributes(ppnum_t page, unsigned int attributes);
++extern unsigned int pmap_cache_attributes(ppnum_t page);
+ 
+ bool
+ nabu_gpu_gmu_memory_root(uint64_t *table_root)
