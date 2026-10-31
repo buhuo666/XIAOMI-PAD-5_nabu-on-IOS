@@ -1,0 +1,938 @@
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+--- a/bsd/dev/nabu_gpu_clocks.c
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -45,6 +45,7 @@
+ #include <vm/vm_kern.h>
+ 
+ #include "nabu_gpu.h"
++#include "nabu_gpu_diag.h"
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
+ 
+@@ -58,23 +59,34 @@
+ 	static int gpu2_sleep_chan;
+ 	uint64_t deadline;
+ 
++	nabu_gpu_diag_begin(NABU_DIAG_WAIT, NABU_DIAG_DEADLINE, 0, ms, 0, 0);
+ 	clock_interval_to_deadline(ms, NSEC_PER_MSEC, &deadline);
+-	(void)assert_wait_deadline(&gpu2_sleep_chan, THREAD_UNINT, deadline);
+-	thread_block(THREAD_CONTINUE_NULL);
++	nabu_gpu_diag_end(NABU_DIAG_WAIT, ms, 0);
++	nabu_gpu_diag_begin(NABU_DIAG_WAIT, NABU_DIAG_ASSERT_WAIT, 0, ms, 0, deadline);
++	wait_result_t asserted = assert_wait_deadline(&gpu2_sleep_chan, THREAD_UNINT, deadline);
++	nabu_gpu_diag_end(NABU_DIAG_WAIT, (uint32_t)asserted, ms);
++	nabu_gpu_diag_begin(NABU_DIAG_WAIT, NABU_DIAG_THREAD_BLOCK, 0, ms, (uint32_t)asserted, deadline);
++	wait_result_t returned = thread_block(THREAD_CONTINUE_NULL);
++	nabu_gpu_diag_end(NABU_DIAG_WAIT, (uint32_t)returned, (uint32_t)asserted);
+ }
+ 
+ static void
+ nabu_gpu2_announce(const char *what)
+ {
+ 	printf("nabugpu2: %s\n", what);
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_ANNOUNCE, 0, gpu2_pause_ms, 0, 0);
+ 	nabu_gpu2_sleep_ms(gpu2_pause_ms);
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, gpu2_pause_ms, 0);
+ }
+ 
+ static bool
+ nabu_gpu2_map(void)
+ {
+ 	if (gpucc_base == 0) {
++		nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_MAP, 4,
++		    NABU_BLOCK_GPUCC_BASE, NABU_BLOCK_GPUCC_SIZE, 0);
+ 		gpucc_base = ml_io_map(NABU_BLOCK_GPUCC_BASE, NABU_BLOCK_GPUCC_SIZE);
++		nabu_gpu_diag_end(NABU_DIAG_CLOCK, gpucc_base != 0, 0);
+ 		if (gpucc_base == 0) {
+ 			printf("nabugpu2: cannot map gpucc at 0x%lx\n",
+ 			    (unsigned long)NABU_BLOCK_GPUCC_BASE);
+@@ -87,13 +99,18 @@
+ static uint32_t
+ nabu_gpu2_read(uint32_t offset)
+ {
+-	return *(volatile uint32_t *)(gpucc_base + offset);
++	nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_READ32, 4, offset, 0, 0);
++	uint32_t value = *(volatile uint32_t *)(gpucc_base + offset);
++	nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
++	return value;
+ }
+ 
+ static void
+ nabu_gpu2_write(uint32_t offset, uint32_t value)
+ {
++	nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_WRITE32, 4, offset, value, 0);
+ 	*(volatile uint32_t *)(gpucc_base + offset) = value;
++	nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
+ }
+ 
+ /*
+@@ -224,6 +241,8 @@
+ 
+ 	nabu_gpu2_report();
+ 	printf("nabugpu2: stage 2 finished; no firmware was loaded\n");
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_CLOCK_FINISHED, 0, 0, 1, 0);
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, 1, 0);
+ 
+ watch:
+ 	if (gpu2_watch_secs) {
+diff --git a/bsd/dev/nabu_gpu_gmu_hfi.c b/bsd/dev/nabu_gpu_gmu_hfi.c
+--- a/bsd/dev/nabu_gpu_gmu_hfi.c
++++ b/bsd/dev/nabu_gpu_gmu_hfi.c
+@@ -7,6 +7,7 @@
+ #include <sys/systm.h>
+ #include <libkern/libkern.h>
+ #include "nabu_gpu_gmu_hfi.h"
++#include "nabu_gpu_diag.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -30,6 +31,8 @@
+ hfi_fail(struct hfi_transaction *hfi, enum nabu_gmu_hfi_error error)
+ {
+ 	hfi->result->error = error;
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_RESULT, 0, 0, error, 0);
++	nabu_gpu_diag_end(NABU_DIAG_HFI, 0, error);
+ 	return false;
+ }
+ 
+@@ -90,12 +93,14 @@
+ {
+ 	uint32_t read, write, msg[255];
+ 	struct nabu_gmu_hfi_result *result = hfi->result;
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_RECEIVE, 0, index, result->messages, 0);
+ 	if (!hfi_queue(hfi, index, &read, &write)) {
+ 		return false;
+ 	}
+ 	if (read == write) {
+ 		hfi->table->queue[index].rx_request = 1;
+ 		hfi_barrier(hfi);
++		nabu_gpu_diag_end(NABU_DIAG_HFI, 0, index);
+ 		return true;
+ 	}
+ 	if (result->messages >= HFI_MESSAGES) {
+@@ -143,6 +148,7 @@
+ 		result->firmware_error = words > 1 ? msg[1] : 0xffffffffu;
+ 		return hfi_fail(hfi, NABU_HFI_FAULT);
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_HFI, header, index);
+ 	return true;
+ }
+ 
+@@ -151,7 +157,9 @@
+     const struct nabu_gmu_boot_result *boot, const struct nabu_gmu_io *io,
+     struct nabu_gmu_hfi_result *result)
+ {
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_INPUT, 0, 0, 0, 0);
+ 	if (result == NULL || result->attempted) {
++		nabu_gpu_diag_end(NABU_DIAG_HFI, 0, NABU_HFI_INPUT);
+ 		return false;
+ 	}
+ 	memset(result, 0, sizeof(*result));
+@@ -163,19 +171,24 @@
+ 	    boot == NULL || boot->failed || boot->state != NABU_GMU_BOOT_HFI_READY ||
+ 	    !boot->stream_published || io == NULL || io->read32 == NULL ||
+ 	    io->write32 == NULL || io->barrier == NULL || io->delay_us == NULL) {
++		nabu_gpu_diag_end(NABU_DIAG_HFI, 0, NABU_HFI_INPUT);
+ 		return false;
+ 	}
+ 	struct hfi_transaction hfi = {
+ 		.memory = memory, .io = io, .result = result,
+ 		.table = (volatile struct nabu_gmu_hfi_table *)memory->hfi.cpu,
+ 	};
++	nabu_gpu_diag_end(NABU_DIAG_HFI, 1, 0);
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_VERSION, 0, HFI_VERSION_INFO, 0, 0);
+ 	if (!hfi_read_reg(&hfi, HFI_VERSION_INFO, &result->hfi_version)) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_HFI, result->hfi_version, 0);
+ 	hfi.major = result->hfi_version >> 28;
+ 	if (hfi.major != 1 && hfi.major != 2) {
+ 		return hfi_fail(&hfi, NABU_HFI_VERSION);
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_LAYOUT, 0, 0, hfi.major, 0);
+ 	if (hfi.table->version != 0 || hfi.table->words != 210 ||
+ 	    hfi.table->first_queue != 6 || hfi.table->queue_words != 12 ||
+ 	    hfi.table->queues != 3 || hfi.table->active_queues != 3) {
+@@ -195,11 +208,13 @@
+ 	if (result->rsp_read != result->rsp_write) {
+ 		return hfi_fail(&hfi, NABU_HFI_ACK);
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_HFI, 1, hfi.major);
+ 	/* A single new sequence; the whole returned request must match. */
+ 	result->request = 0x00100201u;
+ 	if (!hfi_write_reg(&hfi, HFI_INTR_CLEAR, 1)) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_PUBLISH, 0, write, result->request, 0);
+ 	volatile uint32_t *command = hfi_data(&hfi, 0);
+ 	command[write] = result->request;
+ 	command[(write + 1) % NABU_HFI_WORDS] = HFI_FW_SUPPORTED;
+@@ -211,17 +226,22 @@
+ 	result->cmd_write = (write + occupied) % NABU_HFI_WORDS;
+ 	hfi.table->queue[0].write = result->cmd_write;
+ 	hfi_barrier(&hfi);
++	nabu_gpu_diag_end(NABU_DIAG_HFI, result->cmd_write, result->request);
+ 	/* A failed doorbell write is uncertain and must never be retried. */
+ 	result->sent = true;
++	nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_DOORBELL, 0, HFI_DOORBELL, 1, 0);
+ 	if (!hfi_write_reg(&hfi, HFI_DOORBELL, 1)) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_HFI, 1, 0);
+ 	result->error = NABU_HFI_OK;
+ 	for (uint32_t i = 0; i < HFI_POLLS; i++) {
+ 		result->poll_reads++;
++		nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_POLL, 0, i, result->messages, 0);
+ 		if (!hfi_read_reg(&hfi, HFI_INTR_INFO, &result->interrupt_info)) {
+ 			return false;
+ 		}
++		nabu_gpu_diag_end(NABU_DIAG_HFI, result->interrupt_info, i);
+ 		if (result->interrupt_info & (1u << 15)) {
+ 			return hfi_fail(&hfi, NABU_HFI_FAULT);
+ 		}
+@@ -233,7 +253,12 @@
+ 			return false;
+ 		}
+ 		if (result->acked) {
+-			return hfi_write_reg(&hfi, HFI_INTR_CLEAR, 1);
++			bool cleared = hfi_write_reg(&hfi, HFI_INTR_CLEAR, 1);
++			nabu_gpu_diag_begin(NABU_DIAG_HFI, NABU_DIAG_HFI_RESULT, 0, 0,
++			    cleared ? 1u : 0u, cleared ? 0u : NABU_HFI_IO);
++			nabu_gpu_diag_end(NABU_DIAG_HFI, cleared ? 1u : 0u,
++			    cleared ? 0u : NABU_HFI_IO);
++			return cleared;
+ 		}
+ 		io->delay_us(io->cookie, 100);
+ 	}
+diff --git a/bsd/dev/nabu_gpu_gmu_memory.c b/bsd/dev/nabu_gpu_gmu_memory.c
+--- a/bsd/dev/nabu_gpu_gmu_memory.c
++++ b/bsd/dev/nabu_gpu_gmu_memory.c
+@@ -29,6 +29,7 @@
+ #include "nabu_gpu_smmu_plan.h"
+ #include "nabu_gpu_gmu.h"
+ #include "nabu_gpu_gmu_hfi.h"
++#include "nabu_gpu_diag.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -181,12 +182,24 @@
+ 	 * introducing a conflicting alias or flushing shared dirty index lines.
+ 	 * This runs once, before any GMU stream or reset release.
+ 	 */
++	nabu_gpu_diag_begin(NABU_DIAG_CACHE, NABU_DIAG_CACHE_CLEAN, 0, 0, NABU_GMU_POOL_SIZE, 0);
+ 	flush_dcache64(nabu_gmu_plan.pool_pa, NABU_GMU_POOL_SIZE, TRUE);
++	nabu_gpu_diag_end(NABU_DIAG_CACHE, NABU_GMU_POOL_SIZE, 0);
+ 	for (uint32_t offset = 0; offset < NABU_GMU_POOL_SIZE; offset += PAGE_SIZE) {
+ 		ppnum_t page = (ppnum_t)atop(nabu_gmu_plan.pool_pa + offset);
++		nabu_gpu_diag_begin(NABU_DIAG_CACHE, NABU_DIAG_CACHE_SET, 0, offset, VM_WIMG_WCOMB, 0);
+ 		pmap_set_cache_attributes(page, VM_WIMG_WCOMB);
+-		if ((pmap_cache_attributes(page) & VM_WIMG_MASK) != VM_WIMG_WCOMB ||
+-		    kvtophys(nabu_gmu_plan.pool_va + offset) != nabu_gmu_plan.pool_pa + offset) {
++		nabu_gpu_diag_end(NABU_DIAG_CACHE, VM_WIMG_WCOMB, 0);
++		nabu_gpu_diag_begin(NABU_DIAG_CACHE, NABU_DIAG_CACHE_ATTR, 0, offset, 0, 0);
++		unsigned int attribute = pmap_cache_attributes(page);
++		nabu_gpu_diag_end(NABU_DIAG_CACHE, attribute, VM_WIMG_WCOMB);
++		if ((attribute & VM_WIMG_MASK) != VM_WIMG_WCOMB) {
++			return false;
++		}
++		nabu_gpu_diag_begin(NABU_DIAG_CACHE, NABU_DIAG_CACHE_TRANSLATE, 0, offset, 0, 0);
++		bool translated = kvtophys(nabu_gmu_plan.pool_va + offset) == nabu_gmu_plan.pool_pa + offset;
++		nabu_gpu_diag_end(NABU_DIAG_CACHE, translated ? 1u : 0u, 0);
++		if (!translated) {
+ 			return false;
+ 		}
+ 	}
+diff --git a/bsd/dev/nabu_gpu_gmu_start.c b/bsd/dev/nabu_gpu_gmu_start.c
+--- a/bsd/dev/nabu_gpu_gmu_start.c
++++ b/bsd/dev/nabu_gpu_gmu_start.c
+@@ -15,6 +15,7 @@
+ #include "nabu_gpu_gmu.h"
+ #include "nabu_gpu_gmu_hfi.h"
+ #include "nabu_gpu_smmu_plan.h"
++#include "nabu_gpu_diag.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -46,7 +47,9 @@
+ 	if (address == 0) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_READ32, region, offset, 0, 0);
+ 	*value = *(volatile uint32_t *)address;
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, *value, 0);
+ 	return true;
+ }
+ 
+@@ -57,7 +60,9 @@
+ 	if (address == 0 || region == NABU_GMU_GPUCC || region == NABU_GMU_GCC) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_WRITE32, region, offset, value, 0);
+ 	*(volatile uint32_t *)address = value;
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, value, 0);
+ 	return true;
+ }
+ 
+@@ -68,32 +73,54 @@
+ 	if (address == 0 || region != NABU_GMU_SMMU || (offset != 0x8020 && offset != 0x8028)) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_WRITE64, region, offset, (uint32_t)value, 0);
+ 	*(volatile uint64_t *)address = value;
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, (uint32_t)value, (uint32_t)(value >> 32));
+ 	return true;
+ }
+ 
+ static void
+ start_clean(__unused void *cookie, uint64_t physical, uint32_t bytes)
+ {
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_CLEAN, 0, bytes, 0, 0);
+ 	flush_dcache64((addr64_t)physical, bytes, TRUE);
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, bytes, 0);
+ }
+ 
+ static void
+ start_barrier(__unused void *cookie)
+ {
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_BARRIER, 0, 0, 0, 0);
+ 	__asm__ volatile ("dsb sy" ::: "memory");
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, 0, 0);
+ }
+ 
+ static void
+ start_delay(__unused void *cookie, uint32_t microseconds)
+ {
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_IO, NABU_DIAG_DELAY, 0, microseconds, 0, 0);
+ 	delay(microseconds);
++	nabu_gpu_diag_end(NABU_DIAG_GMU_IO, microseconds, 0);
+ }
+ 
+ static void
+ start_event(__unused void *cookie, const char *event, uint32_t value)
+ {
++	static const char *const phases[] = {
++		"memory-validated", "cold-handoff-empty", "domain-installed",
++		"power-sequencers-ready", "firmware-staged", "release-reset",
++		"firmware-ready", "hfi-ready", "failed"
++	};
++	unsigned phase = 0;
++	for (unsigned i = 0; i < sizeof(phases) / sizeof(phases[0]); i++) {
++		if (strcmp(event, phases[i]) == 0) {
++			phase = i + 1;
++			break;
++		}
++	}
++	nabu_gpu_diag_begin(NABU_DIAG_GMU_PHASE, NABU_DIAG_PHASE, 0, phase, value, 0);
+ 	printf("nabugmustart: phase=%s value=0x%08x\n", event, value);
++	nabu_gpu_diag_end(NABU_DIAG_GMU_PHASE, value, phase);
+ }
+ 
+ static void
+@@ -103,6 +130,7 @@
+ 	DTEntry chosen;
+ 	const uint8_t *firmware = NULL;
+ 	unsigned int bytes = 0;
++	uint32_t exit_reason = 0;
+ 	uint64_t gcc, gpucc, smmu;
+ 	const struct nabu_gmu_io io = {
+ 		.read32 = start_read, .write32 = start_write, .write64 = start_write64,
+@@ -110,34 +138,55 @@
+ 		.event = start_event,
+ 	};
+ 
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_WORKER_ENTER, 0, 0, start_hfi, 0);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_hfi, 0);
+ 	if (start_hfi) {
++		nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_CACHE_PREPARE, 0, 0, 0, 0);
+ 		bool prepared = nabu_gpu_gmu_memory_hfi_prepare();
++		nabu_gpu_diag_end(NABU_DIAG_WORKER, prepared ? 1u : 0u, 0);
+ 		printf("nabugmuhfi: cache=normal-nc pool_bytes=0x88000 pages=34 verified=%u\n", prepared);
+ 		if (!prepared) {
++			exit_reason = 1;
+ 			goto finished;
+ 		}
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_RESOURCES, 0, 0, 0, 0);
+ 	if (!nabu_gpu_gmu_memory_get(&memory) ||
+ 	    !nabu_gpu_smmu_resources_get(&gcc, &gpucc) ||
+ 	    !nabu_gpu_smmu_mapping_get(&smmu) ||
+ 	    SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess ||
+ 	    SecureDTGetProperty(chosen, "nabu-gmu-firmware", (void const **)&firmware, &bytes) != kSuccess) {
+ 		printf("nabugmustart: rejected; validated RAM/early mappings/firmware unavailable; no writes\n");
++		nabu_gpu_diag_end(NABU_DIAG_WORKER, 0, 0);
++		exit_reason = 2;
+ 		goto finished;
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, 1, 0);
+ 	start_mapping[NABU_GMU_GPUCC] = (vm_offset_t)gpucc;
+ 	start_mapping[NABU_GMU_GCC] = (vm_offset_t)gcc;
+ 	start_mapping[NABU_GMU_SMMU] = (vm_offset_t)smmu;
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_MAP, NABU_GMU_REGS, 0x02c6a000, 0x30000, 0);
+ 	start_mapping[NABU_GMU_REGS] = ml_io_map(0x02c6a000UL, 0x30000);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_mapping[NABU_GMU_REGS] != 0, 0);
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_MAP, NABU_GMU_PDC_CFG, 0x0b290000, 0x10000, 0);
+ 	start_mapping[NABU_GMU_PDC_CFG] = ml_io_map(0x0b290000UL, 0x10000);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_mapping[NABU_GMU_PDC_CFG] != 0, 0);
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_MAP, NABU_GMU_PDC_SEQ, 0x0b490000, 0x10000, 0);
+ 	start_mapping[NABU_GMU_PDC_SEQ] = ml_io_map(0x0b490000UL, 0x10000);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_mapping[NABU_GMU_PDC_SEQ] != 0, 0);
+ 	if (start_mapping[NABU_GMU_REGS] == 0 || start_mapping[NABU_GMU_PDC_CFG] == 0 ||
+ 	    start_mapping[NABU_GMU_PDC_SEQ] == 0) {
+ 		printf("nabugmustart: rejected; GMU/PDC CPU mapping unavailable; no writes\n");
++		exit_reason = 3;
+ 		goto finished;
+ 	}
+ 	printf("nabugmustart: begin cold initialization; reused GCC/GPUCC/SMMU mappings; no probe log waits\n");
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_COLD_START, 0, 0, 0, 0);
+ 	bool ready = nabu_gpu_gmu_cold_start(&memory, firmware, bytes, &io, &start_result);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, ready ? 1u : 0u, (uint32_t)start_result.state);
++	if (!ready) {
++		exit_reason = 4;
++	}
+ 	printf("nabugmustart: outcome=%s state=%u region=%u offset=0x%x observed=0x%08x observed_valid=%u "
+ 	    "writes=%u tcm_words=%u validated_blocks=%u poll_reads=%u reset_restored=%u stream_published=%u "
+ 	    "gpu_acceleration=0\n", ready ? "HFI_READY" : "FAILED", (unsigned)start_result.state,
+@@ -147,7 +196,12 @@
+ 	    start_result.poll_reads, start_result.reset_restored, start_result.stream_published);
+ 	if (ready && start_hfi) {
+ 		printf("nabugmuhfi: begin version query; one request; timeout_us=100000\n");
++		nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_HFI_QUERY, 0, 0, 0, 0);
+ 		bool ack = nabu_gpu_gmu_hfi_version(&memory, &start_result, &io, &start_hfi_result);
++		nabu_gpu_diag_end(NABU_DIAG_WORKER, ack ? 1u : 0u, (uint32_t)start_hfi_result.error);
++		if (!ack) {
++			exit_reason = 5;
++		}
+ 		printf("nabugmuhfi: outcome=%s error=%u sent=%u acked=%u hfi=0x%08x fw=0x%08x "
+ 		    "request=0x%08x ack_header=0x%08x returned_request=0x%08x fw_error=0x%08x "
+ 		    "messages=%u unmatched=%u polls=%u intr=0x%08x cmd_read=%u cmd_write=%u "
+@@ -162,6 +216,10 @@
+ 		    start_hfi_result.rsp_read, start_hfi_result.rsp_write);
+ 	}
+ finished:
++	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_WORKER_EXIT, 0,
++	    (uint32_t)start_result.state, start_hfi_result.acked ? 1u : 0u, 0);
++	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_hfi_result.acked ? 1u : 0u,
++	    (exit_reason << 16) | (uint32_t)start_hfi_result.error);
+ 	(void)thread_terminate(current_thread());
+ 	thread_block(THREAD_CONTINUE_NULL);
+ }
+@@ -173,6 +231,8 @@
+ 	char root[32];
+ 	thread_t thread;
+ 
++	nabu_gpu_diag_begin(NABU_DIAG_PATH, NABU_DIAG_ROOT, 0, 0, 1, 0);
++	nabu_gpu_diag_end(NABU_DIAG_PATH, 1, 0);
+ 	if (!PE_parse_boot_argn("nabugmustart", &enable, sizeof(enable)) || enable == 0) {
+ 		return;
+ 	}
+@@ -190,10 +250,13 @@
+ 	}
+ 	start_scheduled = true;
+ 	start_hfi = hfi == 1;
++	nabu_gpu_diag_begin(NABU_DIAG_PATH, NABU_DIAG_SCHEDULE, 0, 0, hfi, 0);
+ 	if (kernel_thread_start(start_worker, NULL, &thread) != KERN_SUCCESS) {
++		nabu_gpu_diag_end(NABU_DIAG_PATH, 0, hfi);
+ 		printf("nabugmustart: thread creation failed; no writes\n");
+ 		return;
+ 	}
++	nabu_gpu_diag_end(NABU_DIAG_PATH, 1, hfi);
+ 	thread_deallocate(thread);
+ 	printf("nabugmustart: scheduled after root mount; cold init through FW/HFI ready; one attempt\n");
+ }
+diff --git a/bsd/dev/nabu_gpu_smmu_clocks.c b/bsd/dev/nabu_gpu_smmu_clocks.c
+--- a/bsd/dev/nabu_gpu_smmu_clocks.c
++++ b/bsd/dev/nabu_gpu_smmu_clocks.c
+@@ -17,6 +17,7 @@
+ #include <pexpert/pexpert.h>
+ #include <mach/mach_types.h>
+ #include "nabu_gpu_smmu_plan.h"
++#include "nabu_gpu_diag.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -63,7 +64,11 @@
+ static uint32_t
+ smmu_clock_load(vm_offset_t base, uint32_t offset)
+ {
+-	return *(volatile uint32_t *)(base + offset);
++	nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_READ32,
++	    base == clock_gcc_mapping ? 5u : 4u, offset, 0, 0);
++	uint32_t value = *(volatile uint32_t *)(base + offset);
++	nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
++	return value;
+ }
+ 
+ bool
+@@ -81,7 +86,10 @@
+ 	if (checkpoint != NULL && !checkpoint(1, false)) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_MAP, 5,
++	    SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE, 0);
+ 	gcc = ml_io_map(SMMU_CLOCK_GCC_BASE, SMMU_CLOCK_GCC_SIZE);
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, gcc != 0, 0);
+ 	if (gcc == 0) {
+ 		printf("%s: cannot map GCC; SMMU remains blocked\n", prefix);
+ 		return false;
+@@ -89,7 +97,10 @@
+ 	if (checkpoint != NULL && (!checkpoint(1, true) || !checkpoint(2, false))) {
+ 		return false;
+ 	}
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_MAP, 4,
++	    SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE, 0);
+ 	gpucc = ml_io_map(SMMU_CLOCK_GPUCC_BASE, SMMU_CLOCK_GPUCC_SIZE);
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, gpucc != 0, 0);
+ 	if (gpucc == 0) {
+ 		printf("%s: cannot map GPUCC; SMMU remains blocked\n", prefix);
+ 		return false;
+diff --git a/bsd/dev/nabu_gpu_smmu_read.c b/bsd/dev/nabu_gpu_smmu_read.c
+--- a/bsd/dev/nabu_gpu_smmu_read.c
++++ b/bsd/dev/nabu_gpu_smmu_read.c
+@@ -31,6 +31,7 @@
+ #include <pexpert/pexpert.h>
+ #include <vm/vm_kern.h>
+ #include "nabu_gpu_smmu_plan.h"
++#include "nabu_gpu_diag.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -108,7 +109,9 @@
+ 
+ 	printf("nabussmuread: fixed registers and SMRs only; S2CR access retired after test93\n");
+ 
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_MAP, 1, NABU_SMMU_BASE, NABU_SMMU_SIZE, 0);
+ 	smmu = ml_io_map(NABU_SMMU_BASE, NABU_SMMU_SIZE);
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, smmu != 0, 0);
+ 	if (smmu == 0) {
+ 		printf("nabussmuread: cannot map 0x%x\n", (unsigned)NABU_SMMU_BASE);
+ 		return;
+@@ -118,7 +121,9 @@
+ 		uint32_t value;
+ 		printf("nabussmuread: reading %s 0x%03x\n",
+ 		    fixed_words[i].name, fixed_words[i].offset);
++		nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_READ32, 1, fixed_words[i].offset, 0, 0);
+ 		value = *(volatile uint32_t *)(smmu + fixed_words[i].offset);
++		nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
+ 		if (fixed_words[i].offset == 0x020) {
+ 			num_smr = value & 0xffu;
+ 		}
+@@ -145,7 +150,9 @@
+ 	for (uint32_t i = 0; i < num_smr; i++) {
+ 		uint32_t off = 0x800 + i * 4;
+ 		printf("nabussmuread: reading SMR[%u] 0x%03x\n", i, off);
++		nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_READ32, 1, off, 0, 0);
+ 		smmu_snapshot.smr[i] = *(volatile uint32_t *)(smmu + off);
++		nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, smmu_snapshot.smr[i], 0);
+ 		if ((smmu_snapshot.smr[i] & 0x80000000u) != 0) {
+ 			valid_mask |= 1u << i;
+ 		}
+diff --git a/bsd/dev/nabu_gpu_diag.h b/bsd/dev/nabu_gpu_diag.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_diag.h
+@@ -0,0 +1,68 @@
++/*
++ * Opt-in RAM-only progress records. Each lane has exactly one writer.
++ * Readers never wait for the target thread or touch GPU registers.
++ */
++#ifndef NABU_GPU_DIAG_H
++#define NABU_GPU_DIAG_H
++
++#include <sys/types.h>
++
++enum nabu_gpu_diag_lane {
++	NABU_DIAG_PATH, NABU_DIAG_CLOCK, NABU_DIAG_WAIT, NABU_DIAG_EARLY_IO,
++	NABU_DIAG_CACHE, NABU_DIAG_WORKER, NABU_DIAG_GMU_IO,
++	NABU_DIAG_GMU_PHASE, NABU_DIAG_HFI, NABU_DIAG_LOG, NABU_DIAG_LANES
++};
++
++enum nabu_gpu_diag_op {
++	NABU_DIAG_CONFIG = 1, NABU_DIAG_EARLY_CALL, NABU_DIAG_MAP,
++	NABU_DIAG_ANNOUNCE, NABU_DIAG_CLOCK_FINISHED,
++	NABU_DIAG_READ32, NABU_DIAG_WRITE32, NABU_DIAG_WRITE64,
++	NABU_DIAG_DEADLINE, NABU_DIAG_ASSERT_WAIT, NABU_DIAG_THREAD_BLOCK,
++	NABU_DIAG_ROOT, NABU_DIAG_SCHEDULE, NABU_DIAG_WORKER_ENTER,
++	NABU_DIAG_CACHE_PREPARE, NABU_DIAG_CACHE_CLEAN, NABU_DIAG_CACHE_SET,
++	NABU_DIAG_CACHE_ATTR, NABU_DIAG_CACHE_TRANSLATE, NABU_DIAG_RESOURCES,
++	NABU_DIAG_COLD_START, NABU_DIAG_PHASE, NABU_DIAG_CLEAN,
++	NABU_DIAG_BARRIER, NABU_DIAG_DELAY, NABU_DIAG_HFI_QUERY,
++	NABU_DIAG_HFI_INPUT, NABU_DIAG_HFI_VERSION, NABU_DIAG_HFI_LAYOUT,
++	NABU_DIAG_HFI_PUBLISH, NABU_DIAG_HFI_DOORBELL, NABU_DIAG_HFI_POLL,
++	NABU_DIAG_HFI_RECEIVE, NABU_DIAG_HFI_RESULT, NABU_DIAG_WORKER_EXIT,
++	NABU_DIAG_LOG_SLEEP, NABU_DIAG_LOG_LOCK, NABU_DIAG_LOG_WRITE,
++	NABU_DIAG_LOG_HEADER, NABU_DIAG_LOG_SYNC, NABU_DIAG_LOG_COMMIT
++};
++
++/* Little-endian on the tablet. Extension starts at byte 64 of the log header. */
++#define NABU_GPU_DIAG_HEADER_OFFSET 64u
++#define NABU_GPU_DIAG_VERSION 1u
++#define NABU_GPU_DIAG_ENTER 1u
++#define NABU_GPU_DIAG_DONE 2u
++
++struct nabu_gpu_diag_record {
++	uint32_t seq, op, edge, region, offset, value, detail, cpu, irq, preempt;
++	uint64_t started_ns, updated_ns, deadline_ns;
++};
++
++struct nabu_gpu_diag_snapshot {
++	char magic[8];
++	uint32_t version, bytes, lanes, valid_mask;
++	uint64_t flush_sequence, log_total, captured_ns;
++	uint32_t observer_ticks, checksum;
++	struct nabu_gpu_diag_record record[NABU_DIAG_LANES];
++};
++
++#if defined(NABU_GPU_DIAG_HOST_NOOP)
++static inline void nabu_gpu_diag_start(void) {}
++static inline void nabu_gpu_diag_begin(unsigned l, unsigned o, unsigned r,
++    uint32_t a, uint32_t v, uint64_t d)
++{ (void)l; (void)o; (void)r; (void)a; (void)v; (void)d; }
++static inline void nabu_gpu_diag_end(unsigned l, uint32_t v, uint32_t d)
++{ (void)l; (void)v; (void)d; }
++#else
++void nabu_gpu_diag_start(void);
++void nabu_gpu_diag_begin(unsigned lane, unsigned op, unsigned region,
++    uint32_t offset, uint32_t value, uint64_t deadline);
++void nabu_gpu_diag_end(unsigned lane, uint32_t value, uint32_t detail);
++void nabu_gpu_diag_header(void *header, uint32_t capacity,
++    uint64_t sequence, uint64_t total);
++#endif
++
++#endif /* NABU_GPU_DIAG_H */
+diff --git a/bsd/dev/nabu_gpu_diag.c b/bsd/dev/nabu_gpu_diag.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/nabu_gpu_diag.c
+@@ -0,0 +1,232 @@
++/*
++ * One-pass GPU startup diagnostics. No allocation, locks, printf, storage or
++ * hardware access in the instrumented path. Publication uses atomic fields
++ * and a bounded seqlock read, so a stalled writer cannot stall its observer.
++ */
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
++#include <machine/machine_routines.h>
++#include <machine/atomic.h>
++#include <pexpert/pexpert.h>
++#include <libkern/libkern.h>
++#include "nabu_gpu_diag.h"
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++
++extern int get_preemption_level(void);
++extern kern_return_t thread_terminate(thread_t);
++extern uint64_t nabu_log_position(void);
++extern uint64_t nabu_log_committed_position(void);
++extern int hz;
++
++struct diag_slot {
++	uint32_t _Atomic seq, op, edge, region, offset, value, detail, cpu, irq, preempt;
++	uint64_t _Atomic started_ns, updated_ns, deadline_ns;
++};
++
++static struct diag_slot diag_slots[NABU_DIAG_LANES];
++static bool diag_enabled, diag_started;
++static uint32_t _Atomic diag_ticks;
++static int diag_sleep_channel;
++
++_Static_assert(sizeof(struct nabu_gpu_diag_record) == 64, "diagnostic record ABI");
++_Static_assert(sizeof(struct nabu_gpu_diag_snapshot) == 696, "diagnostic snapshot ABI");
++_Static_assert(NABU_GPU_DIAG_HEADER_OFFSET + sizeof(struct nabu_gpu_diag_snapshot) <= 4096,
++    "diagnostics must fit the existing log header block");
++
++static uint64_t
++diag_now(void)
++{
++	uint64_t ns;
++	absolutetime_to_nanoseconds(mach_absolute_time(), &ns);
++	return ns;
++}
++
++void
++nabu_gpu_diag_begin(unsigned lane, unsigned op, unsigned region,
++    uint32_t offset, uint32_t value, uint64_t deadline)
++{
++	if (!diag_enabled || lane >= NABU_DIAG_LANES) {
++		return;
++	}
++	struct diag_slot *slot = &diag_slots[lane];
++	uint64_t now = diag_now(), deadline_ns = 0;
++	if (deadline != 0) {
++		absolutetime_to_nanoseconds(deadline, &deadline_ns);
++	}
++	/* Acq_rel prevents payload updates from preceding the odd generation. */
++	os_atomic_add(&slot->seq, 1, acq_rel);
++	os_atomic_store(&slot->op, op, relaxed);
++	os_atomic_store(&slot->edge, NABU_GPU_DIAG_ENTER, relaxed);
++	os_atomic_store(&slot->region, region, relaxed);
++	os_atomic_store(&slot->offset, offset, relaxed);
++	os_atomic_store(&slot->value, value, relaxed);
++	os_atomic_store(&slot->detail, 0, relaxed);
++	os_atomic_store(&slot->cpu, (uint32_t)cpu_number(), relaxed);
++	os_atomic_store(&slot->irq, ml_get_interrupts_enabled() ? 1u : 0u, relaxed);
++	os_atomic_store(&slot->preempt, (uint32_t)get_preemption_level(), relaxed);
++	os_atomic_store(&slot->started_ns, now, relaxed);
++	os_atomic_store(&slot->updated_ns, now, relaxed);
++	os_atomic_store(&slot->deadline_ns, deadline_ns, relaxed);
++	os_atomic_add(&slot->seq, 1, release);
++}
++
++void
++nabu_gpu_diag_end(unsigned lane, uint32_t value, uint32_t detail)
++{
++	if (!diag_enabled || lane >= NABU_DIAG_LANES) {
++		return;
++	}
++	struct diag_slot *slot = &diag_slots[lane];
++	os_atomic_add(&slot->seq, 1, acq_rel);
++	os_atomic_store(&slot->value, value, relaxed);
++	os_atomic_store(&slot->detail, detail, relaxed);
++	os_atomic_store(&slot->updated_ns, diag_now(), relaxed);
++	os_atomic_store(&slot->edge, NABU_GPU_DIAG_DONE, relaxed);
++	os_atomic_add(&slot->seq, 1, release);
++}
++
++static bool
++diag_read(unsigned lane, struct nabu_gpu_diag_record *out)
++{
++	struct diag_slot *slot = &diag_slots[lane];
++	for (unsigned attempt = 0; attempt < 2; attempt++) {
++		uint32_t seq = os_atomic_load(&slot->seq, acquire);
++		if (seq == 0 || (seq & 1u) != 0) {
++			continue;
++		}
++#define DIAG_COPY(field) out->field = os_atomic_load(&slot->field, relaxed)
++		DIAG_COPY(op); DIAG_COPY(edge); DIAG_COPY(region); DIAG_COPY(offset);
++		DIAG_COPY(value); DIAG_COPY(detail); DIAG_COPY(cpu);
++		DIAG_COPY(irq); DIAG_COPY(preempt); DIAG_COPY(started_ns);
++		DIAG_COPY(updated_ns); DIAG_COPY(deadline_ns);
++#undef DIAG_COPY
++		/* The final generation must be read after all payload fields. */
++		os_atomic_thread_fence(acquire);
++		if (seq == os_atomic_load(&slot->seq, relaxed)) {
++			out->seq = seq;
++			return true;
++		}
++	}
++	bzero(out, sizeof(*out));
++	return false;
++}
++
++static void
++diag_snapshot(struct nabu_gpu_diag_snapshot *out, uint64_t sequence, uint64_t total)
++{
++	bzero(out, sizeof(*out));
++	memcpy(out->magic, "NABUD160", 8);
++	out->version = NABU_GPU_DIAG_VERSION;
++	out->bytes = sizeof(*out);
++	out->lanes = NABU_DIAG_LANES;
++	out->flush_sequence = sequence;
++	out->log_total = total;
++	out->observer_ticks = os_atomic_load(&diag_ticks, relaxed);
++	for (unsigned lane = 0; lane < NABU_DIAG_LANES; lane++) {
++		if (diag_read(lane, &out->record[lane])) {
++			out->valid_mask |= 1u << lane;
++		}
++	}
++	out->captured_ns = diag_now();
++}
++
++void
++nabu_gpu_diag_header(void *header, uint32_t capacity, uint64_t sequence, uint64_t total)
++{
++	if (!diag_enabled || capacity < NABU_GPU_DIAG_HEADER_OFFSET +
++	    sizeof(struct nabu_gpu_diag_snapshot)) {
++		return;
++	}
++	struct nabu_gpu_diag_snapshot snapshot;
++	diag_snapshot(&snapshot, sequence, total);
++	const uint8_t *bytes = (const uint8_t *)&snapshot;
++	uint32_t checksum = 2166136261u;
++	for (unsigned i = 0; i < sizeof(snapshot); i++) {
++		checksum = (checksum ^ bytes[i]) * 16777619u;
++	}
++	snapshot.checksum = checksum;
++	memcpy((uint8_t *)header + NABU_GPU_DIAG_HEADER_OFFSET, &snapshot, sizeof(snapshot));
++}
++
++static void
++diag_observer(__unused void *arg, __unused wait_result_t wr)
++{
++	uint32_t previous[NABU_DIAG_LANES] = {0};
++	printf("nabugpudiag: observer=started version=1 lanes=10 interval_ms=1000 ticks_max=360\n");
++	for (uint32_t tick = 1; tick <= 360; tick++) {
++		struct nabu_gpu_diag_snapshot snapshot;
++		os_atomic_store(&diag_ticks, tick, relaxed);
++		diag_snapshot(&snapshot, 0, 0);
++		printf("nabugpudiag: tick=%u now_ns=%llu total=%llu committed=%llu valid=0x%x\n",
++		    tick, snapshot.captured_ns, nabu_log_position(),
++		    nabu_log_committed_position(), snapshot.valid_mask);
++		for (unsigned lane = 0; lane < NABU_DIAG_LANES; lane++) {
++			const struct nabu_gpu_diag_record *r = &snapshot.record[lane];
++			if ((snapshot.valid_mask & (1u << lane)) == 0) {
++				continue;
++			}
++			bool pending = r->edge == NABU_GPU_DIAG_ENTER &&
++			    snapshot.captured_ns >= r->started_ns &&
++			    snapshot.captured_ns - r->started_ns >= 5ULL * NSEC_PER_SEC;
++			bool overdue = pending && r->deadline_ns != 0 &&
++			    snapshot.captured_ns > r->deadline_ns;
++			if (r->seq == previous[lane] && tick % 10 != 0 && !pending) {
++				continue;
++			}
++			printf("nabugpudiag: lane=%u seq=%u op=%u edge=%u region=%u offset=0x%x "
++			    "value=0x%x detail=0x%x cpu=%u irq=%u preempt=%u start_ns=%llu "
++			    "update_ns=%llu deadline_ns=%llu sample_ns=%llu pending=%u overdue=%u\n",
++			    lane, r->seq, r->op, r->edge, r->region, r->offset,
++			    r->value, r->detail, r->cpu, r->irq, r->preempt,
++			    r->started_ns, r->updated_ns, r->deadline_ns, snapshot.captured_ns,
++			    pending ? 1u : 0u, overdue ? 1u : 0u);
++			previous[lane] = r->seq;
++		}
++		(void)tsleep(&diag_sleep_channel, PZERO, "gpudiag", hz);
++	}
++	printf("nabugpudiag: observer=finished; header snapshots remain enabled\n");
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++void
++nabu_gpu_diag_start(void)
++{
++	uint32_t enable = 0, hfi = 0, clocks = 0, start = 0, logging = 0;
++	uint32_t pause = 2200;
++	char root[32];
++	thread_t thread;
++	if (diag_started) {
++		return;
++	}
++	diag_started = true;
++	if (!PE_parse_boot_argn("nabugpudiag", &enable, sizeof(enable)) || enable != 1 ||
++	    !PE_parse_boot_argn("nabulog", &logging, sizeof(logging)) || logging != 1 ||
++	    !PE_parse_boot_argn("ufsroot", root, sizeof(root)) ||
++	    strncmp(root, "nabu_system", sizeof(root)) != 0) {
++		return;
++	}
++	(void)PE_parse_boot_argn("nabugmuhfi", &hfi, sizeof(hfi));
++	(void)PE_parse_boot_argn("nabugpu2", &clocks, sizeof(clocks));
++	(void)PE_parse_boot_argn("nabugmustart", &start, sizeof(start));
++	(void)PE_parse_boot_argn("nabugpu2_pause", &pause, sizeof(pause));
++	diag_enabled = true;
++	nabu_gpu_diag_begin(NABU_DIAG_PATH, NABU_DIAG_CONFIG, 0, pause,
++	    (clocks & 0xffu) | ((start & 0xffu) << 8) | ((hfi & 0xffu) << 16), 0);
++	nabu_gpu_diag_end(NABU_DIAG_PATH, hfi, pause);
++	printf("nabugpudiag: config clocks=%u start=%u hfi=%u pause_ms=%u "
++	    "header_offset=64 header_bytes=696 no_target_waits=1\n", clocks, start, hfi, pause);
++	kern_return_t result = kernel_thread_start(diag_observer, NULL, &thread);
++	if (result == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		printf("nabugpudiag: observer=create_failed status=%d; header snapshots remain enabled\n",
++		    result);
++	}
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -40,6 +40,7 @@
+ #include <libkern/libkern.h>
+ #include <machine/atomic.h>
+ #include "nabu_project_storage.h"
++#include "nabu_gpu_diag.h"
+ 
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+@@ -50,6 +51,7 @@
+ extern void thread_deallocate(thread_t);
+ extern int hz;
+ static void nabu_log_start(void);
++extern void nabu_gpu_diag_start(void);
+ extern void nabu_sample_start(void);
+ extern void nabu_keys_init(void);
+ extern void nabu_touch_init(void);
+@@ -686,6 +688,7 @@
+ 	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
+ 	    su.writable ? "read-write" : "read-only", su.dma_pa);
+ 	nabu_log_start();
++	nabu_gpu_diag_start();
+ 	nabu_sample_start();
+ 	/* Input drivers (HID services in iokit/Kernel/arm/hid/NabuHID.cpp).
+ 	 * SM7150 register maps only; NABU needs its own PM8150/GENI/MTU3
+@@ -856,7 +859,10 @@
+ 	printf("NABU LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
+ 	    NABU_LOG_BLOCKS * UFS_BLOCK >> 10, base);
+ 	for (;;) {
++		nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_SLEEP, 0,
++		    nabu_log_secs, 0, 0);
+ 		(void)tsleep(&nabu_log_chan, PZERO, "nabulog", hz * (int)nabu_log_secs);
++		nabu_gpu_diag_end(NABU_DIAG_LOG, nabu_log_secs, 0);
+ 		uint64_t total = os_atomic_load(&nabu_log_total, relaxed);
+ 		if (total == flushed) {
+ 			continue;
+@@ -864,7 +870,10 @@
+ 		uint64_t pos = total - flushed >= NABU_LOG_SIZE ? total - NABU_LOG_SIZE : flushed;
+ 		int error = 0;
+ 
++		nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_LOCK, 0,
++		    0, (uint32_t)total, 0);
+ 		lck_mtx_lock(&nabu_ufs_lock);
++		nabu_gpu_diag_end(NABU_DIAG_LOG, 1, (uint32_t)total);
+ 		while (pos < total && !error) {
+ 			uint32_t off = (uint32_t)(pos % NABU_LOG_SIZE);
+ 			uint32_t blk = off / UFS_BLOCK;
+@@ -872,7 +881,10 @@
+ 			uint32_t n = (uint32_t)MIN(MIN(need, (uint64_t)(NABU_LOG_SIZE / UFS_BLOCK - blk)),
+ 			    (uint64_t)(BOUNCE_SIZE / UFS_BLOCK));
+ 			memcpy(bounce, nabu_log_ring + (uint64_t)blk * UFS_BLOCK, n * UFS_BLOCK);
++			nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_WRITE, 0,
++			    blk, n, 0);
+ 			error = ufs_write_blocks(base + 1 + blk, n);
++			nabu_gpu_diag_end(NABU_DIAG_LOG, (uint32_t)error, n);
+ 			pos += (uint64_t)(blk + n) * UFS_BLOCK - off;
+ 		}
+ 		if (!error) {
+@@ -882,18 +894,28 @@
+ 			};
+ 			bzero(bounce, UFS_BLOCK);
+ 			memcpy(bounce, &h, sizeof(h));
++			nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_HEADER, 0,
++			    0, (uint32_t)seq, 0);
++			nabu_gpu_diag_header(bounce, UFS_BLOCK, seq, total);
+ 			error = ufs_write_blocks(base, 1);
++			nabu_gpu_diag_end(NABU_DIAG_LOG, (uint32_t)error, (uint32_t)seq);
+ 		}
+ 		if (!error) {
+ 			/* Only the reserved log blocks were written by this flush. */
++			nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_SYNC, 0,
++			    0, NABU_LOG_BLOCKS, 0);
+ 			error = ufs_sync_cache_range(base, NABU_LOG_BLOCKS);
++			nabu_gpu_diag_end(NABU_DIAG_LOG, (uint32_t)error, NABU_LOG_BLOCKS);
+ 		}
+ 		lck_mtx_unlock(&nabu_ufs_lock);
+ 		if (error) {
+ 			printf("NABU LOG: write failed (%d), stopping\n", error);
+ 			return;
+ 		}
++		nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_COMMIT, 0,
++		    0, (uint32_t)total, 0);
+ 		os_atomic_store(&nabu_log_committed, total, release);
++		nabu_gpu_diag_end(NABU_DIAG_LOG, (uint32_t)total, (uint32_t)seq);
+ 		flushed = total;
+ 	}
+ }
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -121,6 +121,7 @@
+ bsd/dev/nabu_gpu_gmu_boot.c	standard
+ bsd/dev/nabu_gpu_gmu_start.c	standard
+ bsd/dev/nabu_gpu_gmu_hfi.c	standard
++bsd/dev/nabu_gpu_diag.c	standard
+ bsd/dev/nabu_sample.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
