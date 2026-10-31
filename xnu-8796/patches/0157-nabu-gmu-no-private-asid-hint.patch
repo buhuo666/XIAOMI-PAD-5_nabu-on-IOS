@@ -1,0 +1,46 @@
+diff --git a/bsd/dev/nabu_gpu_gmu_boot.c b/bsd/dev/nabu_gpu_gmu_boot.c
+--- a/bsd/dev/nabu_gpu_gmu_boot.c
++++ b/bsd/dev/nabu_gpu_gmu_boot.c
+@@ -23,6 +23,7 @@
+ #define GMU_HFI_STATUS 0x14600u
+ #define GMU_REG(word) (((word) - 0x1a800u) * 4u)
+ #define GMU_POLL_LIMIT 1000u
++#define GMU_CB_SCTLR 0x00c00127u
+ 
+ struct gmu_boot {
+ 	const struct nabu_gmu_memory_view *memory;
+@@ -231,6 +232,12 @@
+ 			return false;
+ 		}
+ 	}
++	boot->io->barrier(boot->io->cookie);
++	/* Confirm AArch64 stage 1 with stage 2 bypass before publishing any stream. */
++	if (!gmu_check(boot, NABU_GMU_SMMU, 0x1800, 1, 1) ||
++	    !gmu_check(boot, NABU_GMU_SMMU, 0x1000, 0x30000, 0x10000)) {
++		return false;
++	}
+ 	boot->result->writes++;
+ 	boot->result->observed_valid = false;
+ 	if (!boot->io->write64(boot->io->cookie, NABU_GMU_SMMU, 0x8020,
+@@ -252,12 +259,16 @@
+ 		return false;
+ 	}
+ 	boot->io->barrier(boot->io->cookie);
++	/* ASIDPNE is a broadcast-TLB hint; use no private-namespace assumption.
++	 * Test110 read back bit 12 clear. Keep the whole-word check with it disabled.
++	 * This isolated cold bank still receives its own local ASID invalidation.
++	 */
+ 	if (!gmu_poll(boot, NABU_GMU_SMMU, 0x87f4, 1, 0) ||
+-	    !gmu_write(boot, NABU_GMU_SMMU, 0x8000, 0xc01127)) {
+-		return false;
+-	}
+-	boot->io->barrier(boot->io->cookie);
+-	if (!gmu_check(boot, NABU_GMU_SMMU, 0x8000, 0xffffffffu, 0xc01127) ||
++	    !gmu_write(boot, NABU_GMU_SMMU, 0x8000, GMU_CB_SCTLR)) {
++		return false;
++	}
++	boot->io->barrier(boot->io->cookie);
++	if (!gmu_check(boot, NABU_GMU_SMMU, 0x8000, 0xffffffffu, GMU_CB_SCTLR) ||
+ 	    !gmu_write(boot, NABU_GMU_SMMU, 0xc00, 0x300)) {
+ 		return false;
+ 	}
