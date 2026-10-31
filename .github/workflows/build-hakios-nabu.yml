@@ -55,13 +55,22 @@ jobs:
           set -euo pipefail
           test "$(uname)" = Darwin
           cd hakios
-          make kernel JOBS=3 2>&1 | tee ../out/kernel-build.log
+          if ! make kernel JOBS=3 2>&1 | tee ../out/kernel-build.log; then
+            for log in xnu-deps/*.log; do
+              test -f "$log" || continue
+              cp "$log" ../out/
+              echo "Build diagnostic: $log"
+              tail -100 "$log"
+            done
+            exit 1
+          fi
           test -s hakios-kernel
           cp hakios-kernel ../out/hakios-kernel
           cp .config ../out/nabu.config
           python3 tools/kernel-version.py > ../out/kernel-version.txt
           git -C xnu-src/xnu-8796.121.2 rev-parse HEAD > ../out/xnu-source-commit.txt
       - name: Build the RAM-only placeholder HakiOS loader
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -70,8 +79,11 @@ jobs:
           DEVICE=nabu bash -x xnuloader/build.sh 2>&1 | tee ../out/loader-build.log
           cp xnuloader/loader.efi ../out/nabu-loader-open.efi
           grep -q -- '-DHAKIOS_NABU_RAM_ONLY=1' ../out/loader-build.log
-          file ../out/hakios-kernel ../out/nabu-loader-open.efi > ../out/file-types.txt
-          python3 ../hakios-nabu/record-build.py ../out
+          file ../out/nabu-loader-open.efi > ../out/file-types.txt
+          if test -s ../out/hakios-kernel; then
+            file ../out/hakios-kernel >> ../out/file-types.txt
+            python3 ../hakios-nabu/record-build.py ../out
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
