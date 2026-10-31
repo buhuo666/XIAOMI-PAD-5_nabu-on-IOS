@@ -1,0 +1,71 @@
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+--- a/bsd/dev/nabu_gpu_clocks.c
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -25,6 +25,7 @@
+  * Boot arguments:
+  *   nabugpu2=1        run at all
+  *   nabugpu2_pause=MS wait after each announcement (default 2200)
++ *   nabugpu2_pause4=MS override only the wait after CX power-on (0..60000)
+  *   nabugpu2_watch=S  report liveness for S seconds afterwards
+  *   nabugpu2_noread=1 after the wait, do not touch the GMU clock registers
+  *                    (separates a stalled wait/wakeup from the first access)
+@@ -54,6 +55,7 @@
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
+ 
+ static uint32_t gpu2_pause_ms = 2200;
++static uint32_t gpu2_pause4_ms;
+ static uint32_t gpu2_watch_secs;
+ static uint32_t gpu2_noread;
+ static uint32_t gpu2_dryrun;
+@@ -77,14 +79,21 @@
+ }
+ 
+ static void
++nabu_gpu2_announce_delay(const char *what, uint32_t pause_ms)
++{
++	printf("nabugpu2: %s\n", what);
++	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_ANNOUNCE, 0, pause_ms, 0, 0);
++	if (pause_ms != 0) {
++		nabu_gpu2_sleep_ms(pause_ms);
++	}
++	nabu_gpu_diag_end(NABU_DIAG_CLOCK, pause_ms, 0);
++	printf("nabugpu2: pause %u ms returned\n", pause_ms);
++}
++
++static void
+ nabu_gpu2_announce(const char *what)
+ {
+-	printf("nabugpu2: %s\n", what);
+-	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_ANNOUNCE, 0, gpu2_pause_ms, 0, 0);
+-	nabu_gpu2_sleep_ms(gpu2_pause_ms);
+-	/* The wait's own completion, so a stall after it names the access that follows. */
+-	printf("nabugpu2: pause %u ms returned\n", gpu2_pause_ms);
+-	nabu_gpu_diag_end(NABU_DIAG_CLOCK, gpu2_pause_ms, 0);
++	nabu_gpu2_announce_delay(what, gpu2_pause_ms);
+ }
+ 
+ static bool
+@@ -224,6 +233,12 @@
+ 		return;
+ 	}
+ 	(void)PE_parse_boot_argn("nabugpu2_pause", &gpu2_pause_ms, sizeof(gpu2_pause_ms));
++	gpu2_pause4_ms = gpu2_pause_ms;
++	if (PE_parse_boot_argn("nabugpu2_pause4", &gpu2_pause4_ms, sizeof(gpu2_pause4_ms)) &&
++	    gpu2_pause4_ms > 60000) {
++		printf("nabugpu2: rejected pause4 above 60000 ms; no GPU access\n");
++		return;
++	}
+ 	(void)PE_parse_boot_argn("nabugpu2_watch", &gpu2_watch_secs, sizeof(gpu2_watch_secs));
+ 	(void)PE_parse_boot_argn("nabugpu2_noread", &gpu2_noread, sizeof(gpu2_noread));
+ 	(void)PE_parse_boot_argn("nabugpu2_dryrun", &gpu2_dryrun, sizeof(gpu2_dryrun));
+@@ -257,7 +272,9 @@
+ 		goto watch;
+ 	}
+ 
+-	nabu_gpu2_announce("turn on the GMU's clock");
++	printf("nabugpu2: GMU pre-access pause %u ms (earlier pauses %u ms)\n",
++	    gpu2_pause4_ms, gpu2_pause_ms);
++	nabu_gpu2_announce_delay("turn on the GMU's clock", gpu2_pause4_ms);
+ 	if (gpu2_noread) {
+ 		/* No GPUCC access and no report after the wait: the only question left
+ 		 * is whether the wait itself returns. */
