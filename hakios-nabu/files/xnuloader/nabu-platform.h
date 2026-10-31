@@ -326,7 +326,8 @@ nbu_map_covers(const void *map, uint64_t map_bytes, uint64_t stride,
 			uint64_t attributes = nbu_le64(d + 32);
 			if (type >= 32 || !(allowed & (1u << type)) || pages > (UINT64_MAX >> 12) ||
 			    !nbu_range(lo, pages << 12, &hi) || (attributes & 0x2000ULL) ||
-			    (allowed == ((1u << 2) | (1u << 4)) && attributes & (0x1000ULL | 0x20000ULL))) {
+			    ((allowed == ((1u << 2) | (1u << 4)) || allowed == (1u << 7)) &&
+			    attributes & (0x1000ULL | 0x20000ULL))) {
 				continue;
 			}
 			if (lo <= start && hi > next) {

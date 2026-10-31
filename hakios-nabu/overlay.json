@@ -9,7 +9,7 @@
     "files/devices/nabu/soc/configs/sm8150.config": "a32e813a1c46dc22626faaf9829d911891994f2c2ed90107f6de67fcb04ac0e1",
     "files/devices/nabu/soc/soc.conf": "4015ad96e805b4607726b4230fc8ed27bf1ebc3320bfc0740b750accdd316196",
     "files/tools/nabu-workspace.py": "7d06743de321010479bbad1a1a13c557fc7ddd0dcfde82d909f7aaaea5529c39",
-    "files/xnuloader/nabu-platform.h": "efbb3924668f06718e4cd85a04dc7629820c3ec90f9e1f1cfbce69a229297a80",
+    "files/xnuloader/nabu-platform.h": "75c87f9247d1307966363911cef8b371ab74625d757b25fb8d2fabd694ac5168",
     "record-build.py": "0655bb139a7c11b032a6af0126c53c1009213a1a2f53adea9ac6d86a7fd277fe",
     "verify-overlay.py": "8a13499d968fc2ec43c391a8d92226b2866e0a718bed64309db1418edbb95a87"
   }
