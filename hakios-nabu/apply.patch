@@ -110,11 +110,95 @@ index 673a45f..3437bb5 100755
  source "$(dirname "${BASH_SOURCE[0]}")/xnu-env.sh"
  cd "$XNU_SRC" || exit 1
  # The Wi-Fi driver's object (tools/mk-ath11k.sh) is linked into the kernel when it is there; make
+diff --git a/xnu/files/osfmk/arm64/gic_v3_irq.c b/xnu/files/osfmk/arm64/gic_v3_irq.c
+index 63ffd4b..0202090 100644
+--- a/xnu/files/osfmk/arm64/gic_v3_irq.c
++++ b/xnu/files/osfmk/arm64/gic_v3_irq.c
+@@ -72,7 +72,7 @@
+ 
+ #define GIC_SGI_SIGNAL          0           /* cpu_signal(): another processor wants this one's attention */
+ #define GIC_SGI_STOP            1           /* psci_smp_stop_here(): the system is going back to the boot loader */
+-#define GIC_INTID_VTIMER        27          /* EL1 virtual timer PPI */
++#define GIC_INTID_VTIMER_DEFAULT 27         /* Standard EL1 virtual timer PPI */
+ #define GIC_INTID_SPI_MIN       32
+ #define GIC_INTID_SPURIOUS_MIN  1020
+ #define GIC_SPI_MOST            48          /* attached at a time */
+@@ -80,6 +80,7 @@
+ 
+ static vm_offset_t gicd_base, gicr_base;
+ static vm_size_t   gicr_size;
++static uint32_t    gic_vtimer_intid = GIC_INTID_VTIMER_DEFAULT;
+ static vm_offset_t gicr_cpu_base[MAX_CPUS]; /* each processor's redistributor frame */
+ 
+ /*
+@@ -310,7 +311,7 @@ gic_irq_handler(__unused void *target, __unused void *refCon, __unused void *nub
+ 		}
+ 		gic_active_iar[cpu] = iar | GIC_IAR_TAKEN;
+ 
+-		if (intid == GIC_INTID_VTIMER) {
++		if (intid == gic_vtimer_intid) {
+ 			/* same sequence as the FIQ path in sleh_fiq() */
+ 			getCpuDatap()->cpu_decrementer = -1; /* Large */
+ 			rtclock_intr(TRUE);
+@@ -418,13 +419,26 @@ gic_v3_irq_cpu_init(void)
+ {
+ 	int cpu = cpu_number();
+ 	vm_offset_t gicr;
+-	uint32_t mine = 1u << GIC_INTID_VTIMER;
++	uint32_t mine;
+ 
+ 	if (gicd_base == 0) {
+ 		DTEntry entry;
+ 		void const *prop;
+ 		unsigned int prop_size;
+ 
++		if (SecureDTLookupEntry(NULL, "/chosen", &entry) == kSuccess &&
++		    SecureDTGetProperty(entry, "virtual-timer-irq", &prop, &prop_size) == kSuccess) {
++			uint32_t irq;
++
++			if (prop_size != sizeof(irq)) {
++				panic("gic: invalid virtual-timer-irq length");
++			}
++			__builtin_memcpy(&irq, prop, sizeof(irq));
++			if (irq < 16 || irq > 31) {
++				panic("gic: virtual timer interrupt is not a PPI");
++			}
++			gic_vtimer_intid = irq;
++		}
+ 		if (SecureDTLookupEntry(NULL, "/arm-io/gic", &entry) != kSuccess ||
+ 		    SecureDTGetProperty(entry, "reg", &prop, &prop_size) != kSuccess ||
+ 		    prop_size < 4 * sizeof(uint64_t)) {
+@@ -443,6 +457,7 @@ gic_v3_irq_cpu_init(void)
+ 	} else if (gicr_cpu_base[cpu] != 0) {
+ 		return;
+ 	}
++	mine = 1u << gic_vtimer_intid;
+ 
+ 	/* System-register CPU interface */
+ 	__builtin_arm_wsr64("ICC_SRE_EL1", __builtin_arm_rsr64("ICC_SRE_EL1") | 1);
+@@ -476,7 +491,7 @@ gic_v3_irq_cpu_init(void)
+ 	/* Virtual timer PPI (and those): Group 1 (IRQ), default priority, enabled */
+ 	gic_write32(gicr + GICR_IGROUPR0, gic_read32(gicr + GICR_IGROUPR0) | mine);
+ 	gic_write32(gicr + GICR_IGRPMODR0, gic_read32(gicr + GICR_IGRPMODR0) & ~mine);
+-	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER)) = GIC_PRIORITY_DEFAULT;
++	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(gic_vtimer_intid)) = GIC_PRIORITY_DEFAULT;
+ 	gic_write32(gicr + GICR_ISENABLER0, mine);
+ 
+ 	/* Distributor: affinity routing, Group 1 enabled (normally already so) */
+@@ -502,7 +517,7 @@ gic_v3_irq_cpu_init(void)
+ 
+ 	ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
+ 	kprintf("gic: v3, distributor %p, cpu %d's redistributor %p, virtual timer on PPI %d\n",
+-	    (void *)gicd_base, cpu, (void *)gicr, GIC_INTID_VTIMER);
++	    (void *)gicd_base, cpu, (void *)gicr, gic_vtimer_intid);
+ }
+ 
+ #endif /* GENERIC_GIC_V3_IRQ */
 diff --git a/xnuloader/build.sh b/xnuloader/build.sh
-index d8e696a..f068429 100755
+index d8e696a..11626ac 100755
 --- a/xnuloader/build.sh
 +++ b/xnuloader/build.sh
-@@ -2,11 +2,15 @@
+@@ -2,12 +2,18 @@
  # Build the XNU loader as a freestanding AArch64 UEFI application.
  set -e
  cd "$(dirname "$0")"
@@ -124,18 +208,49 @@ index d8e696a..f068429 100755
 +fi
  # the iPhone's identity for XNU, from the device tree of the builder's own IPSW (not in the repository)
  [ -f identity.h ] || ./mkidentity.sh
++LOADER_OPT=${LOADER_OPT:--O1}
++case "$LOADER_OPT" in -O0|-O1|-O2|-O3|-Os|-Oz) ;; *) echo "invalid LOADER_OPT" >&2; exit 1 ;; esac
  
  clang --target=aarch64-unknown-windows -ffreestanding -fno-builtin -fno-stack-protector -fshort-wchar \
 -  -mgeneral-regs-only -O1 -Wall -Wextra -Wno-unused-parameter -c loader.c -o loader.obj
-+  -mgeneral-regs-only -O1 -Wall -Wextra -Wno-unused-parameter "${DEFINES[@]}" -c loader.c -o loader.obj
++  -mgeneral-regs-only "$LOADER_OPT" -Wall -Wextra -Wno-unused-parameter "${DEFINES[@]}" -c loader.c -o loader.obj
  # /base: UEFI loads an image at its preferred address when that is free. The PE default (0x140000000)
  # is in the middle of the phone's largest block of RAM, which XNU needs in one piece.
- lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /base:0xA1000000 /out:loader.efi loader.obj
+-lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /base:0xA1000000 /out:loader.efi loader.obj
++"${LLD_LINK:-lld-link}" /subsystem:efi_application /entry:efi_main /nodefaultlib /base:0xA1000000 /out:loader.efi loader.obj
+ ls -la loader.efi
+diff --git a/xnuloader/efi.h b/xnuloader/efi.h
+index 2d35c83..1cc55a9 100644
+--- a/xnuloader/efi.h
++++ b/xnuloader/efi.h
+@@ -184,7 +184,13 @@ typedef struct {
+ 	efi_handle parent;
+ 	void *system_table;
+ 	efi_handle device;                      /* the device the image was loaded from: the volume to look on */
+-} efi_loaded_image;                             /* (the specification goes on; nothing more is read) */
++	void *file_path, *reserved;
++	uint32_t load_options_size, pad2;
++	void *load_options, *image_base;
++	uint64_t image_size;
++	uint32_t image_code_type, image_data_type;
++	void *unload;
++} efi_loaded_image;
+ 
+ typedef struct efi_file {
+ 	uint64_t revision;
 diff --git a/xnuloader/loader.c b/xnuloader/loader.c
-index 422f9d3..6db298e 100644
+index 422f9d3..e62d4a2 100644
 --- a/xnuloader/loader.c
 +++ b/xnuloader/loader.c
-@@ -35,6 +35,9 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
+@@ -10,6 +10,7 @@
+  *   - exits boot services, turns the MMU off and jumps to the kernel entry
+  */
+ #include "efi.h"
++#include "nabu-platform.h"
+ #include "identity.h"         /* who Darwin shall think we are: from the iPhone's own device tree (mkidentity.py) */
+ 
+ /* ------------------------------------------------------------------------ */
+@@ -35,6 +36,9 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
  #define PAGE_SIZE_MAX       0x4000ULL
  
  #define LOG_PARTITION       u"logdump"
@@ -145,7 +260,7 @@ index 422f9d3..6db298e 100644
  #define CHECKPOINT_SELFTEST 999
  #define PANIC_LOG_SIZE      0x80000u
  #define NVRAM_BANK_SIZE     0x2000u
-@@ -264,6 +267,10 @@ clean_dcache(uint64_t start, uint64_t end)
+@@ -264,6 +268,10 @@ clean_dcache(uint64_t start, uint64_t end)
  static efi_block_io *
  find_log_partition(void)
  {
@@ -156,7 +271,135 @@ index 422f9d3..6db298e 100644
  	static const efi_guid part_guid = EFI_PARTITION_INFO_GUID;
  	static const efi_guid blk_guid = EFI_BLOCK_IO_GUID;
  	static const char16 want[] = LOG_PARTITION;
-@@ -1876,6 +1883,10 @@ block_tables(void)
+@@ -561,6 +569,9 @@ struct platform {
+ 	int core_shift;                  /* ... in this bit of MPIDR: the phone numbers them in the second affinity field */
+ 	uint32_t timeout_scale;          /* a kernel on several cores gets this much longer to wait for a lock, 0: as it is */
+ 	uint32_t small_cores;            /* a bit for each of the slower cores, by number: "small-core" in the device tree */
++	uint32_t virtual_timer_irq;      /* absolute GIC INTID: the hypervisor may route the timer elsewhere */
++	uint64_t counter_hz;             /* 0: use the firmware's CNTFRQ; a known board must match its FDT */
++	uint64_t memory_limit;           /* maximum owned contiguous window, not installed RAM */
+ };
+ 
+ static const struct platform platform_qemu_virt = {
+@@ -573,6 +584,8 @@ static const struct platform platform_qemu_virt = {
+ 	 * is that of real hardware: an eighth of a second by a 24 MHz clock, a twentieth here.
+ 	 */
+ 	.timeout_scale = 20,
++	.virtual_timer_irq = 27,
++	.memory_limit = MAX_MEM_SIZE,
+ };
+ 
+ static const struct platform platform_redwood = {
+@@ -586,8 +599,108 @@ static const struct platform platform_redwood = {
+ 	 * (XNU's machine_routines.c, ml_choose_slow_core_partners()).
+ 	 */
+ 	.small_cores = 0x0f,
++	.virtual_timer_irq = 27,
++	.memory_limit = MAX_MEM_SIZE,
+ };
+ 
++static const struct platform platform_nabu = {
++	/*
++	 * The tablet's Android FDT: GICD/GICR, PSCI SMC and MPIDR Aff1 numbering.
++	 * Its virtual timer is PPI 3 (INTID 19), unlike QEMU's standard INTID 27.
++	 * Board drivers remain out of the first kernel. No redwood MMIO or WDT.
++	 */
++	.name = "nabu", .io_base = 0x00100000, .io_size = 0x3ff00000,
++	.gic_dist = NBU_GICD, .gic_redist = NBU_GICR, .uart = 0, .psci_hvc = 0,
++	.cores = 8, .core_shift = 8, .small_cores = 0x0f,
++	.virtual_timer_irq = NBU_VIRTUAL_TIMER_IRQ, .counter_hz = NBU_COUNTER_HZ,
++	.memory_limit = NBU_WINDOW_LIMIT,
++};
++
++static int payload_memory_ready;
++static const void *platform_fdt;
++static uint64_t platform_fdt_bytes;
++static uint64_t loader_image_base, loader_image_bytes;
++static int payload_fdt_reserved;
++
++/* Firmware memory is readable only after its complete range is described as RAM. */
++static int
++mapped_ram(uint64_t base, uint64_t bytes, uint32_t allowed)
++{
++	static uint8_t map[65536] __attribute__((aligned(8)));
++	uint64_t size = sizeof(map), key, stride;
++	uint32_t version;
++	if (EFI_ERROR(BS->get_memory_map(&size, map, &key, &stride, &version))) {
++		return 0;
++	}
++	return nbu_map_covers(map, size, stride, base, bytes, allowed);
++}
++
++static int
++find_nabu_platform(void)
++{
++	static const efi_guid fdt_guid = {
++		0xb1b621d5, 0xf19c, 0x41a5, { 0x83, 0x0b, 0xd9, 0x15, 0x2c, 0x69, 0xaa, 0xe0 }
++	};
++	struct nbu_fdt_facts facts;
++	const uint32_t ram_types = 0xfe; /* firmware-provided loader, boot, runtime or conventional RAM */
++	if (ST->nr_tables > 256 || (ST->nr_tables && ST->tables == NULL)) {
++		return 0;
++	}
++	for (uint64_t i = 0; i < ST->nr_tables; i++) {
++		if (memcmp(&ST->tables[i].guid, &fdt_guid, sizeof(fdt_guid)) != 0) {
++			continue;
++		}
++		const uint8_t *raw = ST->tables[i].table;
++		uint64_t address = (uint64_t)(uintptr_t)raw;
++		if (!mapped_ram(address, 40, ram_types)) {
++			return 0;
++		}
++		uint32_t bytes = nbu_be32(raw + 4);
++		if (bytes < 40 || bytes > 4 * 1024 * 1024 || !mapped_ram(address, bytes, ram_types) ||
++		    !nbu_fdt(raw, bytes, &facts)) {
++			return 0;
++		}
++		platform_fdt = raw;
++		platform_fdt_bytes = bytes;
++		payload_fdt_reserved = facts.payload_reserved;
++		return facts.gic_dist == platform_nabu.gic_dist && facts.gic_redist == platform_nabu.gic_redist;
++	}
++	return 0;
++}
++
++/* The region is a firmware-owned HKUB reservation, or is claimed before its first read. */
++static int
++prepare_payload_memory(void)
++{
++	static const efi_guid image_guid = EFI_LOADED_IMAGE_GUID;
++	efi_loaded_image *image = NULL;
++	if (!payload_fdt_reserved ||
++	    EFI_ERROR(BS->handle_protocol(IMAGE, &image_guid, (void **)&image)) || image == NULL ||
++	    nbu_overlap(PAYLOAD_BASE, PAYLOAD_MAX_SIZE, (uint64_t)(uintptr_t)image->image_base, image->image_size) ||
++	    (platform_fdt != NULL && nbu_overlap(PAYLOAD_BASE, PAYLOAD_MAX_SIZE,
++	    (uint64_t)(uintptr_t)platform_fdt, platform_fdt_bytes))) {
++		return 0;
++	}
++	loader_image_base = (uint64_t)(uintptr_t)image->image_base;
++	loader_image_bytes = image->image_size;
++	if (mapped_ram(PAYLOAD_BASE, PAYLOAD_MAX_SIZE, (1u << 2) | (1u << 4))) {
++		payload_memory_ready = 1;
++		return 1;
++	}
++	if (!mapped_ram(PAYLOAD_BASE, PAYLOAD_MAX_SIZE, 1u << EfiConventionalMemory)) {
++		return 0;
++	}
++	uint64_t address = PAYLOAD_BASE;
++	if (EFI_ERROR(BS->allocate_pages(AllocateAddress, EfiLoaderData, PAYLOAD_MAX_SIZE >> 12, &address)) ||
++	    address != PAYLOAD_BASE) {
++		return 0;
++	}
++	payload_memory_ready = 1;
++	/* Newly claimed RAM is not a previously admitted payload. */
++	((volatile struct payload_header *)PAYLOAD_BASE)->magic = 0;
++	return 1;
++}
++
+ /* ------------------------------------------------------------------------ */
+ 
+ static void
+@@ -1876,6 +1989,10 @@ block_tables(void)
  static int
  block_is_darwin(const efi_partition_info *info, const efi_block_io *bio, const struct loader_block_part *bp)
  {
@@ -167,3 +410,346 @@ index 422f9d3..6db298e 100644
  	static const efi_guid type = BLOCK_DARWIN_TYPE;
  	const uint8_t *u = (const uint8_t *)&info->unique_guid;
  	static const char name[] = "darwin";
+@@ -2599,10 +2716,16 @@ parse_payload(struct payload_info *pi, int verbose)
+ 
+ 	memset(pi, 0, sizeof(*pi));
+ 	pi->cmdline = "";
++	if (HAKIOS_NABU_RAM_ONLY && !payload_memory_ready) {
++		return 0;
++	}
+ 	if (ph->magic != PAYLOAD_MAGIC) {
+ 		print("no payload at %x (magic %x)\n", PAYLOAD_BASE, (uint64_t)ph->magic);
+ 		return 0;
+ 	}
++	if (ph->size > PAYLOAD_MAX_SIZE - 0x100000ULL - sizeof(*ph)) {
++		return 0;
++	}
+ 	/*
+ 	 * The size in the header is not trusted past what the payload region can hold (the file's size is not
+ 	 * known here), so a wild value cannot send the walk through memory that is not the payload.
+@@ -2611,6 +2734,13 @@ parse_payload(struct payload_info *pi, int verbose)
+ 	while (p + sizeof(struct payload_entry) <= pend) {
+ 		const struct payload_entry *e = (const struct payload_entry *)p;
+ 		const char *text = (const char *)(p + sizeof(*e));
++		unsigned name_length = 0;
++		while (name_length < sizeof(e->name) && e->name[name_length]) {
++			name_length++;
++		}
++		if (name_length == sizeof(e->name)) {
++			return 0;
++		}
+ 		if (e->name[0] == 0) {
+ 			break;
+ 		}
+@@ -2625,6 +2755,16 @@ parse_payload(struct payload_info *pi, int verbose)
+ 			print("payload entry is larger than the payload (size %x): not used\n", (uint64_t)e->size);
+ 			return 0;
+ 		}
++		if (str_eq(e->name, "cmdline") || str_eq(e->name, "physbase") || str_eq(e->name, "rdres") ||
++		    str_eq(e->name, "kernel.ver") || str_eq(e->name, "checkpoint")) {
++			uint32_t length = 0;
++			while (length < e->size && text[length]) {
++				length++;
++			}
++			if (length == e->size) {
++				return 0;
++			}
++		}
+ 		if (str_eq(e->name, "ramdisk")) {
+ 			pi->ramdisk = p + sizeof(*e);             /* becomes /dev/md0, the root device */
+ 			pi->ramdisk_size = e->size;
+@@ -2765,7 +2905,13 @@ choose_window(const struct payload_info *pi)
+ 	uint64_t map_size = sizeof(map_buf), map_key, desc_size;
+ 	uint32_t desc_ver;
+ 	uint64_t best_base = 0, best_size = 0;
+-	uint64_t pay_lo = PAYLOAD_BASE, pay_hi = PAYLOAD_BASE + PAYLOAD_MAX_SIZE;
++	struct nbu_region excluded[] = {
++		{ PAYLOAD_BASE, PAYLOAD_MAX_SIZE },
++		{ SCREEN.base, (uint64_t)SCREEN.stride * SCREEN.height },
++		{ (uint64_t)(uintptr_t)platform_fdt, platform_fdt_bytes },
++		{ loader_image_base, loader_image_bytes },
++	};
++	uint64_t limit = PLAT->memory_limit ? PLAT->memory_limit : MAX_MEM_SIZE;
+ 
+ 	if (win_size != 0) {
+ 		return 1;
+@@ -2774,25 +2920,21 @@ choose_window(const struct payload_info *pi)
+ 		print("GetMemoryMap failed\n");
+ 		return 0;
+ 	}
++	if (!nbu_map_valid(map_size, desc_size) || (pi->forced_base && PLAT == &platform_nabu)) {
++		print("memory map invalid, or nabu payload requested an unverified physical base\n");
++		return 0;
++	}
+ 	for (uint64_t off = 0; off < map_size; off += desc_size) {
+ 		efi_memory_descriptor *d = (efi_memory_descriptor *)(map_buf + off);
+-		if (d->type != EfiConventionalMemory) {
++		if (d->type != EfiConventionalMemory || d->pages > (UINT64_MAX >> 12) ||
++		    d->attribute & (0x1000ULL | 0x2000ULL | 0x20000ULL)) {
+ 			continue;
+ 		}
+-		uint64_t lo = d->phys_start, hi = d->phys_start + (d->pages << 12);
+-		/* the payload sits in RAM that UEFI may consider free: stay clear of it */
+-		if (lo < pay_hi && hi > pay_lo) {
+-			if (pay_lo - lo > hi - pay_hi && pay_lo > lo) {
+-				hi = pay_lo;
+-			} else {
+-				lo = pay_hi;
+-			}
+-		}
+-		lo = (lo + BASE_ALIGN - 1) & ~(BASE_ALIGN - 1);
+-		hi &= ~(BASE_ALIGN - 1);
+-		if (hi > lo && hi - lo > best_size) {
+-			best_base = lo;
+-			best_size = hi - lo;
++		struct nbu_region candidate = nbu_window(d->phys_start, d->pages << 12, excluded,
++		    sizeof(excluded) / sizeof(excluded[0]), limit);
++		if (candidate.bytes > best_size) {
++			best_base = candidate.base;
++			best_size = candidate.bytes;
+ 		}
+ 	}
+ 	print("largest free block %x size %x\n", best_base, best_size);
+@@ -2800,14 +2942,18 @@ choose_window(const struct payload_info *pi)
+ 		best_base = pi->forced_base;
+ 		best_size = MAX_MEM_SIZE;
+ 	}
+-	if (best_size > MAX_MEM_SIZE) {
+-		best_size = MAX_MEM_SIZE;
++	if (best_size > limit) {
++		best_size = limit;
++	}
++	if (!best_size) {
++		print("no usable contiguous memory window\n");
++		return 0;
+ 	}
+ 	/* UEFI stays alive while the kernel runs, so the kernel must own all of its window. */
+ 	uint64_t claim = best_base;
+ 	efi_status s = BS->allocate_pages(AllocateAddress, EfiLoaderData, best_size >> 12, &claim);
+ 	print("phys window %x size %x, claim status %x\n", best_base, best_size, s);
+-	if (EFI_ERROR(s)) {
++	if (EFI_ERROR(s) || claim != best_base) {
+ 		return 0;
+ 	}
+ 	win_base = best_base;
+@@ -2834,6 +2980,11 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 		print("no kernel in payload\n");
+ 		return 0;
+ 	}
++	if (PLAT == &platform_nabu && (pi.forced_base || !nbu_boot_args(pi.cmdline) ||
++	    (READ_SYSREG(CurrentEL) >> 2) != 1 || READ_SYSREG(CNTFRQ_EL0) != NBU_COUNTER_HZ)) {
++		print("nabu: unvalidated boot arguments, exception level or counter frequency; kernel not started\n");
++		return 0;
++	}
+ 	if (!have_checkpoint) {
+ 		checkpoint = pi.checkpoint;
+ 	}
+@@ -3032,6 +3183,10 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 		hc_requested |= starts_with(c, "ufs_native=") && (c == pi.cmdline || c[-1] == ' ') && c[11] >= '1' &&
+ 		    c[11] <= '9';
+ 	}
++	if (PLAT == &platform_nabu) {
++		/* cpus=1 is present but must not trigger surveys of the other cores. */
++		more_cores = 0;
++	}
+ 	if (battery_requested) {
+ 		charger_start();
+ 	}
+@@ -3224,13 +3379,13 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 	 * those of that phone. XNU itself does not care; the hardware is described further down.
+ 	 */
+ 	dt_identity(&w, identity_root, sizeof(identity_root) / sizeof(identity_root[0]), identity_root_data);
+-	dt_prop_str(&w, "platform-name", "t8015");
++	dt_prop_str(&w, "platform-name", plat == &platform_nabu ? "t8027" : "t8015");
+ 	/* what iBoot takes from the factory configuration of a real phone; fixed size fields */
+-	dt_prop_padded(&w, "serial-number", "RDW00POCOX5P", 32);
+-	dt_prop_padded(&w, "mlb-serial-number", "RDW00POCOX5PMLB00", 32);
+-	dt_prop_padded(&w, "model-number", "MQAC2", 32);
++	dt_prop_padded(&w, "serial-number", plat == &platform_nabu ? "HAKIOSNABUDEV" : "RDW00POCOX5P", 32);
++	dt_prop_padded(&w, "mlb-serial-number", plat == &platform_nabu ? "HAKIOSNABUDEVMLB" : "RDW00POCOX5PMLB00", 32);
++	dt_prop_padded(&w, "model-number", plat == &platform_nabu ? "HAKIOS-DEV" : "MQAC2", 32);
+ 	dt_prop_padded(&w, "region-info", "LL/A", 32);
+-	dt_prop_padded(&w, "regulatory-model-number", "A1865", 32);
++	dt_prop_padded(&w, "regulatory-model-number", plat == &platform_nabu ? "HAKIOS-DEV" : "A1865", 32);
+ 	dt_prop_u32(&w, "#address-cells", 2);
+ 	dt_prop_u32(&w, "#size-cells", 2);
+ 
+@@ -3240,10 +3395,11 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 	dt_prop_u64(&w, "dram-size", win_size);
+ 	dt_prop_u32(&w, "debug-enabled", 1);
+ 	/* what MobileGestalt answers "main screen scale" from: 3 device pixels per point */
+-	dt_prop_u32(&w, "display-scale", 3);
++	dt_prop_u32(&w, "display-scale", plat == &platform_nabu ? 2 : 3);
+ 	dt_prop_u32(&w, "display-rotation", 0);
+ 	/* how the kernel is to ask the firmware for more cores (PSCI) */
+ 	dt_prop_str(&w, "psci-method", plat->psci_hvc ? "hvc" : "smc");
++	dt_prop_u32(&w, "virtual-timer-irq", plat->virtual_timer_irq);
+ 	/* the time now, by the firmware's clock (the kernel has no real-time clock driver) */
+ 	uint64_t epoch = firmware_epoch();
+ 	if (epoch != 0) {
+@@ -3259,8 +3415,9 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
+ 	static const uint8_t manifest_hash[48] = { 0x72, 0x65, 0x64, 0x77, 0x6f, 0x6f, 0x64 };
+ 	static const uint8_t no_behavior[16];
+ 	dt_prop_u64(&w, "unique-chip-id", 0x000052445730001ULL);
+-	dt_prop_u32(&w, "chip-id", 0x8015);
+-	dt_prop_u32(&w, "board-id", 0x06);
++	/* Donor identifiers from the new IPSW, not the physical Qualcomm SoC. */
++	dt_prop_u32(&w, "chip-id", plat == &platform_nabu ? 0x8027 : 0x8015);
++	dt_prop_u32(&w, "board-id", plat == &platform_nabu ? 0x0c : 0x06);
+ 	dt_prop(&w, "mac-address-wifi0", wifi_address, sizeof(wifi_address));
+ 	dt_prop(&w, "mac-address-bluetooth0", bluetooth_address, sizeof(bluetooth_address));
+ 	dt_prop(&w, "boot-manifest-hash", manifest_hash, sizeof(manifest_hash));
+@@ -4223,7 +4380,8 @@ load_payload_from_volume(void)
+ 	 * memory the firmware has not given to us must not be written.
+ 	 */
+ 	pages = PAYLOAD_MAX_SIZE / 0x1000;
+-	if (EFI_ERROR(BS->allocate_pages(2 /* AllocateAddress */, 2 /* EfiLoaderData */, pages, &address))) {
++	int newly_allocated = !payload_memory_ready;
++	if (newly_allocated && EFI_ERROR(BS->allocate_pages(AllocateAddress, EfiLoaderData, pages, &address))) {
+ 		volume_payload_note = "the payload region is not free (the firmware keeps it reserved)";
+ 		goto close;
+ 	}
+@@ -4235,14 +4393,18 @@ load_payload_from_volume(void)
+ 			/* what was read stays in memory after the pages are given back: without this, the first MiB's XNUP
+ 			 * header would still be there and a half-read payload would be taken for a whole one */
+ 			((volatile struct payload_header *)PAYLOAD_BASE)->magic = 0;
+-			BS->free_pages(PAYLOAD_BASE, pages);
++			if (newly_allocated) {
++				BS->free_pages(PAYLOAD_BASE, pages);
++			}
+ 			goto close;
+ 		}
+ 		done += chunk;
+ 	}
+ 	if (((const struct payload_header *)PAYLOAD_BASE)->magic != PAYLOAD_MAGIC) {
+ 		volume_payload_note = "\\EFI\\hakios\\payload.bin is not a payload (no XNUP at its start)";
+-		BS->free_pages(PAYLOAD_BASE, pages);
++		if (newly_allocated) {
++			BS->free_pages(PAYLOAD_BASE, pages);
++		}
+ 		goto close;
+ 	}
+ 	volume_payload_bytes = size;
+@@ -4260,28 +4422,8 @@ close:
+ static const char *
+ payload_kernel_version(void)
+ {
+-	const struct payload_header *ph = (const struct payload_header *)PAYLOAD_BASE;
+-
+-	if (ph->magic != PAYLOAD_MAGIC) {
+-		return NULL;
+-	}
+-	/* (the same limits as parse_payload: a header size or an entry size that reaches past the payload ends the walk) */
+-	const uint8_t *p = (const uint8_t *)(ph + 1), *pend = p + payload_walk_size(ph->size);
+-	while (p + sizeof(struct payload_entry) <= pend) {
+-		const struct payload_entry *e = (const struct payload_entry *)p;
+-
+-		if (e->name[0] == 0) {
+-			break;
+-		}
+-		if ((uint64_t)e->size > (uint64_t)(pend - (p + sizeof(*e)))) {
+-			break;
+-		}
+-		if (str_eq(e->name, "kernel.ver")) {
+-			return (const char *)(p + sizeof(*e));
+-		}
+-		p += sizeof(*e) + ((e->size + 15) & ~15u);
+-	}
+-	return NULL;
++	struct payload_info pi;
++	return parse_payload(&pi, 0) ? pi.kernel_version : NULL;
+ }
+ 
+ /*
+@@ -4319,6 +4461,28 @@ efi_main(efi_handle image, efi_system_table *st)
+ 	IMAGE = image;
+ 
+ 	BS->set_watchdog_timer(0, 0, 0, NULL);
++	/*
++	 * nabu is identified from its firmware FDT, before any fixed payload
++	 * address is read or a QEMU-only MMIO register is touched.
++	 */
++	if (HAKIOS_NABU_RAM_ONLY) {
++		if (!find_nabu_platform()) {
++			print("nabu: no matching firmware FDT; no kernel or MMIO started\n");
++			return EFI_ERROR_BIT | 3;
++		}
++		PLAT = &platform_nabu;
++		if ((READ_SYSREG(CurrentEL) >> 2) != 1 || READ_SYSREG(CNTFRQ_EL0) != NBU_COUNTER_HZ ||
++		    ((READ_SYSREG(MPIDR_EL1) & 0xffffff) > 0x700) || (READ_SYSREG(MPIDR_EL1) & 0xff)) {
++			print("nabu: unsupported EL, counter frequency or boot CPU; no kernel started\n");
++			return EFI_ERROR_BIT | 3;
++		}
++		if (!prepare_payload_memory()) {
++			print("nabu: the complete payload RAM reservation is not available; no kernel started\n");
++			return EFI_ERROR_BIT | 9;
++		}
++	} else {
++		PLAT = &platform_qemu_virt;
++	}
+ 	/* no payload in memory (nobody put one there): the volume this loader came from may have one, as a UEFI boot loader's does */
+ 	if (((const struct payload_header *)PAYLOAD_BASE)->magic != PAYLOAD_MAGIC) {
+ 		load_payload_from_volume();
+@@ -4334,16 +4498,26 @@ efi_main(efi_handle image, efi_system_table *st)
+ 	print("CurrentEL=%x MIDR=%x MMFR0=%x CNTFRQ=%d image=%x\n", READ_SYSREG(CurrentEL) >> 2, READ_SYSREG(MIDR_EL1),
+ 	    READ_SYSREG(ID_AA64MMFR0_EL1), READ_SYSREG(CNTFRQ_EL0), (uint64_t)(uintptr_t)&__ImageBase);
+ 
+-	PLAT = &platform_qemu_virt;
+ 	if (EFI_ERROR(BS->locate_protocol(&gop_guid, NULL, (void **)&GOP)) || GOP->mode == NULL ||
+ 	    GOP->mode->info == NULL || GOP->mode->fb_base == 0) {
+ 		GOP = NULL;                     /* no display (QEMU without -device ramfb) */
+ 	} else {
++		const efi_gop_mode_info *info = GOP->mode->info;
++		uint64_t stride = (uint64_t)info->pixels_per_scanline * 4, bytes = stride * info->height;
++		if (PLAT == &platform_nabu && (info->pixel_format > 1 || info->pixels_per_scanline < info->width ||
++		    stride > UINT32_MAX || bytes > GOP->mode->fb_size ||
++		    !((info->width == 1600 && info->height == 2560) || (info->width == 2560 && info->height == 1600)) ||
++		    nbu_overlap(GOP->mode->fb_base, bytes, PAYLOAD_BASE, PAYLOAD_MAX_SIZE))) {
++			print("nabu: unsupported GOP geometry or framebuffer bounds; no kernel started\n");
++			return EFI_ERROR_BIT | 3;
++		}
+ 		SCREEN.base = GOP->mode->fb_base;
+-		SCREEN.width = GOP->mode->info->width;
+-		SCREEN.height = GOP->mode->info->height;
+-		SCREEN.stride = GOP->mode->info->pixels_per_scanline * 4;
+-		if (SCREEN.base == 0xE1000000ULL) {
++		SCREEN.width = info->width;
++		SCREEN.height = info->height;
++		SCREEN.stride = (uint32_t)stride;
++		if (PLAT == &platform_nabu) {
++			print("nabu: framebuffer supplied by GOP, no display controller programming\n");
++		} else if (SCREEN.base == 0xE1000000ULL) {
+ 			PLAT = &platform_redwood;
+ 		} else {
+ 			ramfb_phone_screen();
+@@ -4356,14 +4530,26 @@ efi_main(efi_handle image, efi_system_table *st)
+ 	wdt_arm();
+ 
+ 	int have_payload = parse_payload(&pi, 0);
+-	if (have_payload && pi.usb_mode && usb_start()) {
+-		flush_log();
+-		usb_command_loop();
++	if (have_payload && pi.usb_mode) {
++		if (usb_start()) {
++			flush_log();
++			usb_command_loop();
++		}
++		if (PLAT == &platform_nabu) {
++			print("nabu: USB loader transport unavailable; no kernel started\n");
++			return EFI_ERROR_BIT | 3;
++		}
+ 	}
+ 
+ 	/* One-shot mode: run the kernel that came with the image, then reset. */
+ 	if (have_payload) {
+-		run_kernel(0, 0);
++		if (!run_kernel(0, 0) && PLAT == &platform_nabu) {
++			return EFI_ERROR_BIT | 1;
++		}
++	}
++	if (PLAT == &platform_nabu && !have_payload) {
++		print("nabu: no admitted payload; returning to firmware without a kernel attempt\n");
++		return EFI_ERROR_BIT | 1;
+ 	}
+ 	reboot();
+ 	return 0;
