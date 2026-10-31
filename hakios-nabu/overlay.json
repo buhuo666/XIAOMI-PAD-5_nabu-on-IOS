@@ -2,12 +2,12 @@
   "upstream": "a3384e031eb1e605cf37adaefc19991f04f6274b",
   "files": {
     "apply.patch": "7cb3eed9d38ae116adbda999817d8dd2c18cb6721d0f88925f189bfa628a5e00",
-    "files/devices/nabu/configs/nabu.config": "82b2be8dae3775ef3e4335953a227eaefc417663bb8e818e810c5eb21b0f22fc",
-    "files/devices/nabu/configs/nabu_defconfig": "72b7e9eb1f2e9d92450037b0a7e6b7a9685ef9958f35625c1ab638eaa8651f21",
-    "files/devices/nabu/device.conf": "2a360de57cee1d6e906379edc6ff98b27fb529acbd912ee33bb4bf61357e221a",
-    "files/devices/nabu/hardware.json": "87d87fdd3759b71f9eb7a33b58a4364059ba84dac00a079a41f54ac90ffd35a0",
-    "files/devices/nabu/soc/configs/sm8150.config": "9fb8747a25ce0bba3c70f03a9a42b8b58d8a5b3040f302e67378d246ee049f7b",
-    "files/devices/nabu/soc/soc.conf": "9c0ed614c3022d39253ba4a073bebb5faf750dd7f34b9ee1af42501642d6b4a3",
+    "files/devices/nabu/configs/nabu.config": "a7d34e5a2d7b59bca2bd20cfa99e087af976ad0d1bbd288fab32627142e80752",
+    "files/devices/nabu/configs/nabu_defconfig": "0a5d4595577f473306f563f9006661fdfd3fdbb3c69327142fa5884eeda7dd41",
+    "files/devices/nabu/device.conf": "5f255ab51eb87521b81b31c07fe7764cde42cd675f22fab2648c326cdc9e2e54",
+    "files/devices/nabu/hardware.json": "1f91130d63c6142e3bad244ccd9a064b53611dbb779e73d2ffbdf810afd3eff7",
+    "files/devices/nabu/soc/configs/sm8150.config": "a32e813a1c46dc22626faaf9829d911891994f2c2ed90107f6de67fcb04ac0e1",
+    "files/devices/nabu/soc/soc.conf": "4015ad96e805b4607726b4230fc8ed27bf1ebc3320bfc0740b750accdd316196",
     "files/tools/nabu-workspace.py": "7d06743de321010479bbad1a1a13c557fc7ddd0dcfde82d909f7aaaea5529c39",
     "record-build.py": "0655bb139a7c11b032a6af0126c53c1009213a1a2f53adea9ac6d86a7fd277fe",
     "verify-overlay.py": "8a13499d968fc2ec43c391a8d92226b2866e0a718bed64309db1418edbb95a87"
