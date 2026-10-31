@@ -45,10 +45,14 @@ jobs:
           sw_vers > out/toolchain.txt
           xcodebuild -version >> out/toolchain.txt
           clang --version >> out/toolchain.txt
-          if ! brew --prefix llvm >/dev/null 2>&1; then brew install llvm; fi
-          if ! brew --prefix coreutils >/dev/null 2>&1; then brew install coreutils; fi
+          for formula in llvm coreutils lld; do
+            brew list --versions "$formula" >/dev/null 2>&1 || brew install "$formula"
+          done
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+          test -x "$(brew --prefix coreutils)/libexec/gnubin/nproc"
+          test -x "$(brew --prefix lld)/bin/lld-link"
       - name: Build the HakiOS kernel on macOS
         shell: bash
         run: |
