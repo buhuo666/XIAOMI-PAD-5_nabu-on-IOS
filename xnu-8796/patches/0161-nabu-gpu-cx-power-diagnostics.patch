@@ -1,0 +1,116 @@
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+--- a/bsd/dev/nabu_gpu_clocks.c
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -99,18 +99,24 @@
+ static uint32_t
+ nabu_gpu2_read(uint32_t offset)
+ {
+-	nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_READ32, 4, offset, 0, 0);
++	unsigned lane = (offset == NABU_GPUCC_CX_GDSCR ||
++	    offset == NABU_GPUCC_CX_HW_CTRL ||
++	    offset == NABU_GPUCC_CX_GMU_CBCR) ? NABU_DIAG_CX_POWER : NABU_DIAG_EARLY_IO;
++	nabu_gpu_diag_begin(lane, NABU_DIAG_READ32, 4, offset, 0, 0);
+ 	uint32_t value = *(volatile uint32_t *)(gpucc_base + offset);
+-	nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
++	nabu_gpu_diag_end(lane, value, 0);
+ 	return value;
+ }
+ 
+ static void
+ nabu_gpu2_write(uint32_t offset, uint32_t value)
+ {
+-	nabu_gpu_diag_begin(NABU_DIAG_EARLY_IO, NABU_DIAG_WRITE32, 4, offset, value, 0);
++	unsigned lane = (offset == NABU_GPUCC_CX_GDSCR ||
++	    offset == NABU_GPUCC_CX_HW_CTRL ||
++	    offset == NABU_GPUCC_CX_GMU_CBCR) ? NABU_DIAG_CX_POWER : NABU_DIAG_EARLY_IO;
++	nabu_gpu_diag_begin(lane, NABU_DIAG_WRITE32, 4, offset, value, 0);
+ 	*(volatile uint32_t *)(gpucc_base + offset) = value;
+-	nabu_gpu_diag_end(NABU_DIAG_EARLY_IO, value, 0);
++	nabu_gpu_diag_end(lane, value, 0);
+ }
+ 
+ /*
+@@ -167,14 +173,16 @@
+ 	for (int tries = 0; tries < 100; tries++) {
+ 		gdscr = nabu_gpu2_read(NABU_GPUCC_CX_GDSCR);
+ 		if ((gdscr & NABU_GDSC_POWER_ON) != 0) {
++			uint32_t hw_ctrl = nabu_gpu2_read(NABU_GPUCC_CX_HW_CTRL);
+ 			printf("nabugpu2: CX is on (cx_gdscr=0x%08x, hw_ctrl=0x%08x)\n",
+-			    gdscr, nabu_gpu2_read(NABU_GPUCC_CX_HW_CTRL));
++			    gdscr, hw_ctrl);
+ 			return true;
+ 		}
+ 		nabu_gpu2_sleep_ms(2);
+ 	}
++	gdscr = nabu_gpu2_read(NABU_GPUCC_CX_GDSCR);
+ 	printf("nabugpu2: CX does not come on (cx_gdscr=0x%08x)\n",
+-	    nabu_gpu2_read(NABU_GPUCC_CX_GDSCR));
++	    gdscr);
+ 	return false;
+ }
+ 
+diff --git a/bsd/dev/nabu_gpu_diag.h b/bsd/dev/nabu_gpu_diag.h
+--- a/bsd/dev/nabu_gpu_diag.h
++++ b/bsd/dev/nabu_gpu_diag.h
+@@ -8,9 +8,10 @@
+ #include <sys/types.h>
+ 
+ enum nabu_gpu_diag_lane {
+-	NABU_DIAG_PATH, NABU_DIAG_CLOCK, NABU_DIAG_WAIT, NABU_DIAG_EARLY_IO,
+-	NABU_DIAG_CACHE, NABU_DIAG_WORKER, NABU_DIAG_GMU_IO,
+-	NABU_DIAG_GMU_PHASE, NABU_DIAG_HFI, NABU_DIAG_LOG, NABU_DIAG_LANES
++	NABU_DIAG_PATH, NABU_DIAG_CLOCK, NABU_DIAG_WAIT, NABU_DIAG_CX_POWER,
++	NABU_DIAG_EARLY_IO, NABU_DIAG_CACHE, NABU_DIAG_WORKER,
++	NABU_DIAG_GMU_IO, NABU_DIAG_GMU_PHASE, NABU_DIAG_HFI, NABU_DIAG_LOG,
++	NABU_DIAG_LANES
+ };
+ 
+ enum nabu_gpu_diag_op {
+@@ -32,7 +33,7 @@
+ 
+ /* Little-endian on the tablet. Extension starts at byte 64 of the log header. */
+ #define NABU_GPU_DIAG_HEADER_OFFSET 64u
+-#define NABU_GPU_DIAG_VERSION 1u
++#define NABU_GPU_DIAG_VERSION 2u
+ #define NABU_GPU_DIAG_ENTER 1u
+ #define NABU_GPU_DIAG_DONE 2u
+ 
+diff --git a/bsd/dev/nabu_gpu_diag.c b/bsd/dev/nabu_gpu_diag.c
+--- a/bsd/dev/nabu_gpu_diag.c
++++ b/bsd/dev/nabu_gpu_diag.c
+@@ -33,7 +33,7 @@
+ static int diag_sleep_channel;
+ 
+ _Static_assert(sizeof(struct nabu_gpu_diag_record) == 64, "diagnostic record ABI");
+-_Static_assert(sizeof(struct nabu_gpu_diag_snapshot) == 696, "diagnostic snapshot ABI");
++_Static_assert(sizeof(struct nabu_gpu_diag_snapshot) == 760, "diagnostic snapshot ABI");
+ _Static_assert(NABU_GPU_DIAG_HEADER_OFFSET + sizeof(struct nabu_gpu_diag_snapshot) <= 4096,
+     "diagnostics must fit the existing log header block");
+ 
+@@ -119,7 +119,7 @@
+ diag_snapshot(struct nabu_gpu_diag_snapshot *out, uint64_t sequence, uint64_t total)
+ {
+ 	bzero(out, sizeof(*out));
+-	memcpy(out->magic, "NABUD160", 8);
++	memcpy(out->magic, "NABUD161", 8);
+ 	out->version = NABU_GPU_DIAG_VERSION;
+ 	out->bytes = sizeof(*out);
+ 	out->lanes = NABU_DIAG_LANES;
+@@ -156,7 +156,7 @@
+ diag_observer(__unused void *arg, __unused wait_result_t wr)
+ {
+ 	uint32_t previous[NABU_DIAG_LANES] = {0};
+-	printf("nabugpudiag: observer=started version=1 lanes=10 interval_ms=1000 ticks_max=360\n");
++	printf("nabugpudiag: observer=started version=2 lanes=11 interval_ms=1000 ticks_max=360\n");
+ 	for (uint32_t tick = 1; tick <= 360; tick++) {
+ 		struct nabu_gpu_diag_snapshot snapshot;
+ 		os_atomic_store(&diag_ticks, tick, relaxed);
+@@ -219,7 +219,7 @@
+ 	    (clocks & 0xffu) | ((start & 0xffu) << 8) | ((hfi & 0xffu) << 16), 0);
+ 	nabu_gpu_diag_end(NABU_DIAG_PATH, hfi, pause);
+ 	printf("nabugpudiag: config clocks=%u start=%u hfi=%u pause_ms=%u "
+-	    "header_offset=64 header_bytes=696 no_target_waits=1\n", clocks, start, hfi, pause);
++	    "header_offset=64 header_bytes=760 no_target_waits=1\n", clocks, start, hfi, pause);
+ 	kern_return_t result = kernel_thread_start(diag_observer, NULL, &thread);
+ 	if (result == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
