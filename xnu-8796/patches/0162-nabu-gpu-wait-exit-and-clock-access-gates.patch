@@ -1,0 +1,65 @@
+diff --git a/bsd/dev/nabu_gpu_clocks.c b/bsd/dev/nabu_gpu_clocks.c
+--- a/bsd/dev/nabu_gpu_clocks.c
++++ b/bsd/dev/nabu_gpu_clocks.c
+@@ -26,6 +26,10 @@
+  *   nabugpu2=1        run at all
+  *   nabugpu2_pause=MS wait after each announcement (default 2200)
+  *   nabugpu2_watch=S  report liveness for S seconds afterwards
++ *   nabugpu2_noread=1 after the wait, do not touch the GMU clock registers
++ *                    (separates a stalled wait/wakeup from the first access)
++ *   nabugpu2_dryrun=1 read each clock register but skip the enable write
++ *                    (separates a fatal read from a fatal write)
+  *
+  * Every write is announced first and read back afterwards, so a reset leaves a
+  * record of the last thing attempted.
+@@ -51,6 +55,8 @@
+ 
+ static uint32_t gpu2_pause_ms = 2200;
+ static uint32_t gpu2_watch_secs;
++static uint32_t gpu2_noread;
++static uint32_t gpu2_dryrun;
+ static vm_offset_t gpucc_base;
+ 
+ static void
+@@ -76,6 +82,8 @@
+ 	printf("nabugpu2: %s\n", what);
+ 	nabu_gpu_diag_begin(NABU_DIAG_CLOCK, NABU_DIAG_ANNOUNCE, 0, gpu2_pause_ms, 0, 0);
+ 	nabu_gpu2_sleep_ms(gpu2_pause_ms);
++	/* The wait's own completion, so a stall after it names the access that follows. */
++	printf("nabugpu2: pause %u ms returned\n", gpu2_pause_ms);
+ 	nabu_gpu_diag_end(NABU_DIAG_CLOCK, gpu2_pause_ms, 0);
+ }
+ 
+@@ -130,6 +138,10 @@
+ 	uint32_t after;
+ 
+ 	printf("nabugpu2: clock %s at 0x%x: 0x%08x -> enable\n", name, offset, before);
++	if (gpu2_dryrun) {
++		printf("nabugpu2: clock %s: dry run, the enable write is skipped\n", name);
++		return true;
++	}
+ 	nabu_gpu2_write(offset, before | NABU_CBCR_ENABLE);
+ 
+ 	for (int tries = 0; tries < 50; tries++) {
+@@ -213,6 +225,8 @@
+ 	}
+ 	(void)PE_parse_boot_argn("nabugpu2_pause", &gpu2_pause_ms, sizeof(gpu2_pause_ms));
+ 	(void)PE_parse_boot_argn("nabugpu2_watch", &gpu2_watch_secs, sizeof(gpu2_watch_secs));
++	(void)PE_parse_boot_argn("nabugpu2_noread", &gpu2_noread, sizeof(gpu2_noread));
++	(void)PE_parse_boot_argn("nabugpu2_dryrun", &gpu2_dryrun, sizeof(gpu2_dryrun));
+ 
+ 	printf("nabugpu2: SM8150 %s stage 2: clock and power writes\n",
+ 	    NABU_GPU_NAME);
+@@ -244,6 +258,12 @@
+ 	}
+ 
+ 	nabu_gpu2_announce("turn on the GMU's clock");
++	if (gpu2_noread) {
++		/* No GPUCC access and no report after the wait: the only question left
++		 * is whether the wait itself returns. */
++		printf("nabugpu2: nabugpu2_noread=1; returning before any GMU clock access\n");
++		return;
++	}
+ 	nabu_gpu2_clock_on("cx_gmu", NABU_GPUCC_CX_GMU_CBCR, false);
+ 	nabu_gpu2_clock_on("gx_gmu", NABU_GPUCC_GX_GMU_CBCR, false);
+ 
