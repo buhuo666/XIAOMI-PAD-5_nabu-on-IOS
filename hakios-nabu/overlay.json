@@ -1,7 +1,7 @@
 {
   "upstream": "a3384e031eb1e605cf37adaefc19991f04f6274b",
   "files": {
-    "apply.patch": "1e99cc82bed6b5ee38beed0196f8f40b121005c02243f1720bd30565faa248a5",
+    "apply.patch": "1a42273f89e82c08703fce11ce89fd3dcc8f2ead6995123e09c78ea09a74ca2a",
     "files/devices/nabu/configs/nabu.config": "a7d34e5a2d7b59bca2bd20cfa99e087af976ad0d1bbd288fab32627142e80752",
     "files/devices/nabu/configs/nabu_defconfig": "0a5d4595577f473306f563f9006661fdfd3fdbb3c69327142fa5884eeda7dd41",
     "files/devices/nabu/device.conf": "5f255ab51eb87521b81b31c07fe7764cde42cd675f22fab2648c326cdc9e2e54",
@@ -9,6 +9,9 @@
     "files/devices/nabu/soc/configs/sm8150.config": "a32e813a1c46dc22626faaf9829d911891994f2c2ed90107f6de67fcb04ac0e1",
     "files/devices/nabu/soc/soc.conf": "4015ad96e805b4607726b4230fc8ed27bf1ebc3320bfc0740b750accdd316196",
     "files/tools/nabu-workspace.py": "7d06743de321010479bbad1a1a13c557fc7ddd0dcfde82d909f7aaaea5529c39",
+    "files/xnu/files/osfmk/arm64/hakios_pauth_compat.h": "4473e65f76c55b6bc0f9140e04ef4188f4966ac03cac64fb8e57011d8bc7556d",
+    "files/xnu/files/osfmk/arm64/hakios_pauth_xnu.h": "c71518db142b666f0da560eee8e008a6a52a2a8389107d5bfc3eb83be6640bbd",
+    "files/xnu/pauth-test-hook.patch": "59811fffd422f78af4c3b5d19779863ee69c7073e4741701b468303de82b0d37",
     "files/xnuloader/nabu-platform.h": "75c87f9247d1307966363911cef8b371ab74625d757b25fb8d2fabd694ac5168",
     "record-build.py": "0655bb139a7c11b032a6af0126c53c1009213a1a2f53adea9ac6d86a7fd277fe",
     "verify-overlay.py": "8a13499d968fc2ec43c391a8d92226b2866e0a718bed64309db1418edbb95a87"

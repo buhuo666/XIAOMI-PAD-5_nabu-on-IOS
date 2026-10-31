@@ -110,6 +110,19 @@ index 673a45f..3437bb5 100755
  source "$(dirname "${BASH_SOURCE[0]}")/xnu-env.sh"
  cd "$XNU_SRC" || exit 1
  # The Wi-Fi driver's object (tools/mk-ath11k.sh) is linked into the kernel when it is there; make
+diff --git a/xnu/apply.sh b/xnu/apply.sh
+index 7f7b206..ddc187f 100755
+--- a/xnu/apply.sh
++++ b/xnu/apply.sh
+@@ -27,6 +27,8 @@ git checkout -q -b hakios "$TAG"
+ [ "$(git rev-parse HEAD)" = "$BASE" ] || { echo "apply.sh: $TAG is $(git rev-parse HEAD), expected $BASE" >&2; false; }
+ echo 'BUILD/' >> .git/info/exclude
+ git apply --whitespace=nowarn "$HERE/hakios.patch"
++git apply --check "$HERE/pauth-test-hook.patch"
++git apply "$HERE/pauth-test-hook.patch"
+ cp -a "$HERE/files/." .
+ # HFS Plus (the data volume): Apple's release, fetched like XNU, and this port's changes over it
+ "$HERE/hfs/hfs.sh" put "$DIR"
 diff --git a/xnu/files/osfmk/arm64/gic_v3_irq.c b/xnu/files/osfmk/arm64/gic_v3_irq.c
 index 63ffd4b..0202090 100644
 --- a/xnu/files/osfmk/arm64/gic_v3_irq.c
@@ -239,7 +252,7 @@ index 2d35c83..1cc55a9 100644
  typedef struct efi_file {
  	uint64_t revision;
 diff --git a/xnuloader/loader.c b/xnuloader/loader.c
-index 422f9d3..e62d4a2 100644
+index 422f9d3..10a73b3 100644
 --- a/xnuloader/loader.c
 +++ b/xnuloader/loader.c
 @@ -10,6 +10,7 @@
@@ -690,9 +703,12 @@ index 422f9d3..e62d4a2 100644
  	/* no payload in memory (nobody put one there): the volume this loader came from may have one, as a UEFI boot loader's does */
  	if (((const struct payload_header *)PAYLOAD_BASE)->magic != PAYLOAD_MAGIC) {
  		load_payload_from_volume();
-@@ -4334,16 +4498,26 @@ efi_main(efi_handle image, efi_system_table *st)
+@@ -4333,17 +4497,29 @@ efi_main(efi_handle image, efi_system_table *st)
+ 	}
  	print("CurrentEL=%x MIDR=%x MMFR0=%x CNTFRQ=%d image=%x\n", READ_SYSREG(CurrentEL) >> 2, READ_SYSREG(MIDR_EL1),
  	    READ_SYSREG(ID_AA64MMFR0_EL1), READ_SYSREG(CNTFRQ_EL0), (uint64_t)(uintptr_t)&__ImageBase);
++	print("CPU features: AA64ISAR0=%x AA64ISAR1=%x\n",
++	    READ_SYSREG(ID_AA64ISAR0_EL1), READ_SYSREG(ID_AA64ISAR1_EL1));
  
 -	PLAT = &platform_qemu_virt;
  	if (EFI_ERROR(BS->locate_protocol(&gop_guid, NULL, (void **)&GOP)) || GOP->mode == NULL ||
@@ -722,7 +738,7 @@ index 422f9d3..e62d4a2 100644
  			PLAT = &platform_redwood;
  		} else {
  			ramfb_phone_screen();
-@@ -4356,14 +4530,26 @@ efi_main(efi_handle image, efi_system_table *st)
+@@ -4356,14 +4532,26 @@ efi_main(efi_handle image, efi_system_table *st)
  	wdt_arm();
  
  	int have_payload = parse_payload(&pi, 0);

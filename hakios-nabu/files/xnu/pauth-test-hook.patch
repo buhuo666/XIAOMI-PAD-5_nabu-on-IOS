@@ -1,0 +1,23 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -874,6 +874,8 @@ sleh_synchronous(arm_context_t *context, uint32_t esr, vm_offset_t far)
+ #endif
+ }
+ 
++#include <arm64/hakios_pauth_xnu.h>
++
+ /*
+  * Uncategorized exceptions are a catch-all for general execution errors.
+  * ARM64_TODO: For now, we assume this is for undefined instruction exceptions.
+@@ -885,7 +887,9 @@ handle_uncategorized(arm_saved_state_t *state)
+ 	mach_msg_type_number_t     numcodes  = 2;
+ 	uint32_t                   instr     = 0;
+ 
+-	COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr));
++	if (COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr)) == 0 &&
++	    hakios_pauth_xnu_step(state, instr))
++		return;
+ 
+ #if CONFIG_DTRACE
+ 
