@@ -1,0 +1,186 @@
+diff --git a/bsd/dev/nabu_gpu_gmu.h b/bsd/dev/nabu_gpu_gmu.h
+--- a/bsd/dev/nabu_gpu_gmu.h
++++ b/bsd/dev/nabu_gpu_gmu.h
+@@ -63,11 +63,17 @@
+ 	bool attempted, failed, reset_restored, stream_published, observed_valid;
+ };
+ 
+-/* Cold takeover only: CM3 reset, GX off, no inherited SMR, ordinary nabu CBs. */
++struct nabu_smmu_snapshot;
++struct nabu_smmu_register_plan;
++
++/* CPU-only gate shared by preflight and the destructive cold backend. */
++bool nabu_gpu_gmu_admit(const struct nabu_gmu_memory_view *memory,
++    const struct nabu_smmu_snapshot *snapshot, struct nabu_smmu_register_plan *plan);
++/* Cold takeover also requires this boot's explicit bank/quiescence evidence. */
+ /* The result must be zero initialized; attempted prevents replaying a start. */
+ bool nabu_gpu_gmu_cold_start(const struct nabu_gmu_memory_view *memory,
+     const uint8_t *firmware, uint32_t bytes, const struct nabu_gmu_io *io,
+-    struct nabu_gmu_boot_result *result);
++    struct nabu_gmu_boot_result *result, const struct nabu_smmu_snapshot *snapshot);
+ void nabu_gpu_gmu_start_after_root(void);
+ 
+ #endif /* NABU_GPU_GMU_H */
+diff --git a/bsd/dev/nabu_gpu_gmu_boot.c b/bsd/dev/nabu_gpu_gmu_boot.c
+--- a/bsd/dev/nabu_gpu_gmu_boot.c
++++ b/bsd/dev/nabu_gpu_gmu_boot.c
+@@ -8,6 +8,8 @@
+  * The ordinary, non-static-CB allocator starts at NUMS2CB and reserves banks
+  * only for valid translating handoff SMRs. This deliberately narrow takeover
+  * accepts no inherited stream at all and requires both CM3 reset and GX off.
++ * These resource predicates are not ownership: the shared software planner
++ * must first admit this boot's explicit bank and client-quiescence evidence.
+  * It never consumes Android bank numbers, fabricates an old observation, or
+  * changes global SMMU bypass. Other boot states require a different driver.
+  */
+@@ -15,6 +17,7 @@
+ #include <sys/systm.h>
+ #include <libkern/libkern.h>
+ #include "nabu_gpu_gmu.h"
++#include "nabu_gpu_smmu_plan.h"
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 
+@@ -185,6 +188,20 @@
+ 	return true;
+ }
+ 
++bool
++nabu_gpu_gmu_admit(const struct nabu_gmu_memory_view *memory,
++    const struct nabu_smmu_snapshot *snapshot, struct nabu_smmu_register_plan *plan)
++{
++	if (plan == NULL) {
++		return false;
++	}
++	nabu_smmu_build_register_plan(snapshot, memory != NULL ? memory->table_root : 0,
++	    gmu_memory_matches(memory), plan);
++	/* The current executor implements only CB0/stream0; never retarget silently. */
++	return plan->result == NABU_SMMU_PLAN_READY &&
++	       plan->bank_index == 0 && plan->stream_index == 0;
++}
++
+ static bool
+ gmu_cold_resources(struct gmu_boot *boot)
+ {
+@@ -220,13 +237,13 @@
+ 		{0x8004, 0x303},
+ 	};
+ 
++	/* Recheck before the first context store; never manufacture a disabled bank. */
++	if (!gmu_check(boot, NABU_GMU_SMMU, 0x8000, 0xffffffffu, 0)) {
++		return false;
++	}
+ 	boot->io->clean(boot->io->cookie, memory->pool_physical, memory->pool_bytes);
+ 	boot->io->barrier(boot->io->cookie);
+ 	boot->domain_touched = true;
+-	if (!gmu_write(boot, NABU_GMU_SMMU, 0x8000, 0) ||
+-	    !gmu_check(boot, NABU_GMU_SMMU, 0x8000, 1, 0)) {
+-		return false;
+-	}
+ 	for (unsigned i = 0; i < sizeof(setup) / sizeof(setup[0]); i++) {
+ 		if (!gmu_write(boot, NABU_GMU_SMMU, setup[i].offset, setup[i].value)) {
+ 			return false;
+@@ -422,13 +439,18 @@
+ bool
+ nabu_gpu_gmu_cold_start(const struct nabu_gmu_memory_view *memory,
+     const uint8_t *firmware, uint32_t bytes, const struct nabu_gmu_io *io,
+-    struct nabu_gmu_boot_result *result)
++    struct nabu_gmu_boot_result *result, const struct nabu_smmu_snapshot *snapshot)
+ {
+ 	if (result == NULL || result->attempted) {
+ 		return false;
+ 	}
+ 	memset(result, 0, sizeof(*result));
+ 	result->attempted = true;
++	struct nabu_smmu_register_plan admission;
++	if (!nabu_gpu_gmu_admit(memory, snapshot, &admission)) {
++		result->failed = true;
++		return false;
++	}
+ 	if (io == NULL || io->read32 == NULL || io->write32 == NULL ||
+ 	    io->write64 == NULL || io->clean == NULL || io->barrier == NULL ||
+ 	    io->delay_us == NULL || !gmu_memory_matches(memory)) {
+diff --git a/bsd/dev/nabu_gpu_gmu_start.c b/bsd/dev/nabu_gpu_gmu_start.c
+--- a/bsd/dev/nabu_gpu_gmu_start.c
++++ b/bsd/dev/nabu_gpu_gmu_start.c
+@@ -25,6 +25,7 @@
+ 
+ static bool start_scheduled;
+ static bool start_hfi;
++static bool start_preflight;
+ static struct nabu_gmu_boot_result start_result;
+ static struct nabu_gmu_hfi_result start_hfi_result;
+ static vm_offset_t start_mapping[6];
+@@ -127,6 +128,8 @@
+ start_worker(__unused void *arg, __unused wait_result_t wr)
+ {
+ 	struct nabu_gmu_memory_view memory;
++	struct nabu_smmu_snapshot snapshot;
++	struct nabu_smmu_register_plan admission;
+ 	DTEntry chosen;
+ 	const uint8_t *firmware = NULL;
+ 	unsigned int bytes = 0;
+@@ -140,6 +143,24 @@
+ 
+ 	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_WORKER_ENTER, 0, 0, start_hfi, 0);
+ 	nabu_gpu_diag_end(NABU_DIAG_WORKER, start_hfi, 0);
++	bzero(&snapshot, sizeof(snapshot));
++	if (!nabu_gpu_gmu_memory_get(&memory)) {
++		printf("nabugmupreflight: rejected; validated RAM unavailable; no MMIO or cache transition\n");
++		exit_reason = 6;
++		goto finished;
++	}
++	(void)nabu_gpu_smmu_snapshot_get(&snapshot);
++	bool admitted = nabu_gpu_gmu_admit(&memory, &snapshot, &admission);
++	printf("nabugmupreflight: mode=%u admitted=%u result=%u operations=%u "
++	    "bank=0x%x stream=0x%x; no MMIO or cache transition\n",
++	    start_preflight ? 2u : 1u, admitted ? 1u : 0u,
++	    (unsigned)admission.result, admission.operation_count,
++	    admission.bank_index, admission.stream_index);
++	printf("nabugmupreflight: reason=%s\n", nabu_smmu_plan_result_name(admission.result));
++	if (start_preflight || !admitted) {
++		exit_reason = admitted ? 0 : 6;
++		goto finished;
++	}
+ 	if (start_hfi) {
+ 		nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_CACHE_PREPARE, 0, 0, 0, 0);
+ 		bool prepared = nabu_gpu_gmu_memory_hfi_prepare();
+@@ -182,7 +203,7 @@
+ 	}
+ 	printf("nabugmustart: begin cold initialization; reused GCC/GPUCC/SMMU mappings; no probe log waits\n");
+ 	nabu_gpu_diag_begin(NABU_DIAG_WORKER, NABU_DIAG_COLD_START, 0, 0, 0, 0);
+-	bool ready = nabu_gpu_gmu_cold_start(&memory, firmware, bytes, &io, &start_result);
++	bool ready = nabu_gpu_gmu_cold_start(&memory, firmware, bytes, &io, &start_result, &snapshot);
+ 	nabu_gpu_diag_end(NABU_DIAG_WORKER, ready ? 1u : 0u, (uint32_t)start_result.state);
+ 	if (!ready) {
+ 		exit_reason = 4;
+@@ -237,7 +258,7 @@
+ 		return;
+ 	}
+ 	(void)PE_parse_boot_argn("nabugmuhfi", &hfi, sizeof(hfi));
+-	if (enable != 1 || hfi > 1 || start_scheduled ||
++	if ((enable != 1 && enable != 2) || hfi > 1 || (enable == 2 && hfi != 0) || start_scheduled ||
+ 	    PE_parse_boot_argn("nabugmujoint", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmucb", &other, sizeof(other)) ||
+ 	    PE_parse_boot_argn("nabugmuload", &other, sizeof(other)) ||
+@@ -250,6 +271,7 @@
+ 	}
+ 	start_scheduled = true;
+ 	start_hfi = hfi == 1;
++	start_preflight = enable == 2;
+ 	nabu_gpu_diag_begin(NABU_DIAG_PATH, NABU_DIAG_SCHEDULE, 0, 0, hfi, 0);
+ 	if (kernel_thread_start(start_worker, NULL, &thread) != KERN_SUCCESS) {
+ 		nabu_gpu_diag_end(NABU_DIAG_PATH, 0, hfi);
+@@ -258,7 +280,11 @@
+ 	}
+ 	nabu_gpu_diag_end(NABU_DIAG_PATH, 1, hfi);
+ 	thread_deallocate(thread);
+-	printf("nabugmustart: scheduled after root mount; cold init through FW/HFI ready; one attempt\n");
++	if (start_preflight) {
++		printf("nabugmupreflight: scheduled after root mount; CPU-only admission; one attempt\n");
++	} else {
++		printf("nabugmustart: scheduled after root mount; cold init through FW/HFI ready; one attempt\n");
++	}
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
