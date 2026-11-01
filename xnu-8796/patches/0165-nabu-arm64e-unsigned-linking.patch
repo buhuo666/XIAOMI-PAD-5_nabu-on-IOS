@@ -1,0 +1,243 @@
+diff --git a/bsd/dev/arm/kern_machdep.c b/bsd/dev/arm/kern_machdep.c
+--- a/bsd/dev/arm/kern_machdep.c
++++ b/bsd/dev/arm/kern_machdep.c
+@@ -16,6 +16,9 @@
+ #include        <libkern/libkern.h>
+ #include        <machine/exec.h>
+ #include        <pexpert/arm64/board_config.h>
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++#include        <pexpert/pexpert.h>
++#endif
+ 
+ #if __arm64__
+ static cpu_subtype_t cpu_subtype32(void);
+@@ -85,6 +88,20 @@
+ 		switch (hostsubtype) {
+ 		case CPU_SUBTYPE_ARM64_V8:
+ 			switch (execsubtype) {
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++			case CPU_SUBTYPE_ARM64E: {
++				int enabled = 0;
++				/* Admit only the known versioned ABI; never advertise PAuth. */
++				if ((execfeatures & CPU_SUBTYPE_PTRAUTH_ABI) == 0 ||
++				    CPU_SUBTYPE_ARM64_PTR_AUTH_VERSION(execfeatures) !=
++				    CPU_SUBTYPE_ARM64_PTR_AUTH_CURRENT_VERSION ||
++				    !PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) ||
++				    enabled != 1) {
++					return 0;
++				}
++				return grade_arm64e_binary(execfeatures);
++			}
++#endif
+ 			case CPU_SUBTYPE_ARM64_V8:
+ 				return 10;
+ 			case CPU_SUBTYPE_ARM64_ALL:
+diff --git a/osfmk/vm/vm_dyld_pager.c b/osfmk/vm/vm_dyld_pager.c
+--- a/osfmk/vm/vm_dyld_pager.c
++++ b/osfmk/vm/vm_dyld_pager.c
+@@ -62,6 +62,11 @@
+ #include <ptrauth.h>
+ #include <arm/misc_protos.h>
+ #endif /* defined(HAS_APPLE_PAC) */
++
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++#include <pexpert/pexpert.h>
++#include <vm/nabu_arm64e_fixups.h>
++#endif
+ 
+ /*
+  * DYLD page in linking pager.
+@@ -566,6 +571,50 @@
+ #endif /* defined(HAS_APPLE_PAC) */
+ 
+ 
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++static kern_return_t
++nabu_fixup_page_unsigned(vm_offset_t contents, vm_offset_t end_contents,
++    dyld_pager_t pager, struct dyld_chained_starts_in_segment *seg,
++    uint32_t page_index)
++{
++	int enabled = 0;
++	const struct mwl_info_hdr *hdr = pager->dyld_link_info;
++	size_t info_bytes = pager->dyld_link_info_size;
++	uintptr_t info_address = (uintptr_t)hdr;
++	uintptr_t segment_address = (uintptr_t)seg;
++	size_t segment_offset;
++	size_t page_start_offset = offsetof(struct dyld_chained_starts_in_segment, page_start);
++
++	if (!PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) || enabled != 1 ||
++	    info_bytes < sizeof(*hdr) || segment_address < info_address ||
++	    end_contents < contents) {
++		return KERN_FAILURE;
++	}
++	segment_offset = segment_address - info_address;
++	if (segment_offset > info_bytes || page_start_offset > info_bytes - segment_offset ||
++	    seg->size > info_bytes - segment_offset || seg->size < page_start_offset ||
++	    page_index >= seg->page_count ||
++	    (size_t)seg->page_count > (seg->size - page_start_offset) / sizeof(uint16_t) ||
++	    seg->pointer_format != hdr->mwli_pointer_format ||
++	    end_contents - contents != seg->page_size ||
++	    (hdr->mwli_binds_offset & 7) != 0 ||
++	    hdr->mwli_binds_offset > info_bytes ||
++	    hdr->mwli_binds_count > (info_bytes - hdr->mwli_binds_offset) / sizeof(uint64_t)) {
++		return KERN_FAILURE;
++	}
++	const uint64_t *binds = (const uint64_t *)(info_address + hdr->mwli_binds_offset);
++	enum nabu_arm64e_result result = nabu_arm64e_fixup_page((uint8_t *)contents,
++	    end_contents - contents, seg->page_start[page_index], hdr->mwli_pointer_format,
++	    hdr->mwli_image_address, hdr->mwli_slide, binds, hdr->mwli_binds_count, NULL);
++	if (result != NABU_ARM64E_OK) {
++		printf("nabuarm64e: rejected unsigned chain format=%u page=%u reason=%u\n",
++		    hdr->mwli_pointer_format, page_index, (unsigned int)result);
++		return KERN_FAILURE;
++	}
++	return KERN_SUCCESS;
++}
++#endif
++
+ /*
+  * Handle dyld fixups for a page.
+  */
+@@ -657,6 +706,11 @@
+ 	case DYLD_CHAINED_PTR_ARM64E_USERLAND24:
+ 		fixupPageAuth64(userVA, contents, end_contents, pager, segInfo, pageIndex, true);
+ 		break;
++#elif defined(ARM64_BOARD_CONFIG_NABU)
++	case DYLD_CHAINED_PTR_ARM64E:
++	case DYLD_CHAINED_PTR_ARM64E_USERLAND:
++	case DYLD_CHAINED_PTR_ARM64E_USERLAND24:
++		return nabu_fixup_page_unsigned(contents, end_contents, pager, segInfo, pageIndex);
+ #endif /* defined(HAS_APPLE_PAC) */
+ 	case DYLD_CHAINED_PTR_64:
+ 		fixupPage64(contents, end_contents, link_info, segInfo, pageIndex, false);
+diff --git a/osfmk/vm/nabu_arm64e_fixups.h b/osfmk/vm/nabu_arm64e_fixups.h
+new file mode 100644
+--- /dev/null
++++ b/osfmk/vm/nabu_arm64e_fixups.h
+@@ -0,0 +1,126 @@
++/*
++ * Experimental unsigned arm64e chain materialization for the nabu port.
++ * No signing, key derivation, authentication or cryptographic PAC is performed.
++ * Layouts: xnu-8796.141.3/EXTERNAL_HEADERS/mach-o/fixup-chains.h.
++ */
++#ifndef NABU_ARM64E_FIXUPS_H
++#define NABU_ARM64E_FIXUPS_H
++
++#include <stdint.h>
++#include <stddef.h>
++
++enum nabu_arm64e_result {
++	NABU_ARM64E_OK = 0,
++	NABU_ARM64E_BAD_FORMAT = 1,
++	NABU_ARM64E_BAD_BIND = 2,
++	NABU_ARM64E_RESERVED_BITS = 3,
++	NABU_ARM64E_BAD_PAGE = 4,
++	NABU_ARM64E_BAD_CHAIN = 5
++};
++
++static inline enum nabu_arm64e_result
++nabu_arm64e_decode(uint64_t value, uint16_t format, uint64_t image_address,
++    uint64_t slide, const uint64_t *binds, size_t bind_count,
++    uint64_t *target, uint16_t *next)
++{
++	uint64_t result;
++	int auth = (int)(value >> 63);
++	int bind = (int)((value >> 62) & 1);
++
++	if (format != 1 && format != 9 && format != 12)
++		return NABU_ARM64E_BAD_FORMAT;
++	if (target == NULL || next == NULL)
++		return NABU_ARM64E_BAD_CHAIN;
++
++	if (bind) {
++		uint32_t ordinal_mask = format == 12 ? 0xffffffu : 0xffffu;
++		uint32_t ordinal = (uint32_t)value & ordinal_mask;
++		if ((uint32_t)value & ~ordinal_mask)
++			return NABU_ARM64E_RESERVED_BITS;
++		if (binds == NULL || ordinal >= bind_count)
++			return NABU_ARM64E_BAD_BIND;
++		result = binds[ordinal];
++		if (!auth) {
++			int64_t addend = (int64_t)((value >> 32) & 0x7ffffu);
++			if (addend & 0x40000)
++				addend -= 0x80000;
++			result += (uint64_t)addend;
++		}
++	} else if (auth) {
++		/* Authenticated rebases always use an image-relative 32-bit target. */
++		result = image_address + (value & 0xffffffffu);
++	} else {
++		uint64_t low43 = value & 0x7ffffffffffULL;
++		uint64_t high8 = (value << 13) & 0xff00000000000000ULL;
++		result = low43 + (format == 1 ? slide : image_address) + high8;
++	}
++
++	*target = result;
++	*next = (uint16_t)((value >> 51) & 0x7ff);
++	return NABU_ARM64E_OK;
++}
++
++static inline uint64_t
++nabu_arm64e_read64(const uint8_t *bytes)
++{
++	uint64_t result = 0;
++	for (unsigned int i = 0; i < 8; ++i)
++		result |= (uint64_t)bytes[i] << (i * 8);
++	return result;
++}
++
++static inline void
++nabu_arm64e_write64(uint8_t *bytes, uint64_t value)
++{
++	for (unsigned int i = 0; i < 8; ++i)
++		bytes[i] = (uint8_t)(value >> (i * 8));
++}
++
++/*
++ * Validate the whole chain before changing the page. A bad bind or out-of-page
++ * next offset leaves every byte intact. Nonzero deltas strictly move forward.
++ */
++static inline enum nabu_arm64e_result
++nabu_arm64e_fixup_page(uint8_t *page, size_t page_bytes, uint16_t first,
++    uint16_t format, uint64_t image_address, uint64_t slide,
++    const uint64_t *binds, size_t bind_count, size_t *fixed_count)
++{
++	if (format != 1 && format != 9 && format != 12)
++		return NABU_ARM64E_BAD_FORMAT;
++	if (page == NULL || (page_bytes != 4096 && page_bytes != 16384))
++		return NABU_ARM64E_BAD_PAGE;
++	if (first == 0xffff) {
++		if (fixed_count != NULL)
++			*fixed_count = 0;
++		return NABU_ARM64E_OK;
++	}
++	if (first >= page_bytes || first > page_bytes - 8)
++		return NABU_ARM64E_BAD_CHAIN;
++
++	for (unsigned int pass = 0; pass < 2; ++pass) {
++		size_t offset = first;
++		size_t count = 0;
++		for (;;) {
++			uint64_t target;
++			uint16_t next;
++			enum nabu_arm64e_result result = nabu_arm64e_decode(
++			    nabu_arm64e_read64(page + offset), format, image_address,
++			    slide, binds, bind_count, &target, &next);
++			if (result != NABU_ARM64E_OK)
++				return result;
++			if (next != 0 && (size_t)next * 8 > page_bytes - 8 - offset)
++				return NABU_ARM64E_BAD_CHAIN;
++			if (pass != 0)
++				nabu_arm64e_write64(page + offset, target);
++			++count;
++			if (next == 0)
++				break;
++			offset += (size_t)next * 8;
++		}
++		if (pass != 0 && fixed_count != NULL)
++			*fixed_count = count;
++	}
++	return NABU_ARM64E_OK;
++}
++
++#endif
