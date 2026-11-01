@@ -1,0 +1,84 @@
+diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
+--- a/bsd/dev/nabu_sample.c
++++ b/bsd/dev/nabu_sample.c
+@@ -11,6 +11,7 @@
+  * syscall stub in pc and its caller in lr/bt.
+  *
+  * First sample 90 s after start, then every 120 s, 40 samples at most.
++ * nabusmpfirst=1..300 and nabusmpint=1..120 override those waits.
+  */
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -64,17 +65,29 @@
+ nabu_sample_thread(__unused void *arg, __unused wait_result_t wr)
+ {
+ 	static int chan;
++	int first = 90, interval = 120;
++	int first_set, interval_set;
++
+ 	if (!PE_parse_boot_argn("nabusample", nabu_sample_names, sizeof(nabu_sample_names))) {
+ 		strlcpy(nabu_sample_names, "SpringBoard,backboardd", sizeof(nabu_sample_names));
++	}
++	first_set = PE_parse_boot_argn("nabusmpfirst", &first, sizeof(first));
++	interval_set = PE_parse_boot_argn("nabusmpint", &interval, sizeof(interval));
++	if (first < 1 || first > 300 || interval < 1 || interval > 120) {
++		printf("SMP rejected: require nabusmpfirst=1..300 and nabusmpint=1..120\n");
++		return;
+ 	}
+ 	if (nabu_sample_names[0] == '-') {
+ 		return;
+ 	}
+-	(void)tsleep(&chan, PZERO, "nabusmp", 90 * hz);
++	if (first_set || interval_set) {
++		printf("SMP schedule first=%d interval=%d count=40\n", first, interval);
++	}
++	(void)tsleep(&chan, PZERO, "nabusmp", first * hz);
+ 	for (int i = 0; i < 40; i++) {
+ 		printf("SMP --- sample %d\n", i);
+ 		proc_iterate(PROC_ALLPROCLIST, nabu_sample_proc, NULL, NULL, NULL);
+-		(void)tsleep(&chan, PZERO, "nabusmp", 120 * hz);
++		(void)tsleep(&chan, PZERO, "nabusmp", interval * hz);
+ 	}
+ }
+ 
+diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1461,6 +1461,26 @@
+ 	return exit_with_reason(p, rv, retval, thread_can_terminate, perf_notify, jetsam_flags, OS_REASON_NULL);
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_NABU)
++static void
++nabu_boottrace_exit(proc_t p, int rv)
++{
++	static unsigned int lines;
++	int enabled = 0;
++
++	if (!PE_parse_boot_argn("nabuboottrace", &enabled, sizeof(enabled)) || enabled != 1 ||
++	    (strcmp(p->p_comm, "launchd") != 0 &&
++	    strcmp(p->p_comm, "launchd_cache_lo") != 0)) {
++		return;
++	}
++	if (__atomic_fetch_add(&lines, 1u, __ATOMIC_RELAXED) >= 128u) {
++		return;
++	}
++	printf("NABU BOOT: exit-request name=%s pid=%d rv=0x%x\n",
++	    p->p_comm, proc_getpid(p), (unsigned int)rv);
++}
++#endif
++
+ /*
+  * NOTE: exit_with_reason drops a reference on the passed exit_reason
+  */
+@@ -1473,6 +1493,10 @@
+ 	struct uthread *ut;
+ 	int error = 0;
+ 	bool proc_exiting = false;
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	nabu_boottrace_exit(p, rv);
++#endif
+ 
+ #if DEVELOPMENT || DEBUG
+ 	/*

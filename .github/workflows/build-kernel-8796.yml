@@ -127,6 +127,8 @@ jobs:
           python3 xnu-8796/test-project-system-root.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-keystore-registration.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-amfi-service.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/test-amfi-current-source.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/test-bootstrap-diagnostics.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-volume-home.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-display-mode.py --xnu-source dxb/xnu --cc clang++ 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-display-scale-trace.py --xnu-source dxb/xnu --cc clang++ 2>&1 | tee -a out/source-tests.txt
