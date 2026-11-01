@@ -33,7 +33,13 @@ SAMPLER_SHIM = r"""
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
+#ifdef strlcpy
+#undef strlcpy
+#endif
+#define strlcpy nabu_host_strlcpy
 #define PZERO 0
 #define PROC_ALLPROCLIST 1
 #define PROC_RETURNED 0
@@ -47,7 +53,7 @@ static int waits[50], wait_count, samples, calls, selected;
 static int log_count, schedule_count, rejected_count;
 static const char *names;
 static char nabu_sample_names[128];
-static size_t strlcpy(char *out, const char *in, size_t size) {
+static size_t nabu_host_strlcpy(char *out, const char *in, size_t size) {
     size_t len = strlen(in), n = len < size - 1 ? len : size - 1;
     memcpy(out, in, n); out[n] = 0; return len;
 }
