@@ -14,7 +14,12 @@ PRELUDE = r"""
 #include <setjmp.h>
 #include <stdatomic.h>
 #include "nabu_log_storage.h"
+/* The banner is diagnostic only; a shim avoids host format-checking differences. */
+static void nabu_host_printf(const char *fmt, ...) { (void)fmt; }
+#define printf nabu_host_printf
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 #define PZERO 0
 #define UFS_BLOCK 4096u
 #define NABU_LOG_SIZE (4u << 20)
@@ -23,7 +28,11 @@ PRELUDE = r"""
 #define DMA_BOUNCE 0u
 #define os_atomic_load(p,order) atomic_load_explicit((p),memory_order_##order)
 #define os_atomic_store(p,v,order) atomic_store_explicit((p),(v),memory_order_##order)
-#define bzero(p,n) memset((p),0,(n))
+#ifdef bzero
+#undef bzero
+#endif
+static void nabu_host_bzero(void *p, size_t n) { __builtin_memset(p, 0, n); }
+#define bzero(p,n) nabu_host_bzero((p),(n))
 #define NABU_DIAG_LOG 0
 #define NABU_DIAG_LOG_SLEEP 0
 #define NABU_DIAG_LOG_LOCK 0
@@ -44,10 +53,21 @@ static bool held;
 static unsigned sleeps,writes,syncs,fail_write,fail_sync;
 static uint64_t base_lba, max_written, total_written;
 static struct nabu_log_header saved_header;
+static bool stream_case;
+static unsigned char disk_capture[12u << 20];
 static jmp_buf stop_loop;
+static unsigned char pattern(uint64_t at) { return (unsigned char)((at*13u+at/4096u)%251u); }
 static int tsleep(void *c,int priority,const char *name,int ticks) {
     assert(c==&nabu_log_chan && priority==PZERO && ticks==hz);
     assert(!strcmp(name,"nabulog") && !held);
+    if(stream_case) {
+        if(sleeps++==6) longjmp(stop_loop,1);
+        uint64_t previous=nabu_log_total;
+        uint64_t next=previous+1500001;
+        for(uint64_t i=previous;i<next;++i) nabu_log_ring[i%NABU_LOG_SIZE]=(char)pattern(i);
+        nabu_log_total=next;
+        return 0;
+    }
     if(sleeps++) longjmp(stop_loop,1);
     return 0;
 }
@@ -66,12 +86,16 @@ static int ufs_write_blocks(uint64_t lba,uint32_t count) {
         assert(off+(uint64_t)count*UFS_BLOCK<=NABU_LOG_STORAGE_BYTES);
         total_written+=(uint64_t)count*UFS_BLOCK;
         if(off+(uint64_t)count*UFS_BLOCK>max_written) max_written=off+(uint64_t)count*UFS_BLOCK;
+        if(stream_case) {
+            assert(off+(uint64_t)count*UFS_BLOCK<=sizeof(disk_capture));
+            memcpy(disk_capture+off,bounce,(size_t)count*UFS_BLOCK);
+        }
     }
     return 0;
 }
 static int ufs_sync_cache_range(uint64_t lba,uint64_t count) {
     assert(held && count && lba>=base_lba && lba+count<=su.first_block+su.nblocks);
-    assert(nabu_log_committed==17);
+    if(!stream_case) assert(nabu_log_committed==17);
     syncs++;
     return syncs==fail_sync ? 5 : 0;
 }
@@ -122,6 +146,13 @@ int main(void) {
     assert(saved_header.ram_lost>0 && saved_header.valid_from==saved_header.ram_lost);
     run_case(NABU_LOG_STORAGE_BYTES+20000ULL,0,0);
     assert(syncs==3 && max_written==NABU_LOG_STORAGE_BYTES);
+    stream_case=true;
+    fail_write=fail_sync=0; held=false; sleeps=writes=syncs=0;
+    nabu_log_total=nabu_log_committed=0;
+    if(!setjmp(stop_loop)) nabu_log_thread(NULL,0);
+    assert(!held && nabu_log_committed==9000006 && saved_header.total==9000006);
+    assert(saved_header.valid_from==0 && saved_header.ram_lost==0);
+    for(uint64_t i=0;i<9000006;++i) assert(disk_capture[i]==pattern(i));
     puts("v2 logger: 1GiB disk/4MiB RAM, wrap mapping, bounded dirty writes, sync failures and commit gates passed");
     return 0;
 }
