@@ -1,12 +1,22 @@
 diff --git a/bsd/vfs/vfs_lookup.c b/bsd/vfs/vfs_lookup.c
 --- a/bsd/vfs/vfs_lookup.c
 +++ b/bsd/vfs/vfs_lookup.c
-@@ -75,0 +76 @@
+@@ -73,6 +73,7 @@
+  */
+ 
+ #include <sys/param.h>
 +#include <sys/nabu_boottrace.h>
-@@ -164,0 +166,2 @@
+ #include <sys/systm.h>
+ #include <sys/syslimits.h>
+ #include <sys/time.h>
+@@ -162,8 +163,20 @@
+  *		lookup: ???
+  *		VNOP_READLINK:???
+  */
 +static int nabu_namei_impl(struct nameidata *ndp, struct nabu_bt_token token);
 +
-@@ -166,0 +170,10 @@
+ int
+ namei(struct nameidata *ndp)
 +{
 +	struct nabu_bt_token token = nabu_boottrace_begin(NABU_BT_LOOKUP,
 +	    (int)ndp->ni_cnd.cn_nameiop);
@@ -17,18 +27,37 @@ diff --git a/bsd/vfs/vfs_lookup.c b/bsd/vfs/vfs_lookup.c
 +
 +static int
 +nabu_namei_impl(struct nameidata *ndp, struct nabu_bt_token token)
-@@ -268,0 +282 @@
+ {
+ 	struct vnode *dp;       /* the directory we are searching */
+ 	struct vnode *usedvp = ndp->ni_dvp;  /* store pointer to vp in case we must loop due to
+@@ -266,6 +279,7 @@
+ 	if (error) {
+ 		goto error_out;
+ 	}
 +	nabu_boottrace_path(token, NABU_BT_LOOKUP, cnp->cn_pnbuf);
+ 	assert(bytes_copied <= MAXPATHLEN);
+ 	ndp->ni_pathlen = (u_int)bytes_copied;
+ 	bytes_copied = 0;
 diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
 --- a/bsd/vfs/vfs_syscalls.c
 +++ b/bsd/vfs/vfs_syscalls.c
-@@ -74,0 +75 @@
+@@ -72,6 +72,7 @@
+  */
+ 
+ #include <sys/param.h>
 +#include <sys/nabu_boottrace.h>
-@@ -4524,0 +4526,3 @@
+ #include <sys/systm.h>
+ #include <sys/namei.h>
+ #include <sys/filedesc.h>
+@@ -4522,8 +4523,21 @@
+  *
+  * XXX Need to implement uid, gid
+  */
 +static int nabu_open1_impl(vfs_context_t ctx, struct nameidata *ndp, int uflags,
 +    struct vnode_attr *vap, fp_initfn_t fp_init, void *initarg, int32_t *retval, int authfd);
 +
-@@ -4526,0 +4531,10 @@
+ int
+ open1(vfs_context_t ctx, struct nameidata *ndp, int uflags,
 +    struct vnode_attr *vap, fp_initfn_t fp_init, void *initarg, int32_t *retval, int authfd)
 +{
 +	struct nabu_bt_token token = nabu_boottrace_begin(NABU_BT_OPEN, uflags);
@@ -39,15 +68,28 @@ diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
 +
 +static int
 +nabu_open1_impl(vfs_context_t ctx, struct nameidata *ndp, int uflags,
+     struct vnode_attr *vap, fp_initfn_t fp_init, void *initarg, int32_t *retval, int authfd)
+ {
+ 	proc_t p = vfs_context_proc(ctx);
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -85,0 +86 @@
+@@ -83,6 +83,7 @@
+ 
+ #include <sys/cdefs.h>
+ #include <sys/param.h>
 +#include <sys/nabu_boottrace.h>
-@@ -2139,0 +2141,2 @@
+ #include <sys/systm.h>
+ #include <sys/filedesc.h>
+ #include <sys/kernel.h>
+@@ -2137,8 +2138,19 @@
+  *	<ex_imgact>:???			[anything an imgact can return]
+  *	EDEADLK				Process is being terminated
+  */
 +static int nabu_exec_activate_impl(struct image_params *imgp);
 +
-@@ -2141,0 +2145,9 @@
+ static int
+ exec_activate_image(struct image_params *imgp)
 +{
 +	struct nabu_bt_token token = nabu_boottrace_begin(NABU_BT_EXEC, 0);
 +	int result = nabu_exec_activate_impl(imgp);
@@ -57,27 +99,60 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 +
 +static int
 +nabu_exec_activate_impl(struct image_params *imgp)
+ {
+ 	struct nameidata *ndp = NULL;
+ 	const char *excpath;
 diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
-@@ -79,0 +80 @@
+@@ -77,6 +77,7 @@
+ #include <stdatomic.h>
+ 
+ #include <sys/param.h>
 +#include <sys/nabu_boottrace.h>
-@@ -1495,0 +1497,3 @@
+ #include <sys/systm.h>
+ #include <sys/ioctl.h>
+ #include <sys/proc_internal.h>
+@@ -1493,6 +1494,9 @@
+ 	struct uthread *ut;
+ 	int error = 0;
+ 	bool proc_exiting = false;
 +
 +	struct nabu_bt_token nabu_exit_token = nabu_boottrace_begin(NABU_BT_EXIT, rv);
 +	nabu_boottrace_end(nabu_exit_token, NABU_BT_EXIT, rv, jetsam_flags);
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU)
+ 	nabu_boottrace_exit(p, rv);
 diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
 --- a/bsd/dev/nabu_sample.c
 +++ b/bsd/dev/nabu_sample.c
-@@ -16,0 +17 @@
+@@ -14,6 +14,7 @@
+  * nabusmpfirst=1..300 and nabusmpint=1..120 override those waits.
+  */
+ #include <sys/param.h>
 +#include <sys/nabu_boottrace.h>
-@@ -97,0 +99 @@
+ #include <sys/systm.h>
+ #include <sys/proc.h>
+ #include <sys/proc_internal.h>
+@@ -95,6 +96,7 @@
+ nabu_sample_start(void)
+ {
+ 	thread_t thread;
 +	nabu_boottrace_start();
+ 	if (kernel_thread_start(nabu_sample_thread, NULL, &thread) == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
+ 	}
 diff --git a/bsd/conf/files b/bsd/conf/files
 --- a/bsd/conf/files
 +++ b/bsd/conf/files
-@@ -108,0 +109 @@
+@@ -123,6 +123,7 @@
+ bsd/dev/nabu_gpu_gmu_hfi.c	standard
+ bsd/dev/nabu_gpu_diag.c	standard
+ bsd/dev/nabu_sample.c			standard
 +bsd/dev/nabu_boottrace.c			standard
+ bsd/dev/nabu_keys.c			standard
+ bsd/dev/nabu_touch.c			standard
+ bsd/dev/nabu_geni_spi.c			standard
 diff --git a/bsd/sys/nabu_boottrace_queue.h b/bsd/sys/nabu_boottrace_queue.h
 new file mode 100644
 --- /dev/null
@@ -205,13 +280,14 @@ diff --git a/bsd/dev/nabu_boottrace.c b/bsd/dev/nabu_boottrace.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/nabu_boottrace.c
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,167 @@
 +/*
 + * Opt-in system-wide boot boundaries. Producers only copy bounded kernel
 + * memory into a preallocated queue; formatting and console output run here.
 + */
 +#include <sys/param.h>
 +#include <sys/systm.h>
++#include <sys/kernel.h>
 +#include <sys/proc_internal.h>
 +#include <sys/nabu_boottrace.h>
 +#include <sys/nabu_boottrace_queue.h>
@@ -220,6 +296,8 @@ new file mode 100644
 +#include <pexpert/pexpert.h>
 +
 +#if defined(ARM64_BOARD_CONFIG_NABU)
++extern kern_return_t kernel_thread_start_priority(thread_continue_t continuation,
++    void *parameter, integer_t priority, thread_t *new_thread);
 +static struct nabu_bt_queue nabu_bt_events;
 +static unsigned int nabu_bt_enabled, nabu_bt_started;
 +static uint64_t nabu_bt_id;
