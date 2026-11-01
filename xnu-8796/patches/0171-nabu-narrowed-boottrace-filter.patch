@@ -1,0 +1,153 @@
+diff --git a/bsd/dev/nabu_boottrace.c b/bsd/dev/nabu_boottrace.c
+--- a/bsd/dev/nabu_boottrace.c
++++ b/bsd/dev/nabu_boottrace.c
+@@ -1,6 +1,6 @@
+ /*
+- * Opt-in system-wide boot boundaries. Producers only copy bounded kernel
+- * memory into a preallocated queue; formatting and console output run here.
++ * Opt-in boot boundaries, narrowed to selected processes. Producers only copy
++ * bounded kernel memory into a preallocated queue; formatting runs here.
+  */
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -19,6 +19,60 @@
+ static unsigned int nabu_bt_enabled, nabu_bt_started;
+ static uint64_t nabu_bt_id;
+ 
++/* Exact p_comm filter; an empty list traces every process. */
++static char nabu_bt_names[NABU_BT_MAX_NAMES][NABU_BT_NAME];
++static unsigned int nabu_bt_name_count;
++static unsigned int nabu_bt_kind_mask;
++static uint64_t nabu_bt_filtered;
++
++static void
++nabu_bt_add_name(const char *name, unsigned int length)
++{
++	if (!length || length >= NABU_BT_NAME || nabu_bt_name_count == NABU_BT_MAX_NAMES) {
++		return;
++	}
++	for (unsigned int i = 0; i < length; ++i) {
++		nabu_bt_names[nabu_bt_name_count][i] = name[i];
++	}
++	nabu_bt_name_count++;
++}
++
++static void
++nabu_bt_parse_names(const char *argument)
++{
++	unsigned int start = 0;
++	for (unsigned int at = 0; ; ++at) {
++		char byte = argument[at];
++		if (byte == ',' || byte == 0) {
++			nabu_bt_add_name(argument + start, at - start);
++			if (!byte) {
++				break;
++			}
++			start = at + 1;
++		}
++	}
++}
++
++static int
++nabu_bt_match(proc_t p, unsigned int kind)
++{
++	if (!(nabu_bt_kind_mask & (1u << kind))) {
++		return 0;
++	}
++	if (!nabu_bt_name_count) {
++		return 1;
++	}
++	if (!p) {
++		return 0;
++	}
++	for (unsigned int i = 0; i < nabu_bt_name_count; ++i) {
++		if (strncmp(nabu_bt_names[i], p->p_comm, NABU_BT_NAME) == 0) {
++			return 1;
++		}
++	}
++	return 0;
++}
++
+ static uint64_t
+ nabu_bt_now(void)
+ {
+@@ -47,6 +101,10 @@
+ {
+ 	struct nabu_bt_token token = { 0, 0 };
+ 	if (!__atomic_load_n(&nabu_bt_enabled, __ATOMIC_ACQUIRE)) {
++		return token;
++	}
++	if (!nabu_bt_match(current_proc(), kind)) {
++		__atomic_fetch_add(&nabu_bt_filtered, 1ULL, __ATOMIC_RELAXED);
+ 		return token;
+ 	}
+ 	struct nabu_bt_event event = { 0 };
+@@ -128,20 +186,21 @@
+ 	static int channel;
+ 	unsigned int tick = 0;
+ 	struct nabu_bt_event event;
+-	printf("BTS v=1 slots=%u path=%u drain=128 period=1 scope=namei,open1,image,exit\n",
+-	    NABU_BT_SLOTS, NABU_BT_PATH);
++	printf("BTS v=2 slots=%u path=%u drain=128 period=1 kinds=0x%x names=%u\n",
++	    NABU_BT_SLOTS, NABU_BT_PATH, nabu_bt_kind_mask, nabu_bt_name_count);
+ 	for (;;) {
+ 		(void)tsleep(&channel, PZERO, "nabubtrace", hz);
+ 		for (unsigned int i = 0; i < 128 && nabu_bt_pop(&nabu_bt_events, &event); ++i) {
+ 			nabu_bt_emit(&event);
+ 		}
+ 		if (++tick % 10u == 0) {
+-			printf("BTC ns=%llu offered=%llu accepted=%llu busy=%llu full=%llu out=%llu\n",
++			printf("BTC ns=%llu offered=%llu accepted=%llu busy=%llu full=%llu flt=%llu out=%llu\n",
+ 			    nabu_bt_now(),
+ 			    __atomic_load_n(&nabu_bt_events.offered, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.accepted, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.busy_dropped, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.full_dropped, __ATOMIC_RELAXED),
++			    __atomic_load_n(&nabu_bt_filtered, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.consumed, __ATOMIC_RELAXED));
+ 		}
+ 	}
+@@ -150,11 +209,29 @@
+ void
+ nabu_boottrace_start(void)
+ {
+-	int enabled = 0;
++	int enabled = 0, mask = 0;
++	char names[NABU_BT_NAME * NABU_BT_MAX_NAMES + 8] = { 0 };
+ 	unsigned int expected = 0;
+ 	thread_t thread;
+-	if (!PE_parse_boot_argn("nabutraceall", &enabled, sizeof(enabled)) || enabled != 1 ||
+-	    !__atomic_compare_exchange_n(&nabu_bt_started, &expected, 1u, 0,
++
++	(void)PE_parse_boot_argn("nabutraceall", &enabled, sizeof(enabled));
++	(void)PE_parse_boot_argn("nabutracep", names, (int)sizeof(names));
++	if (enabled != 1 && names[0] == 0) {
++		return;
++	}
++	if (!PE_parse_boot_argn("nabutracek", &mask, sizeof(mask))) {
++		mask = 0x1e;
++	}
++	mask &= 0x1e;
++	if (mask == 0) {
++		return;
++	}
++	nabu_bt_parse_names(names);
++	if (names[0] && !nabu_bt_name_count) {
++		return;
++	}
++	nabu_bt_kind_mask = (unsigned int)mask;
++	if (!__atomic_compare_exchange_n(&nabu_bt_started, &expected, 1u, 0,
+ 	    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+ 		return;
+ 	}
+diff --git a/bsd/sys/nabu_boottrace_queue.h b/bsd/sys/nabu_boottrace_queue.h
+--- a/bsd/sys/nabu_boottrace_queue.h
++++ b/bsd/sys/nabu_boottrace_queue.h
+@@ -6,6 +6,7 @@
+ #define NABU_BT_SLOTS 4096u
+ #define NABU_BT_PATH 320u
+ #define NABU_BT_NAME 17u
++#define NABU_BT_MAX_NAMES 4u
+ 
+ struct nabu_bt_event {
+ 	uint64_t sequence, id, ns, tid, elapsed_ns;
