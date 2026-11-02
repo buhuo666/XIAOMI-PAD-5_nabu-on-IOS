@@ -253,10 +253,10 @@ index a128485..29d7b81 100644
  
  void
 diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
-index d93c8c6..41db19c 100644
+index d93c8c6..e1bfe75 100644
 --- a/osfmk/kern/exception.c
 +++ b/osfmk/kern/exception.c
-@@ -1002,20 +1002,184 @@ nabu_crash_strings(const char *name)
+@@ -1002,20 +1002,162 @@ nabu_crash_strings(const char *name)
   * dropped, carrying the real thread id, the process generation, the sample
   * sequence and the sampled CPU times.  The lock is only extended by storing a
   * thread reference; CPU reads and formatting happen outside it.
@@ -281,7 +281,10 @@ index d93c8c6..41db19c 100644
 + *    NABU_SMP3_T_MAX threads and are not charged against the frame budget;
 + *  - frame fragments (F) are charged against NABU_SMP3_FRAME_BUDGET_BYTES.
 + * This keeps P/T complete for a Test136-sized sample (29 threads) while
-+ * bounding the per-sample output to roughly T_MAX*205 + 16 KiB + Q.
++ * bounding the per-sample output to roughly T_MAX*210 + 24 KiB + Q.
++ *
++ * The kernel does not export vsnprintf, so every record is formatted at the
++ * call site with snprintf and then passed to nabu_smp3_emit_line().
 + */
 +#define NABU_SMP3_T_MAX 64
 +#define NABU_SMP3_FRAME_BUDGET_BYTES 24576
@@ -293,13 +296,11 @@ index d93c8c6..41db19c 100644
 +	uint64_t lr;
 +	uint64_t sp;
 +	uint64_t fp;
- 	int index;
-+	int t_emitted;
 +	uint64_t user_ns;
 +	uint64_t system_ns;
 +	uint64_t runnable_ns;
-+	uint64_t read_begin;
-+	uint64_t read_end;
+ 	int index;
++	int t_emitted;
  };
  
 -void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task);
@@ -310,6 +311,9 @@ index d93c8c6..41db19c 100644
 +static uint64_t nabu_smp3_out, nabu_smp3_t_records;
 +static uint64_t nabu_smp3_frame_bytes;
 +
++void nabu_smp_begin_sample(void);
++void nabu_smp_end_sample(unsigned int procs, unsigned int instances,
++    unsigned int instances_limited);
 +void nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task);
  extern unsigned int nabu_sample_seq;
 +extern uint64_t nabu_smp_session;
@@ -331,51 +335,25 @@ index d93c8c6..41db19c 100644
 +	    (uint64_t)NABU_SMP3_FRAME_BUDGET_BYTES;
 +}
 +
-+/* Priority records: P, T and the formatting-failure fallback.  They are not
-+ * charged against the frame budget but still count in the sample byte total. */
++/* Print one already-formatted SMP3 record.  `charged` selects the frame
++ * budget; a record that does not fit is counted in out, so Q.out always equals
++ * the number of dropped SMP3 records. */
 +static int
-+nabu_smp3_emit(const char *format, ...)
++nabu_smp3_emit_line(char *line, int n, int charged)
 +{
-+	va_list arguments;
-+	char line[NABU_SMP3_LINE_BYTES];
-+	int n;
-+
-+	va_start(arguments, format);
-+	n = vsnprintf(line, sizeof(line), format, arguments);
-+	va_end(arguments);
-+	if (n <= 0 || n >= (int)sizeof(line)) {
++	if (n <= 0 || n >= NABU_SMP3_LINE_BYTES) {
++		nabu_smp3_out++;
++		return 0;
++	}
++	if (charged && !nabu_smp3_room(n)) {
 +		nabu_smp3_out++;
 +		return 0;
 +	}
 +	printf("%s", line);
 +	nabu_smp3_bytes += (uint64_t)n;
-+	return 1;
-+}
-+
-+/* Frame fragments are the only budgeted records.  A record that does not fit
-+ * is counted in out, so Q.out always equals the number of dropped SMP3
-+ * records. */
-+static int
-+nabu_smp3_emit_frame(const char *format, ...)
-+{
-+	va_list arguments;
-+	char line[NABU_SMP3_LINE_BYTES];
-+	int n;
-+
-+	va_start(arguments, format);
-+	n = vsnprintf(line, sizeof(line), format, arguments);
-+	va_end(arguments);
-+	if (n <= 0 || n >= (int)sizeof(line)) {
-+		nabu_smp3_out++;
-+		return 0;
++	if (charged) {
++		nabu_smp3_frame_bytes += (uint64_t)n;
 +	}
-+	if (!nabu_smp3_room(n)) {
-+		nabu_smp3_out++;
-+		return 0;
-+	}
-+	printf("%s", line);
-+	nabu_smp3_bytes += (uint64_t)n;
-+	nabu_smp3_frame_bytes += (uint64_t)n;
 +	return 1;
 +}
 +
@@ -415,8 +393,9 @@ index d93c8c6..41db19c 100644
 +	*termination = reason;
 +	return count;
 +}
-+
-+void
+ 
+ void
+-nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
 +nabu_smp_end_sample(unsigned int procs, unsigned int instances,
 +    unsigned int instances_limited)
 +{
@@ -436,23 +415,32 @@ index d93c8c6..41db19c 100644
 +		nabu_smp3_bytes += (uint64_t)n;
 +	}
 +}
- 
- void
--nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
++
++void
 +nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task)
  {
  	vm_map_t map = get_task_map(task);
  	uint64_t slide = 0;
-@@ -1032,69 +1196,149 @@ nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
+@@ -1026,75 +1168,155 @@ nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
+ 	int snap_count = 0;
+ 	int snap_dropped = 0;
+ 	uint64_t stamp_ns = 0;
++	char line[400];
++	int n;
+ 
+ 	absolutetime_to_nanoseconds(mach_absolute_time(), &stamp_ns);
+ 	if (sr != NULL) {
  		slide = sr->sr_slide;
  		vm_shared_region_deallocate(sr);
  	}
 -	printf("SMP %s[%d] slide 0x%llx mh 0x%llx\n", name, pid, slide, task->mach_header_vm_address);
 +	printf("SMP %s[%d] slide 0x%llx mh 0x%llx\n", name, pid, slide,
 +	    task->mach_header_vm_address);
-+	(void)nabu_smp3_emit("NABU SMP3 P: v=1 s=%llu seq=%u uid=%llu pid=%d"
-+	    " nm=%s slide=0x%llx mh=0x%llx\n", nabu_smp_session, nabu_sample_seq,
-+	    uid, pid, name, slide, task->mach_header_vm_address);
++	n = snprintf(line, sizeof(line), "NABU SMP3 P: v=1 s=%llu seq=%u"
++	    " uid=%llu pid=%d nm=%s slide=0x%llx mh=0x%llx\n",
++	    nabu_smp_session, nabu_sample_seq, uid, pid, name, slide,
++	    task->mach_header_vm_address);
++	(void)nabu_smp3_emit_line(line, n, 0);
  
 +	/*
 +	 * Under the task lock: enumerate, copy scalar saved-state values and
@@ -528,12 +516,8 @@ index d93c8c6..41db19c 100644
  
 -		thread_read_times(snap[i].thread, &user_time, &system_time, &runnable_time);
 -		user_ns = (uint64_t)user_time.seconds * 1000000000ULL +
-+		absolutetime_to_nanoseconds(mach_absolute_time(),
-+		    &snap[i].read_begin);
 +		thread_read_times(snap[i].thread, &user_time, &system_time,
 +		    &runnable_time);
-+		absolutetime_to_nanoseconds(mach_absolute_time(),
-+		    &snap[i].read_end);
 +		snap[i].user_ns = (uint64_t)user_time.seconds * 1000000000ULL +
  		    (uint64_t)user_time.microseconds * 1000ULL;
 -		system_ns = (uint64_t)system_time.seconds * 1000000000ULL +
@@ -553,13 +537,14 @@ index d93c8c6..41db19c 100644
 +			continue;
 +		}
 +		nabu_smp3_ok++;
-+		if (nabu_smp3_emit("NABU SMP3 T: v=1 s=%llu seq=%u uid=%llu"
-+		    " pid=%d tid=%llu nm=%s usr=%llu sys=%llu run=%llu"
-+		    " stv=1 cons=best_effort pc=0x%llx lr=0x%llx"
++		n = snprintf(line, sizeof(line), "NABU SMP3 T: v=1 s=%llu"
++		    " seq=%u uid=%llu pid=%d tid=%llu nm=%s usr=%llu sys=%llu"
++		    " run=%llu stv=1 cons=best_effort pc=0x%llx lr=0x%llx"
 +		    " sp=0x%llx inv=-\n", nabu_smp_session, nabu_sample_seq,
 +		    uid, pid, snap[i].tid, name, snap[i].user_ns,
 +		    snap[i].system_ns, snap[i].runnable_ns, snap[i].pc,
-+		    snap[i].lr, snap[i].sp)) {
++		    snap[i].lr, snap[i].sp);
++		if (nabu_smp3_emit_line(line, n, 0)) {
 +			snap[i].t_emitted = 1;
 +			nabu_smp3_t_records++;
 +		}
@@ -569,8 +554,6 @@ index d93c8c6..41db19c 100644
 +		uint64_t frames[NABU_SMP3_FRAME_MAX];
 +		unsigned int frame_count;
 +		const char *termination = "end";
-+		char line[400];
-+		int n;
 +
 +		/* The legacy SMP line keeps its meaning; it is printed for the
 +		 * bounded snapshot set after the lock is dropped. */
@@ -607,7 +590,7 @@ index d93c8c6..41db19c 100644
 +				last = frame_count;
 +			}
 +			for (unsigned int k = part; k < last; k++) {
-+				(void)nabu_smp3_emit_frame("NABU SMP3 F:"
++				n = snprintf(line, sizeof(line), "NABU SMP3 F:"
 +				    " v=1 s=%llu seq=%u uid=%llu"
 +				    " tid=%llu part=%u/%u i=%u"
 +				    " a=0x%llx tr=%s\n",
@@ -617,6 +600,7 @@ index d93c8c6..41db19c 100644
 +				    parts, k, frames[k],
 +				    (k + 1 == frame_count) ?
 +				    termination : "more");
++				(void)nabu_smp3_emit_line(line, n, 1);
 +			}
 +		}
  		thread_deallocate(snap[i].thread);
