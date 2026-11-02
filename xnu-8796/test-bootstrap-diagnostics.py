@@ -49,6 +49,8 @@ struct process { const char *comm; int pid; void *task; };
 typedef struct process *proc_t;
 typedef void *task_t;
 static int hz = 100, first = 90, interval = 120, first_present, interval_present;
+static unsigned int count = 40;
+static int count_present;
 static int waits[50], wait_count, samples, calls, selected;
 static int log_count, schedule_count, rejected_count;
 static const char *names;
@@ -66,8 +68,11 @@ static int PE_parse_boot_argn(const char *name, void *value, int bytes) {
     if (!strcmp(name, "nabusmpfirst")) {
         if (first_present) memcpy(value, &first, sizeof(first)); return first_present;
     }
-    assert(!strcmp(name, "nabusmpint"));
-    if (interval_present) memcpy(value, &interval, sizeof(interval)); return interval_present;
+    if (!strcmp(name, "nabusmpint")) {
+        if (interval_present) memcpy(value, &interval, sizeof(interval)); return interval_present;
+    }
+    assert(!strcmp(name, "nabusmpcount"));
+    if (count_present) memcpy(value, &count, sizeof(count)); return count_present;
 }
 static int host_printf(const char *format, ...) {
     ++log_count;
@@ -93,8 +98,41 @@ static void proc_name(int pid, char *out, int size) {
 }
 static task_t proc_task(proc_t p) { return p->task; }
 static unsigned int nabu_sample_seq;
-static void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task) {
+/* D1 sampler interface: the extracted functions reference these plan globals,
+ * counters and helper functions.  They are host doubles, not kernel logic. */
+#define NABU_SMP_DEFAULT_COUNT 40
+#define NABU_SMP_MAX_COUNT 240
+#define NABU_SMP_MAX_SPAN_SEC 3600
+#define NABU_SMP_NS_PER_SEC UINT64_C(1000000000)
+#define NABU_SMP_MAX_INSTANCES 8
+static unsigned int nabu_smp_procs, nabu_smp_instances, nabu_smp_instances_limited;
+static unsigned int nabu_smp_count;
+static int nabu_smp_first, nabu_smp_interval;
+static uint64_t nabu_smp_session;
+static uint32_t nabu_smp_cfg;
+static uint64_t host_now_ns;
+static uint64_t nabu_smp_now_ns(void) { return host_now_ns; }
+static void nabu_smp_sleep_ns(uint64_t ns) {
+    uint64_t per_tick = NABU_SMP_NS_PER_SEC / (uint64_t)hz;
+    int ticks = (int)((ns + per_tick - 1) / per_tick);
+    if (ticks < 1) ticks = 1;
+    host_now_ns += ns;
+    tsleep(NULL, 0, "nabusmp", ticks);
+}
+static void nabu_smp_schedule_line(unsigned int seq, uint64_t planned,
+    uint64_t begin, uint64_t end, const char *status, const char *skip) {
+    (void)seq; (void)planned; (void)begin; (void)end; (void)status; (void)skip;
+}
+static uint32_t nabu_smp_config_hash(int first, int interval, unsigned int count) {
+    return (uint32_t)((unsigned)first * 131u + (unsigned)interval * 17u + count);
+}
+static void nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task) {
     assert(name && pid && task); assert(uid == UINT64_C(1000) + (uint64_t)pid); ++selected;
+}
+static void nabu_smp_begin_sample(void) { }
+static void nabu_smp_end_sample(unsigned int procs, unsigned int instances,
+    unsigned int instances_limited) {
+    (void)procs; (void)instances; (void)instances_limited;
 }
 static void proc_iterate(int which, int (*callback)(proc_t, void *), void *arg, void *a, void *b) {
     assert(which == PROC_ALLPROCLIST && !a && !b);
@@ -111,16 +149,20 @@ static void reset(void) {
     first=90; interval=120; first_present=interval_present=0;
     waits[0]=0; wait_count=samples=calls=selected=log_count=schedule_count=rejected_count=0;
     names=NULL; memset(nabu_sample_names,0,sizeof(nabu_sample_names));
+    host_now_ns=0; nabu_smp_procs=nabu_smp_instances=nabu_smp_instances_limited=0;
+    nabu_smp_count=0; nabu_smp_first=0; nabu_smp_interval=0;
+    nabu_smp_session=0; nabu_smp_cfg=0; nabu_sample_seq=0;
 }
 int main(void) {
     reset(); nabu_sample_thread(NULL,0);
-    assert(wait_count==41 && waits[0]==9000 && samples==40 && selected==80);
-    for (int i=1;i<41;++i) assert(waits[i]==12000);
+    assert(wait_count==40 && waits[0]==9000 && samples==40 && selected==80);
+    for (int i=1;i<40;++i) assert(waits[i]==12000);
+    assert(nabu_smp_count==40 && nabu_smp_first==90 && nabu_smp_interval==120);
     assert(schedule_count==0 && rejected_count==0);
     reset(); names="launchd,launchd_cache_lo"; first_present=interval_present=1; first=1; interval=1;
     nabu_sample_thread(NULL,0);
-    assert(wait_count==41 && samples==40 && selected==80 && schedule_count==1);
-    for(int i=0;i<41;++i) assert(waits[i]==100);
+    assert(wait_count==40 && samples==40 && selected==80 && schedule_count==1);
+    for(int i=0;i<40;++i) assert(waits[i]==100);
     assert(nabu_sample_wanted("launchd_cache_lo"));
     assert(!nabu_sample_wanted("launchd_cache_loader") && !nabu_sample_wanted("launchd_cache_l"));
     reset(); names="launchd"; first_present=interval_present=1; first=300; interval=120;
