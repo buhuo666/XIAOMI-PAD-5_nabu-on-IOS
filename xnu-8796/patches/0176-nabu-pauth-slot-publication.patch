@@ -1,0 +1,503 @@
+diff --git a/osfmk/arm64/nabu_pauth_diag.c b/osfmk/arm64/nabu_pauth_diag.c
+index 21c95a8..5ee24d4 100644
+--- a/osfmk/arm64/nabu_pauth_diag.c
++++ b/osfmk/arm64/nabu_pauth_diag.c
+@@ -63,8 +63,15 @@ extern int hz;
+ #define NABU_PAUTH_BUDGET_BYTES    8192
+ #define NABU_PAUTH_LINE_BYTES      320
+ 
++/* Slot publication: EMPTY -> INITIALIZING (owned by one writer) -> READY.
++ * A reader only accepts READY with an acquire load, so partially initialised
++ * identity fields are never used for aggregation or output. */
++#define NABU_PAUTH_SLOT_EMPTY      0u
++#define NABU_PAUTH_SLOT_INIT       1u
++#define NABU_PAUTH_SLOT_READY      2u
++
+ struct nabu_pauth_proc {
+-	uint32_t used;
++	uint32_t state;
+ 	char name[NABU_PAUTH_NAME_MAX + 1];
+ 	int pid;
+ 	uint64_t uid;
+@@ -91,7 +98,7 @@ struct nabu_pauth_proc {
+ };
+ 
+ struct nabu_pauth_thread {
+-	uint32_t active;
++	uint32_t state;
+ 	uint64_t uid;
+ 	uint64_t tid;
+ 	int proc;
+@@ -129,6 +136,14 @@ static uint64_t nabu_pauth_q_proc_full;
+ static uint64_t nabu_pauth_q_snapshot_fail;
+ static uint64_t nabu_pauth_q_output_skipped;
+ 
++/* D0 publication/snapshot correctness counters. */
++static uint64_t nabu_pauth_q_pub_init;
++static uint64_t nabu_pauth_q_pub_ready;
++static uint64_t nabu_pauth_q_pub_casfail;
++static uint64_t nabu_pauth_q_pub_stale;
++static uint64_t nabu_pauth_q_pub_skip;
++static uint64_t nabu_pauth_q_pub_snapshot;
++
+ static int nabu_pauth_chan;
+ 
+ static inline uint64_t
+@@ -223,23 +238,31 @@ nabu_pauth_proc_index(proc_t p)
+ 	int pid = proc_getpid(p);
+ 
+ 	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
+-		if (__atomic_load_n(&nabu_pauth_procs[i].used, __ATOMIC_ACQUIRE) &&
+-		    nabu_pauth_procs[i].uid == uid) {
++		if (__atomic_load_n(&nabu_pauth_procs[i].state, __ATOMIC_ACQUIRE) ==
++		    NABU_PAUTH_SLOT_READY && nabu_pauth_procs[i].uid == uid) {
+ 			return (int)i;
+ 		}
+ 	}
+ 	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
+-		uint32_t expected = 0;
+-		if (!__atomic_compare_exchange_n(&nabu_pauth_procs[i].used, &expected, 1u,
+-		    0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+-			if (nabu_pauth_procs[i].uid == uid) {
++		uint32_t expected = NABU_PAUTH_SLOT_EMPTY;
++		if (!__atomic_compare_exchange_n(&nabu_pauth_procs[i].state,
++		    &expected, NABU_PAUTH_SLOT_INIT, 0, __ATOMIC_ACQ_REL,
++		    __ATOMIC_RELAXED)) {
++			__atomic_fetch_add(&nabu_pauth_q_pub_casfail, 1, __ATOMIC_RELAXED);
++			if (__atomic_load_n(&nabu_pauth_procs[i].state,
++			    __ATOMIC_ACQUIRE) == NABU_PAUTH_SLOT_READY &&
++			    nabu_pauth_procs[i].uid == uid) {
+ 				return (int)i;
+ 			}
+ 			continue;
+ 		}
++		__atomic_fetch_add(&nabu_pauth_q_pub_init, 1, __ATOMIC_RELAXED);
+ 		nabu_pauth_procs[i].uid = uid;
+ 		nabu_pauth_procs[i].pid = pid;
+ 		nabu_pauth_copy_name(nabu_pauth_procs[i].name, proc_name_address(p));
++		__atomic_store_n(&nabu_pauth_procs[i].state, NABU_PAUTH_SLOT_READY,
++		    __ATOMIC_RELEASE);
++		__atomic_fetch_add(&nabu_pauth_q_pub_ready, 1, __ATOMIC_RELAXED);
+ 		return (int)i;
+ 	}
+ 	__atomic_fetch_add(&nabu_pauth_q_proc_full, 1, __ATOMIC_RELAXED);
+@@ -270,13 +293,15 @@ nabu_pauth_thread_entry(void)
+ 		unsigned int index = (start + probe) & (NABU_PAUTH_MAX_THREADS - 1);
+ 		struct nabu_pauth_thread *entry = &nabu_pauth_threads[index];
+ 
+-		if (!__atomic_load_n(&entry->active, __ATOMIC_ACQUIRE)) {
++		uint32_t state = __atomic_load_n(&entry->state, __ATOMIC_ACQUIRE);
++		if (state == NABU_PAUTH_SLOT_EMPTY) {
+ 			if (free_slot == NABU_PAUTH_MAX_THREADS) {
+ 				free_slot = index;
+ 			}
+ 			continue;
+ 		}
+-		if (entry->uid == uid && entry->tid == tid) {
++		if (state == NABU_PAUTH_SLOT_READY && entry->uid == uid &&
++		    entry->tid == tid) {
+ 			return entry;
+ 		}
+ 	}
+@@ -293,14 +318,18 @@ nabu_pauth_thread_entry(void)
+ 		return NULL;
+ 	}
+ 	struct nabu_pauth_thread *entry = &nabu_pauth_threads[free_slot];
+-	uint32_t expected = 0;
+-	if (!__atomic_compare_exchange_n(&entry->active, &expected, 1u, 0,
+-	    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
++	uint32_t expected = NABU_PAUTH_SLOT_EMPTY;
++	if (!__atomic_compare_exchange_n(&entry->state, &expected,
++	    NABU_PAUTH_SLOT_INIT, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
++		__atomic_fetch_add(&nabu_pauth_q_pub_casfail, 1, __ATOMIC_RELAXED);
+ 		return NULL;
+ 	}
++	__atomic_fetch_add(&nabu_pauth_q_pub_init, 1, __ATOMIC_RELAXED);
+ 	entry->uid = uid;
+ 	entry->tid = tid;
+ 	entry->proc = proc;
++	__atomic_store_n(&entry->state, NABU_PAUTH_SLOT_READY, __ATOMIC_RELEASE);
++	__atomic_fetch_add(&nabu_pauth_q_pub_ready, 1, __ATOMIC_RELAXED);
+ 	return entry;
+ }
+ 
+@@ -388,51 +417,96 @@ nabu_pauth_diag_enabled(void)
+ 	return __atomic_load_n(&nabu_pauth_active, __ATOMIC_RELAXED);
+ }
+ 
++struct nabu_pauth_proc_view {
++	uint64_t uid;
++	int pid;
++	char name[NABU_PAUTH_NAME_MAX + 1];
++	uint64_t trap;
++	uint64_t fetch_ok;
++	uint64_t fetch_failed;
++	uint64_t gate[NABU_PAUTH_GATE_COUNT];
++	uint64_t core;
++	uint64_t status[NABU_PAUTH_ST_COUNT];
++	uint64_t cls[HAKIOS_PAUTH_CLASS_COUNT];
++	uint64_t samples;
++	uint64_t ticks_sum;
++};
++
++static void
++nabu_pauth_proc_snapshot(struct nabu_pauth_proc *proc,
++    struct nabu_pauth_proc_view *view)
++{
++	view->uid = proc->uid;
++	view->pid = proc->pid;
++	for (unsigned int i = 0; i <= NABU_PAUTH_NAME_MAX; i++) {
++		view->name[i] = proc->name[i];
++	}
++	view->trap = __atomic_load_n(&proc->trap, __ATOMIC_RELAXED);
++	view->fetch_ok = __atomic_load_n(&proc->fetch_ok, __ATOMIC_RELAXED);
++	view->fetch_failed = __atomic_load_n(&proc->fetch_failed, __ATOMIC_RELAXED);
++	for (unsigned int i = 0; i < NABU_PAUTH_GATE_COUNT; i++) {
++		view->gate[i] = __atomic_load_n(&proc->gate[i], __ATOMIC_RELAXED);
++	}
++	view->core = __atomic_load_n(&proc->core, __ATOMIC_RELAXED);
++	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
++		view->status[i] = __atomic_load_n(&proc->status[i], __ATOMIC_RELAXED);
++	}
++	for (unsigned int i = 0; i < HAKIOS_PAUTH_CLASS_COUNT; i++) {
++		view->cls[i] = __atomic_load_n(&proc->cls[i], __ATOMIC_RELAXED);
++	}
++	view->samples = __atomic_load_n(&proc->samples, __ATOMIC_RELAXED);
++	view->ticks_sum = __atomic_load_n(&proc->ticks_sum, __ATOMIC_RELAXED);
++}
++
++#define SNAPSHOT(e) __atomic_load_n(&(e), __ATOMIC_RELAXED)
++
+ static unsigned int
+-nabu_pauth_window_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
++nabu_pauth_window_line(char *buffer, size_t size,
++    const struct nabu_pauth_proc_view *view, struct nabu_pauth_proc *proc)
+ {
+-	uint64_t trap = proc->trap - proc->last_trap;
+-	uint64_t fetch_ok = proc->fetch_ok - proc->last_fetch_ok;
+-	uint64_t fetch_failed = proc->fetch_failed - proc->last_fetch_failed;
+-	uint64_t core = proc->core - proc->last_core;
+-	uint64_t samples = proc->samples - proc->last_samples;
+-	uint64_t ticks_sum = proc->ticks_sum - proc->last_ticks_sum;
++	uint64_t trap = view->trap - proc->last_trap;
++	uint64_t fetch_ok = view->fetch_ok - proc->last_fetch_ok;
++	uint64_t fetch_failed = view->fetch_failed - proc->last_fetch_failed;
++	uint64_t core = view->core - proc->last_core;
++	uint64_t samples = view->samples - proc->last_samples;
++	uint64_t ticks_sum = view->ticks_sum - proc->last_ticks_sum;
+ 	int n;
+ 
+-	proc->last_trap = proc->trap;
+-	proc->last_fetch_ok = proc->fetch_ok;
+-	proc->last_fetch_failed = proc->fetch_failed;
+-	proc->last_core = proc->core;
+-	proc->last_samples = proc->samples;
+-	proc->last_ticks_sum = proc->ticks_sum;
++	proc->last_trap = view->trap;
++	proc->last_fetch_ok = view->fetch_ok;
++	proc->last_fetch_failed = view->fetch_failed;
++	proc->last_core = view->core;
++	proc->last_samples = view->samples;
++	proc->last_ticks_sum = view->ticks_sum;
+ 
+ 	n = snprintf(buffer, size,
+ 	    "NABU PAUTH C: v=1 s=%llu seq=%u t=%llu.%09llu proc=%s pid=%d uid=%llu "
+ 	    "tra=%llu fet=%llu/%llu gat=%llu/%llu/%llu cor=%llu "
+ 	    "st=%llu/%llu/%llu/%llu/%llu",
+ 	    nabu_pauth_session, nabu_pauth_seq, nabu_pauth_now_ns() / 1000000000ULL,
+-	    nabu_pauth_now_ns() % 1000000000ULL, proc->name, proc->pid, proc->uid,
++	    nabu_pauth_now_ns() % 1000000000ULL, view->name, view->pid, view->uid,
+ 	    trap, fetch_ok, fetch_failed,
+-	    proc->gate[NABU_PAUTH_GATE_DISABLED] - proc->last_gate[NABU_PAUTH_GATE_DISABLED],
+-	    proc->gate[NABU_PAUTH_GATE_STATE] - proc->last_gate[NABU_PAUTH_GATE_STATE],
+-	    proc->gate[NABU_PAUTH_GATE_HARDWARE] - proc->last_gate[NABU_PAUTH_GATE_HARDWARE],
++	    view->gate[NABU_PAUTH_GATE_DISABLED] - proc->last_gate[NABU_PAUTH_GATE_DISABLED],
++	    view->gate[NABU_PAUTH_GATE_STATE] - proc->last_gate[NABU_PAUTH_GATE_STATE],
++	    view->gate[NABU_PAUTH_GATE_HARDWARE] - proc->last_gate[NABU_PAUTH_GATE_HARDWARE],
+ 	    core,
+-	    proc->status[NABU_PAUTH_ST_STEPPED] - proc->last_status[NABU_PAUTH_ST_STEPPED],
+-	    proc->status[NABU_PAUTH_ST_UNHANDLED] - proc->last_status[NABU_PAUTH_ST_UNHANDLED],
+-	    proc->status[NABU_PAUTH_ST_BAD_TARGET] - proc->last_status[NABU_PAUTH_ST_BAD_TARGET],
+-	    proc->status[NABU_PAUTH_ST_BAD_ADDRESS] - proc->last_status[NABU_PAUTH_ST_BAD_ADDRESS],
+-	    proc->status[NABU_PAUTH_ST_READ_FAILED] - proc->last_status[NABU_PAUTH_ST_READ_FAILED]);
++	    view->status[NABU_PAUTH_ST_STEPPED] - proc->last_status[NABU_PAUTH_ST_STEPPED],
++	    view->status[NABU_PAUTH_ST_UNHANDLED] - proc->last_status[NABU_PAUTH_ST_UNHANDLED],
++	    view->status[NABU_PAUTH_ST_BAD_TARGET] - proc->last_status[NABU_PAUTH_ST_BAD_TARGET],
++	    view->status[NABU_PAUTH_ST_BAD_ADDRESS] - proc->last_status[NABU_PAUTH_ST_BAD_ADDRESS],
++	    view->status[NABU_PAUTH_ST_READ_FAILED] - proc->last_status[NABU_PAUTH_ST_READ_FAILED]);
+ 	if (n < 0 || (size_t)n >= size) {
+ 		return (unsigned int)size;
+ 	}
+ 	for (unsigned int i = 0; i < NABU_PAUTH_GATE_COUNT; i++) {
+-		proc->last_gate[i] = proc->gate[i];
++		proc->last_gate[i] = view->gate[i];
+ 	}
+ 	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
+-		proc->last_status[i] = proc->status[i];
++		proc->last_status[i] = view->status[i];
+ 	}
+ 	n += snprintf(buffer + n, size - (size_t)n, " smp=%llu tk=%llu/%llu\n",
+-	    samples, ticks_sum, proc->ticks_max);
++	    samples, ticks_sum,
++	    __atomic_load_n(&proc->ticks_max, __ATOMIC_RELAXED));
+ 	if (n < 0 || (size_t)n >= size) {
+ 		return (unsigned int)size;
+ 	}
+@@ -440,19 +514,20 @@ nabu_pauth_window_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
+ }
+ 
+ static unsigned int
+-nabu_pauth_class_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
++nabu_pauth_class_line(char *buffer, size_t size,
++    const struct nabu_pauth_proc_view *view, struct nabu_pauth_proc *proc)
+ {
+ 	int n = snprintf(buffer, size, "NABU PAUTH L: v=1 s=%llu seq=%u t=%llu.%09llu "
+ 	    "proc=%s uid=%llu cl=", nabu_pauth_session, nabu_pauth_seq,
+ 	    nabu_pauth_now_ns() / 1000000000ULL, nabu_pauth_now_ns() % 1000000000ULL,
+-	    proc->name, proc->uid);
++	    view->name, view->uid);
+ 	if (n < 0 || (size_t)n >= size) {
+ 		return (unsigned int)size;
+ 	}
+ 	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
+ 		n += snprintf(buffer + n, size - (size_t)n, "%s%llu", i ? "/" : "",
+-		    proc->cls[i] - proc->last_cls[i]);
+-		proc->last_cls[i] = proc->cls[i];
++		    view->cls[i] - proc->last_cls[i]);
++		proc->last_cls[i] = view->cls[i];
+ 		if (n < 0 || (size_t)n >= size) {
+ 			return (unsigned int)size;
+ 		}
+@@ -464,44 +539,86 @@ nabu_pauth_class_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
+ 	return (unsigned int)n;
+ }
+ 
++struct nabu_pauth_thread_view {
++	uint64_t uid;
++	uint64_t tid;
++	uint64_t trap;
++	uint64_t status[NABU_PAUTH_ST_COUNT];
++	uint64_t cls[NABU_PAUTH_CLASS_COUNT];
++	uint64_t samples;
++	uint64_t ticks_sum;
++};
++
++static void
++nabu_pauth_thread_snapshot(struct nabu_pauth_thread *entry,
++    struct nabu_pauth_thread_view *view)
++{
++	view->uid = entry->uid;
++	view->tid = entry->tid;
++	view->trap = __atomic_load_n(&entry->trap, __ATOMIC_RELAXED);
++	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
++		view->status[i] = __atomic_load_n(&entry->status[i], __ATOMIC_RELAXED);
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
++		view->cls[i] = __atomic_load_n(&entry->cls[i], __ATOMIC_RELAXED);
++	}
++	view->samples = __atomic_load_n(&entry->samples, __ATOMIC_RELAXED);
++	view->ticks_sum = __atomic_load_n(&entry->ticks_sum, __ATOMIC_RELAXED);
++}
++
+ static unsigned int
+-nabu_pauth_thread_line(char *buffer, size_t size, struct nabu_pauth_thread *entry,
+-    const char *name)
++nabu_pauth_thread_line(char *buffer, size_t size,
++    const struct nabu_pauth_thread_view *view, struct nabu_pauth_thread *entry,
++    const char *proc_name)
+ {
+-	uint64_t trap = entry->trap - entry->last_trap;
+-	uint64_t samples = entry->samples - entry->last_samples;
+-	uint64_t ticks_sum = entry->ticks_sum - entry->last_ticks_sum;
++	uint64_t trap = view->trap - entry->last_trap;
++	uint64_t samples = view->samples - entry->last_samples;
++	uint64_t ticks_sum = view->ticks_sum - entry->last_ticks_sum;
++	uint64_t delta_status[NABU_PAUTH_ST_COUNT];
+ 	int n;
+ 
+-	entry->last_trap = entry->trap;
+-	entry->last_samples = entry->samples;
+-	entry->last_ticks_sum = entry->ticks_sum;
++	/*
++	 * All deltas are computed from the one snapshot passed in; commit the
++	 * same snapshot before formatting.  A producer that increments after
++	 * the snapshot is therefore counted in the next window instead of being
++	 * lost between snapshot and commit.
++	 */
++	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
++		delta_status[i] = view->status[i] - entry->last_status[i];
++		entry->last_status[i] = view->status[i];
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
++		entry->last_cls[i] = view->cls[i];
++	}
++	entry->last_trap = view->trap;
++	entry->last_samples = view->samples;
++	entry->last_ticks_sum = view->ticks_sum;
+ 	n = snprintf(buffer, size,
+ 	    "NABU PAUTH T: v=1 s=%llu seq=%u t=%llu.%09llu proc=%s uid=%llu tid=%llu "
+ 	    "tra=%llu st=%llu/%llu/%llu/%llu/%llu smp=%llu tk=%llu/%llu\n",
+ 	    nabu_pauth_session, nabu_pauth_seq, nabu_pauth_now_ns() / 1000000000ULL,
+-	    nabu_pauth_now_ns() % 1000000000ULL, name, entry->uid, entry->tid, trap,
+-	    entry->status[NABU_PAUTH_ST_STEPPED] - entry->last_status[NABU_PAUTH_ST_STEPPED],
+-	    entry->status[NABU_PAUTH_ST_UNHANDLED] - entry->last_status[NABU_PAUTH_ST_UNHANDLED],
+-	    entry->status[NABU_PAUTH_ST_BAD_TARGET] - entry->last_status[NABU_PAUTH_ST_BAD_TARGET],
+-	    entry->status[NABU_PAUTH_ST_BAD_ADDRESS] - entry->last_status[NABU_PAUTH_ST_BAD_ADDRESS],
+-	    entry->status[NABU_PAUTH_ST_READ_FAILED] - entry->last_status[NABU_PAUTH_ST_READ_FAILED],
+-	    samples, ticks_sum, entry->ticks_max);
++	    nabu_pauth_now_ns() % 1000000000ULL, proc_name, view->uid, view->tid, trap,
++	    delta_status[NABU_PAUTH_ST_STEPPED],
++	    delta_status[NABU_PAUTH_ST_UNHANDLED],
++	    delta_status[NABU_PAUTH_ST_BAD_TARGET],
++	    delta_status[NABU_PAUTH_ST_BAD_ADDRESS],
++	    delta_status[NABU_PAUTH_ST_READ_FAILED],
++	    samples, ticks_sum,
++	    __atomic_load_n(&entry->ticks_max, __ATOMIC_RELAXED));
+ 	if (n < 0 || (size_t)n >= size) {
+ 		return (unsigned int)size;
+ 	}
+-	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
+-		entry->last_status[i] = entry->status[i];
+-	}
+-	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
+-		entry->last_cls[i] = entry->cls[i];
+-	}
+-	if (n >= (int)size) {
+-		return (unsigned int)size;
+-	}
+ 	return (unsigned int)n;
+ }
+ 
++/* Thread details are chosen by trap delta from a stable snapshot, so the
++ * ranking never reads a slot twice and never uses a slot that is not READY. */
++struct nabu_pauth_detail {
++	struct nabu_pauth_thread *entry;
++	struct nabu_pauth_thread_view view;
++	uint64_t delta;
++};
++
+ static void
+ nabu_pauth_print_window(void)
+ {
+@@ -513,27 +630,44 @@ nabu_pauth_print_window(void)
+ 	uint64_t proc_full = __atomic_load_n(&nabu_pauth_q_proc_full, __ATOMIC_RELAXED);
+ 	uint64_t snapshot_fail = __atomic_load_n(&nabu_pauth_q_snapshot_fail, __ATOMIC_RELAXED);
+ 	uint64_t skipped = __atomic_load_n(&nabu_pauth_q_output_skipped, __ATOMIC_RELAXED);
++	uint64_t pub_init = __atomic_load_n(&nabu_pauth_q_pub_init, __ATOMIC_RELAXED);
++	uint64_t pub_ready = __atomic_load_n(&nabu_pauth_q_pub_ready, __ATOMIC_RELAXED);
++	uint64_t pub_casfail = __atomic_load_n(&nabu_pauth_q_pub_casfail, __ATOMIC_RELAXED);
++	uint64_t pub_stale = __atomic_load_n(&nabu_pauth_q_pub_stale, __ATOMIC_RELAXED);
++	uint64_t pub_skip = __atomic_load_n(&nabu_pauth_q_pub_skip, __ATOMIC_RELAXED);
++	uint64_t pub_snapshot = __atomic_load_n(&nabu_pauth_q_pub_snapshot, __ATOMIC_RELAXED);
+ 
+ 	nabu_pauth_seq++;
+ 	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
+ 		struct nabu_pauth_proc *proc = &nabu_pauth_procs[i];
+-		struct nabu_pauth_thread *detail[NABU_PAUTH_DETAIL_PER_PROC];
+-		uint64_t detail_trap[NABU_PAUTH_DETAIL_PER_PROC];
++		struct nabu_pauth_proc_view view;
++		struct nabu_pauth_detail detail[NABU_PAUTH_DETAIL_PER_PROC];
+ 		int details = 0;
+ 		unsigned int length;
+ 		unsigned int budget = NABU_PAUTH_BUDGET_BYTES - used;
++		uint32_t state = __atomic_load_n(&proc->state, __ATOMIC_ACQUIRE);
+ 
+-		if (!__atomic_load_n(&proc->used, __ATOMIC_ACQUIRE)) {
++		if (state == NABU_PAUTH_SLOT_EMPTY) {
++			continue;
++		}
++		if (state != NABU_PAUTH_SLOT_READY) {
++			/* Writer is mid-publication: never read its identity. */
++			__atomic_fetch_add(&nabu_pauth_q_pub_stale, 1, __ATOMIC_RELAXED);
++			pub_stale++;
+ 			continue;
+ 		}
+-		length = nabu_pauth_window_line(buffer, sizeof(buffer), proc);
++		nabu_pauth_proc_snapshot(proc, &view);
++		__atomic_fetch_add(&nabu_pauth_q_pub_snapshot, 1, __ATOMIC_RELAXED);
++		pub_snapshot++;
++
++		length = nabu_pauth_window_line(buffer, sizeof(buffer), &view, proc);
+ 		if (length >= sizeof(buffer) || length > budget || length > 255) {
+ 			__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1, __ATOMIC_RELAXED);
+ 			continue;
+ 		}
+ 		printf("%s", buffer);
+ 		used += length;
+-		length = nabu_pauth_class_line(buffer, sizeof(buffer), proc);
++		length = nabu_pauth_class_line(buffer, sizeof(buffer), &view, proc);
+ 		if (length >= sizeof(buffer) || length > NABU_PAUTH_BUDGET_BYTES - used ||
+ 		    length > 255) {
+ 			__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1, __ATOMIC_RELAXED);
+@@ -544,35 +678,43 @@ nabu_pauth_print_window(void)
+ 
+ 		for (unsigned int t = 0; t < NABU_PAUTH_MAX_THREADS; t++) {
+ 			struct nabu_pauth_thread *entry = &nabu_pauth_threads[t];
++			struct nabu_pauth_thread_view thread_view;
+ 			uint64_t delta;
+-			if (!__atomic_load_n(&entry->active, __ATOMIC_ACQUIRE) ||
+-			    entry->proc != (int)i) {
++
++			if (__atomic_load_n(&entry->state, __ATOMIC_ACQUIRE) !=
++			    NABU_PAUTH_SLOT_READY) {
++				continue;
++			}
++			if (entry->proc != (int)i) {
+ 				continue;
+ 			}
+-			delta = entry->trap - entry->last_trap;
++			nabu_pauth_thread_snapshot(entry, &thread_view);
++			delta = thread_view.trap - entry->last_trap;
+ 			if (delta == 0) {
+ 				continue;
+ 			}
+ 			if (details < NABU_PAUTH_DETAIL_PER_PROC) {
+-				detail[details] = entry;
+-				detail_trap[details] = delta;
++				detail[details].entry = entry;
++				detail[details].view = thread_view;
++				detail[details].delta = delta;
+ 				details++;
+ 				continue;
+ 			}
+ 			int smallest = 0;
+ 			for (int k = 1; k < details; k++) {
+-				if (detail_trap[k] < detail_trap[smallest]) {
++				if (detail[k].delta < detail[smallest].delta) {
+ 					smallest = k;
+ 				}
+ 			}
+-			if (delta > detail_trap[smallest]) {
+-				detail[smallest] = entry;
+-				detail_trap[smallest] = delta;
++			if (delta > detail[smallest].delta) {
++				detail[smallest].entry = entry;
++				detail[smallest].view = thread_view;
++				detail[smallest].delta = delta;
+ 			}
+ 		}
+ 		for (int k = 0; k < details; k++) {
+-			length = nabu_pauth_thread_line(buffer, sizeof(buffer), detail[k],
+-			    proc->name);
++			length = nabu_pauth_thread_line(buffer, sizeof(buffer),
++			    &detail[k].view, detail[k].entry, view.name);
+ 			if (length >= sizeof(buffer) ||
+ 			    length > NABU_PAUTH_BUDGET_BYTES - used || length > 255) {
+ 				__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1,
+@@ -594,6 +736,16 @@ nabu_pauth_print_window(void)
+ 			printf("%s", buffer);
+ 		}
+ 	}
++	if (pub_init | pub_ready | pub_casfail | pub_stale | pub_skip | pub_snapshot) {
++		int n = snprintf(buffer, sizeof(buffer),
++		    "NABU D0 D: v=1 s=%llu seq=%u init=%llu ready=%llu"
++		    " casfail=%llu stale=%llu skip=%llu snap=%llu\n",
++		    nabu_pauth_session, nabu_pauth_seq, pub_init, pub_ready,
++		    pub_casfail, pub_stale, pub_skip, pub_snapshot);
++		if (n > 0 && n < (int)sizeof(buffer)) {
++			printf("%s", buffer);
++		}
++	}
+ }
+ 
+ static void

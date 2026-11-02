@@ -1,0 +1,632 @@
+diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
+index a128485..29d7b81 100644
+--- a/bsd/dev/nabu_sample.c
++++ b/bsd/dev/nabu_sample.c
+@@ -12,12 +12,33 @@
+  *
+  * First sample 90 s after start, then every 120 s, 40 samples at most.
+  * nabusmpfirst=1..300 and nabusmpint=1..120 override those waits.
++ *
++ * nabusmpcount=1..240 overrides the sample count (default 40).  Samples are
++ * scheduled on deadlines measured from one fixed monotonic start, so a slow
++ * sample does not shift later samples and nothing is caught up in a burst:
++ * a deadline that is already past when the sampler wakes is recorded as
++ * skipped instead of being sampled late.  The plan must fit
++ * first + (count - 1) * interval <= 3600 s.
++ *
++ * Each sample also emits the versioned SMP3 record set from exception.c:
++ * schedule, process identity, one record per sampled thread (real tid,
++ * process generation, bounded CPU times and user state) and bounded frame
++ * fragments, followed by a quality record.  The legacy SMP/SMP2 lines keep
++ * their previous meaning, but they are now printed after the task lock is
++ * dropped and only for the bounded thread set that was snapshotted.
++ *
++ * Two resource bounds apply per sample: at most NABU_SMP_MAX_INSTANCES
++ * matching process instances are collected (further matches are counted in
++ * the quality record as liminst), and exception.c enforces a soft per-sample
++ * byte budget for SMP3 records (dropped records are counted as out; the
++ * quality record itself is always printed).
+  */
+ #include <sys/param.h>
+ #include <sys/nabu_boottrace.h>
+ #include <sys/systm.h>
+ #include <sys/proc.h>
+ #include <sys/proc_internal.h>
++#include <kern/clock.h>
+ #include <kern/task.h>
+ #include <kern/thread.h>
+ #include <pexpert/pexpert.h>
+@@ -29,11 +50,24 @@ extern task_t proc_task(proc_t);
+ extern int hz;
+ extern void nabu_sample_start(void);
+ 
++#define NABU_SMP_DEFAULT_COUNT  40
++#define NABU_SMP_MAX_COUNT      240
++#define NABU_SMP_MAX_SPAN_SEC   3600
++#define NABU_SMP_NS_PER_SEC     1000000000ULL
++
+ static char nabu_sample_names[128];
++static int nabu_smp_chan;
+ 
+ /* Current sample ordinal; shared with the SMP2 records in exception.c. */
+ unsigned int nabu_sample_seq;
+ 
++/* SMP3 identity: one session per sampler life and a hash of its plan. */
++uint64_t nabu_smp_session;
++uint32_t nabu_smp_cfg;
++unsigned int nabu_smp_count;
++int nabu_smp_first;
++int nabu_smp_interval;
++
+ static bool
+ nabu_sample_wanted(const char *name)
+ {
+@@ -52,51 +86,179 @@ nabu_sample_wanted(const char *name)
+ 	return false;
+ }
+ 
+-extern void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task);  /* osfmk/kern/exception.c */
++extern void nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task);
++extern void nabu_smp_begin_sample(void);
++extern void nabu_smp_end_sample(unsigned int procs, unsigned int instances,
++    unsigned int instances_limited);
++
++#define NABU_SMP_MAX_INSTANCES 8
++
++static unsigned int nabu_smp_procs;
++static unsigned int nabu_smp_instances;
++static unsigned int nabu_smp_instances_limited;
+ 
+ static int
+ nabu_sample_proc(proc_t p, __unused void *arg)
+ {
+ 	char name[32];
+ 	proc_name(proc_pid(p), name, sizeof(name));
++	nabu_smp_procs++;
+ 	if (nabu_sample_wanted(name)) {
+ 		task_t task = proc_task(p);
+ 		if (task != TASK_NULL) {
+-			nabu_sample_task(name, proc_pid(p), proc_uniqueid(p), task);
++			if (nabu_smp_instances >= NABU_SMP_MAX_INSTANCES) {
++				nabu_smp_instances_limited++;
++				return PROC_RETURNED;
++			}
++			nabu_smp_instances++;
++			nabu_smp_task(name, proc_pid(p), proc_uniqueid(p), task);
+ 		}
+ 	}
+ 	return PROC_RETURNED;
+ }
+ 
++static uint64_t
++nabu_smp_now_ns(void)
++{
++	uint64_t ns = 0;
++
++	absolutetime_to_nanoseconds(mach_absolute_time(), &ns);
++	return ns;
++}
++
++/* Sleep for at most one interval worth of nanoseconds; the caller re-reads the
++ * clock afterwards and never assumes the requested time elapsed. */
++static void
++nabu_smp_sleep_ns(uint64_t ns)
++{
++	uint64_t per_tick = NABU_SMP_NS_PER_SEC / (uint64_t)hz;
++	int ticks;
++
++	if (per_tick == 0) {
++		per_tick = 1;
++	}
++	ticks = (int)((ns + per_tick - 1) / per_tick);
++	if (ticks < 1) {
++		ticks = 1;
++	}
++	(void)tsleep(&nabu_smp_chan, PZERO, "nabusmp", ticks);
++}
++
++static uint32_t
++nabu_smp_config_hash(int first, int interval, unsigned int count)
++{
++	uint32_t hash = 2166136261u;
++
++	for (const char *t = nabu_sample_names; *t; t++) {
++		hash = (hash ^ (uint32_t)(unsigned char)*t) * 16777619u;
++	}
++	hash = (hash ^ (uint32_t)first) * 16777619u;
++	hash = (hash ^ (uint32_t)interval) * 16777619u;
++	hash = (hash ^ count) * 16777619u;
++	return hash;
++}
++
++static void
++nabu_smp_schedule_line(unsigned int seq, uint64_t planned, uint64_t begin,
++    uint64_t end, const char *status, const char *skip)
++{
++	printf("NABU SMP3 S: v=1 s=%llu cfg=0x%08x seq=%u plan=%llu begin=%llu end=%llu"
++	    " st=%s skip=%s\n", nabu_smp_session, nabu_smp_cfg, seq, planned,
++	    begin, end, status, skip);
++}
++
+ static void
+ nabu_sample_thread(__unused void *arg, __unused wait_result_t wr)
+ {
+-	static int chan;
+ 	int first = 90, interval = 120;
+-	int first_set, interval_set;
++	unsigned int count = NABU_SMP_DEFAULT_COUNT;
++	int first_set, interval_set, count_set;
++	uint64_t base;
++	unsigned int done = 0, skipped = 0;
+ 
+ 	if (!PE_parse_boot_argn("nabusample", nabu_sample_names, sizeof(nabu_sample_names))) {
+ 		strlcpy(nabu_sample_names, "SpringBoard,backboardd", sizeof(nabu_sample_names));
+ 	}
+ 	first_set = PE_parse_boot_argn("nabusmpfirst", &first, sizeof(first));
+ 	interval_set = PE_parse_boot_argn("nabusmpint", &interval, sizeof(interval));
++	count_set = PE_parse_boot_argn("nabusmpcount", &count, sizeof(count));
+ 	if (first < 1 || first > 300 || interval < 1 || interval > 120) {
+ 		printf("SMP rejected: require nabusmpfirst=1..300 and nabusmpint=1..120\n");
+ 		return;
+ 	}
++	if (count < 1 || count > NABU_SMP_MAX_COUNT) {
++		printf("SMP rejected: require nabusmpcount=1..%d\n", NABU_SMP_MAX_COUNT);
++		return;
++	}
+ 	if (nabu_sample_names[0] == '-') {
+ 		return;
+ 	}
+-	if (first_set || interval_set) {
+-		printf("SMP schedule first=%d interval=%d count=40\n", first, interval);
++	uint64_t span_ns = ((uint64_t)first +
++	    (uint64_t)(count - 1) * (uint64_t)interval) * NABU_SMP_NS_PER_SEC;
++	/* The 3600 s plan bound belongs to the new count option.  A legacy
++	 * configuration without nabusmpcount keeps its historical schedule. */
++	if (count_set && span_ns >
++	    (uint64_t)NABU_SMP_MAX_SPAN_SEC * NABU_SMP_NS_PER_SEC) {
++		printf("SMP rejected: plan spans %llu s, maximum %d s\n",
++		    span_ns / NABU_SMP_NS_PER_SEC, NABU_SMP_MAX_SPAN_SEC);
++		return;
++	}
++	nabu_smp_first = first;
++	nabu_smp_interval = interval;
++	nabu_smp_count = count;
++	nabu_smp_cfg = nabu_smp_config_hash(first, interval, count);
++	nabu_smp_session = nabu_smp_now_ns();
++	base = nabu_smp_session;
++	if (first_set || interval_set || count_set) {
++		printf("SMP schedule first=%d interval=%d count=%u\n", first,
++		    interval, count);
+ 	}
+-	(void)tsleep(&chan, PZERO, "nabusmp", first * hz);
+-	for (int i = 0; i < 40; i++) {
+-		printf("SMP --- sample %d\n", i);
+-		nabu_sample_seq = (unsigned int)i;
++	for (unsigned int i = 0; i < count; i++) {
++		uint64_t planned = base +
++		    ((uint64_t)first + (uint64_t)i * (uint64_t)interval) *
++		    NABU_SMP_NS_PER_SEC;
++		uint64_t interval_ns = (uint64_t)interval * NABU_SMP_NS_PER_SEC;
++		uint64_t now = nabu_smp_now_ns();
++		uint64_t begin, end;
++		const char *status, *skip = "-";
++
++		if (now > planned) {
++			/* Missed by a whole interval or more: record it, do not
++			 * sample, and do not shift the following deadlines. */
++			if (now >= planned + interval_ns) {
++				skipped++;
++				nabu_smp_schedule_line(i, planned, now, now,
++				    "skipped", "missed");
++				continue;
++			}
++			status = "late";
++		} else {
++			nabu_smp_sleep_ns(planned - now);
++			now = nabu_smp_now_ns();
++			if (now >= planned + interval_ns) {
++				skipped++;
++				nabu_smp_schedule_line(i, planned, now, now,
++				    "skipped", "missed");
++				continue;
++			}
++			status = (now > planned) ? "late" : "ok";
++		}
++		begin = now;
++		printf("SMP --- sample %d\n", (int)i);
++		nabu_sample_seq = i;
++		nabu_smp_procs = 0;
++		nabu_smp_instances = 0;
++		nabu_smp_instances_limited = 0;
++		nabu_smp_begin_sample();
+ 		proc_iterate(PROC_ALLPROCLIST, nabu_sample_proc, NULL, NULL, NULL);
+-		(void)tsleep(&chan, PZERO, "nabusmp", interval * hz);
++		nabu_smp_end_sample(nabu_smp_procs, nabu_smp_instances,
++		    nabu_smp_instances_limited);
++		end = nabu_smp_now_ns();
++		done++;
++		nabu_smp_schedule_line(i, planned, begin, end, status, skip);
+ 	}
++	printf("NABU SMP3 E: v=1 s=%llu end=%llu done=%u skipped=%u reason=%s\n",
++	    nabu_smp_session, nabu_smp_now_ns(), done, skipped, "complete");
+ }
+ 
+ void
+diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
+index d93c8c6..41db19c 100644
+--- a/osfmk/kern/exception.c
++++ b/osfmk/kern/exception.c
+@@ -1002,20 +1002,184 @@ nabu_crash_strings(const char *name)
+  * dropped, carrying the real thread id, the process generation, the sample
+  * sequence and the sampled CPU times.  The lock is only extended by storing a
+  * thread reference; CPU reads and formatting happen outside it.
++ *
++ * The "SMP3 v=1 ..." record family is the late-window sampler contract: every
++ * thread record can be associated by (session, seq, proc uniqueid, tid) without
++ * relying on a preceding heading line, frame fragments carry their part index,
++ * and a per-sample quality record accounts for every thread that was skipped.
++ * Snapshots are bounded: at most 64 thread references per task and 16 frames
++ * per thread.  The saved state pointer is used as a best-effort view, never as
++ * an atomic snapshot of a running thread.
+  */
+ #define NABU_SMP_SNAP_MAX 64
++#define NABU_SMP3_FRAME_MAX 16
++#define NABU_SMP3_FRAME_PART 8
++#define NABU_SMP3_LINE_BYTES 241
++/*
++ * Output priorities for one sample:
++ *  - the quality record (Q) is always printed and is not charged;
++ *  - process identity (P) and thread state (T, including CPU times and
++ *    pc/lr/sp) are priority records: they are printed for at most
++ *    NABU_SMP3_T_MAX threads and are not charged against the frame budget;
++ *  - frame fragments (F) are charged against NABU_SMP3_FRAME_BUDGET_BYTES.
++ * This keeps P/T complete for a Test136-sized sample (29 threads) while
++ * bounding the per-sample output to roughly T_MAX*205 + 16 KiB + Q.
++ */
++#define NABU_SMP3_T_MAX 64
++#define NABU_SMP3_FRAME_BUDGET_BYTES 24576
+ 
+ struct nabu_smp_snap {
+ 	thread_t thread;
+ 	uint64_t tid;
++	uint64_t pc;
++	uint64_t lr;
++	uint64_t sp;
++	uint64_t fp;
+ 	int index;
++	int t_emitted;
++	uint64_t user_ns;
++	uint64_t system_ns;
++	uint64_t runnable_ns;
++	uint64_t read_begin;
++	uint64_t read_end;
+ };
+ 
+-void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task);
++/* Quality counters for one SMP3 sample, owned by the sampler thread. */
++static uint64_t nabu_smp3_thr, nabu_smp3_ok, nabu_smp3_limthr;
++static uint64_t nabu_smp3_noexec, nabu_smp3_nostate, nabu_smp3_bad;
++static uint64_t nabu_smp3_rdfail, nabu_smp3_drop, nabu_smp3_bytes;
++static uint64_t nabu_smp3_out, nabu_smp3_t_records;
++static uint64_t nabu_smp3_frame_bytes;
++
++void nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task);
+ extern unsigned int nabu_sample_seq;
++extern uint64_t nabu_smp_session;
++extern uint32_t nabu_smp_cfg;
++
++void
++nabu_smp_begin_sample(void)
++{
++	nabu_smp3_thr = nabu_smp3_ok = nabu_smp3_limthr = 0;
++	nabu_smp3_noexec = nabu_smp3_nostate = nabu_smp3_bad = 0;
++	nabu_smp3_rdfail = nabu_smp3_drop = nabu_smp3_bytes = 0;
++	nabu_smp3_out = nabu_smp3_t_records = nabu_smp3_frame_bytes = 0;
++}
++
++static int
++nabu_smp3_room(int n)
++{
++	return nabu_smp3_frame_bytes + (uint64_t)n <=
++	    (uint64_t)NABU_SMP3_FRAME_BUDGET_BYTES;
++}
++
++/* Priority records: P, T and the formatting-failure fallback.  They are not
++ * charged against the frame budget but still count in the sample byte total. */
++static int
++nabu_smp3_emit(const char *format, ...)
++{
++	va_list arguments;
++	char line[NABU_SMP3_LINE_BYTES];
++	int n;
++
++	va_start(arguments, format);
++	n = vsnprintf(line, sizeof(line), format, arguments);
++	va_end(arguments);
++	if (n <= 0 || n >= (int)sizeof(line)) {
++		nabu_smp3_out++;
++		return 0;
++	}
++	printf("%s", line);
++	nabu_smp3_bytes += (uint64_t)n;
++	return 1;
++}
++
++/* Frame fragments are the only budgeted records.  A record that does not fit
++ * is counted in out, so Q.out always equals the number of dropped SMP3
++ * records. */
++static int
++nabu_smp3_emit_frame(const char *format, ...)
++{
++	va_list arguments;
++	char line[NABU_SMP3_LINE_BYTES];
++	int n;
++
++	va_start(arguments, format);
++	n = vsnprintf(line, sizeof(line), format, arguments);
++	va_end(arguments);
++	if (n <= 0 || n >= (int)sizeof(line)) {
++		nabu_smp3_out++;
++		return 0;
++	}
++	if (!nabu_smp3_room(n)) {
++		nabu_smp3_out++;
++		return 0;
++	}
++	printf("%s", line);
++	nabu_smp3_bytes += (uint64_t)n;
++	nabu_smp3_frame_bytes += (uint64_t)n;
++	return 1;
++}
++
++/* Bounded user frame walk.  Only called after task_unlock. */
++static unsigned int
++nabu_smp3_frames(vm_map_t map, uint64_t fp, uint64_t *frames,
++    unsigned int max, const char **termination)
++{
++	unsigned int count = 0;
++	const char *reason = "end";
++
++	while (count < max) {
++		uint64_t frame[2];
++
++		if (fp == 0) {
++			break;
++		}
++		if ((fp & 7) != 0) {
++			reason = "unaligned";
++			break;
++		}
++		if (vm_map_read_user(map, fp, frame, sizeof(frame)) != KERN_SUCCESS) {
++			reason = "read_fail";
++			nabu_smp3_rdfail++;
++			break;
++		}
++		frames[count++] = frame[1];
++		if (frame[0] <= fp) {
++			reason = "cycle";
++			break;
++		}
++		fp = frame[0];
++	}
++	if (count == max) {
++		reason = "limit";
++	}
++	*termination = reason;
++	return count;
++}
++
++void
++nabu_smp_end_sample(unsigned int procs, unsigned int instances,
++    unsigned int instances_limited)
++{
++	char line[NABU_SMP3_LINE_BYTES];
++	int n;
++
++	n = snprintf(line, sizeof(line),
++	    "NABU SMP3 Q: v=1 s=%llu seq=%u procs=%u inst=%u liminst=%u"
++	    " thr=%llu ok=%llu limthr=%llu noexec=%llu nostate=%llu bad=%llu"
++	    " rdfail=%llu drop=%llu out=%llu bytes=%llu\n",
++	    nabu_smp_session, nabu_sample_seq, procs, instances,
++	    instances_limited, nabu_smp3_thr, nabu_smp3_ok, nabu_smp3_limthr,
++	    nabu_smp3_noexec, nabu_smp3_nostate, nabu_smp3_bad,
++	    nabu_smp3_rdfail, nabu_smp3_drop, nabu_smp3_out, nabu_smp3_bytes);
++	if (n > 0 && n < (int)sizeof(line)) {
++		printf("%s", line);
++		nabu_smp3_bytes += (uint64_t)n;
++	}
++}
+ 
+ void
+-nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
++nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task)
+ {
+ 	vm_map_t map = get_task_map(task);
+ 	uint64_t slide = 0;
+@@ -1032,69 +1196,149 @@ nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
+ 		slide = sr->sr_slide;
+ 		vm_shared_region_deallocate(sr);
+ 	}
+-	printf("SMP %s[%d] slide 0x%llx mh 0x%llx\n", name, pid, slide, task->mach_header_vm_address);
++	printf("SMP %s[%d] slide 0x%llx mh 0x%llx\n", name, pid, slide,
++	    task->mach_header_vm_address);
++	(void)nabu_smp3_emit("NABU SMP3 P: v=1 s=%llu seq=%u uid=%llu pid=%d"
++	    " nm=%s slide=0x%llx mh=0x%llx\n", nabu_smp_session, nabu_sample_seq,
++	    uid, pid, name, slide, task->mach_header_vm_address);
+ 
++	/*
++	 * Under the task lock: enumerate, copy scalar saved-state values and
++	 * take one thread reference per snapshot.  No user-memory read, no
++	 * formatting and no printf happen here.
++	 */
+ 	task_lock(task);
+ 	queue_iterate(&task->threads, thread, thread_t, task_threads) {
+ 		arm_saved_state_t *ss = find_user_regs(thread);
+-		char line[400];
+-		int n;
+-		uint64_t fp;
+ 		int index;
+ 
+-		if (ss == NULL || !is_saved_state64(ss)) {
++		nabu_smp3_thr++;
++		if (ss == NULL) {
++			nabu_smp3_nostate++;
+ 			continue;
+ 		}
+-		index = tn++;
+-		fp = get_saved_state_fp(ss);
+-		n = snprintf(line, sizeof(line), "SMP %s t%d pc 0x%llx lr 0x%llx sp 0x%llx bt", name, index,
+-		    get_saved_state_pc(ss), get_saved_state_lr(ss), get_saved_state_sp(ss));
+-		for (int i = 0; i < 16 && fp != 0 && (fp & 7) == 0 && n < (int)sizeof(line) - 20; i++) {
+-			uint64_t frame[2];
+-			if (vm_map_read_user(map, fp, frame, sizeof(frame)) != KERN_SUCCESS) {
+-				break;
+-			}
+-			n += snprintf(line + n, sizeof(line) - n, " 0x%llx", frame[1]);
+-			if (frame[0] <= fp) {
+-				break;
+-			}
+-			fp = frame[0];
++		if (!is_saved_state64(ss)) {
++			nabu_smp3_noexec++;
++			continue;
+ 		}
+-		printf("%s\n", line);
+-		if (snap_count < NABU_SMP_SNAP_MAX) {
+-			thread_reference(thread);
+-			snap[snap_count].thread = thread;
+-			snap[snap_count].tid = thread_tid(thread);
+-			snap[snap_count].index = index;
+-			snap_count++;
+-		} else {
++		index = tn++;
++		if (snap_count >= NABU_SMP_SNAP_MAX) {
+ 			snap_dropped++;
++			nabu_smp3_limthr++;
++			continue;
+ 		}
++		thread_reference(thread);
++		snap[snap_count].thread = thread;
++		snap[snap_count].tid = thread_tid(thread);
++		snap[snap_count].index = index;
++		snap[snap_count].pc = get_saved_state_pc(ss);
++		snap[snap_count].lr = get_saved_state_lr(ss);
++		snap[snap_count].sp = get_saved_state_sp(ss);
++		snap[snap_count].fp = get_saved_state_fp(ss);
++		snap[snap_count].t_emitted = 0;
++		snap_count++;
+ 	}
+ 	task_unlock(task);
+ 
++	/* Priority pass: all P and T records first, so a busy frame budget can
++	 * never remove the CPU totals or pc/lr/sp of a sampled thread. */
+ 	for (int i = 0; i < snap_count; i++) {
+ 		time_value_t user_time = { 0, 0 };
+ 		time_value_t system_time = { 0, 0 };
+ 		time_value_t runnable_time = { 0, 0 };
+-		uint64_t user_ns, system_ns, runnable_ns;
+ 
+-		thread_read_times(snap[i].thread, &user_time, &system_time, &runnable_time);
+-		user_ns = (uint64_t)user_time.seconds * 1000000000ULL +
++		absolutetime_to_nanoseconds(mach_absolute_time(),
++		    &snap[i].read_begin);
++		thread_read_times(snap[i].thread, &user_time, &system_time,
++		    &runnable_time);
++		absolutetime_to_nanoseconds(mach_absolute_time(),
++		    &snap[i].read_end);
++		snap[i].user_ns = (uint64_t)user_time.seconds * 1000000000ULL +
+ 		    (uint64_t)user_time.microseconds * 1000ULL;
+-		system_ns = (uint64_t)system_time.seconds * 1000000000ULL +
+-		    (uint64_t)system_time.microseconds * 1000ULL;
+-		runnable_ns = (uint64_t)runnable_time.seconds * 1000000000ULL +
+-		    (uint64_t)runnable_time.microseconds * 1000ULL;
++		snap[i].system_ns = (uint64_t)system_time.seconds *
++		    1000000000ULL + (uint64_t)system_time.microseconds *
++		    1000ULL;
++		snap[i].runnable_ns = (uint64_t)runnable_time.seconds *
++		    1000000000ULL + (uint64_t)runnable_time.microseconds *
++		    1000ULL;
++		if (nabu_smp3_t_records >= NABU_SMP3_T_MAX) {
++			/* Hard cap on priority records: counted as dropped, the
++			 * thread is not represented as a complete T record. */
++			nabu_smp3_out++;
++			continue;
++		}
++		nabu_smp3_ok++;
++		if (nabu_smp3_emit("NABU SMP3 T: v=1 s=%llu seq=%u uid=%llu"
++		    " pid=%d tid=%llu nm=%s usr=%llu sys=%llu run=%llu"
++		    " stv=1 cons=best_effort pc=0x%llx lr=0x%llx"
++		    " sp=0x%llx inv=-\n", nabu_smp_session, nabu_sample_seq,
++		    uid, pid, snap[i].tid, name, snap[i].user_ns,
++		    snap[i].system_ns, snap[i].runnable_ns, snap[i].pc,
++		    snap[i].lr, snap[i].sp)) {
++			snap[i].t_emitted = 1;
++			nabu_smp3_t_records++;
++		}
++	}
++
++	for (int i = 0; i < snap_count; i++) {
++		uint64_t frames[NABU_SMP3_FRAME_MAX];
++		unsigned int frame_count;
++		const char *termination = "end";
++		char line[400];
++		int n;
++
++		/* The legacy SMP line keeps its meaning; it is printed for the
++		 * bounded snapshot set after the lock is dropped. */
++		frame_count = nabu_smp3_frames(map, snap[i].fp, frames,
++		    NABU_SMP3_FRAME_MAX, &termination);
++		n = snprintf(line, sizeof(line),
++		    "SMP %s t%d pc 0x%llx lr 0x%llx sp 0x%llx bt", name,
++		    snap[i].index, snap[i].pc, snap[i].lr, snap[i].sp);
++		for (unsigned int k = 0; k < frame_count &&
++		    n < (int)sizeof(line) - 20; k++) {
++			n += snprintf(line + n, sizeof(line) - (size_t)n,
++			    " 0x%llx", frames[k]);
++		}
++		printf("%s\n", line);
+ 		printf("SMP2 v=1 sample=%u name=%s pid=%d uid=%llu idx=%d tid=%llu "
+ 		    "user_ns=%llu sys_ns=%llu run_ns=%llu ns=%llu\n",
+ 		    nabu_sample_seq, name, pid, uid, snap[i].index, snap[i].tid,
+-		    user_ns, system_ns, runnable_ns, stamp_ns);
++		    snap[i].user_ns, snap[i].system_ns, snap[i].runnable_ns,
++		    stamp_ns);
++		if (!snap[i].t_emitted) {
++			/* T was dropped by the priority cap: do not emit orphan
++			 * frame fragments for it. */
++			thread_deallocate(snap[i].thread);
++			continue;
++		}
++		for (unsigned int part = 0; part < frame_count;
++		    part += NABU_SMP3_FRAME_PART) {
++			unsigned int last = part + NABU_SMP3_FRAME_PART;
++			unsigned int parts = (frame_count +
++			    NABU_SMP3_FRAME_PART - 1) / NABU_SMP3_FRAME_PART;
++
++			if (last > frame_count) {
++				last = frame_count;
++			}
++			for (unsigned int k = part; k < last; k++) {
++				(void)nabu_smp3_emit_frame("NABU SMP3 F:"
++				    " v=1 s=%llu seq=%u uid=%llu"
++				    " tid=%llu part=%u/%u i=%u"
++				    " a=0x%llx tr=%s\n",
++				    nabu_smp_session, nabu_sample_seq,
++				    uid, snap[i].tid,
++				    part / NABU_SMP3_FRAME_PART + 1,
++				    parts, k, frames[k],
++				    (k + 1 == frame_count) ?
++				    termination : "more");
++			}
++		}
+ 		thread_deallocate(snap[i].thread);
+ 	}
+ 	if (snap_dropped != 0) {
+-		printf("SMP2 v=1 sample=%u name=%s pid=%d uid=%llu dropped=%d reason=snapshot\n",
+-		    nabu_sample_seq, name, pid, uid, snap_dropped);
++		printf("SMP2 v=1 sample=%u name=%s pid=%d uid=%llu dropped=%d"
++		    " reason=snapshot\n", nabu_sample_seq, name, pid, uid,
++		    snap_dropped);
+ 	}
+ }
+ 
