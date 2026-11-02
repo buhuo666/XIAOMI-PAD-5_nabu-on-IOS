@@ -1,0 +1,109 @@
+diff --git a/osfmk/arm64/nabu_arm64e_xnu.h b/osfmk/arm64/nabu_arm64e_xnu.h
+--- a/osfmk/arm64/nabu_arm64e_xnu.h
++++ b/osfmk/arm64/nabu_arm64e_xnu.h
+@@ -6,6 +6,17 @@
+  * fetch, so the diagnostic summary can report fetch+wrapper elapsed ticks.
+  * The value is 0 when PAuth diagnostics are disabled; semantics, register
+  * commit and the fallback return value do not depend on it.
++ *
++ * Work order C1: the two gate inputs that are invariant after boot are cached.
++ *  - nabuarm64e is a boot argument: PE_parse_boot_argn is called once, then the
++ *    result is shared. A failed parse is cached as "disabled" exactly because
++ *    the original path would also return disabled for every later trap.
++ *  - ID_AA64ISAR1_EL1 is read once per CPU and cached in that CPU's own slot:
++ *    no CPU's reading is used to authorize another CPU. An uninitialized or
++ *    out-of-range slot always falls back to the original direct read, and a
++ *    cached "not yet known" state never permits emulation.
++ * The per-trap EL0/64-bit saved-state validation, the gate classification, the
++ * diagnostics accounting and the decoder contract are unchanged.
+  */
+ #ifndef NABU_ARM64E_XNU_H
+ #define NABU_ARM64E_XNU_H
+@@ -14,12 +25,66 @@
+ #include <arm64/nabu_pauth_compat.h>
+ #include <arm64/nabu_pauth_diag.h>
+ #include <pexpert/pexpert.h>
++#include <arm/cpu_number.h>
++
++#ifndef MAX_CPUS
++#define MAX_CPUS 64
++#endif
++
++/* 0 unknown, 1 enabled, 2 disabled; shared by every CPU. */
++static int nabu_arm64e_cfg_state;
++/* Per-CPU: 0 unknown, 1 hardware PAuth absent, 2 hardware PAuth present. */
++static uint8_t nabu_arm64e_hw_state[MAX_CPUS];
+ 
+ static int
+ nabu_arm64e_copyin64(uint64_t address, uint64_t *value, void *context)
+ {
+ 	(void)context;
+ 	return copyin((user_addr_t)address, value, sizeof(*value)) == 0;
++}
++
++static inline int
++nabu_arm64e_enabled(void)
++{
++	int state = __atomic_load_n(&nabu_arm64e_cfg_state, __ATOMIC_RELAXED);
++	int enabled = 0;
++	int desired;
++
++	if (state != 0) {
++		return state == 1;
++	}
++	desired = (PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) &&
++	    enabled == 1) ? 1 : 2;
++	if (!__atomic_compare_exchange_n(&nabu_arm64e_cfg_state, &state, desired, 0,
++	    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
++		/* Another CPU won the initialization race with the same answer. */
++		return state == 1;
++	}
++	return desired == 1;
++}
++
++/* Returns 1 when the current CPU reports hardware PAuth. */
++static inline int
++nabu_arm64e_hardware_pauth(void)
++{
++	const uint64_t mask = (0xffULL << 4) | (0xffULL << 24);
++	uint64_t isar1;
++	uint8_t value;
++	int cpu = cpu_number();
++
++	if (cpu < 0 || cpu >= MAX_CPUS) {
++		/* No cache slot: keep the original direct read, never assume absent. */
++		isar1 = __builtin_arm_rsr64("ID_AA64ISAR1_EL1");
++		return (isar1 & mask) != 0;
++	}
++	value = __atomic_load_n(&nabu_arm64e_hw_state[cpu], __ATOMIC_RELAXED);
++	if (value != 0) {
++		return value == 2;
++	}
++	isar1 = __builtin_arm_rsr64("ID_AA64ISAR1_EL1");
++	value = (isar1 & mask) ? 2 : 1;
++	__atomic_store_n(&nabu_arm64e_hw_state[cpu], value, __ATOMIC_RELAXED);
++	return value == 2;
+ }
+ 
+ static inline enum nabu_pauth_step_status
+@@ -52,18 +117,16 @@
+ 	};
+ 	enum hakios_pauth_class cls = HAKIOS_PAUTH_CLASS_UNKNOWN;
+ 	enum hakios_pauth_status status;
+-	int enabled = 0;
+ 
+ 	if (!is_saved_state64(state) || !PSR64_IS_USER64(get_saved_state_cpsr(state))) {
+ 		nabu_pauth_diag_gate(NABU_PAUTH_GATE_STATE, start_tick);
+ 		return 0;
+ 	}
+-	if (!PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) || enabled != 1) {
++	if (!nabu_arm64e_enabled()) {
+ 		nabu_pauth_diag_gate(NABU_PAUTH_GATE_DISABLED, start_tick);
+ 		return 0;
+ 	}
+-	uint64_t isar1 = __builtin_arm_rsr64("ID_AA64ISAR1_EL1");
+-	if (isar1 & ((0xffULL << 4) | (0xffULL << 24))) {
++	if (nabu_arm64e_hardware_pauth()) {
+ 		nabu_pauth_diag_gate(NABU_PAUTH_GATE_HARDWARE, start_tick);
+ 		return 0;
+ 	}
