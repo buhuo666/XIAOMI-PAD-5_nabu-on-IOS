@@ -80,6 +80,7 @@ static int tsleep(void *c, int flags, const char *label, int ticks) {
     assert(wait_count < 50); waits[wait_count++] = ticks; return 0;
 }
 static int proc_pid(proc_t p) { return p->pid; }
+static uint64_t proc_uniqueid(proc_t p) { return UINT64_C(1000) + (uint64_t)p->pid; }
 static struct process targets[] = {
     {"launchd",1,(void *)1}, {"launchd_cache_lo",55,(void *)2},
     {"unrelated",56,(void *)3}, {"SpringBoard",57,(void *)4},
@@ -91,8 +92,9 @@ static void proc_name(int pid, char *out, int size) {
     assert(0);
 }
 static task_t proc_task(proc_t p) { return p->task; }
-static void nabu_sample_task(const char *name, int pid, task_t task) {
-    assert(name && pid && task); ++selected;
+static unsigned int nabu_sample_seq;
+static void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task) {
+    assert(name && pid && task); assert(uid == UINT64_C(1000) + (uint64_t)pid); ++selected;
 }
 static void proc_iterate(int which, int (*callback)(proc_t, void *), void *arg, void *a, void *b) {
     assert(which == PROC_ALLPROCLIST && !a && !b);

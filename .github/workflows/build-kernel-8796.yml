@@ -35,6 +35,7 @@ on:
       - "xnu-8796/test-boottrace-queue.py"
       - "xnu-8796/test-log-storage-v2.py"
       - "xnu-8796/test-boottrace-filter.py"
+      - "xnu-8796/test-bootstrap-diagnostics.py"
       - "xnu-8796/tests/**"
       - "tools/kernel-build-evidence.py"
       - ".github/workflows/build-kernel-8796.yml"
