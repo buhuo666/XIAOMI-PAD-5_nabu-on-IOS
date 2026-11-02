@@ -20,6 +20,15 @@ diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
  
  static bool
  nabu_sample_wanted(const char *name)
+@@ -46,7 +52,7 @@
+ 	return false;
+ }
+ 
+-extern void nabu_sample_task(const char *name, int pid, task_t task);  /* osfmk/kern/exception.c */
++extern void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task);  /* osfmk/kern/exception.c */
+ 
+ static int
+ nabu_sample_proc(proc_t p, __unused void *arg)
 @@ -56,7 +62,7 @@
  	if (nabu_sample_wanted(name)) {
  		task_t task = proc_task(p);
@@ -519,7 +528,7 @@ diff --git a/osfmk/arm64/nabu_pauth_diag.c b/osfmk/arm64/nabu_pauth_diag.c
 new file mode 100644
 --- /dev/null
 +++ b/osfmk/arm64/nabu_pauth_diag.c
-@@ -0,0 +1,633 @@
+@@ -0,0 +1,674 @@
 +/*
 + * PAuth software-compatibility diagnostics for nabu.
 + *
@@ -540,10 +549,8 @@ new file mode 100644
 + */
 +#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
 +
-+#include <sys/param.h>
-+#include <sys/systm.h>
-+#include <sys/proc.h>
-+#include <sys/proc_internal.h>
++#include <stddef.h>
++#include <stdint.h>
 +#include <kern/thread.h>
 +#include <kern/clock.h>
 +#include <kern/sched_prim.h>
@@ -552,11 +559,25 @@ new file mode 100644
 +
 +#include <arm64/nabu_pauth_diag.h>
 +
++/*
++ * This translation unit deliberately stays inside the osfmk include world.
++ * Pulling the BSD <sys/param.h>/<sys/systm.h> pair into a MACH_KERNEL_PRIVATE
++ * unit makes sys/param.h's setbit() macro collide with kern/misc_protos.h,
++ * so the few BSD services used here are declared explicitly instead.
++ */
++struct proc;
 +#ifndef __printflike
 +#define __printflike(fmtarg, firstvararg)
 +#endif
++#ifndef PZERO
++#define PZERO 0
++#endif
 +extern int printf(const char *format, ...) __printflike(1, 2);
 +extern struct proc *current_proc(void);
++extern uint64_t proc_uniqueid(struct proc *p);
++extern int proc_getpid(struct proc *p);
++extern char *proc_name_address(struct proc *p);
++extern int tsleep(void *chan, int pri, const char *wmesg, int timo);
 +extern int hz;
 +
 +#define NABU_PAUTH_MAX_PROCS       4
@@ -689,10 +710,35 @@ new file mode 100644
 +}
 +
 +static int
++nabu_pauth_name_equal(const char *left, const char *right)
++{
++	for (unsigned int i = 0; i <= NABU_PAUTH_NAME_MAX; i++) {
++		if (left[i] != right[i]) {
++			return 0;
++		}
++		if (left[i] == '\0') {
++			return 1;
++		}
++	}
++	return 1;
++}
++
++static void
++nabu_pauth_copy_name(char *destination, const char *source)
++{
++	unsigned int i;
++
++	for (i = 0; i < NABU_PAUTH_NAME_MAX && source[i] != '\0'; i++) {
++		destination[i] = source[i];
++	}
++	destination[i] = '\0';
++}
++
++static int
 +nabu_pauth_wanted(const char *name)
 +{
 +	for (unsigned int i = 0; i < nabu_pauth_name_count; i++) {
-+		if (strncmp(name, nabu_pauth_names[i], NABU_PAUTH_NAME_MAX) == 0) {
++		if (nabu_pauth_name_equal(name, nabu_pauth_names[i])) {
 +			return 1;
 +		}
 +	}
@@ -722,8 +768,7 @@ new file mode 100644
 +		}
 +		nabu_pauth_procs[i].uid = uid;
 +		nabu_pauth_procs[i].pid = pid;
-+		strlcpy(nabu_pauth_procs[i].name, p->p_comm,
-+		    sizeof(nabu_pauth_procs[i].name));
++		nabu_pauth_copy_name(nabu_pauth_procs[i].name, proc_name_address(p));
 +		return (int)i;
 +	}
 +	__atomic_fetch_add(&nabu_pauth_q_proc_full, 1, __ATOMIC_RELAXED);
@@ -764,7 +809,7 @@ new file mode 100644
 +			return entry;
 +		}
 +	}
-+	if (!nabu_pauth_wanted(p->p_comm)) {
++	if (!nabu_pauth_wanted(proc_name_address(p))) {
 +		__atomic_fetch_add(&nabu_pauth_q_untracked, 1, __ATOMIC_RELAXED);
 +		return NULL;
 +	}
@@ -1102,19 +1147,24 @@ new file mode 100644
 +		return 0;
 +	}
 +	const char *cursor = configured;
-+	while (*cursor && nabu_pauth_name_count < NABU_PAUTH_MAX_NAMES) {
-+		const char *end = strchr(cursor, ',');
-+		size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
++	while (*cursor != '\0' && nabu_pauth_name_count < NABU_PAUTH_MAX_NAMES) {
++		unsigned int length = 0;
++
++		while (cursor[length] != '\0' && cursor[length] != ',') {
++			length++;
++		}
 +		if (length == 0 || length > NABU_PAUTH_NAME_MAX) {
 +			return -1;
 +		}
-+		memcpy(nabu_pauth_names[nabu_pauth_name_count], cursor, length);
++		for (unsigned int i = 0; i < length; i++) {
++			nabu_pauth_names[nabu_pauth_name_count][i] = cursor[i];
++		}
 +		nabu_pauth_names[nabu_pauth_name_count][length] = '\0';
 +		nabu_pauth_name_count++;
-+		if (end == NULL) {
++		if (cursor[length] == '\0') {
 +			break;
 +		}
-+		cursor = end + 1;
++		cursor += length + 1;
 +	}
 +	return nabu_pauth_name_count > 0 ? 0 : -1;
 +}
