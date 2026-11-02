@@ -528,7 +528,7 @@ diff --git a/osfmk/arm64/nabu_pauth_diag.c b/osfmk/arm64/nabu_pauth_diag.c
 new file mode 100644
 --- /dev/null
 +++ b/osfmk/arm64/nabu_pauth_diag.c
-@@ -0,0 +1,675 @@
+@@ -0,0 +1,676 @@
 +/*
 + * PAuth software-compatibility diagnostics for nabu.
 + *
@@ -554,7 +554,6 @@ new file mode 100644
 +#include <kern/thread.h>
 +#include <kern/clock.h>
 +#include <kern/sched_prim.h>
-+#include <libkern/libkern.h>
 +#include <pexpert/pexpert.h>
 +
 +#include <arm64/nabu_pauth_diag.h>
@@ -574,6 +573,8 @@ new file mode 100644
 +#define PZERO 0
 +#endif
 +extern int printf(const char *format, ...) __printflike(1, 2);
++extern int snprintf(char *buffer, size_t size, const char *format, ...)
++    __printflike(3, 4);
 +extern struct proc *current_proc(void);
 +extern uint64_t proc_uniqueid(struct proc *p);
 +extern int proc_getpid(struct proc *p);
