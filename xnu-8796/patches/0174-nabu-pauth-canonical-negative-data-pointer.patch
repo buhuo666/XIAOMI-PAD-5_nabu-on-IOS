@@ -1,0 +1,27 @@
+diff --git a/osfmk/arm64/nabu_pauth_compat.h b/osfmk/arm64/nabu_pauth_compat.h
+--- a/osfmk/arm64/nabu_pauth_compat.h
++++ b/osfmk/arm64/nabu_pauth_compat.h
+@@ -61,6 +61,23 @@
+ static inline uint64_t
+ hakios_pauth_strip(uint64_t value, const struct hakios_pauth_policy *policy, int data)
+ {
++	/*
++	 * Data pointers keep the unsigned canonical-negative encoding used by
++	 * dispatch sentinels (-1, -2, -4096, ...).  A 48-bit user VA is sign
++	 * extended through bits 55:48; the top byte is the tag.  Stripping the
++	 * middle byte would turn e.g. -2 into 0xff00fffffffffffe, so the freed
++	 * dispatch branch no longer recognises its own sentinel.
++	 *
++	 * Only the fixed unsigned policy with a tag byte opts into this rule.
++	 * Code pointers and every other policy keep the plain mask, and no
++	 * signature is invented: this is a value-preserving carve-out.
++	 */
++	if (data && policy->user_limit == (UINT64_C(1) << 48) &&
++	    policy->data_tag_mask == UINT64_C(0xff00000000000000) &&
++	    (value & UINT64_C(0x00ff800000000000)) ==
++	    UINT64_C(0x00ff800000000000)) {
++		return value;
++	}
+ 	return value & ((policy->user_limit - 1) | (data ? policy->data_tag_mask : 0));
+ }
+ 
