@@ -1,0 +1,1228 @@
+diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
+--- a/bsd/dev/nabu_sample.c
++++ b/bsd/dev/nabu_sample.c
+@@ -21,12 +21,18 @@
+ #include <kern/task.h>
+ #include <kern/thread.h>
+ #include <pexpert/pexpert.h>
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++#include <arm64/nabu_pauth_diag.h>
++#endif
+ 
+ extern task_t proc_task(proc_t);
+ extern int hz;
+ extern void nabu_sample_start(void);
+ 
+ static char nabu_sample_names[128];
++
++/* Current sample ordinal; shared with the SMP2 records in exception.c. */
++unsigned int nabu_sample_seq;
+ 
+ static bool
+ nabu_sample_wanted(const char *name)
+@@ -56,7 +62,7 @@
+ 	if (nabu_sample_wanted(name)) {
+ 		task_t task = proc_task(p);
+ 		if (task != TASK_NULL) {
+-			nabu_sample_task(name, proc_pid(p), task);
++			nabu_sample_task(name, proc_pid(p), proc_uniqueid(p), task);
+ 		}
+ 	}
+ 	return PROC_RETURNED;
+@@ -87,6 +93,7 @@
+ 	(void)tsleep(&chan, PZERO, "nabusmp", first * hz);
+ 	for (int i = 0; i < 40; i++) {
+ 		printf("SMP --- sample %d\n", i);
++		nabu_sample_seq = (unsigned int)i;
+ 		proc_iterate(PROC_ALLPROCLIST, nabu_sample_proc, NULL, NULL, NULL);
+ 		(void)tsleep(&chan, PZERO, "nabusmp", interval * hz);
+ 	}
+@@ -97,6 +104,9 @@
+ {
+ 	thread_t thread;
+ 	nabu_boottrace_start();
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++	nabu_pauth_diag_start();
++#endif
+ 	if (kernel_thread_start(nabu_sample_thread, NULL, &thread) == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
+ 	}
+diff --git a/osfmk/arm64/nabu_arm64e_xnu.h b/osfmk/arm64/nabu_arm64e_xnu.h
+--- a/osfmk/arm64/nabu_arm64e_xnu.h
++++ b/osfmk/arm64/nabu_arm64e_xnu.h
+@@ -1,12 +1,18 @@
+ /*
+  * Opt-in unsigned arm64e instruction handling for nabu's EL0 processes.
+  * No signature generation, key storage or hardware register emulation.
++ *
++ * The third argument carries the absolute time taken before the instruction
++ * fetch, so the diagnostic summary can report fetch+wrapper elapsed ticks.
++ * The value is 0 when PAuth diagnostics are disabled; semantics, register
++ * commit and the fallback return value do not depend on it.
+  */
+ #ifndef NABU_ARM64E_XNU_H
+ #define NABU_ARM64E_XNU_H
+ 
+ #if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
+ #include <arm64/nabu_pauth_compat.h>
++#include <arm64/nabu_pauth_diag.h>
+ #include <pexpert/pexpert.h>
+ 
+ static int
+@@ -16,8 +22,26 @@
+ 	return copyin((user_addr_t)address, value, sizeof(*value)) == 0;
+ }
+ 
++static inline enum nabu_pauth_step_status
++nabu_arm64e_diag_status(enum hakios_pauth_status status)
++{
++	switch (status) {
++	case HAKIOS_PAUTH_STEPPED:
++		return NABU_PAUTH_ST_STEPPED;
++	case HAKIOS_PAUTH_UNHANDLED:
++		return NABU_PAUTH_ST_UNHANDLED;
++	case HAKIOS_PAUTH_BAD_TARGET:
++		return NABU_PAUTH_ST_BAD_TARGET;
++	case HAKIOS_PAUTH_BAD_ADDRESS:
++		return NABU_PAUTH_ST_BAD_ADDRESS;
++	case HAKIOS_PAUTH_READ_FAILED:
++		return NABU_PAUTH_ST_READ_FAILED;
++	}
++	return NABU_PAUTH_ST_UNHANDLED;
++}
++
+ static int
+-nabu_arm64e_xnu_step(arm_saved_state_t *state, uint32_t instruction)
++nabu_arm64e_xnu_step(arm_saved_state_t *state, uint32_t instruction, uint64_t start_tick)
+ {
+ 	struct hakios_pauth_frame frame;
+ 	const struct hakios_pauth_policy policy = {
+@@ -26,14 +50,21 @@
+ 		.read64 = nabu_arm64e_copyin64,
+ 		.context = NULL,
+ 	};
++	enum hakios_pauth_class cls = HAKIOS_PAUTH_CLASS_UNKNOWN;
++	enum hakios_pauth_status status;
+ 	int enabled = 0;
+ 
+-	if (!is_saved_state64(state) || !PSR64_IS_USER64(get_saved_state_cpsr(state)) ||
+-	    !PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) || enabled != 1) {
++	if (!is_saved_state64(state) || !PSR64_IS_USER64(get_saved_state_cpsr(state))) {
++		nabu_pauth_diag_gate(NABU_PAUTH_GATE_STATE, start_tick);
++		return 0;
++	}
++	if (!PE_parse_boot_argn("nabuarm64e", &enabled, sizeof(enabled)) || enabled != 1) {
++		nabu_pauth_diag_gate(NABU_PAUTH_GATE_DISABLED, start_tick);
+ 		return 0;
+ 	}
+ 	uint64_t isar1 = __builtin_arm_rsr64("ID_AA64ISAR1_EL1");
+ 	if (isar1 & ((0xffULL << 4) | (0xffULL << 24))) {
++		nabu_pauth_diag_gate(NABU_PAUTH_GATE_HARDWARE, start_tick);
+ 		return 0;
+ 	}
+ 	for (unsigned int i = 0; i < 29; ++i) {
+@@ -44,7 +75,9 @@
+ 	frame.sp = get_saved_state_sp(state);
+ 	frame.pc = get_saved_state_pc(state);
+ 	frame.pstate = get_saved_state_cpsr(state);
+-	if (hakios_pauth_step(instruction, &frame, &policy) != HAKIOS_PAUTH_STEPPED) {
++	status = hakios_pauth_step_class(instruction, &frame, &policy, &cls);
++	nabu_pauth_diag_core(start_tick, nabu_arm64e_diag_status(status), cls);
++	if (status != HAKIOS_PAUTH_STEPPED) {
+ 		return 0;
+ 	}
+ 	for (unsigned int i = 0; i < 29; ++i) {
+@@ -58,10 +91,11 @@
+ }
+ #else
+ static int
+-nabu_arm64e_xnu_step(arm_saved_state_t *state, uint32_t instruction)
++nabu_arm64e_xnu_step(arm_saved_state_t *state, uint32_t instruction, uint64_t start_tick)
+ {
+ 	(void)state;
+ 	(void)instruction;
++	(void)start_tick;
+ 	return 0;
+ }
+ #endif
+diff --git a/osfmk/arm64/nabu_pauth_compat.h b/osfmk/arm64/nabu_pauth_compat.h
+--- a/osfmk/arm64/nabu_pauth_compat.h
++++ b/osfmk/arm64/nabu_pauth_compat.h
+@@ -5,6 +5,9 @@
+  * PACGA returns the same zero result as non-PAuth ptrauth_sign_generic_data.
+  *
+  * Encoding reference: LLVM 14.0.6 AArch64InstrFormats.td, SignAuth/Auth*.
++ *
++ * The optional class output only names the decoder branch that executed; it is
++ * metadata for diagnostics and never changes the step result or the frame.
+  */
+ #ifndef NABU_PAUTH_COMPAT_H
+ #define NABU_PAUTH_COMPAT_H
+@@ -19,6 +22,22 @@
+ 	HAKIOS_PAUTH_READ_FAILED = -3,
+ };
+ 
++/* Mutually exclusive names for the decode branches that can return STEPPED. */
++enum hakios_pauth_class {
++	HAKIOS_PAUTH_CLASS_UNKNOWN = 0,
++	HAKIOS_PAUTH_CLASS_DATA_PAC,
++	HAKIOS_PAUTH_CLASS_DATA_AUT,
++	HAKIOS_PAUTH_CLASS_DATA_XPAC,
++	HAKIOS_PAUTH_CLASS_CODE_PAC,
++	HAKIOS_PAUTH_CLASS_CODE_AUT,
++	HAKIOS_PAUTH_CLASS_CODE_XPAC,
++	HAKIOS_PAUTH_CLASS_AUTH_BRANCH,
++	HAKIOS_PAUTH_CLASS_AUTH_RETURN,
++	HAKIOS_PAUTH_CLASS_AUTH_LOAD,
++	HAKIOS_PAUTH_CLASS_PACGA,
++	HAKIOS_PAUTH_CLASS_COUNT
++};
++
+ struct hakios_pauth_frame {
+ 	uint64_t x[31];
+ 	uint64_t sp;
+@@ -58,16 +77,23 @@
+  * The frame is changed only on success. Memory reads are delegated to the
+  * caller: a kernel caller must use copyin, never a direct user-pointer load.
+  * PSTATE's NZCV bits and every unrelated register are preserved.
++ *
++ * out_class, when non-NULL, receives the decoder branch on every STEPPED
++ * return and UNKNOWN otherwise. It is written before the frame is committed.
+  */
+ static inline enum hakios_pauth_status
+-hakios_pauth_step(uint32_t instruction, struct hakios_pauth_frame *frame,
+-    const struct hakios_pauth_policy *policy)
++hakios_pauth_step_class(uint32_t instruction, struct hakios_pauth_frame *frame,
++    const struct hakios_pauth_policy *policy, enum hakios_pauth_class *out_class)
+ {
+ 	uint32_t base, family;
+ 	unsigned int rd = instruction & 31, rn = (instruction >> 5) & 31;
+ 	uint64_t target, next_pc, value, address;
++	enum hakios_pauth_class pending = HAKIOS_PAUTH_CLASS_UNKNOWN;
+ 	int link = 0;
+ 
++	if (out_class != NULL) {
++		*out_class = HAKIOS_PAUTH_CLASS_UNKNOWN;
++	}
+ 	if (!frame || !hakios_pauth_policy_valid(policy) ||
+ 	    frame->pc >= policy->user_limit || (frame->pc & 3) ||
+ 	    frame->pc > policy->user_limit - 4)
+@@ -76,6 +102,8 @@
+ 
+ 	/* Generic data signatures are disabled, including stored/recomputed uses. */
+ 	if ((instruction & 0xffe0fc00u) == 0x9ac03000u) {
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_PACGA;
+ 		if (rd != 31)
+ 			frame->x[rd] = 0;
+ 		frame->pc = next_pc;
+@@ -85,26 +113,56 @@
+ 	/* PAC/AUT hint aliases operate on LR or X17; XPACLRI uses LR. */
+ 	switch (instruction) {
+ 	case 0xd503211f: case 0xd503215f: /* PACIA1716, PACIB1716 */
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_CODE_PAC;
++		frame->x[17] = hakios_pauth_strip(frame->x[17], policy, 0);
++		frame->pc = next_pc;
++		return HAKIOS_PAUTH_STEPPED;
+ 	case 0xd503219f: case 0xd50321df: /* AUTIA1716, AUTIB1716 */
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_CODE_AUT;
+ 		frame->x[17] = hakios_pauth_strip(frame->x[17], policy, 0);
+ 		frame->pc = next_pc;
+ 		return HAKIOS_PAUTH_STEPPED;
+ 	case 0xd50320ff: /* XPACLRI */
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_CODE_XPAC;
++		frame->x[30] = hakios_pauth_strip(frame->x[30], policy, 0);
++		frame->pc = next_pc;
++		return HAKIOS_PAUTH_STEPPED;
+ 	case 0xd503231f: case 0xd503235f: /* PACIAZ, PACIBZ */
++	case 0xd503233f: case 0xd503237f: /* PACIASP, PACIBSP */
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_CODE_PAC;
++		frame->x[30] = hakios_pauth_strip(frame->x[30], policy, 0);
++		frame->pc = next_pc;
++		return HAKIOS_PAUTH_STEPPED;
+ 	case 0xd503239f: case 0xd50323df: /* AUTIAZ, AUTIBZ */
+-	case 0xd503233f: case 0xd503237f: /* PACIASP, PACIBSP */
+ 	case 0xd50323bf: case 0xd50323ff: /* AUTIASP, AUTIBSP */
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_CODE_AUT;
+ 		frame->x[30] = hakios_pauth_strip(frame->x[30], policy, 0);
+ 		frame->pc = next_pc;
+ 		return HAKIOS_PAUTH_STEPPED;
+ 	}
+ 
+-	/* Register PAC/AUT and their zero-modifier variants; XPACI/XPACD. */
++	/*
++	 * Register PAC/AUT and their zero-modifier variants.  In this decoder the
++	 * instruction's bit 11 marks a data operand and bit 12 marks AUT; that is
++	 * the same split the stripping code below uses.
++	 */
+ 	base = instruction & 0xfffffc00u;
+ 	family = base & ~0x1c00u;
+ 	if (family == 0xdac10000u) {
+-		if (rd != 31)
+-			frame->x[rd] = hakios_pauth_strip(frame->x[rd], policy, !!(instruction & 0x800u));
++		int data = !!(instruction & 0x800u);
++		int aut = !!(instruction & 0x1000u);
++		if (out_class != NULL) {
++			*out_class = data ? (aut ? HAKIOS_PAUTH_CLASS_DATA_AUT :
++			    HAKIOS_PAUTH_CLASS_DATA_PAC) : (aut ?
++			    HAKIOS_PAUTH_CLASS_CODE_AUT : HAKIOS_PAUTH_CLASS_CODE_PAC);
++		}
++		if (rd != 31)
++			frame->x[rd] = hakios_pauth_strip(frame->x[rd], policy, data);
+ 		frame->pc = next_pc;
+ 		return HAKIOS_PAUTH_STEPPED;
+ 	}
+@@ -112,9 +170,22 @@
+ 	if ((base >= 0xdac123e0u && base <= 0xdac13fe0u &&
+ 	    ((base - 0xdac123e0u) & 0x3ffu) == 0) ||
+ 	    base == 0xdac143e0u || base == 0xdac147e0u) {
+-		if (rd != 31)
+-			frame->x[rd] = hakios_pauth_strip(frame->x[rd], policy,
+-			    base == 0xdac147e0u || (base < 0xdac14000u && !!(instruction & 0x800u)));
++		int data = base == 0xdac147e0u ||
++		    (base < 0xdac14000u && !!(instruction & 0x800u));
++		int aut = !!(base & 0x1000u);
++		if (out_class != NULL) {
++			if (base == 0xdac143e0u) {
++				*out_class = HAKIOS_PAUTH_CLASS_CODE_XPAC;
++			} else if (base == 0xdac147e0u) {
++				*out_class = HAKIOS_PAUTH_CLASS_DATA_XPAC;
++			} else {
++				*out_class = data ? (aut ? HAKIOS_PAUTH_CLASS_DATA_AUT :
++				    HAKIOS_PAUTH_CLASS_DATA_PAC) : (aut ?
++				    HAKIOS_PAUTH_CLASS_CODE_AUT : HAKIOS_PAUTH_CLASS_CODE_PAC);
++			}
++		}
++		if (rd != 31)
++			frame->x[rd] = hakios_pauth_strip(frame->x[rd], policy, data);
+ 		frame->pc = next_pc;
+ 		return HAKIOS_PAUTH_STEPPED;
+ 	}
+@@ -122,6 +193,7 @@
+ 	base = instruction & 0xfffffc00u;
+ 	if (base == 0xd71f0800u || base == 0xd71f0c00u ||
+ 	    base == 0xd73f0800u || base == 0xd73f0c00u) {
++		pending = HAKIOS_PAUTH_CLASS_AUTH_BRANCH;
+ 		target = hakios_pauth_reg(frame, rn);
+ 		link = !!(instruction & 0x00200000u);
+ 		goto branch;
+@@ -129,11 +201,13 @@
+ 	base = instruction & 0xfffffc1fu;
+ 	if (base == 0xd61f081fu || base == 0xd61f0c1fu ||
+ 	    base == 0xd63f081fu || base == 0xd63f0c1fu) {
++		pending = HAKIOS_PAUTH_CLASS_AUTH_BRANCH;
+ 		target = hakios_pauth_reg(frame, rn);
+ 		link = !!(instruction & 0x00200000u);
+ 		goto branch;
+ 	}
+ 	if (instruction == 0xd65f0bffu || instruction == 0xd65f0fffu) {
++		pending = HAKIOS_PAUTH_CLASS_AUTH_RETURN;
+ 		target = frame->x[30];
+ 		goto branch;
+ 	}
+@@ -178,6 +252,8 @@
+ 			else
+ 				frame->x[rn] = address;
+ 		}
++		if (out_class != NULL)
++			*out_class = HAKIOS_PAUTH_CLASS_AUTH_LOAD;
+ 		frame->pc = next_pc;
+ 		return HAKIOS_PAUTH_STEPPED;
+ 	}
+@@ -189,6 +265,8 @@
+ 	target = hakios_pauth_strip(target, policy, 0);
+ 	if (target & 3)
+ 		return HAKIOS_PAUTH_BAD_TARGET;
++	if (out_class != NULL)
++		*out_class = pending;
+ 	/* Read the target before changing LR, including BLRAA X30, Xm. */
+ 	if (link)
+ 		frame->x[30] = next_pc;
+@@ -196,4 +274,11 @@
+ 	return HAKIOS_PAUTH_STEPPED;
+ }
+ 
++static inline enum hakios_pauth_status
++hakios_pauth_step(uint32_t instruction, struct hakios_pauth_frame *frame,
++    const struct hakios_pauth_policy *policy)
++{
++	return hakios_pauth_step_class(instruction, frame, policy, NULL);
++}
++
+ #endif
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -876,6 +876,7 @@
+ }
+ 
+ #include <arm64/nabu_arm64e_xnu.h>
++#include <arm64/nabu_pauth_diag.h>
+ 
+ /*
+  * Uncategorized exceptions are a catch-all for general execution errors.
+@@ -888,10 +889,22 @@
+ 	mach_exception_data_type_t codes[2]  = {EXC_ARM_UNDEFINED};
+ 	mach_msg_type_number_t     numcodes  = 2;
+ 	uint32_t                   instr     = 0;
+-
+-	if ((COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr))) == 0 &&
+-	    nabu_arm64e_xnu_step(state, instr)) {
+-		return;
++	uint64_t                   diag_start = 0;
++
++	/*
++	 * Diagnostics take one monotonic reading before the fetch so that the
++	 * measured segment is fetch + compatibility wrapper.  With diagnostics
++	 * disabled the reading is skipped and the path is unchanged.
++	 */
++	if (nabu_pauth_diag_enabled()) {
++		diag_start = mach_absolute_time();
++	}
++	if ((COPYIN(get_saved_state_pc(state), (char *)&instr, sizeof(instr))) == 0) {
++		if (nabu_arm64e_xnu_step(state, instr, diag_start)) {
++			return;
++		}
++	} else if (diag_start != 0) {
++		nabu_pauth_diag_fetch_failed(diag_start);
+ 	}
+ 
+ #if CONFIG_DTRACE
+diff --git a/osfmk/conf/files b/osfmk/conf/files
+--- a/osfmk/conf/files
++++ b/osfmk/conf/files
+@@ -361,3 +361,4 @@
+ 
+ osfmk/prng/prng_random.c	standard
+ osfmk/prng/entropy.c   standard
++osfmk/arm64/nabu_pauth_diag.c	standard
+diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
+--- a/osfmk/kern/exception.c
++++ b/osfmk/kern/exception.c
+@@ -82,6 +82,8 @@
+ #include <kern/processor.h>
+ #include <kern/sched.h>
+ #include <kern/sched_prim.h>
++#include <kern/clock.h>
++#include <mach/time_value.h>
+ #include <kern/host.h>
+ #include <kern/misc_protos.h>
+ #include <kern/ux_handler.h>
+@@ -993,18 +995,39 @@
+ /*
+  * NABU process sampler (bsd/dev/nabu_sample.c): user pc/lr/sp and a frame
+  * pointer backtrace of every thread of a task, from the saved user state.
+- */
+-void nabu_sample_task(const char *name, int pid, task_t task);
++ *
++ * The old "SMP <name> tN ..." lines keep their meaning: tN is the enumeration
++ * order of printed threads in that sample, not a stable thread id.  A second
++ * versioned record set, "SMP2 v=1 ...", is emitted after the task lock is
++ * dropped, carrying the real thread id, the process generation, the sample
++ * sequence and the sampled CPU times.  The lock is only extended by storing a
++ * thread reference; CPU reads and formatting happen outside it.
++ */
++#define NABU_SMP_SNAP_MAX 64
++
++struct nabu_smp_snap {
++	thread_t thread;
++	uint64_t tid;
++	int index;
++};
++
++void nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task);
++extern unsigned int nabu_sample_seq;
+ 
+ void
+-nabu_sample_task(const char *name, int pid, task_t task)
++nabu_sample_task(const char *name, int pid, uint64_t uid, task_t task)
+ {
+ 	vm_map_t map = get_task_map(task);
+ 	uint64_t slide = 0;
+ 	int tn = 0;
+ 	thread_t thread;
+ 	vm_shared_region_t sr = vm_shared_region_get(task);
+-
++	struct nabu_smp_snap snap[NABU_SMP_SNAP_MAX];
++	int snap_count = 0;
++	int snap_dropped = 0;
++	uint64_t stamp_ns = 0;
++
++	absolutetime_to_nanoseconds(mach_absolute_time(), &stamp_ns);
+ 	if (sr != NULL) {
+ 		slide = sr->sr_slide;
+ 		vm_shared_region_deallocate(sr);
+@@ -1017,12 +1040,14 @@
+ 		char line[400];
+ 		int n;
+ 		uint64_t fp;
++		int index;
+ 
+ 		if (ss == NULL || !is_saved_state64(ss)) {
+ 			continue;
+ 		}
++		index = tn++;
+ 		fp = get_saved_state_fp(ss);
+-		n = snprintf(line, sizeof(line), "SMP %s t%d pc 0x%llx lr 0x%llx sp 0x%llx bt", name, tn++,
++		n = snprintf(line, sizeof(line), "SMP %s t%d pc 0x%llx lr 0x%llx sp 0x%llx bt", name, index,
+ 		    get_saved_state_pc(ss), get_saved_state_lr(ss), get_saved_state_sp(ss));
+ 		for (int i = 0; i < 16 && fp != 0 && (fp & 7) == 0 && n < (int)sizeof(line) - 20; i++) {
+ 			uint64_t frame[2];
+@@ -1036,8 +1061,41 @@
+ 			fp = frame[0];
+ 		}
+ 		printf("%s\n", line);
++		if (snap_count < NABU_SMP_SNAP_MAX) {
++			thread_reference(thread);
++			snap[snap_count].thread = thread;
++			snap[snap_count].tid = thread_tid(thread);
++			snap[snap_count].index = index;
++			snap_count++;
++		} else {
++			snap_dropped++;
++		}
+ 	}
+ 	task_unlock(task);
++
++	for (int i = 0; i < snap_count; i++) {
++		time_value_t user_time = { 0, 0 };
++		time_value_t system_time = { 0, 0 };
++		time_value_t runnable_time = { 0, 0 };
++		uint64_t user_ns, system_ns, runnable_ns;
++
++		thread_read_times(snap[i].thread, &user_time, &system_time, &runnable_time);
++		user_ns = (uint64_t)user_time.seconds * 1000000000ULL +
++		    (uint64_t)user_time.microseconds * 1000ULL;
++		system_ns = (uint64_t)system_time.seconds * 1000000000ULL +
++		    (uint64_t)system_time.microseconds * 1000ULL;
++		runnable_ns = (uint64_t)runnable_time.seconds * 1000000000ULL +
++		    (uint64_t)runnable_time.microseconds * 1000ULL;
++		printf("SMP2 v=1 sample=%u name=%s pid=%d uid=%llu idx=%d tid=%llu "
++		    "user_ns=%llu sys_ns=%llu run_ns=%llu ns=%llu\n",
++		    nabu_sample_seq, name, pid, uid, snap[i].index, snap[i].tid,
++		    user_ns, system_ns, runnable_ns, stamp_ns);
++		thread_deallocate(snap[i].thread);
++	}
++	if (snap_dropped != 0) {
++		printf("SMP2 v=1 sample=%u name=%s pid=%d uid=%llu dropped=%d reason=snapshot\n",
++		    nabu_sample_seq, name, pid, uid, snap_dropped);
++	}
+ }
+ 
+ #endif /* ARM64_BOARD_CONFIG_NABU */
+diff --git a/osfmk/arm64/nabu_pauth_diag.c b/osfmk/arm64/nabu_pauth_diag.c
+new file mode 100644
+--- /dev/null
++++ b/osfmk/arm64/nabu_pauth_diag.c
+@@ -0,0 +1,631 @@
++/*
++ * PAuth software-compatibility diagnostics for nabu.
++ *
++ * Scope: count and classify the EL0 undefined-instruction trap path that
++ * implements unsigned arm64e PAC/AUT/XPAC/branch/load semantics, per tracked
++ * process and per real thread, and print a bounded summary window.  The
++ * compatibility behaviour itself is unchanged: this file only observes the
++ * already computed status and class.
++ *
++ * Design constraints (see diagnostic-design.md):
++ *  - the hot path never formats, sleeps, allocates or walks process lists;
++ *  - a fixed preallocated side table holds per-thread counters; slots are
++ *    claimed once and never reused, so coverage gaps are counted, not hidden;
++ *  - a background worker prints at most one window every five seconds, and a
++ *    window is skipped (and counted) when it would exceed the output budget;
++ *  - counters are committed only for the configured process names, matched
++ *    against p_comm, and only for threads that trap.
++ */
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/proc.h>
++#include <sys/proc_internal.h>
++#include <kern/thread.h>
++#include <kern/clock.h>
++#include <kern/sched_prim.h>
++#include <kern/misc_protos.h>
++#include <libkern/libkern.h>
++#include <pexpert/pexpert.h>
++#include <vm/vm_protos.h>
++#include <string.h>
++
++#include <arm64/nabu_pauth_diag.h>
++
++extern int hz;
++
++#define NABU_PAUTH_MAX_PROCS       4
++#define NABU_PAUTH_MAX_THREADS     128
++#define NABU_PAUTH_MAX_NAMES       4
++#define NABU_PAUTH_NAME_MAX        16
++#define NABU_PAUTH_PROBE           8
++#define NABU_PAUTH_DEFAULT_RATE    1024
++#define NABU_PAUTH_MAX_RATE        4096
++#define NABU_PAUTH_WINDOW_SECONDS  5
++#define NABU_PAUTH_DETAIL_PER_PROC 4
++#define NABU_PAUTH_BUDGET_BYTES    8192
++#define NABU_PAUTH_LINE_BYTES      320
++
++struct nabu_pauth_proc {
++	uint32_t used;
++	char name[NABU_PAUTH_NAME_MAX + 1];
++	int pid;
++	uint64_t uid;
++	uint64_t trap;
++	uint64_t fetch_ok;
++	uint64_t fetch_failed;
++	uint64_t gate[NABU_PAUTH_GATE_COUNT];
++	uint64_t core;
++	uint64_t status[NABU_PAUTH_ST_COUNT];
++	uint64_t cls[HAKIOS_PAUTH_CLASS_COUNT];
++	uint64_t samples;
++	uint64_t ticks_sum;
++	uint64_t ticks_max;
++	/* Previous printed snapshot, used to report window deltas. */
++	uint64_t last_trap;
++	uint64_t last_fetch_ok;
++	uint64_t last_fetch_failed;
++	uint64_t last_gate[NABU_PAUTH_GATE_COUNT];
++	uint64_t last_core;
++	uint64_t last_status[NABU_PAUTH_ST_COUNT];
++	uint64_t last_cls[HAKIOS_PAUTH_CLASS_COUNT];
++	uint64_t last_samples;
++	uint64_t last_ticks_sum;
++};
++
++struct nabu_pauth_thread {
++	uint32_t active;
++	uint64_t uid;
++	uint64_t tid;
++	int proc;
++	uint64_t seq;
++	uint64_t trap;
++	uint64_t fetch_ok;
++	uint64_t fetch_failed;
++	uint64_t gate[NABU_PAUTH_GATE_COUNT];
++	uint64_t core;
++	uint64_t status[NABU_PAUTH_ST_COUNT];
++	uint64_t cls[HAKIOS_PAUTH_CLASS_COUNT];
++	uint64_t samples;
++	uint64_t ticks_sum;
++	uint64_t ticks_max;
++	uint64_t last_trap;
++	uint64_t last_status[NABU_PAUTH_ST_COUNT];
++	uint64_t last_cls[HAKIOS_PAUTH_CLASS_COUNT];
++	uint64_t last_samples;
++	uint64_t last_ticks_sum;
++};
++
++static int nabu_pauth_active;
++static uint64_t nabu_pauth_session;
++static unsigned int nabu_pauth_rate = NABU_PAUTH_DEFAULT_RATE;
++static char nabu_pauth_names[NABU_PAUTH_MAX_NAMES][NABU_PAUTH_NAME_MAX + 1];
++static unsigned int nabu_pauth_name_count;
++static struct nabu_pauth_proc nabu_pauth_procs[NABU_PAUTH_MAX_PROCS];
++static struct nabu_pauth_thread nabu_pauth_threads[NABU_PAUTH_MAX_THREADS];
++static unsigned int nabu_pauth_seq;
++
++static uint64_t nabu_pauth_q_overflow;
++static uint64_t nabu_pauth_q_untracked;
++static uint64_t nabu_pauth_q_table_full;
++static uint64_t nabu_pauth_q_proc_full;
++static uint64_t nabu_pauth_q_snapshot_fail;
++static uint64_t nabu_pauth_q_output_skipped;
++
++static int nabu_pauth_chan;
++
++static inline uint64_t
++nabu_pauth_add(uint64_t *counter, uint64_t value)
++{
++	uint64_t old = __atomic_fetch_add(counter, value, __ATOMIC_RELAXED);
++	if (old == (~(uint64_t)0)) {
++		__atomic_fetch_add(&nabu_pauth_q_overflow, 1, __ATOMIC_RELAXED);
++	}
++	return old;
++}
++
++static inline uint64_t
++nabu_pauth_max(uint64_t *maximum, uint64_t value)
++{
++	uint64_t seen = __atomic_load_n(maximum, __ATOMIC_RELAXED);
++	while (value > seen &&
++	    !__atomic_compare_exchange_n(maximum, &seen, value, 0,
++	    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
++	}
++	return seen;
++}
++
++static inline unsigned int
++nabu_pauth_key(uint64_t uid, uint64_t tid)
++{
++	uint64_t x = (uid * 0x9e3779b97f4a7c15ULL) ^ (tid + 0x94d049bb133111ebULL);
++	x ^= x >> 30;
++	x *= 0xbf58476d1ce4e5b9ULL;
++	x ^= x >> 27;
++	return (unsigned int)x & (NABU_PAUTH_MAX_THREADS - 1);
++}
++
++static inline uint64_t
++nabu_pauth_now_ns(void)
++{
++	uint64_t ns = 0;
++	absolutetime_to_nanoseconds(mach_absolute_time(), &ns);
++	return ns;
++}
++
++/* Sample roughly one in rate traps, with a per-thread phase so that the same
++ * instruction is not always the sampled one. */
++static inline int
++nabu_pauth_sampled(struct nabu_pauth_thread *entry)
++{
++	uint64_t mix = (entry->seq * 0x9e3779b97f4a7c15ULL) ^
++	    ((entry->tid >> 4) * 0xbf58476d1ce4e5b9ULL);
++	return ((mix & (uint64_t)(nabu_pauth_rate - 1)) == 0);
++}
++
++static int
++nabu_pauth_wanted(const char *name)
++{
++	for (unsigned int i = 0; i < nabu_pauth_name_count; i++) {
++		if (strncmp(name, nabu_pauth_names[i], NABU_PAUTH_NAME_MAX) == 0) {
++			return 1;
++		}
++	}
++	return 0;
++}
++
++static int
++nabu_pauth_proc_index(proc_t p)
++{
++	uint64_t uid = proc_uniqueid(p);
++	int pid = proc_getpid(p);
++
++	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
++		if (__atomic_load_n(&nabu_pauth_procs[i].used, __ATOMIC_ACQUIRE) &&
++		    nabu_pauth_procs[i].uid == uid) {
++			return (int)i;
++		}
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
++		uint32_t expected = 0;
++		if (!__atomic_compare_exchange_n(&nabu_pauth_procs[i].used, &expected, 1u,
++		    0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
++			if (nabu_pauth_procs[i].uid == uid) {
++				return (int)i;
++			}
++			continue;
++		}
++		nabu_pauth_procs[i].uid = uid;
++		nabu_pauth_procs[i].pid = pid;
++		strlcpy(nabu_pauth_procs[i].name, p->p_comm,
++		    sizeof(nabu_pauth_procs[i].name));
++		return (int)i;
++	}
++	__atomic_fetch_add(&nabu_pauth_q_proc_full, 1, __ATOMIC_RELAXED);
++	return -1;
++}
++
++static struct nabu_pauth_thread *
++nabu_pauth_thread_entry(void)
++{
++	proc_t p;
++	thread_t thread;
++	uint64_t uid, tid;
++	unsigned int start, free_slot = NABU_PAUTH_MAX_THREADS;
++
++	if (!__atomic_load_n(&nabu_pauth_active, __ATOMIC_RELAXED)) {
++		return NULL;
++	}
++	p = current_proc();
++	thread = current_thread();
++	if (p == NULL || thread == NULL) {
++		return NULL;
++	}
++	uid = proc_uniqueid(p);
++	tid = thread_tid(thread);
++	start = nabu_pauth_key(uid, tid);
++
++	for (unsigned int probe = 0; probe < NABU_PAUTH_PROBE; probe++) {
++		unsigned int index = (start + probe) & (NABU_PAUTH_MAX_THREADS - 1);
++		struct nabu_pauth_thread *entry = &nabu_pauth_threads[index];
++
++		if (!__atomic_load_n(&entry->active, __ATOMIC_ACQUIRE)) {
++			if (free_slot == NABU_PAUTH_MAX_THREADS) {
++				free_slot = index;
++			}
++			continue;
++		}
++		if (entry->uid == uid && entry->tid == tid) {
++			return entry;
++		}
++	}
++	if (!nabu_pauth_wanted(p->p_comm)) {
++		__atomic_fetch_add(&nabu_pauth_q_untracked, 1, __ATOMIC_RELAXED);
++		return NULL;
++	}
++	if (free_slot == NABU_PAUTH_MAX_THREADS) {
++		__atomic_fetch_add(&nabu_pauth_q_table_full, 1, __ATOMIC_RELAXED);
++		return NULL;
++	}
++	int proc = nabu_pauth_proc_index(p);
++	if (proc < 0) {
++		return NULL;
++	}
++	struct nabu_pauth_thread *entry = &nabu_pauth_threads[free_slot];
++	uint32_t expected = 0;
++	if (!__atomic_compare_exchange_n(&entry->active, &expected, 1u, 0,
++	    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
++		return NULL;
++	}
++	entry->uid = uid;
++	entry->tid = tid;
++	entry->proc = proc;
++	return entry;
++}
++
++static inline void
++nabu_pauth_commit(struct nabu_pauth_thread *entry, uint64_t start_tick,
++    int fetch_ok, enum nabu_pauth_gate gate, int core,
++    enum nabu_pauth_step_status status, enum hakios_pauth_class cls)
++{
++	struct nabu_pauth_proc *proc = &nabu_pauth_procs[entry->proc];
++	uint64_t elapsed = 1;
++	int sampled = 0;
++
++	entry->seq++;
++	nabu_pauth_add(&entry->trap, 1);
++	nabu_pauth_add(&proc->trap, 1);
++	if (fetch_ok) {
++		nabu_pauth_add(&entry->fetch_ok, 1);
++		nabu_pauth_add(&proc->fetch_ok, 1);
++	} else {
++		nabu_pauth_add(&entry->fetch_failed, 1);
++		nabu_pauth_add(&proc->fetch_failed, 1);
++	}
++	if (gate != NABU_PAUTH_GATE_NONE) {
++		nabu_pauth_add(&entry->gate[gate], 1);
++		nabu_pauth_add(&proc->gate[gate], 1);
++	}
++	if (core) {
++		nabu_pauth_add(&entry->core, 1);
++		nabu_pauth_add(&proc->core, 1);
++		nabu_pauth_add(&entry->status[status], 1);
++		nabu_pauth_add(&proc->status[status], 1);
++		nabu_pauth_add(&entry->cls[cls], 1);
++		nabu_pauth_add(&proc->cls[cls], 1);
++	}
++	if (start_tick == 0) {
++		return;
++	}
++	sampled = nabu_pauth_sampled(entry);
++	if (!sampled) {
++		return;
++	}
++	elapsed = mach_absolute_time() - start_tick;
++	nabu_pauth_add(&entry->samples, 1);
++	nabu_pauth_add(&proc->samples, 1);
++	nabu_pauth_add(&entry->ticks_sum, elapsed);
++	nabu_pauth_add(&proc->ticks_sum, elapsed);
++	nabu_pauth_max(&entry->ticks_max, elapsed);
++	nabu_pauth_max(&proc->ticks_max, elapsed);
++}
++
++void
++nabu_pauth_diag_fetch_failed(uint64_t start_tick)
++{
++	struct nabu_pauth_thread *entry = nabu_pauth_thread_entry();
++	if (entry != NULL) {
++		nabu_pauth_commit(entry, start_tick, 0, NABU_PAUTH_GATE_NONE, 0,
++		    NABU_PAUTH_ST_STEPPED, HAKIOS_PAUTH_CLASS_UNKNOWN);
++	}
++}
++
++void
++nabu_pauth_diag_gate(enum nabu_pauth_gate gate, uint64_t start_tick)
++{
++	struct nabu_pauth_thread *entry = nabu_pauth_thread_entry();
++	if (entry != NULL) {
++		nabu_pauth_commit(entry, start_tick, 1, gate, 0,
++		    NABU_PAUTH_ST_STEPPED, HAKIOS_PAUTH_CLASS_UNKNOWN);
++	}
++}
++
++void
++nabu_pauth_diag_core(uint64_t start_tick, enum nabu_pauth_step_status status,
++    enum hakios_pauth_class cls)
++{
++	struct nabu_pauth_thread *entry = nabu_pauth_thread_entry();
++	if (entry != NULL) {
++		nabu_pauth_commit(entry, start_tick, 1, NABU_PAUTH_GATE_NONE, 1,
++		    status, cls);
++	}
++}
++
++int
++nabu_pauth_diag_enabled(void)
++{
++	return __atomic_load_n(&nabu_pauth_active, __ATOMIC_RELAXED);
++}
++
++static unsigned int
++nabu_pauth_window_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
++{
++	uint64_t trap = proc->trap - proc->last_trap;
++	uint64_t fetch_ok = proc->fetch_ok - proc->last_fetch_ok;
++	uint64_t fetch_failed = proc->fetch_failed - proc->last_fetch_failed;
++	uint64_t core = proc->core - proc->last_core;
++	uint64_t samples = proc->samples - proc->last_samples;
++	uint64_t ticks_sum = proc->ticks_sum - proc->last_ticks_sum;
++	int n;
++
++	proc->last_trap = proc->trap;
++	proc->last_fetch_ok = proc->fetch_ok;
++	proc->last_fetch_failed = proc->fetch_failed;
++	proc->last_core = proc->core;
++	proc->last_samples = proc->samples;
++	proc->last_ticks_sum = proc->ticks_sum;
++
++	n = snprintf(buffer, size,
++	    "NABU PAUTH C: v=1 s=%llu seq=%u t=%llu.%09llu proc=%s pid=%d uid=%llu "
++	    "tra=%llu fet=%llu/%llu gat=%llu/%llu/%llu cor=%llu "
++	    "st=%llu/%llu/%llu/%llu/%llu",
++	    nabu_pauth_session, nabu_pauth_seq, nabu_pauth_now_ns() / 1000000000ULL,
++	    nabu_pauth_now_ns() % 1000000000ULL, proc->name, proc->pid, proc->uid,
++	    trap, fetch_ok, fetch_failed,
++	    proc->gate[NABU_PAUTH_GATE_DISABLED] - proc->last_gate[NABU_PAUTH_GATE_DISABLED],
++	    proc->gate[NABU_PAUTH_GATE_STATE] - proc->last_gate[NABU_PAUTH_GATE_STATE],
++	    proc->gate[NABU_PAUTH_GATE_HARDWARE] - proc->last_gate[NABU_PAUTH_GATE_HARDWARE],
++	    core,
++	    proc->status[NABU_PAUTH_ST_STEPPED] - proc->last_status[NABU_PAUTH_ST_STEPPED],
++	    proc->status[NABU_PAUTH_ST_UNHANDLED] - proc->last_status[NABU_PAUTH_ST_UNHANDLED],
++	    proc->status[NABU_PAUTH_ST_BAD_TARGET] - proc->last_status[NABU_PAUTH_ST_BAD_TARGET],
++	    proc->status[NABU_PAUTH_ST_BAD_ADDRESS] - proc->last_status[NABU_PAUTH_ST_BAD_ADDRESS],
++	    proc->status[NABU_PAUTH_ST_READ_FAILED] - proc->last_status[NABU_PAUTH_ST_READ_FAILED]);
++	if (n < 0 || (size_t)n >= size) {
++		return (unsigned int)size;
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_GATE_COUNT; i++) {
++		proc->last_gate[i] = proc->gate[i];
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
++		proc->last_status[i] = proc->status[i];
++	}
++	n += snprintf(buffer + n, size - (size_t)n, " smp=%llu tk=%llu/%llu\n",
++	    samples, ticks_sum, proc->ticks_max);
++	if (n < 0 || (size_t)n >= size) {
++		return (unsigned int)size;
++	}
++	return (unsigned int)n;
++}
++
++static unsigned int
++nabu_pauth_class_line(char *buffer, size_t size, struct nabu_pauth_proc *proc)
++{
++	int n = snprintf(buffer, size, "NABU PAUTH L: v=1 s=%llu seq=%u t=%llu.%09llu "
++	    "proc=%s uid=%llu cl=", nabu_pauth_session, nabu_pauth_seq,
++	    nabu_pauth_now_ns() / 1000000000ULL, nabu_pauth_now_ns() % 1000000000ULL,
++	    proc->name, proc->uid);
++	if (n < 0 || (size_t)n >= size) {
++		return (unsigned int)size;
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
++		n += snprintf(buffer + n, size - (size_t)n, "%s%llu", i ? "/" : "",
++		    proc->cls[i] - proc->last_cls[i]);
++		proc->last_cls[i] = proc->cls[i];
++		if (n < 0 || (size_t)n >= size) {
++			return (unsigned int)size;
++		}
++	}
++	n += snprintf(buffer + n, size - (size_t)n, "\n");
++	if (n < 0 || (size_t)n >= size) {
++		return (unsigned int)size;
++	}
++	return (unsigned int)n;
++}
++
++static unsigned int
++nabu_pauth_thread_line(char *buffer, size_t size, struct nabu_pauth_thread *entry,
++    const char *name)
++{
++	uint64_t trap = entry->trap - entry->last_trap;
++	uint64_t samples = entry->samples - entry->last_samples;
++	uint64_t ticks_sum = entry->ticks_sum - entry->last_ticks_sum;
++	int n;
++
++	entry->last_trap = entry->trap;
++	entry->last_samples = entry->samples;
++	entry->last_ticks_sum = entry->ticks_sum;
++	n = snprintf(buffer, size,
++	    "NABU PAUTH T: v=1 s=%llu seq=%u t=%llu.%09llu proc=%s uid=%llu tid=%llu "
++	    "tra=%llu st=%llu/%llu/%llu/%llu/%llu smp=%llu tk=%llu/%llu\n",
++	    nabu_pauth_session, nabu_pauth_seq, nabu_pauth_now_ns() / 1000000000ULL,
++	    nabu_pauth_now_ns() % 1000000000ULL, name, entry->uid, entry->tid, trap,
++	    entry->status[NABU_PAUTH_ST_STEPPED] - entry->last_status[NABU_PAUTH_ST_STEPPED],
++	    entry->status[NABU_PAUTH_ST_UNHANDLED] - entry->last_status[NABU_PAUTH_ST_UNHANDLED],
++	    entry->status[NABU_PAUTH_ST_BAD_TARGET] - entry->last_status[NABU_PAUTH_ST_BAD_TARGET],
++	    entry->status[NABU_PAUTH_ST_BAD_ADDRESS] - entry->last_status[NABU_PAUTH_ST_BAD_ADDRESS],
++	    entry->status[NABU_PAUTH_ST_READ_FAILED] - entry->last_status[NABU_PAUTH_ST_READ_FAILED],
++	    samples, ticks_sum, entry->ticks_max);
++	if (n < 0 || (size_t)n >= size) {
++		return (unsigned int)size;
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_ST_COUNT; i++) {
++		entry->last_status[i] = entry->status[i];
++	}
++	for (unsigned int i = 0; i < NABU_PAUTH_CLASS_COUNT; i++) {
++		entry->last_cls[i] = entry->cls[i];
++	}
++	if (n >= (int)size) {
++		return (unsigned int)size;
++	}
++	return (unsigned int)n;
++}
++
++static void
++nabu_pauth_print_window(void)
++{
++	char buffer[NABU_PAUTH_LINE_BYTES];
++	unsigned int used = 0;
++	uint64_t overflow = __atomic_load_n(&nabu_pauth_q_overflow, __ATOMIC_RELAXED);
++	uint64_t untracked = __atomic_load_n(&nabu_pauth_q_untracked, __ATOMIC_RELAXED);
++	uint64_t table_full = __atomic_load_n(&nabu_pauth_q_table_full, __ATOMIC_RELAXED);
++	uint64_t proc_full = __atomic_load_n(&nabu_pauth_q_proc_full, __ATOMIC_RELAXED);
++	uint64_t snapshot_fail = __atomic_load_n(&nabu_pauth_q_snapshot_fail, __ATOMIC_RELAXED);
++	uint64_t skipped = __atomic_load_n(&nabu_pauth_q_output_skipped, __ATOMIC_RELAXED);
++
++	nabu_pauth_seq++;
++	for (unsigned int i = 0; i < NABU_PAUTH_MAX_PROCS; i++) {
++		struct nabu_pauth_proc *proc = &nabu_pauth_procs[i];
++		struct nabu_pauth_thread *detail[NABU_PAUTH_DETAIL_PER_PROC];
++		uint64_t detail_trap[NABU_PAUTH_DETAIL_PER_PROC];
++		int details = 0;
++		unsigned int length;
++		unsigned int budget = NABU_PAUTH_BUDGET_BYTES - used;
++
++		if (!__atomic_load_n(&proc->used, __ATOMIC_ACQUIRE)) {
++			continue;
++		}
++		length = nabu_pauth_window_line(buffer, sizeof(buffer), proc);
++		if (length >= sizeof(buffer) || length > budget || length > 255) {
++			__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1, __ATOMIC_RELAXED);
++			continue;
++		}
++		printf("%s", buffer);
++		used += length;
++		length = nabu_pauth_class_line(buffer, sizeof(buffer), proc);
++		if (length >= sizeof(buffer) || length > NABU_PAUTH_BUDGET_BYTES - used ||
++		    length > 255) {
++			__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1, __ATOMIC_RELAXED);
++		} else {
++			printf("%s", buffer);
++			used += length;
++		}
++
++		for (unsigned int t = 0; t < NABU_PAUTH_MAX_THREADS; t++) {
++			struct nabu_pauth_thread *entry = &nabu_pauth_threads[t];
++			uint64_t delta;
++			if (!__atomic_load_n(&entry->active, __ATOMIC_ACQUIRE) ||
++			    entry->proc != (int)i) {
++				continue;
++			}
++			delta = entry->trap - entry->last_trap;
++			if (delta == 0) {
++				continue;
++			}
++			if (details < NABU_PAUTH_DETAIL_PER_PROC) {
++				detail[details] = entry;
++				detail_trap[details] = delta;
++				details++;
++				continue;
++			}
++			int smallest = 0;
++			for (int k = 1; k < details; k++) {
++				if (detail_trap[k] < detail_trap[smallest]) {
++					smallest = k;
++				}
++			}
++			if (delta > detail_trap[smallest]) {
++				detail[smallest] = entry;
++				detail_trap[smallest] = delta;
++			}
++		}
++		for (int k = 0; k < details; k++) {
++			length = nabu_pauth_thread_line(buffer, sizeof(buffer), detail[k],
++			    proc->name);
++			if (length >= sizeof(buffer) ||
++			    length > NABU_PAUTH_BUDGET_BYTES - used || length > 255) {
++				__atomic_fetch_add(&nabu_pauth_q_output_skipped, 1,
++				    __ATOMIC_RELAXED);
++				continue;
++			}
++			printf("%s", buffer);
++			used += length;
++		}
++	}
++	if (overflow | untracked | table_full | proc_full | snapshot_fail | skipped) {
++		int n = snprintf(buffer, sizeof(buffer),
++		    "NABU PAUTH Q: v=1 s=%llu seq=%u t=%llu.%09llu ovf=%llu unt=%llu "
++		    "tab=%llu prc=%llu snf=%llu out=%llu\n",
++		    nabu_pauth_session, nabu_pauth_seq, nabu_pauth_now_ns() / 1000000000ULL,
++		    nabu_pauth_now_ns() % 1000000000ULL, overflow, untracked, table_full,
++		    proc_full, snapshot_fail, skipped);
++		if (n > 0 && n < (int)sizeof(buffer)) {
++			printf("%s", buffer);
++		}
++	}
++}
++
++static void
++nabu_pauth_diag_worker(__unused void *arg, __unused wait_result_t wr)
++{
++	for (;;) {
++		(void)tsleep(&nabu_pauth_chan, PZERO, "nabupauth",
++		    NABU_PAUTH_WINDOW_SECONDS * hz);
++		nabu_pauth_print_window();
++	}
++}
++
++static int
++nabu_pauth_parse_names(void)
++{
++	char configured[96];
++
++	if (!PE_parse_boot_argn("nabupauthp", configured, sizeof(configured))) {
++		strlcpy(configured, "lsd,SpringBoard,backboardd", sizeof(configured));
++	}
++	if (configured[0] == '-') {
++		return 0;
++	}
++	const char *cursor = configured;
++	while (*cursor && nabu_pauth_name_count < NABU_PAUTH_MAX_NAMES) {
++		const char *end = strchr(cursor, ',');
++		size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
++		if (length == 0 || length > NABU_PAUTH_NAME_MAX) {
++			return -1;
++		}
++		memcpy(nabu_pauth_names[nabu_pauth_name_count], cursor, length);
++		nabu_pauth_names[nabu_pauth_name_count][length] = '\0';
++		nabu_pauth_name_count++;
++		if (end == NULL) {
++			break;
++		}
++		cursor = end + 1;
++	}
++	return nabu_pauth_name_count > 0 ? 0 : -1;
++}
++
++void
++nabu_pauth_diag_start(void)
++{
++	thread_t thread;
++	int enabled = 0;
++	int rate = NABU_PAUTH_DEFAULT_RATE;
++
++	if (!PE_parse_boot_argn("nabupauthdiag", &enabled, sizeof(enabled)) || enabled != 1) {
++		return;
++	}
++	if (PE_parse_boot_argn("nabupauthrate", &rate, sizeof(rate)) &&
++	    (rate < 1 || rate > NABU_PAUTH_MAX_RATE || (rate & (rate - 1)) != 0)) {
++		printf("NABU PAUTH: rejected reason=rate\n");
++		return;
++	}
++	if (nabu_pauth_parse_names() != 0) {
++		printf("NABU PAUTH: rejected reason=procs\n");
++		return;
++	}
++	nabu_pauth_rate = (unsigned int)rate;
++	nabu_pauth_session = nabu_pauth_now_ns();
++	printf("NABU PAUTH: v=1 s=%llu start rate=%u win=%us procs=%s/%s/%s/%s\n",
++	    nabu_pauth_session, nabu_pauth_rate, NABU_PAUTH_WINDOW_SECONDS,
++	    nabu_pauth_names[0], nabu_pauth_names[1], nabu_pauth_names[2],
++	    nabu_pauth_names[3]);
++	__atomic_store_n(&nabu_pauth_active, 1, __ATOMIC_RELEASE);
++	if (kernel_thread_start(nabu_pauth_diag_worker, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		__atomic_fetch_add(&nabu_pauth_q_snapshot_fail, 1, __ATOMIC_RELAXED);
++	}
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU && !HAS_APPLE_PAC */
+diff --git a/osfmk/arm64/nabu_pauth_diag.h b/osfmk/arm64/nabu_pauth_diag.h
+new file mode 100644
+--- /dev/null
++++ b/osfmk/arm64/nabu_pauth_diag.h
+@@ -0,0 +1,70 @@
++/*
++ * PAuth software-compatibility diagnostics for nabu: counters, classes and
++ * thread identity.  Diagnostics never change instruction semantics; when the
++ * enabled flag is clear every entry point is a single atomic load away from
++ * returning, and no saved state, return value or fallback path is touched.
++ */
++#ifndef NABU_PAUTH_DIAG_H
++#define NABU_PAUTH_DIAG_H
++
++#include <stdint.h>
++
++/* Why a fetched instruction did not reach hakios_pauth_step(). */
++enum nabu_pauth_gate {
++	NABU_PAUTH_GATE_NONE = 0,
++	NABU_PAUTH_GATE_DISABLED,   /* nabuarm64e is not exactly 1 */
++	NABU_PAUTH_GATE_STATE,      /* saved state is not EL0 64-bit */
++	NABU_PAUTH_GATE_HARDWARE,   /* ID_AA64ISAR1_EL1 reports PAuth */
++	NABU_PAUTH_GATE_COUNT
++};
++
++/* Result of one hakios_pauth_step() call, mapped one to one. */
++enum nabu_pauth_step_status {
++	NABU_PAUTH_ST_STEPPED = 0,
++	NABU_PAUTH_ST_UNHANDLED,
++	NABU_PAUTH_ST_BAD_TARGET,
++	NABU_PAUTH_ST_BAD_ADDRESS,
++	NABU_PAUTH_ST_READ_FAILED,
++	NABU_PAUTH_ST_COUNT
++};
++
++#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
++
++#include <arm64/nabu_pauth_compat.h>
++
++/* Number of class slots, kept in sync with the decoder's enum. */
++#define NABU_PAUTH_CLASS_COUNT ((unsigned)HAKIOS_PAUTH_CLASS_COUNT)
++
++/*
++ * Counters are only committed for threads of the configured processes.  The
++ * entry points below are safe to call with diagnostics disabled or with an
++ * untracked thread: they then only increment a quality counter.
++ */
++void nabu_pauth_diag_start(void);
++int nabu_pauth_diag_enabled(void);
++void nabu_pauth_diag_fetch_failed(uint64_t start_tick);
++void nabu_pauth_diag_gate(enum nabu_pauth_gate gate, uint64_t start_tick);
++void nabu_pauth_diag_core(uint64_t start_tick, enum nabu_pauth_step_status status,
++    enum hakios_pauth_class cls);
++
++#else /* !NABU || HAS_APPLE_PAC */
++
++static inline void nabu_pauth_diag_start(void) { }
++static inline int nabu_pauth_diag_enabled(void) { return 0; }
++static inline void nabu_pauth_diag_fetch_failed(uint64_t start_tick) { (void)start_tick; }
++static inline void nabu_pauth_diag_gate(enum nabu_pauth_gate gate, uint64_t start_tick)
++{
++	(void)gate;
++	(void)start_tick;
++}
++static inline void nabu_pauth_diag_core(uint64_t start_tick, enum nabu_pauth_step_status status,
++    int cls)
++{
++	(void)start_tick;
++	(void)status;
++	(void)cls;
++}
++
++#endif /* ARM64_BOARD_CONFIG_NABU && !HAS_APPLE_PAC */
++
++#endif /* NABU_PAUTH_DIAG_H */
