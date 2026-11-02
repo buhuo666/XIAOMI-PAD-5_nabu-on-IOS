@@ -6,7 +6,7 @@ diff --git a/bsd/dev/nabu_sample.c b/bsd/dev/nabu_sample.c
  #include <kern/thread.h>
  #include <pexpert/pexpert.h>
 +#if defined(ARM64_BOARD_CONFIG_NABU) && !defined(HAS_APPLE_PAC)
-+#include <arm64/nabu_pauth_diag.h>
++extern void nabu_pauth_diag_start(void);
 +#endif
  
  extern task_t proc_task(proc_t);
@@ -519,7 +519,7 @@ diff --git a/osfmk/arm64/nabu_pauth_diag.c b/osfmk/arm64/nabu_pauth_diag.c
 new file mode 100644
 --- /dev/null
 +++ b/osfmk/arm64/nabu_pauth_diag.c
-@@ -0,0 +1,631 @@
+@@ -0,0 +1,633 @@
 +/*
 + * PAuth software-compatibility diagnostics for nabu.
 + *
@@ -547,14 +547,16 @@ new file mode 100644
 +#include <kern/thread.h>
 +#include <kern/clock.h>
 +#include <kern/sched_prim.h>
-+#include <kern/misc_protos.h>
 +#include <libkern/libkern.h>
 +#include <pexpert/pexpert.h>
-+#include <vm/vm_protos.h>
-+#include <string.h>
 +
 +#include <arm64/nabu_pauth_diag.h>
 +
++#ifndef __printflike
++#define __printflike(fmtarg, firstvararg)
++#endif
++extern int printf(const char *format, ...) __printflike(1, 2);
++extern struct proc *current_proc(void);
 +extern int hz;
 +
 +#define NABU_PAUTH_MAX_PROCS       4
