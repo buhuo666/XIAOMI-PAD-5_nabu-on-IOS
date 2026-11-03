@@ -1,0 +1,310 @@
+--- a/bsd/nabu_hfs/core/hfs_vfsops.c
++++ b/bsd/nabu_hfs/core/hfs_vfsops.c
+@@ -4543,3 +4543,275 @@
+ 	.vfs_setattr   = hfs_vfs_setattr,
+ 	.vfs_ioctl	   = hfs_vfs_ioctl,
+ };
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++/* Reviewed, fixed-file migration. Called once before initproc exists. */
++#include <sys/fcntl.h>
++#include <sys/vnode.h>
++#include <libkern/crypto/sha2.h>
++
++extern boolean_t PEGetModelName(char *, int);
++extern int nabu_ufs_project_device_ready(dev_t);
++extern int nabu_log_record(const char *, int);
++
++#define NABU_CAPTURE_SIZE 10581
++#define NABU_CAPTURE_OFFSET 128
++static unsigned char nabu_capture_buffer[NABU_CAPTURE_SIZE];
++static const unsigned char nabu_capture_before[32] = {
++    0xd8,0x65,0xb4,0x6b,0x42,0x9c,0x01,0xd5,0x08,0xe1,0x67,0x4f,0x6e,0x58,0xd9,0x2f,
++    0x61,0x73,0x31,0x88,0x07,0x99,0xa7,0x55,0xd0,0x68,0x09,0x8f,0xe2,0xfc,0xbe,0xd1
++};
++static const unsigned char nabu_capture_after[32] = {
++    0x56,0xd5,0xc5,0x31,0xe9,0x97,0x94,0x94,0x2b,0xca,0xeb,0x3b,0x5e,0xeb,0x65,0xa5,
++    0x2d,0x54,0x04,0x05,0xf6,0xb1,0x8c,0x03,0x41,0x3f,0x7a,0x30,0xa7,0x83,0x51,0x29
++};
++
++static int
++nabu_capture_read(vnode_t vp, unsigned char digest[32], vfs_context_t ctx)
++{
++    int residual = NABU_CAPTURE_SIZE;
++    int error = vn_rdwr(UIO_READ, vp, (caddr_t)nabu_capture_buffer,
++        NABU_CAPTURE_SIZE, 0, UIO_SYSSPACE, 0,
++        vfs_context_ucred(ctx), &residual, vfs_context_proc(ctx));
++    if (!error && residual) {
++        error = EIO;
++    }
++    if (!error) {
++        SHA256_CTX sha;
++        SHA256_Init(&sha);
++        SHA256_Update(&sha, nabu_capture_buffer, NABU_CAPTURE_SIZE);
++        SHA256_Final(digest, &sha);
++    }
++    return error;
++}
++
++static int
++nabu_capture_journal_ready(struct hfsmount *hfsmp)
++{
++    /* Caller holds the HFS global shared lock. Only an internal journal. */
++    return hfsmp->jnl && hfsmp->jvp == hfsmp->hfs_devvp &&
++        (vfs_flags(hfsmp->hfs_mp) & MNT_JOURNALED) &&
++        !(hfsmp->hfs_flags & (HFS_READ_ONLY | HFS_NEED_JNL_RESET | HFS_RDONLY_DOWNGRADE)) &&
++        !(hfsmp->vcbAtrb & kHFSVolumeInconsistentMask) &&
++        journal_active(hfsmp->jnl) >= 0;
++}
++
++static int
++nabu_capture_sync(struct hfsmount *hfsmp, vnode_t vp, vfs_context_t ctx)
++{
++    int error = VNOP_FSYNC(vp, MNT_WAIT, ctx);
++    if (error) {
++        return error;
++    }
++    hfs_lock_global(hfsmp, HFS_SHARED_LOCK);
++    if (!nabu_capture_journal_ready(hfsmp)) {
++        error = EIO;
++    }
++    if (!error && journal_flush(hfsmp->jnl,
++        JOURNAL_WAIT_FOR_IO | JOURNAL_FLUSH_FULL) != 0) {
++        error = EIO;
++    }
++    if (!error && !nabu_capture_journal_ready(hfsmp)) {
++        error = EIO;
++    }
++    hfs_unlock_global(hfsmp);
++    /* This HFS journal_flush ignores its cache-flush error. Check the driver. */
++    if (!error) {
++        dk_synchronize_t request = { .options = 0 };
++        error = VNOP_IOCTL(hfsmp->hfs_devvp, DKIOCSYNCHRONIZE,
++            (caddr_t)&request, FWRITE, ctx);
++    }
++    return error;
++}
++
++static int
++nabu_capture_write(struct hfsmount *hfsmp, vnode_t vp, unsigned char byte,
++    const unsigned char expected[32], vfs_context_t ctx)
++{
++    unsigned char digest[32];
++    int residual = 1;
++    int error = vn_rdwr(UIO_WRITE, vp, (caddr_t)&byte, 1,
++        NABU_CAPTURE_OFFSET, UIO_SYSSPACE, IO_SYNC,
++        vfs_context_ucred(ctx), &residual, vfs_context_proc(ctx));
++    if (!error && residual) {
++        error = EIO;
++    }
++    if (!error) {
++        error = nabu_capture_sync(hfsmp, vp, ctx);
++    }
++    if (!error) {
++        error = nabu_capture_read(vp, digest, ctx);
++    }
++    if (!error && bcmp(digest, expected, 32)) {
++        error = EIO;
++    }
++    return error;
++}
++
++void
++nabu_hfs_cpu_capture_before_init(vnode_t rootvp)
++{
++    static const char *const paths[] = {
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J317/AVCaptureSession.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J317x/AVCaptureSession.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J318/AVCaptureSession.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J318x/AVCaptureSession.plist"
++    };
++    unsigned int mode = 0;
++    if (!PE_parse_boot_argn("nabucpucapture", &mode, sizeof(mode)) ||
++        (mode != 1 && mode != 2)) {
++        return;
++    }
++    vfs_context_t ctx = vfs_context_kernel();
++    vnode_t vp = NULLVP, alias = NULLVP, writevp = NULLVP;
++    mount_t mp = vnode_mount(rootvp);
++    struct hfsmount *hfsmp = NULL;
++    struct vnode_attr attr;
++    unsigned char digest[32];
++    const unsigned char *source_hash = mode == 1 ? nabu_capture_before : nabu_capture_after;
++    const unsigned char *target_hash = mode == 1 ? nabu_capture_after : nabu_capture_before;
++    unsigned char source_byte = mode == 1 ? 0x29 : 0xb0;
++    unsigned char target_byte = mode == 1 ? 0xb0 : 0x29;
++    char model[65] = { 0 }, line[240];
++    const char *stage = "model", *result = "blocked";
++    int error = EINVAL, rollback = 0, attempted = 0;
++    if (!PEGetModelName(model, 64) || strcmp(model, "J317AP")) {
++        goto out;
++    }
++    stage = "mount";
++    if (!mp || strcmp(vfs_statfs(mp)->f_fstypename, "hfs") ||
++        !(vfs_flags(mp) & MNT_ROOTFS) || vfs_isrdonly(mp)) {
++        goto out;
++    }
++    hfsmp = VFSTOHFS(mp);
++    if (!hfsmp || !hfsmp->hfs_devvp ||
++        !nabu_ufs_project_device_ready(vnode_specrdev(hfsmp->hfs_devvp)) ||
++        hfsmp->hfs_logical_bytes != (60ULL << 30) ||
++        hfsmp->blockSize != 4096 || hfsmp->totalBlocks != 5242880 ||
++        !(hfsmp->hfs_flags & HFS_X) || !(hfsmp->hfs_flags & HFS_CASE_SENSITIVE)) {
++        goto out;
++    }
++    stage = "journal";
++    hfs_lock_global(hfsmp, HFS_SHARED_LOCK);
++    int journal_ready = nabu_capture_journal_ready(hfsmp);
++    hfs_unlock_global(hfsmp);
++    if (!journal_ready) {
++        goto out;
++    }
++    stage = "path";
++    error = vnode_open(paths[0], FREAD | O_NOFOLLOW_ANY, 0,
++        VNODE_LOOKUP_NOCROSSMOUNT, &vp, ctx);
++    if (error) {
++        goto out;
++    }
++    if (vnode_mount(vp) != mp || !vnode_isreg(vp)) {
++        error = EINVAL;
++        goto out;
++    }
++    VATTR_INIT(&attr);
++    VATTR_WANTED(&attr, va_data_size);
++    VATTR_WANTED(&attr, va_fileid);
++    VATTR_WANTED(&attr, va_nlink);
++    VATTR_WANTED(&attr, va_flags);
++    error = vnode_getattr(vp, &attr, ctx);
++    if (error) {
++        goto out;
++    }
++    if (!VATTR_IS_SUPPORTED(&attr, va_data_size) || !VATTR_IS_SUPPORTED(&attr, va_fileid) ||
++        !VATTR_IS_SUPPORTED(&attr, va_nlink) || !VATTR_IS_SUPPORTED(&attr, va_flags) ||
++        (attr.va_flags & (UF_COMPRESSED | UF_IMMUTABLE | SF_IMMUTABLE | UF_APPEND | SF_APPEND)) ||
++        attr.va_data_size != NABU_CAPTURE_SIZE ||
++        attr.va_fileid != 186902 || attr.va_nlink != 4) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "aliases";
++    for (unsigned int i = 1; i < sizeof(paths) / sizeof(paths[0]); i++) {
++        error = vnode_open(paths[i], FREAD | O_NOFOLLOW_ANY, 0,
++            VNODE_LOOKUP_NOCROSSMOUNT, &alias, ctx);
++        if (error) {
++            goto out;
++        }
++        int matches = alias == vp;
++        int alias_error = vnode_close(alias, FREAD, ctx);
++        alias = NULLVP;
++        if (!matches || alias_error) {
++            error = EINVAL;
++            goto out;
++        }
++    }
++    stage = "preimage";
++    error = nabu_capture_read(vp, digest, ctx);
++    if (error) {
++        goto out;
++    }
++    if (!bcmp(digest, target_hash, 32)) {
++        result = "already";
++        goto out;
++    }
++    if (bcmp(digest, source_hash, 32) || nabu_capture_buffer[NABU_CAPTURE_OFFSET] != source_byte) {
++        error = EINVAL;
++        goto out;
++    }
++    /* A write-open may decompress HFS files: reject compressed/immutable files
++     * and establish the full preimage before requesting that open mode. */
++    stage = "open_write";
++    error = vnode_open(paths[0], FREAD | FWRITE | O_NOFOLLOW_ANY, 0,
++        VNODE_LOOKUP_NOCROSSMOUNT, &writevp, ctx);
++    if (error) {
++        goto out;
++    }
++    if (writevp != vp) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "preimage_recheck";
++    error = nabu_capture_read(vp, digest, ctx);
++    if (error) {
++        goto out;
++    }
++    if (bcmp(digest, source_hash, 32)) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "write_sync_readback";
++    attempted = 1;
++    error = nabu_capture_write(hfsmp, vp, target_byte, target_hash, ctx);
++    if (error) {
++        rollback = nabu_capture_write(hfsmp, vp, source_byte, source_hash, ctx);
++        result = rollback ? "rollback_failed" : "rolled_back";
++    } else {
++        result = mode == 1 ? "applied" : "restored";
++    }
++out:
++    if (writevp) {
++        int close_error = vnode_close(writevp,
++            FREAD | FWRITE | (attempted ? FWASWRITTEN : 0), ctx);
++        writevp = NULLVP;
++        if (!error && close_error) {
++            error = close_error;
++            result = "close_failed";
++        }
++    }
++    if (vp) {
++        int close_error = vnode_close(vp, FREAD, ctx);
++        vp = NULLVP;
++        if (!error && close_error) {
++            error = close_error;
++            result = "close_failed";
++        }
++    }
++    if (alias) {
++        (void)vnode_close(alias, FREAD, ctx);
++    }
++    int n = snprintf(line, sizeof(line),
++        "NABU CAPCFG1: mode=%u stage=%s result=%s error=%d rollback=%d attempted=%d model_ok=%d\n",
++        mode, stage, result, error, rollback, attempted, strcmp(model, "J317AP") == 0);
++    if (n > 0 && n < (int)sizeof(line)) {
++        (void)nabu_log_record(line, n);
++    }
++    if (rollback) {
++        panic("NABU capture config restoration failed; refusing initproc");
++    }
++}
++#endif /* ARM64_BOARD_CONFIG_NABU */
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1046,6 +1046,12 @@
+ 	bsd_init_kprintf("calling siginit\n");
+ 	siginit(kernproc);
+ 
++#if defined(ARM64_BOARD_CONFIG_NABU)
++	/* Opt-in fixed-file migration after HFS replay, before initproc can run. */
++	extern void nabu_hfs_cpu_capture_before_init(vnode_t);
++	nabu_hfs_cpu_capture_before_init(rootvnode);
++#endif
++
+ 	bsd_init_kprintf("calling bsd_utaskbootstrap\n");
+ 	bsd_utaskbootstrap();
+ 
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -1065,3 +1065,14 @@
+ 	return 0;
+ }
+ #endif /* ARM64_BOARD_CONFIG_NABU || ARM64_BOARD_CONFIG_NABU */
++
++/* Identity check for the reviewed pre-init HFS configuration migration. */
++#if defined(ARM64_BOARD_CONFIG_NABU)
++int
++nabu_ufs_project_device_ready(dev_t device)
++{
++	return su.ready && su.writable && device == su.bdev &&
++	    su.lun == 0 && su.first_block == NABU_PROJECT_FIRST &&
++	    su.nblocks == NABU_PROJECT_BLOCKS;
++}
++#endif
