@@ -30,6 +30,12 @@ print('macOS SDK SHA256:',digest)
 PY
 tar -xJf build/downloads/MacOSX13.3.sdk.tar.xz -C src/hakios-8796/xnu-deps --include='*MacOSX13.3.sdk/System/Library/Frameworks/Kernel.framework*'
 
+# Select before exporthdrs: otherwise setup can leave shim-generated headers in
+# place, and make may not regenerate them when IIG changes later.
+python3 tools/probe_iig.py --output log/ci/iig-probe.json --selected-path log/ci/iig-path.txt \
+  --fallback src/hakios-8796/xnu-deps/host/bin/iig
+export IIG="$(cat log/ci/iig-path.txt)"
+
 cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
@@ -44,7 +50,15 @@ import hashlib,json,os,pathlib,shutil,subprocess
 root=pathlib.Path(os.environ['PROJECT_ROOT']);tree=pathlib.Path(os.environ['XNU_SRC'])
 candidates=[p for p in tree.glob('BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837*') if p.is_file() and p.read_bytes()[:4]==bytes.fromhex('cffaedfe')]
 report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device image',
-        'build_exit_code':int(os.environ['BUILD_EXIT']),'device_boot_validated':False,'kernels':[]}
+        'build_exit_code':int(os.environ['BUILD_EXIT']),'device_boot_validated':False,'kernels':[],
+        'iig':json.loads((root/'log/ci/iig-probe.json').read_text())}
+generated=[]
+for p in sorted((tree/'BUILD').rglob('*.iig.cpp')):
+    raw=p.read_bytes()
+    generated.append({'path':p.relative_to(tree).as_posix(),'bytes':len(raw),
+                      'sha256':hashlib.sha256(raw).hexdigest(),
+                      'empty_shim_marker':b'no DriverKit implementation generated' in raw})
+(root/'log/ci/iig-generated.json').write_text(json.dumps(generated,indent=2)+'\n')
 for p in candidates:
     dest=root/'artifacts/8796-reference'/p.name;shutil.copy2(p,dest)
     report['kernels'].append({'name':p.name,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
