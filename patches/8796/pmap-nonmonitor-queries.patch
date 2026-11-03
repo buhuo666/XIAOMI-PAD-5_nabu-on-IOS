@@ -1,7 +1,7 @@
 diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
 --- a/osfmk/arm/pmap/pmap.c
 +++ b/osfmk/arm/pmap/pmap.c
-@@ -12349,6 +12349,30 @@ pmap_in_ppl(void)
+@@ -12349,6 +12349,32 @@ pmap_in_ppl(void)
  	return false;
  }
  
@@ -9,13 +9,15 @@ diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
 +int
 +pmap_cs_configuration(void)
 +{
++	code_signing_config_t config;
++
 +	/*
-+	 * This configuration has no pmap code-signing monitor. Match the
-+	 * unsupported-query convention in the 8796 x86_64 implementation.
-+	 * Zero does not describe the kernel's or AMFI's code-signing policy;
-+	 * see the contract in vm/pmap.h.
++	 * The 20F66 arm64 query reads the same cached configuration as
++	 * code_signing_configuration(). Preserve its shared initialization
++	 * and boot-argument state in this non-monitor configuration.
 +	 */
-+	return 0;
++	code_signing_configuration(NULL, &config);
++	return (int)config;
 +}
 +
 +bool

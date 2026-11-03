@@ -195,6 +195,18 @@
     {
       "name": "_ml_mem_fault_report_enable_register",
       "reason": "additional-original-only"
+    },
+    {
+      "name": "_code_signing_configuration",
+      "reason": "shared-configuration-callee-of-pmap-query"
+    },
+    {
+      "name": "__ZN8OSObject9_DispatchEPS_5IORPC",
+      "reason": "base-dispatch-callee-of-selected-iig-interfaces"
+    },
+    {
+      "name": "__ZN8OSAction12Aborted_ImplEv",
+      "reason": "candidate-callee-inlined-in-original-osaction-dispatch"
     }
   ]
 }

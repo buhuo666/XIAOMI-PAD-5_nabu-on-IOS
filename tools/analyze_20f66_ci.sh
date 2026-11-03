@@ -18,3 +18,8 @@ src/lzfse/build/bin/lzfse -decode -i build/kernelcache.20f66.lzfse -o "$BASE/ext
 python3 tools/inspect_kernelcache.py "$BASE/extracted/kernelcache.decoded.macho" --report log/ci/native-20f66/original-metadata.json
 python3 tools/analyze_20f66_native.py --original "$BASE/extracted/kernelcache.arm64.macho" \
   --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped
+python3 tools/inspect_iig_20f66.py --original "$BASE/extracted/kernelcache.arm64.macho" \
+  --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped \
+  --analysis log/ci/native-20f66/instructions.json \
+  --headers log/ci/iig-8796/obj/DEVELOPMENT_ARM64_BCM2837/iokit/DriverKit \
+  --output log/ci/native-20f66/iig-review.json --require-legacy-reply-checks
