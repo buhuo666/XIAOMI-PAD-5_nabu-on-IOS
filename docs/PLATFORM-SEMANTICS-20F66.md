@@ -3,7 +3,7 @@
 日期：2026-11-03。结论按原版普通 arm64 slice、固定公开源码和当前非 monitor 配置区分。
 
 - `pmap_cs_configuration` 应读取共享代码签名配置。原版有初始化分支和缓存读取，不是常量返回；[pmap 补丁](../patches/8796/pmap-nonmonitor-queries.patch) 已据此更新。
-- `pmap_has_iofilter_protected_write` 以及下列 11 个平台接口，已逐条确认是设返回寄存器为 0 后返回。对这 11 个接口可以提出限定平台范围的兼容实现；其私有 C 类型与“0 是何种状态”仍不能仅由机器指令确定。
+- `pmap_has_iofilter_protected_write` 以及下列 11 个平台接口，已逐条确认是设返回寄存器为 0 后返回。11 个接口已形成仅限 BCM2837 普通 arm64 参考配置的独立汇编补丁，并通过字节级交叉汇编检查；其私有 C 类型与“0 是何种状态”仍不能仅由机器指令确定。
 - 7 个 `pmap_iommu_*` 接口包含实际状态、重试、分派或分配行为。特别是仅 4 字节的 `pmap_iommu_ioctl` 是跳转到真实实现，不能以短函数为由补零返回。
 
 ## 证据身份与检查
@@ -51,13 +51,46 @@
 
 九个 X、两个 W。两类指令最终都使 `x0` 为 0；W 写入同时清除高 32 位。入口路径没有读取输入参数、没有内存读写、没有调用或条件分支，第二条直接 `ret`。这是对实际路径的观察，不是从名字或 8 字节长度猜测实现。
 
-补丁判断：这些入口可以作为当前无 Apple IOMMU／PPL 平台的受限兼容定义，保留原版“零值返回且不写输出内存”的行为。若需要在没有类型声明时提供定义，最小 arm64 汇编入口可精确保留表中的两条指令；不应编造 `kern_return_t` 原型、写出参或称之为 `KERN_SUCCESS`。本轮没有为它们创建补丁，也没有改变导出列表。
+补丁：[bcm2837-apple-iommu-query-returns.patch](../patches/8796/bcm2837-apple-iommu-query-returns.patch)。它保留原版“零值返回且不写输出内存”的行为，每个入口使用表中对应的两条 arm64 指令；没有编造 `kern_return_t` 原型、写出参或将结果称为 `KERN_SUCCESS`。补丁没有改变导出列表，也没有实现 IOMMU 初始化、映射或释放操作。
 
 固定公开 XNU `8796.121.2` 的 `config/Private.arm64.exports:85–96` 列出这些名字；在该固定树、HakiOS 的 `xnu/files` 与补丁中未找到对应类型声明或实现。因此，`get_desc` 的名字与 x0=0 可支持“无描述符”的解释，但指针类型本身仍是推断；`vo_tte`、`vo_tt_index` 或 `max_translation_levels` 的 0 更不能被改写为已完成地址转换、有效页表项、成功 IOMMU 操作等语义。
 
 `_uat_get_desc` 的两条指令不说明 `IOUnifiedAddressTranslator` C++ 类也可使用同样替代。原版类方法另有真实调用、状态和控制流，当前证据没有恢复完整对象布局、虚表契约或各 ioctl 数据结构。
 
 原版 `_nvme_ppl_get_desc` 有 IONVMeFamily 的明确消费者，见 [平台消费者报告](PLATFORM-CONSUMERS-20F66.md)。该组件不在当前最小闭包里，这不等于接口无用，也不等于这组 Apple 接口可直接实现 Qualcomm UFS／SMMU。未来引入相关 provider 时必须重新审查所需行为。
+
+### 配置与构建入口
+
+补丁新增 `osfmk/arm64/bcm2837_apple_iommu_queries.s`，在固定 `osfmk/conf/files.arm64` 的 `iofilter_asm.s` 后按相同的 `optional nos_arm_asm` 规则登记。HakiOS 的 `MASTER.arm64` 已在参考 `KERNEL_BASE` 中选择 `nos_arm_asm`；现有 Actions 日志也实际编译了这一组的 `iofilter_asm.o` 和 `machine_routines_asm.o`。新文件复用 `<machine/asm.h>` 的符号前缀宏，并包含真实 `<pexpert/arm64/board_config.h>`；不依赖生成的 `assym.s`。
+
+汇编定义严格受以下条件限定：
+
+```c
+#if defined(ARM64_BOARD_CONFIG_BCM2837) && !defined(__arm64e__) && !PMAP_CS && !XNU_MONITOR
+```
+
+`ARM64_BOARD_CONFIG_BCM2837` 由固定构建的 `MACHINE_FLAGS_ARM64_BCM2837` 提供；`BCM2837.h` 明确设置 `NO_MONITOR`，该板型没有启用 `PMAP_CS`／`XNU_MONITOR`。额外检查这两个宏可避免未来 BCM 配置变化后继续提供此分支。这里只选择当前参考板型，没有扩展至所有非 monitor ARM 平台，也没有登记或声称 nabu 支持。
+
+### 实际应用与交叉汇编验证
+
+补丁 SHA-256：`7fea4ea21697c3041d48df1833d57c0384cf78e142d531d010845c95cb1b1571`。
+
+在两个临时目录分别使用固定 Apple `files.arm64`，以及先应用 HakiOS 完整 `files.arm64` 补丁段的版本。本补丁在两者上均通过 `git apply --check` 和实际应用，新编译清单项各出现一次。固定源码 checkout 的文件 SHA-256 前后一致。
+
+使用本机已安装的 Clang 14 及 `-target arm64-apple-macosx13.0 -x assembler-with-cpp`，直接编译临时目录内的完整新汇编文件；包含路径指向固定 XNU 的实际 `osfmk`／`pexpert` 头文件，没有替换头文件或安装依赖。两种补丁基线上均执行下表全部配置：
+
+| 配置 | 外部定义数 | `__text` bytes |
+|---|---:|---:|
+| BCM2837，普通 arm64，无 PMAP_CS／XNU_MONITOR | 11 | 88 |
+| BCM2837 + `PMAP_CS=1` | 0 | 0 |
+| BCM2837 + `XNU_MONITOR=1` | 0 | 0 |
+| BCM2837 + 人工定义 `__arm64e__=1` | 0 | 0 |
+| 未指定板型 | 0 | 0 |
+| VMAPPLE | 0 | 0 |
+
+对正向配置，解析 Mach-O object 的真实符号表和 section 字节，11 个入口逐个与原版字节比较：九个 X、两个 W 全部相等，文本重定位数为 0。arm64e 一行验证的是 guard 的宏排除行为，不是完整 arm64e 工具链资格测试。
+
+完整命令、编译器身份、对象哈希和逐符号字节在 [bcm2837-query-assembly-validation.json](../log/analysis/bcm2837-query-assembly-validation.json)，SHA-256 `2169132f5b651f789b44edd7179451db739f17d287a6c240cd29f758dff467cb`。这证明受限汇编实现及宏选择通过本地检查；完整 Xcode 内核编译、链接和导出检查由下一次 CI 验证。
 
 ## pmap 代码签名查询不是常量实现
 
@@ -111,4 +144,4 @@ IOfilter 查询则没有这一问题：原版 `0xfffffff007312d94` 的完整字�
 
 ## 范围结论
 
-当前 pmap 补丁只调整两个有明确契约的查询，仍由 `!PMAP_CS && !XNU_MONITOR` 限定。11 个实际零返回入口已有可复现的机器行为证据，可供后续选择明确的平台兼容实现；7 个 IOMMU 操作和 UAT 类方法仍需单独恢复真实契约。本报告没有声称完整 ABI 兼容、可启动 nabu 内核或设备运行通过。
+当前 pmap 补丁只调整两个有明确契约的查询，仍由 `!PMAP_CS && !XNU_MONITOR` 限定。11 个实际零返回入口使用独立、范围更窄的 BCM2837 汇编补丁；7 个 IOMMU 操作和 UAT 类方法仍需单独恢复真实契约。本报告没有声称完整 ABI 兼容、可启动 nabu 内核或设备运行通过。

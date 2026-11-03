@@ -1,0 +1,95 @@
+diff --git a/osfmk/arm64/bcm2837_apple_iommu_queries.s b/osfmk/arm64/bcm2837_apple_iommu_queries.s
+new file mode 100644
+--- /dev/null
++++ b/osfmk/arm64/bcm2837_apple_iommu_queries.s
+@@ -0,0 +1,79 @@
++/*
++ * Preserve the observed 20F66 arm64 return behavior of these private queries
++ * for the BCM2837 host-build reference only. No Apple IOMMU operation is
++ * implemented here; no C prototypes or output-parameter contracts are assumed.
++ */
++#include <machine/asm.h>
++#include <pexpert/arm64/board_config.h>
++
++#if defined(ARM64_BOARD_CONFIG_BCM2837) && !defined(__arm64e__) && !PMAP_CS && !XNU_MONITOR
++
++	.text
++
++	.align 2
++	.globl EXT(sart_get_desc)
++LEXT(sart_get_desc)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t6000dart_get_desc)
++LEXT(t6000dart_get_desc)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t6000dart_vo_tte)
++LEXT(t6000dart_vo_tte)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8020dart_get_desc)
++LEXT(t8020dart_get_desc)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8020dart_vo_tte)
++LEXT(t8020dart_vo_tte)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8110dart_get_desc)
++LEXT(t8110dart_get_desc)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8110dart_vo_tte)
++LEXT(t8110dart_vo_tte)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8110dart_vo_tt_index)
++LEXT(t8110dart_vo_tt_index)
++	mov w0, #0
++	ret
++
++	.align 2
++	.globl EXT(t8110dart_max_translation_levels)
++LEXT(t8110dart_max_translation_levels)
++	mov w0, #0
++	ret
++
++	.align 2
++	.globl EXT(nvme_ppl_get_desc)
++LEXT(nvme_ppl_get_desc)
++	mov x0, #0
++	ret
++
++	.align 2
++	.globl EXT(uat_get_desc)
++LEXT(uat_get_desc)
++	mov x0, #0
++	ret
++
++#endif /* BCM2837, ordinary arm64, no PMAP_CS or XNU_MONITOR */
+diff --git a/osfmk/conf/files.arm64 b/osfmk/conf/files.arm64
+--- a/osfmk/conf/files.arm64
++++ b/osfmk/conf/files.arm64
+@@ -46,6 +46,7 @@
+ osfmk/arm/locks_arm.c	standard
+ osfmk/arm64/locore.s	optional nos_arm_asm
+ osfmk/arm64/iofilter_asm.s	optional nos_arm_asm
++osfmk/arm64/bcm2837_apple_iommu_queries.s	optional nos_arm_asm
+ osfmk/arm64/iofilter.c	optional nos_arm_asm
+ osfmk/arm64/gxf_exceptions.s	optional nos_arm_asm
+ osfmk/arm64/lowmem_vectors.c	standard
