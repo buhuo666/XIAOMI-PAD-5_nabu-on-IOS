@@ -42,7 +42,7 @@
  	mov		x0, #(ARM_TTE_EMPTY)				// Load invalid entry template
  	mov		x1, x25								// Start at V=P pagetable root
 +#if defined(BCM2837) && (ARM_PGSHIFT == 12) && !defined(ARM_LARGE_MEMORY)
-+	MOV64	x2, (BOOTSTRAP_TABLE_BYTES >> TTE_SHIFT)
++	MOV64	x2, (BOOTSTRAP_TABLE_BYTES_NUM >> TTE_SHIFT)
 +#else
  	mov		x2, #(TTE_PGENTRIES)				// Load number of entries per page
  	lsl		x2, x2, #2							// Shift by 2 for num entries on 4 pages
@@ -55,7 +55,7 @@
  	add		x3, x1, PGBYTES
  	mov		x2, x3
 +#if defined(BCM2837) && (ARM_PGSHIFT == 12) && !defined(ARM_LARGE_MEMORY)
-+	MOV64	x17, BOOTSTRAP_TABLE_BYTES
++	MOV64	x17, BOOTSTRAP_TABLE_BYTES_NUM
 +	add		x17, x25, x17
 +#endif
  

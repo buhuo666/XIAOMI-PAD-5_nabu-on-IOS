@@ -48,7 +48,7 @@ def main():
     assyms = []
     for file in args.tree.rglob('assym.s'):
         content = file.read_text(encoding='utf-8')
-        match = re.search(r'^#define\s+BOOTSTRAP_TABLE_BYTES\s+(\S+)', content, re.M)
+        match = re.search(r'^#define\s+BOOTSTRAP_TABLE_BYTES_NUM\s+(\S+)', content, re.M)
         if match:
             size = int(match[1], 0)
             assert size == 32*4096, (file, size)

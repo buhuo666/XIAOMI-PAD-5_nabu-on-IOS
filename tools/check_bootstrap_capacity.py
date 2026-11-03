@@ -74,7 +74,7 @@ def compile_harness(tree, output, pages):
     # harmless valid-table/valid-block stand-ins; permission programming is not tested.
     defines = {
         'BCM2837': 1, 'ARM_PGSHIFT': 12, 'PGBYTES': PAGE,
-        'BOOTSTRAP_TABLE_BYTES': pages * PAGE, 'ARM_TTE_EMPTY': 0,
+        'BOOTSTRAP_TABLE_BYTES_NUM': pages * PAGE, 'ARM_TTE_EMPTY': 0,
         'ARM_TT_L1_INDEX_MASK': 0x7fc0000000, 'ARM_TT_L1_SHIFT': 30,
         'TTE_SHIFT': 3, 'ARM_TTE_BOOT_TABLE': 3,
         'ARM_TTE_TABLE_MASK': 0x0000fffffffff000,
