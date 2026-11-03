@@ -21,6 +21,7 @@ from unicorn import arm64_const as arm
 PAGE = 4096
 BLOCK = 2 << 20
 GIB = 1 << 30
+ROOT_INDEX_MASK = 255  # BCM2837 uses a subpage L1: T0SZ/T1SZ=26.
 MASK64 = (1 << 64) - 1
 CODE = 0x80000
 POOL = 0x100000
@@ -70,12 +71,16 @@ def compile_harness(tree, output, pages):
     mapping = source[source.index('\tmov\t\tx4, x0\n'):source.index('\t/* Ensure TTEs are visible */')]
     asm = (tree/'osfmk/arm64/asm.h').read_text(encoding='utf-8')
     mov64 = asm[asm.index('.macro MOV64'):asm.index('.endmacro', asm.index('.macro MOV64'))+len('.endmacro')]
+    registers = (tree/'osfmk/arm64/proc_reg.h').read_text(encoding='utf-8')
+    board = (tree/'pexpert/pexpert/arm64/BCM2837.h').read_text(encoding='utf-8')
+    assert re.search(r'#define\s+__ARM64_PMAP_SUBPAGE_L1__\s+1\b', board)
+    assert re.search(r'#define\s+ARM_4K_TT_L1_INDEX_MASK\s+0x0000003fc0000000ULL', registers)
     # Hardware geometry from the 4 KiB format in proc_reg.h. Descriptor flags are
     # harmless valid-table/valid-block stand-ins; permission programming is not tested.
     defines = {
         'BCM2837': 1, 'ARM_PGSHIFT': 12, 'PGBYTES': PAGE,
         'BOOTSTRAP_TABLE_BYTES_NUM': pages * PAGE, 'ARM_TTE_EMPTY': 0,
-        'ARM_TT_L1_INDEX_MASK': 0x7fc0000000, 'ARM_TT_L1_SHIFT': 30,
+        'ARM_TT_L1_INDEX_MASK': 0x3fc0000000, 'ARM_TT_L1_SHIFT': 30,
         'TTE_SHIFT': 3, 'ARM_TTE_BOOT_TABLE': 3,
         'ARM_TTE_TABLE_MASK': 0x0000fffffffff000,
         'ARM_TT_L2_INDEX_MASK': 0x3fe00000, 'ARM_TTE_BLOCK_L2_SHIFT': 21,
@@ -126,7 +131,7 @@ def exercise(code, pa, va, size, pages):
         expected_leaves = {}
         for i in range(blocks):
             addr = (base+i*BLOCK)&MASK64
-            root_index = (addr >> 30)&511
+            root_index = (addr >> 30)&ROOT_INDEX_MASK
             leaf_index = (addr >> 21)&511
             table = qword(root+root_index*8) & 0x0000fffffffff000
             assert POOL+2*PAGE <= table < POOL+pages*PAGE
@@ -171,6 +176,8 @@ def main():
     assert regression['result'] == 'bounded-stop'
     report = {'scope': 'actual extracted table-construction instructions under emulation; no MMU/device boot',
               'unicorn_version': unicorn.__version__,
+              'geometry': {'hardware_page_bytes': PAGE, 'l2_block_bytes': BLOCK,
+                           'l1_root_entries': ROOT_INDEX_MASK+1, 't0sz_t1sz': 26},
               'source_sha256': digest(args.tree/'osfmk/arm64/start.s'),
               'pmap_sha256': digest(args.tree/'osfmk/arm/pmap/pmap.h'),
               'assembly_sha256': digest(args.output/'bootstrap-harness.S'),

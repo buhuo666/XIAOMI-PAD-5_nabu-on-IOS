@@ -73,7 +73,7 @@ python -X utf8 tools/github_ci.py --download
 
 工具复用本机 Git credential helper，在进程内使用凭证；代理下载后的日志位于 `log/ci/github`，产物位于 `artifacts/ci`。
 
-当前已完成的构建为 `41659076371 / attempt 1`，提交 `1e53b512c839d8e334391147457069598ddd1d0c`。全部 17 份 IIG 实现编译通过，三个空 reply 分支与 11 个平台查询入口已核对；缺失导出累计从 131 降至 24，完整构建仍为失败，原生分析步骤成功。以该 run 的实际候选复测：
+上一轮接口构建为 `41659076371 / attempt 1`，提交 `1e53b512c839d8e334391147457069598ddd1d0c`。全部 17 份 IIG 实现编译通过，三个空 reply 分支与 11 个平台查询入口已核对；缺失导出累计从 131 降至 24，完整构建仍为失败，原生分析步骤成功。以该 run 的实际候选复测：
 
 ```powershell
 python -X utf8 tools/github_ci.py --run 41659076371 --download
@@ -83,3 +83,5 @@ python -X utf8 tools/inspect_platform_consumers.py --candidate artifacts/ci/4165
 ```
 
 新 run 的 artifact 名称取自下载结果，不从 run ID 猜测。`inspect_platform_consumers.py` 要求明确的候选和输出路径；LLVM 校验使用本机已有 WSL 工具。原生分析命令及证据边界见 [NATIVE-ANALYSIS-20F66](NATIVE-ANALYSIS-20F66.md)。仅更新文档或离线分析工具时可以提交 `[skip ci]`；这不能代替构建代码变更所需的实际验证。
+
+最新八核／内存实验为 `41666598049 / attempt 1`，提交 `259a1d378ca683bfef5d463555a16f966ce65489`，实际 artifact 为 `xnu8796-reference-12`。两个内核和新增原生检查均已取证，完整构建仍保留 24 个导出失败。下载命令为 `python -X utf8 tools/github_ci.py --run 41666598049 --download`。该 run 的内核产物、补丁与本地补充测试范围见 [SMP-MEMORY-EXPERIMENT](SMP-MEMORY-EXPERIMENT.md)；不能把旧 run 的完整消费者检查转记为新 run 已执行。

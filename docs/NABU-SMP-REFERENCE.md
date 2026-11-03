@@ -118,7 +118,7 @@ SMP 与内存容量试验共享冷启动页表、cpu_ttep、cpu_data 和启动�
 
 ## 未关闭的事项
 
-- 当前候选的 macOS 编译、assym 偏移和实际 SGI／timer 指令仍需由当前构建验证；本次字节核验对象只有旧 8796.141.3 包。
+- 本文历史字节审计对象是旧 8796.141.3 包；新候选已在 Actions `41666598049` 链接，并通过页表容量、实际 SGI 屏障及诊断符号的原生检查，见 [本轮实验](SMP-MEMORY-EXPERIMENT.md)。这些静态检查仍不证明实际 timer／SGI 在设备上送达。
 - 没有独立实机证据证明当前固件 CPU_ON 的返回 EL、GIC security／EOImode 初始状态、八核 IRQ 交付或大内存下的跨核一致性。
 - 旧 NabuCPU 的 CPU_OFF、挂起／恢复直接 panic；HakiOS 有停止其他 CPU 后返回 loader 的设计，但不证明可用于本项目最终 loader 契约。
 - OSM／DVFS、深度 idle、热管理、AMP 调度和 PMU 路由不属于“八核已启动”的同义词，仍分别未验收。

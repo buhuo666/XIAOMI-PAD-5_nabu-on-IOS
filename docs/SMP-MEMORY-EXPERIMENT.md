@@ -30,7 +30,22 @@
 
 `check_darwinboot_8796.py` 执行实际源码抽取的结构及命令行代码：50 项 C 静态断言、18 个容量边界、10 个命令行场景、5 个大于等于 4 GiB 的结构往返通过。确认 `bootFlags=0x2d0`、`memSizeActual=0x2d8`、`sizeof(boot_args)=0x2e0`。原固定 DarwinBoot 的对应尾部为 Darwin 23 布局，不能直接交给 8796。
 
-云端构建会重做上述测试，并用 `check_capacity_kernel.py` 核对编译器生成的页表容量、实际清池计数、两条分配限界路径、SGI 屏障以及诊断符号。完整构建仍需保留原有导出检查结果，不能把已有 24 个缺项隐藏成成功。
+云端用 `check_capacity_kernel.py` 核对编译器生成的页表容量、实际清池计数、两条分配限界路径、SGI 屏障以及诊断符号。完整构建仍保留原有导出检查结果，不能把已有 24 个缺项隐藏成成功。
+
+### 实际 Actions 结果
+
+`41666598049 / attempt 1`，构建提交 `259a1d378ca683bfef5d463555a16f966ce65489`，产物 `xnu8796-reference-12`。内核编译和链接产生两个普通 arm64 Mach-O；完整构建退出码仍为 **2**，剩余 **24 个导出缺项**与上一轮逐项相同（17 个 UAT、7 个 IOMMU）。原版／候选接口分析和新增 SMP／容量原生检查两个步骤均成功。
+
+| 文件 | bytes | SHA-256 |
+|---|---:|---|
+| `mach.development.bcm2837.unstripped` | 22,887,640 | `16e9309ccf5960e932b433ac2d14ba25c672127a5ad44e7bd3b78addaba08555` |
+| `mach.development.bcm2837` | 17,089,976 | `19e2b2636ebe6dc29c9bb15a31b7eb2b52e71839b966dae372852bd4c303b774` |
+
+下载后已核对归档、两份内核、四个内核补丁和 loader 补丁的哈希。1,088 条新增分析范围内的 LLDB 指令与下载内核字节逐条相符。生成的 `assym.s` 明确池为 131,072 bytes；候选机器码包含整个池的清理计数和两条越界保护，signal／stop 两条 SGI 路径均有先 DSB ISHST 后 ICC_SGI1R 写入的顺序。寄存器计算可处于两条指令之间，不要求人为相邻。
+
+此 run 的抽取汇编测试使用完整 L1 的索引掩码。随后将主机测试收紧到本 BCM2837 配置实际的 256 项 subpage L1／T0SZ=T1SZ=26，21 个场景与 20 页回归再次通过。两份 harness 除该掩码外逐字相同，`start.s` 在归一 Windows CRLF 后与 CI 源码哈希相同；编译内核的补丁没有变化。不能把主机这项补充验证写成该 run 已执行过的测试。
+
+本地收据：[smp-memory-verification.json](../log/ci/github/41666598049/attempt-1/smp-memory-verification.json)。原生报告 SHA-256 为 `453832bee07d6b7ce837bf8e0bb996b9d60347b7367688a2bfe226cb86becc4f`；补充 subpage 测试报告 SHA-256 为 `6d39235dd968439df0ff7be80667d92f2c6c513d2f7347b4c3a62282aa7b1cf1`。两个较早排队的 run（`41665946282`、`41666276084`）已由该最终提交替代并取消，不计作构建结果。
 
 ## 板上验收目标
 
