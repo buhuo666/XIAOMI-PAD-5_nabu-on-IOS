@@ -66,7 +66,7 @@ Actions `41655737937 / attempt 1` 保存了静态 LLDB 结果，原版 slice SHA
 
 固定公开源码没有给出旧查询的实现和位定义，单看头文件不足以建立二者关系；上面的原版地址和读取路径补上了这项证据。当前补丁在非 monitor 范围内直接返回现代接口的配置，不复制 MiniMAC 的位域。此配置下不会设置最高位的 `CS_CONFIG_CSM_ENABLED`，其公开配置位可由 `int` 表示。
 
-编译与调用路径已经核对：`osfmk/arm/pmap/pmap.c:68` 已包含 `<sys/code_signing.h>`；其 `code_signing_config_t` 和 `code_signing_configuration()` 原型在当前内核编译中可见，无需新头文件。`bsd/conf/files:417` 将 `kern_codesigning.c` 列为 `standard`。HakiOS 的补丁与 overlay 没有替换这个函数、头文件或标准构建项；已构建 candidate 中 `_code_signing_configuration` 定义在 `0xfffffff007837b28`。
+编译与调用路径已经核对：`osfmk/arm/pmap/pmap.c:68` 已包含 `<sys/code_signing.h>`；其 `code_signing_config_t` 和 `code_signing_configuration()` 原型在当前内核编译中可见，无需新头文件。`bsd/conf/files:417` 将 `kern_codesigning.c` 列为 `standard`。HakiOS 的补丁与 overlay 没有替换这个函数、头文件或标准构建项；最新 `41659076371` 候选中 `_code_signing_configuration` 定义在 `0xfffffff007838b28`。
 
 `code_signing_configuration()` 的整个函数体没有调用 `pmap_cs_configuration()`，不会形成递归。其 `csm_enabled()` 及 pmap 专属 boot-arg 调整分别受 `CODE_SIGNING_MONITOR`／`PMAP_CS_PPL_MONITOR` 控制；本补丁的 `!PMAP_CS && !XNU_MONITOR` 配置使这些分支不参与编译。原有无 monitor 初始化、原子缓存和输出写入路径均可用。
 
@@ -76,12 +76,13 @@ Actions `41655737937 / attempt 1` 保存了静态 LLDB 结果，原版 slice SHA
 
 ## 验证与剩余范围
 
-验证仅涉及补丁应用和源码配置；完整 macOS 构建、最终链接和设备运行应分别记录，不能由补丁应用成功推导。
+当前共享配置版本已完成补丁应用、macOS 编译链接和实际指令核对。完整 `make all` 仍因其他导出缺项失败，未做设备运行；这些结果分别记录。
 
 - 已在临时目录分别复制固定 Apple 原始 `pmap.c`，以及先应用 HakiOS 中完整 `pmap.c` 补丁段的文件。两种基线上本补丁的 `git apply --check` 和实际应用均成功；HakiOS 基线上有预期的 5 行偏移，无冲突。
 - 应用后两个查询各有一处定义，既有写入函数的 unsupported panic 保持不变。原始 checkout 文件 SHA-256 前后一致；没有修改源码 checkout。
-- 当前共享配置版本的补丁 SHA-256：`3d5f5fb5976b55fba9461ae5d05efa5c1e0d1d2592a5661a0c1043ba3d3dbbb8`。本轮重新执行了上述两种临时副本验证。尚未取得包含此版本的完整 macOS 构建或设备运行结果。
+- 当前共享配置版本的补丁 SHA-256：`3d5f5fb5976b55fba9461ae5d05efa5c1e0d1d2592a5661a0c1043ba3d3dbbb8`。Actions `41657999493` 和 `41659076371` 的构建报告均记录该哈希，编译链接产生了两个普通 arm64 内核，未做设备运行。
 - Actions `41655737937` 编译的是此前常量版本（补丁 SHA-256 `09fbe98c90fe221e705d6ae438846d9a42211fb3fc245cbf1d8666d871d29b57`）。其两个 candidate 查询都是 `mov w0,#0; ret`，不能作为当前共享配置版本的编译证据。
 - 集成时在 HakiOS 补丁之后应用本补丁，保留原导出表和现有 `pmap_iofilter_protected_write()`。
-- 下一次 macOS 完整构建应确认两个查询的定义来自本补丁，并保留其他导出检查结果。
+- 两轮候选的旧查询入口均为 `0xfffffff007427ff4`，44 bytes，SHA-256 `b881456c20f776163bb6699432b02cb62dc451a37e96ff44cfbe43da47bbac37`。实际指令以 x0=NULL、x1=&32-bit 栈配置调用 `0xfffffff007838b28` 的 `_code_signing_configuration`，随后返回写入的配置；IOfilter 查询仍逐字节等于原版 false 返回。记录在各 run 的 `platform-native-review.json`。
+- 最新 Actions `41659076371` 原生分析成功，完整构建剩余 24 个其他导出缺项；没有改删导出检查。最新产物身份与复核范围见 [NATIVE-ANALYSIS-20F66](NATIVE-ANALYSIS-20F66.md)。
 - 后续 nabu 平台若引入 monitor／MMIO 保护机制，应重新实现并验证能力查询。当前参考配置不是可启动的 nabu 平台实现。

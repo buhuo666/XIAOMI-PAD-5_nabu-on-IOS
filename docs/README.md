@@ -13,7 +13,12 @@
 | [首轮参考构建](FIRST-BUILD.md) | 两个参考内核产物与导出检查失败 |
 | [20F66 用户态](USERLAND-20F66.md) | ZBM 解压、完整缓存组、原始代码哈希 |
 | [131 个导出缺项](EXPORTS-8796.md) | DriverKit、UAT 和平台接口逐项归因 |
-| [原生 IIG 实验](IIG-COMPATIBILITY.md) | 17 份实现编译通过、缺失导出 131→37 |
+| [原生 IIG 实验](IIG-COMPATIBILITY.md) | 17 份实现编译通过，三个空 reply 分支已云端复核 |
+| [原生分析与最新构建](NATIVE-ANALYSIS-20F66.md) | Actions 41659076371、缺失导出 131→24、静态分析范围 |
+| [pmap 查询](PMAP-QUERIES-8796.md) | 共享代码签名配置与非 monitor 能力查询 |
+| [平台接口语义](PLATFORM-SEMANTICS-20F66.md) | 11 个受限查询返回与 7 个未实现的 IOMMU 操作 |
+| [平台接口消费者](PLATFORM-CONSUMERS-20F66.md) | 全部 211 个 kext 的有限引用检查 |
+| [弃用内核硬件参考](ABANDONED-KERNEL-REFERENCE.md) | 85 个恢复文件、版本线索与触摸待验证问题 |
 | [原版组件组成](KEXT-COMPOSITION.md) | 声明依赖与服务归属拆分 |
 | [原版组件实际接口](KEXT-INTERFACES-20F66.md) | KASLR 指针取证与 5 个接口候选恢复 |
 | [原版组件分支链](KEXT-BRANCHES-20F66.md) | 17 处 BL→stub→GOT，常量与未决编码 |

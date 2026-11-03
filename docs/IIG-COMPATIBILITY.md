@@ -2,7 +2,7 @@
 
 日期：2026-11-03，Asia/Shanghai。
 
-IIG 兼容层已在 macOS 实际编译通过全部 17 份实现，并重新链接出两个普通 arm64 内核。94 个 DriverKit 生成层导出缺项全部消失，完整构建仍因另外 37 个平台接口缺项失败。此结果恢复了参考构建的生成层，不代表 nabu 内核或原版 kext 已可启动。
+IIG 兼容层已在 macOS 实际编译通过全部 17 份实现，94 个 DriverKit 生成层导出缺项全部消失。随后根据原版指令修正的三个空 reply 错误分支，也已在 Actions `41657999493` 和 `41659076371` 中确认恢复。最新完整构建因另外 24 个平台导出缺项失败，见 [最新构建与原生分析](NATIVE-ANALYSIS-20F66.md)。下面保留各次实验的历史结果；本工作不代表 nabu 内核或原版 kext 已可启动。
 
 ## 原生默认输出实验
 
@@ -98,8 +98,18 @@ Actions `41655737937 / attempt 1` 的原生 LLDB 分析已成功。原版
 
 这不是把 NULL reply 变成可成功回复的输入：原版 handler 成功后同样无条件写入
 reply，NULL 下的成功路径仍不可用。本修正恢复的是已观察到的早期错误返回路径。
-源码变换已通过本地核对；修改后的内核分支还需下一轮 macOS 构建确认。
+源码变换与修改后的内核分支均已核对：Actions `41657999493` 和 `41659076371` 的三个 Invoke，以及 IOService 分派中的三个对应入口，都恢复了 NULL 跳过 replySize 检查的分支。`inspect_iig_20f66.py --require-legacy-reply-checks` 在云端通过，下载后使用本地原版、候选和归档头文件复跑也通过。
 
 完整逐指令证据位于
 `artifacts/ci/41655737937-attempt-1/xnu8796-reference-6/log/ci/native-20f66/instructions.json`，
 SHA-256 为 `8ddc9cec9fecdccb045294a230871a8ceadac62fbe7cecda223c33ed95650960`。
+
+## 已修复版本的有限回归
+
+最新 `41659076371 / attempt 1` 核对了原版 47 个代码范围、3,390 条指令，以及候选 21 个代码范围、1,904 条指令。范围内每条地址、原始字节和完整 SHA-256 均与本地 Mach-O 一致。三个方法的消息 ID、reply flags=8、reply version `0x4da2b68d`、reply descriptor count=0 相符。IOService 的 53 个比较数值和 OSAction 的 1 个比较数值相同；53 包含分派树阈值，不能称为 53 个方法。
+
+两个生成目录共 34 份原生实现重新经过当前 `adapt()`，输出、变换记录和归档头文件哈希逐项相符；仅两个 IOService 副本各有三处假设删除。记录位于 `log/ci/github/41659076371/attempt-1/iig-compat-verification.json` 和 `iig-native-review.json`。
+
+`tools/check_iig_invoke.py` 从真实归档提取修改前后的三个 Invoke 与消息结构，使用固定 8796 头文件及受控 handler，已在现有 WSL Clang 14、x86_64、`-O2` 上各运行 39 个用例。6 组预期差异是 NULL reply、replySize=0 时，修复后可到类型错误或 handler 错误返回；其余 33 组结果一致。检查覆盖回调参数、reply 常量、未写字节、短 reply、计数、引用数和 sendSize。
+
+该主机回归不是内核运行：类型转换使用 mock，未验证真实 metaclass、生命周期或 ARM64 调用约定；旧版 NULL 输入违反 `__builtin_assume`，其观察只属于所用编译器。两版 NULL 加成功 handler 都会写 NULL，因此没有运行该路径。报告为 `log/host/iig-invoke-c709c5e/report.json`。完整类布局、初始化及运行时兼容仍待验证。

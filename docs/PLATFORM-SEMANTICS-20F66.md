@@ -8,7 +8,7 @@
 
 ## 证据身份与检查
 
-云端记录目录：`artifacts/ci/41655737937-attempt-1/xnu8796-reference-6/log/ci/native-20f66`。分析过程只创建静态 LLDB target，没有运行所分析内核。
+以下原版语义的初次云端记录目录：`artifacts/ci/41655737937-attempt-1/xnu8796-reference-6/log/ci/native-20f66`。表中的候选属于修复前实验。共享配置修复与 11 个汇编入口已分别在 `41657999493`／`41659076371` 验证，最新身份见 [NATIVE-ANALYSIS-20F66](NATIVE-ANALYSIS-20F66.md)。分析只创建静态 LLDB target，没有运行内核。
 
 | 输入 | SHA-256／身份 |
 |---|---|
@@ -90,7 +90,9 @@
 
 对正向配置，解析 Mach-O object 的真实符号表和 section 字节，11 个入口逐个与原版字节比较：九个 X、两个 W 全部相等，文本重定位数为 0。arm64e 一行验证的是 guard 的宏排除行为，不是完整 arm64e 工具链资格测试。
 
-完整命令、编译器身份、对象哈希和逐符号字节在 [bcm2837-query-assembly-validation.json](../log/analysis/bcm2837-query-assembly-validation.json)，SHA-256 `2169132f5b651f789b44edd7179451db739f17d287a6c240cd29f758dff467cb`。这证明受限汇编实现及宏选择通过本地检查；完整 Xcode 内核编译、链接和导出检查由下一次 CI 验证。
+完整命令、编译器身份、对象哈希和逐符号字节在 [bcm2837-query-assembly-validation.json](../log/analysis/bcm2837-query-assembly-validation.json)，SHA-256 `2169132f5b651f789b44edd7179451db739f17d287a6c240cd29f758dff467cb`。
+
+Actions `41659076371 / attempt 1` 已实际编译 `bcm2837_apple_iommu_queries.o` 并链接出两个内核。下载后逐项核对 11 个候选入口，完整 8-byte 范围均与上表原版相等；构建报告的补丁哈希也一致。缺失导出从 35 降至 24，原版独有定义从 41 降至 30。完整 `make all` 仍以 2 退出，保留其他导出失败。记录为 `log/ci/github/41659076371/attempt-1/platform-native-review.json`，不代表 nabu 板级支持。
 
 ## pmap 代码签名查询不是常量实现
 
@@ -116,7 +118,7 @@ code_signing_configuration(NULL, &config);
 return (int)config;
 ```
 
-固定 `kern_codesigning.c:60–220` 提供现成的初始化、缓存和 DEVELOPMENT／DEBUG boot-arg 处理；`pmap.c:68` 已包含其头文件。调用不递归，也不需要编译 monitor 路径。详见 [PMAP-QUERIES-8796](PMAP-QUERIES-8796.md)。原版 RELEASE 初始化为零并不能证明 DEVELOPMENT 的 boot-arg 状态应被丢弃；本次候选常量实现与原版的初始化／共享状态行为有实际区别。
+固定 `kern_codesigning.c:60–220` 提供现成的初始化、缓存和 DEVELOPMENT／DEBUG boot-arg 处理；`pmap.c:68` 已包含其头文件。调用不递归，也不需要编译 monitor 路径。详见 [PMAP-QUERIES-8796](PMAP-QUERIES-8796.md)。原版 RELEASE 初始化为零并不能证明 DEVELOPMENT 的 boot-arg 状态应被丢弃；初次候选的常量实现存在此差异，现已改成共享查询，并在后两轮云端产物中核对了实际调用和返回路径。
 
 IOfilter 查询则没有这一问题：原版 `0xfffffff007312d94` 的完整字节是 `00008052c0035fd6`，与固定 ARM 的 unsupported 写入路径一致，保留 false 有直接证据。
 
