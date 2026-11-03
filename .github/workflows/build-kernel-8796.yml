@@ -141,6 +141,7 @@ jobs:
           python3 xnu-8796/tests/test-bootdiag-records.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/tests/test-metal-abort-observation.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/tests/test-cpu-capture-capability.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
+          python3 xnu-8796/tests/test-ci-capture-capability.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-log-storage-v2.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-boottrace-filter.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt
           python3 xnu-8796/test-volume-home.py --xnu-source dxb/xnu --cc clang 2>&1 | tee -a out/source-tests.txt

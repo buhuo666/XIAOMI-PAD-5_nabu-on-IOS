@@ -1,0 +1,321 @@
+--- a/bsd/nabu_hfs/core/hfs_vfsops.c
++++ b/bsd/nabu_hfs/core/hfs_vfsops.c
+@@ -4815,3 +4815,307 @@
+     }
+ }
+ #endif /* ARM64_BOARD_CONFIG_NABU */
++
++
++#if defined(ARM64_BOARD_CONFIG_NABU)
++/* Reviewed fixed CameraSetup extension; preserve all eight existing links. */
++#define NABU_CI_BEFORE_SIZE 49124
++#define NABU_CI_AFTER_SIZE 49178
++#define NABU_CI_TABLE 42536
++#define NABU_CI_NEW_TABLE 42584
++#define NABU_CI_TABLE_BYTES 6556
++static unsigned char nabu_ci_input[NABU_CI_AFTER_SIZE];
++static unsigned char nabu_ci_original[NABU_CI_BEFORE_SIZE];
++static unsigned char nabu_ci_modified[NABU_CI_AFTER_SIZE];
++static const unsigned char nabu_ci_before_hash[32] = { 0xac,0xce,0x4d,0xaa,0x97,0x23,0xeb,0xc1,0x62,0x5c,0x5e,0x71,0x83,0xfc,0xba,0xc9,0x9a,0x2e,0x48,0xbc,0x8d,0xa2,0x16,0x53,0xe5,0x24,0x52,0x54,0xcc,0x8e,0x9a,0xf5 };
++static const unsigned char nabu_ci_after_hash[32] = { 0x46,0x3e,0xe5,0xb3,0x2f,0xb6,0x9a,0x28,0xc1,0xc1,0x2d,0x94,0x4f,0x97,0x76,0x17,0xd2,0x2d,0x2f,0x7f,0x42,0x4a,0x19,0xc3,0x47,0xe7,0x97,0xe6,0x1e,0x96,0x1c,0x1a };
++static const unsigned char nabu_ci_new_objects[48] = { 0x5f,0x10,0x17,0x43,0x6f,0x72,0x65,0x49,0x6d,0x61,0x67,0x65,0x50,0x6f,0x72,0x74,0x72,0x61,0x69,0x74,0x46,0x69,0x6c,0x74,0x65,0x72,0xd1,0x0b,0x04,0x05,0x32,0xd4,0x0a,0xfd,0x0a,0xfe,0x0a,0xff,0x0c,0xce,0x0b,0x00,0x0b,0x03,0x0b,0x05,0x0c,0xcf };
++static const unsigned char nabu_ci_new_offsets[6] = { 0xa6,0x28,0xa6,0x42,0xa6,0x47 };
++
++static void
++nabu_ci_hash(const unsigned char *bytes, int size, unsigned char digest[32])
++{
++    SHA256_CTX sha;
++    SHA256_Init(&sha);
++    SHA256_Update(&sha, bytes, size);
++    SHA256_Final(digest, &sha);
++}
++
++static int
++nabu_ci_read(vnode_t vp, int size, unsigned char digest[32], vfs_context_t ctx)
++{
++    struct vnode_attr attr;
++    if (size != NABU_CI_BEFORE_SIZE && size != NABU_CI_AFTER_SIZE) {
++        return EINVAL;
++    }
++    VATTR_INIT(&attr);
++    VATTR_WANTED(&attr, va_data_size);
++    int error = vnode_getattr(vp, &attr, ctx);
++    if (error) {
++        return error;
++    }
++    if (!VATTR_IS_SUPPORTED(&attr, va_data_size) || attr.va_data_size != (uint64_t)size) {
++        return EINVAL;
++    }
++    int residual = size;
++    error = vn_rdwr(UIO_READ, vp, (caddr_t)nabu_ci_input, size, 0,
++        UIO_SYSSPACE, 0, vfs_context_ucred(ctx), &residual, vfs_context_proc(ctx));
++    if (!error && residual) {
++        error = EIO;
++    }
++    if (!error) {
++        nabu_ci_hash(nabu_ci_input, size, digest);
++    }
++    return error;
++}
++
++static int
++nabu_ci_prepare(unsigned int mode)
++{
++    unsigned char digest[32];
++    if (mode == 1) {
++        bcopy(nabu_ci_input, nabu_ci_original, NABU_CI_BEFORE_SIZE);
++    } else {
++        /* Recover the complete original, including its offset table/trailer. */
++        bcopy(nabu_ci_input, nabu_ci_original, NABU_CI_TABLE);
++        nabu_ci_original[47] = 0x0a;
++        nabu_ci_original[48] = 0xfc;
++        bcopy(nabu_ci_input + NABU_CI_NEW_TABLE, nabu_ci_original + NABU_CI_TABLE,
++            NABU_CI_TABLE_BYTES);
++        bcopy(nabu_ci_input + NABU_CI_AFTER_SIZE - 32,
++            nabu_ci_original + NABU_CI_BEFORE_SIZE - 32, 32);
++        unsigned char *trailer = nabu_ci_original + NABU_CI_BEFORE_SIZE - 32;
++        trailer[14] = 0x0c;
++        trailer[15] = 0xce; /* original object count: 3278 */
++        trailer[30] = 0xa6;
++        trailer[31] = 0x28; /* original table offset: 42536 */
++    }
++    nabu_ci_hash(nabu_ci_original, NABU_CI_BEFORE_SIZE, digest);
++    if (bcmp(digest, nabu_ci_before_hash, 32)) {
++        return EINVAL;
++    }
++    bcopy(nabu_ci_original, nabu_ci_modified, NABU_CI_TABLE);
++    nabu_ci_modified[47] = 0x0c;
++    nabu_ci_modified[48] = 0xd0;
++    bcopy(nabu_ci_new_objects, nabu_ci_modified + NABU_CI_TABLE, 48);
++    bcopy(nabu_ci_original + NABU_CI_TABLE, nabu_ci_modified + NABU_CI_NEW_TABLE,
++        NABU_CI_TABLE_BYTES);
++    bcopy(nabu_ci_new_offsets,
++        nabu_ci_modified + NABU_CI_NEW_TABLE + NABU_CI_TABLE_BYTES, 6);
++    bcopy(nabu_ci_original + NABU_CI_BEFORE_SIZE - 32,
++        nabu_ci_modified + NABU_CI_AFTER_SIZE - 32, 32);
++    unsigned char *trailer = nabu_ci_modified + NABU_CI_AFTER_SIZE - 32;
++    trailer[14] = 0x0c;
++    trailer[15] = 0xd1; /* new object count: 3281 */
++    trailer[30] = 0xa6;
++    trailer[31] = 0x58; /* new table offset: 42584 */
++    nabu_ci_hash(nabu_ci_modified, NABU_CI_AFTER_SIZE, digest);
++    return bcmp(digest, nabu_ci_after_hash, 32) ? EINVAL : 0;
++}
++
++static int
++nabu_ci_write(struct hfsmount *hfsmp, vnode_t vp, const unsigned char *bytes,
++    int size, const unsigned char expected[32], vfs_context_t ctx)
++{
++    unsigned char digest[32];
++    int residual = size;
++    int error = vn_rdwr(UIO_WRITE, vp, (caddr_t)bytes, size, 0,
++        UIO_SYSSPACE, IO_SYNC, vfs_context_ucred(ctx), &residual, vfs_context_proc(ctx));
++    if (!error && residual) {
++        error = EIO;
++    }
++    if (!error) {
++        struct vnode_attr attr;
++        VATTR_INIT(&attr);
++        VATTR_SET(&attr, va_data_size, size);
++        error = vnode_setattr(vp, &attr, ctx);
++    }
++    if (!error) {
++        error = nabu_capture_sync(hfsmp, vp, ctx);
++    }
++    if (!error) {
++        error = nabu_ci_read(vp, size, digest, ctx);
++    }
++    if (!error && bcmp(digest, expected, 32)) {
++        error = EIO;
++    }
++    return error;
++}
++
++void
++nabu_hfs_ci_capture_before_init(vnode_t rootvp)
++{
++    static const char *const paths[] = {
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J317/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J317x/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J318/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J318x/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J320/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J320x/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J321/CameraSetup.plist",
++        "/System/Library/PrivateFrameworks/CMCapture.framework/J321x/CameraSetup.plist"
++    };
++    unsigned int mode = 0;
++    if (!PE_parse_boot_argn("nabucicapture", &mode, sizeof(mode)) ||
++        (mode != 1 && mode != 2)) {
++        return;
++    }
++    vfs_context_t ctx = vfs_context_kernel();
++    vnode_t vp = NULLVP, alias = NULLVP, writevp = NULLVP;
++    mount_t mp = vnode_mount(rootvp);
++    struct hfsmount *hfsmp = NULL;
++    struct vnode_attr attr;
++    unsigned char digest[32];
++    const unsigned char *source_hash = mode == 1 ? nabu_ci_before_hash : nabu_ci_after_hash;
++    const unsigned char *target_hash = mode == 1 ? nabu_ci_after_hash : nabu_ci_before_hash;
++    const unsigned char *source_bytes = mode == 1 ? nabu_ci_original : nabu_ci_modified;
++    const unsigned char *target_bytes = mode == 1 ? nabu_ci_modified : nabu_ci_original;
++    int source_size = mode == 1 ? NABU_CI_BEFORE_SIZE : NABU_CI_AFTER_SIZE;
++    int target_size = mode == 1 ? NABU_CI_AFTER_SIZE : NABU_CI_BEFORE_SIZE;
++    char model[65] = { 0 }, line[240];
++    const char *stage = "model", *result = "blocked";
++    int error = EINVAL, rollback = 0, attempted = 0;
++    if (!PEGetModelName(model, 64) || strcmp(model, "J317AP")) {
++        goto out;
++    }
++    stage = "mount";
++    if (!mp || strcmp(vfs_statfs(mp)->f_fstypename, "hfs") ||
++        !(vfs_flags(mp) & MNT_ROOTFS) || vfs_isrdonly(mp)) {
++        goto out;
++    }
++    hfsmp = VFSTOHFS(mp);
++    if (!hfsmp || !hfsmp->hfs_devvp ||
++        !nabu_ufs_project_device_ready(vnode_specrdev(hfsmp->hfs_devvp)) ||
++        hfsmp->hfs_logical_bytes != (60ULL << 30) ||
++        hfsmp->blockSize != 4096 || hfsmp->totalBlocks != 5242880 ||
++        !(hfsmp->hfs_flags & HFS_X) || !(hfsmp->hfs_flags & HFS_CASE_SENSITIVE)) {
++        goto out;
++    }
++    stage = "journal";
++    hfs_lock_global(hfsmp, HFS_SHARED_LOCK);
++    int journal_ready = nabu_capture_journal_ready(hfsmp);
++    hfs_unlock_global(hfsmp);
++    if (!journal_ready) {
++        goto out;
++    }
++    stage = "path";
++    error = vnode_open(paths[0], FREAD | O_NOFOLLOW_ANY, 0,
++        VNODE_LOOKUP_NOCROSSMOUNT, &vp, ctx);
++    if (error) {
++        goto out;
++    }
++    if (vnode_mount(vp) != mp || !vnode_isreg(vp)) {
++        error = EINVAL;
++        goto out;
++    }
++    VATTR_INIT(&attr);
++    VATTR_WANTED(&attr, va_data_size);
++    VATTR_WANTED(&attr, va_fileid);
++    VATTR_WANTED(&attr, va_nlink);
++    VATTR_WANTED(&attr, va_flags);
++    error = vnode_getattr(vp, &attr, ctx);
++    if (error) {
++        goto out;
++    }
++    if (!VATTR_IS_SUPPORTED(&attr, va_data_size) || !VATTR_IS_SUPPORTED(&attr, va_fileid) ||
++        !VATTR_IS_SUPPORTED(&attr, va_nlink) || !VATTR_IS_SUPPORTED(&attr, va_flags) ||
++        (attr.va_flags & (UF_COMPRESSED | UF_IMMUTABLE | SF_IMMUTABLE | UF_APPEND | SF_APPEND)) ||
++        (attr.va_data_size != NABU_CI_BEFORE_SIZE && attr.va_data_size != NABU_CI_AFTER_SIZE) ||
++        attr.va_fileid != 186903 || attr.va_nlink != 8) {
++        error = EINVAL;
++        goto out;
++    }
++    int actual_size = (int)attr.va_data_size;
++    stage = "aliases";
++    for (unsigned int i = 1; i < sizeof(paths) / sizeof(paths[0]); i++) {
++        error = vnode_open(paths[i], FREAD | O_NOFOLLOW_ANY, 0,
++            VNODE_LOOKUP_NOCROSSMOUNT, &alias, ctx);
++        if (error) {
++            goto out;
++        }
++        int matches = alias == vp;
++        int alias_error = vnode_close(alias, FREAD, ctx);
++        alias = NULLVP;
++        if (!matches || alias_error) {
++            error = EINVAL;
++            goto out;
++        }
++    }
++    stage = "preimage";
++    error = nabu_ci_read(vp, actual_size, digest, ctx);
++    if (error) {
++        goto out;
++    }
++    if (actual_size == target_size && !bcmp(digest, target_hash, 32)) {
++        result = "already";
++        goto out;
++    }
++    if (actual_size != source_size || bcmp(digest, source_hash, 32)) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "candidate";
++    error = nabu_ci_prepare(mode);
++    if (error) {
++        goto out;
++    }
++    stage = "open_write";
++    error = vnode_open(paths[0], FREAD | FWRITE | O_NOFOLLOW_ANY, 0,
++        VNODE_LOOKUP_NOCROSSMOUNT, &writevp, ctx);
++    if (error) {
++        goto out;
++    }
++    if (writevp != vp) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "preimage_recheck";
++    error = nabu_ci_read(vp, source_size, digest, ctx);
++    if (error) {
++        goto out;
++    }
++    if (bcmp(digest, source_hash, 32)) {
++        error = EINVAL;
++        goto out;
++    }
++    stage = "write_sync_readback";
++    attempted = 1;
++    error = nabu_ci_write(hfsmp, vp, target_bytes, target_size, target_hash, ctx);
++    if (error) {
++        rollback = nabu_ci_write(hfsmp, vp, source_bytes, source_size, source_hash, ctx);
++        result = rollback ? "rollback_failed" : "rolled_back";
++    } else {
++        result = mode == 1 ? "applied" : "restored";
++    }
++out:
++    if (writevp) {
++        int close_error = vnode_close(writevp,
++            FREAD | FWRITE | (attempted ? FWASWRITTEN : 0), ctx);
++        writevp = NULLVP;
++        if (!error && close_error) {
++            error = close_error;
++            result = "close_failed";
++        }
++    }
++    if (vp) {
++        int close_error = vnode_close(vp, FREAD, ctx);
++        vp = NULLVP;
++        if (!error && close_error) {
++            error = close_error;
++            result = "close_failed";
++        }
++    }
++    if (alias) {
++        (void)vnode_close(alias, FREAD, ctx);
++    }
++    int n = snprintf(line, sizeof(line),
++        "NABU CICFG1: mode=%u stage=%s result=%s error=%d rollback=%d attempted=%d model_ok=%d\n",
++        mode, stage, result, error, rollback, attempted, strcmp(model, "J317AP") == 0);
++    if (n > 0 && n < (int)sizeof(line)) {
++        (void)nabu_log_record(line, n);
++    }
++    if (rollback) {
++        panic("NABU CoreImage config restoration failed; refusing initproc");
++    }
++}
++#endif /* ARM64_BOARD_CONFIG_NABU */
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1050,6 +1050,8 @@
+ 	/* Opt-in fixed-file migration after HFS replay, before initproc can run. */
+ 	extern void nabu_hfs_cpu_capture_before_init(vnode_t);
+ 	nabu_hfs_cpu_capture_before_init(rootvnode);
++	extern void nabu_hfs_ci_capture_before_init(vnode_t);
++	nabu_hfs_ci_capture_before_init(rootvnode);
+ #endif
+ 
+ 	bsd_init_kprintf("calling bsd_utaskbootstrap\n");
