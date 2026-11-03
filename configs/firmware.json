@@ -1,0 +1,10 @@
+{
+  "url": "https://updates.cdn-apple.com/2023SpringFCS/fullrestores/032-85073/CCE27BB2-DF15-4DA8-80E0-C9B885DBA725/iPad_10.2_16.5_20F66_Restore.ipsw",
+  "total_bytes": 5602053020,
+  "buildmanifest_sha256": "48436efbd79b82a36ee25114819c3db88f264d91b52d0e7414366e895c676ef8",
+  "device_class": "j171ap",
+  "product": "iPad7,11",
+  "version": "16.5",
+  "build": "20F66",
+  "directory": "OS/ipados/16.5-20F66-iPad7_11"
+}

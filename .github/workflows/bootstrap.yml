@@ -1,0 +1,49 @@
+name: nabu16 - 8796 macOS compilation
+
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/bootstrap.yml'
+      - 'tools/**'
+      - 'configs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xnu8796-reference:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Record build host
+        run: |
+          mkdir -p log/ci
+          {
+            sw_vers
+            xcodebuild -version
+            xcrun clang --version
+            python3 --version
+          } > log/ci/host.txt
+          cat log/ci/host.txt
+      - name: Compile 8796 reference
+        run: bash tools/build_8796_reference.sh
+      - name: Retain build logs and source-built kernel
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xnu8796-reference-${{ github.run_number }}
+          path: |
+            log/ci/
+            artifacts/8796-reference/
+            src/hakios-8796/xnu-deps/*build.log
+            src/hakios-8796/xnu-deps/exporthdrs.log
+          retention-days: 14
+          if-no-files-found: warn

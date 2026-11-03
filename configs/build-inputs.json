@@ -1,0 +1,9 @@
+{
+  "theos_sdk_commit": "0222fd5413cf4b9af096f37b4621afa2688572f7",
+  "macos_sdk_url": "https://github.com/joseluisq/macosx-sdks/releases/download/13.3/MacOSX13.3.sdk.tar.xz",
+  "macos_sdk_sha256": "518e35eae6039b3f64e8025f4525c1c43786cc5cf39459d609852faf091e34be",
+  "macos_sdk_bytes": 59089188,
+  "xcode": "16.4",
+  "runner": "macos-15",
+  "note": "SDK archives are external build inputs; no Apple or vendor firmware is uploaded as an artifact."
+}

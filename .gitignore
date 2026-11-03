@@ -1,0 +1,24 @@
+# Retrieved inputs and independent upstream repositories
+/src/*
+/OS/*
+/firmware/*
+
+# Build output and local runtimes
+/build/*
+/artifacts/*
+/.venv/
+__pycache__/
+*.pyc
+
+# Device identity, raw diagnostics and recovery images stay local
+/device/*
+/backup/*
+/log/*
+!/log/_template/
+!/log/_template/**
+
+# Explicit per-machine configuration
+/configs/local.json
+/configs/local.toml
+.DS_Store
+Thumbs.db
