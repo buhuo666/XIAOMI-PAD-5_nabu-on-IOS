@@ -37,6 +37,9 @@ jobs:
           cat log/ci/host.txt
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
+      - name: Verify linked kernel against the selected export contract
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_nabu_export_contract.py --tree build/xnu8796-reference/tree --verify-generated --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-export-contract-linked.json
       - name: Analyze original and candidate interfaces with native LLDB
         if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
         run: bash tools/analyze_20f66_ci.sh

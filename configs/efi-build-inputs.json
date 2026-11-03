@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "purpose": "Standalone AArch64 UEFI application and Darwin 22 loader; not an Android boot image",
+  "unixnu_source_name": "UniXNU-nabu-reference-core",
+  "darwinboot_source_name": "DarwinBoot",
+  "edk2": {
+    "repository": "https://github.com/microsoft/mu_basecore.git",
+    "commit": "cfb93724a06ff86ff5ba971413368a7809ee42a5",
+    "pin_source": "src/unixnu/feeds.toml at 245aca1a9ec5b730b1cad80fade295800d2981f1",
+    "submodules": {
+      "MdePkg/Library/BaseFdtLib/libfdt": "cfff805481bdea27f900c32698171286542b8d3c",
+      "MdePkg/Library/MipiSysTLib/mipisyst": "370b5944c046bab043dd8b133727b2135af7747a",
+      "BaseTools/Source/C/BrotliCompress/brotli": "e230f474b87134e8c6c85b630084c612057f253e"
+    }
+  },
+  "toolchain": "CLANGPDB",
+  "llvm_major": 18,
+  "target": "DEBUG",
+  "device_boot_validated": false
+}

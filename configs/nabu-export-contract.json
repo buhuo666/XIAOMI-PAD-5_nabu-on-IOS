@@ -1,0 +1,2183 @@
+{
+  "schema_version": 1,
+  "id": "20F66-37-v1",
+  "purpose": "Bounded non-Apple host kernel export surface; not ABI or boot qualification",
+  "platform": {
+    "arch_config": "ARM64",
+    "machine_config": "BCM2837",
+    "arch": "arm64"
+  },
+  "source_pins": {
+    "xnu-8796": "c54f35ca767986246321eb901baf8f5ff7923f6a",
+    "hakios-8796-reference": "96ffbc532e970f3540885755d457e401e04d4707"
+  },
+  "normalization": "Text input hashes replace CRLF with LF; generated list preserves all retained source bytes.",
+  "export_input_lf_sha256": {
+    "BSDKernel.exports": "a397b85cc3507ef3b1afcbf67071a2da7bb0355bed82f5465e821a50d9ff861a",
+    "BSDKernel.arm64.exports": "e76623fb6cb0f77e37738d1ad5a94f16c6f614559a415f073bf49774bd800f99",
+    "IOKit.exports": "96eafa9242ef1dffde13b5ebdf43240fa5e6380aed39aa2f341a55287032d235",
+    "IOKit.arm64.exports": "20be4da4f6637ca6d2b5a8fec95d00874858a8e1d8c7afbb1e860aae6ae130e9",
+    "Libkern.exports": "bfaae5726654281e1733228b163a116ece76e3e5a305a66469306236cff6d205",
+    "Libkern.arm64.exports": "166c204e9399e8832ff80c4b804145140de56cf764d8f6485274176b9491f75e",
+    "Mach.exports": "96b5c5dc21e684538180edb88a347033b368fb2b99544227e8142f974cbecc42",
+    "Mach.arm64.exports": "59d3554678319f0f4a640cce3159c3c0004e0a1dc193d70df88eb531190de6c5",
+    "MACFramework.exports": "d4fc898af0c925a48f8e82073461ea400490561dcc52c16339e62f7caef467e1",
+    "MACFramework.arm64.exports": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "Unsupported.exports": "0418c47c8b920832810933ca47bcb8bcfd2523b230081ac0a6e7bc9ced451972",
+    "Unsupported.arm64.exports": "a454441f451cd8d60a9955cc55c6fe9b05ed3216ddae37fb21814b79684da0f0",
+    "Private.exports": "3e9935c5360a60c496d2b4de542d77e2f66374b4050b47c2aeabd27b43f8fb8e",
+    "Private.arm64.exports": "00e242d4bb226e76c5d759be06606722bcd006dba267cfc5b5e42a0b44ea9dc9",
+    "Unused.exports": "d6ff66c8fc938a7c239077bb14db5cf2de3eb0faa56edf9558768efaed83f348",
+    "Kasan_disabled.exports": "b74166714589b15b6125ce9ccfe5779d3e379bff4b7d365484c74dbd9edee087",
+    "Kcov_disabled.exports": "2bb80d188b728cac35a21a1c1b4ed7701da23b8e066f4b74b52f092dbabb9d36",
+    "Private.arm64.MacOSX.exports": "1de35cc763b513ae53ed573ff09a3ffda5f3c852cc599f0fcd21acb25b4ca8d1"
+  },
+  "excluded_symbols": [
+    "__ZN26IOUnifiedAddressTranslator10gMetaClassE",
+    "__ZN26IOUnifiedAddressTranslator10superClassE",
+    "__ZN26IOUnifiedAddressTranslator12commitUnmapsEv",
+    "__ZN26IOUnifiedAddressTranslator14prepareFWUnmapEyy",
+    "__ZN26IOUnifiedAddressTranslator17getPageTableEntryEy",
+    "__ZN26IOUnifiedAddressTranslator18setClientContextIDEjb",
+    "__ZN26IOUnifiedAddressTranslator19isPageFaultExpectedEyj",
+    "__ZN26IOUnifiedAddressTranslator21removeClientContextIDEv",
+    "__ZN26IOUnifiedAddressTranslator22registerTaskForServiceEP4taskP9IOService",
+    "__ZN26IOUnifiedAddressTranslator23createMappingInApertureEjP18IOMemoryDescriptorjym",
+    "__ZN26IOUnifiedAddressTranslator23getTotalPageTableMemoryEv",
+    "__ZN26IOUnifiedAddressTranslator3mapEP11IOMemoryMapj",
+    "__ZN26IOUnifiedAddressTranslator5doMapEP18IOMemoryDescriptoryyj",
+    "__ZN26IOUnifiedAddressTranslator5unmapEP11IOMemoryMap",
+    "__ZN26IOUnifiedAddressTranslator7doUnmapEP18IOMemoryDescriptoryy",
+    "__ZN26IOUnifiedAddressTranslator8taskDiedEv",
+    "__ZTV26IOUnifiedAddressTranslator",
+    "_pmap_iommu_alloc_contiguous_pages",
+    "_pmap_iommu_init",
+    "_pmap_iommu_ioctl",
+    "_pmap_iommu_iovmalloc",
+    "_pmap_iommu_iovmfree",
+    "_pmap_iommu_map",
+    "_pmap_iommu_unmap"
+  ],
+  "required_retained_symbols": [
+    "_nvme_ppl_get_desc",
+    "_sart_get_desc",
+    "_t8020dart_get_desc",
+    "_t8020dart_vo_tte",
+    "_t6000dart_get_desc",
+    "_t6000dart_vo_tte",
+    "_t8110dart_get_desc",
+    "_t8110dart_max_translation_levels",
+    "_t8110dart_vo_tte",
+    "_t8110dart_vo_tt_index",
+    "_uat_get_desc"
+  ],
+  "consumer_scope": {
+    "firmware": {
+      "product": "iPad7,11",
+      "device_class": "j171ap",
+      "version": "16.5",
+      "build": "20F66",
+      "kernel_sha256": "600da9b3bfff3385f34f8cb51ef549a7070b4ce6f4d2a8494a9595c922b6f4b2"
+    },
+    "roots": {
+      "path": "configs/kext-roots-20F66.json",
+      "sha256": "ce24e84c3c9cef9d11097ad9e6540c1f27e22811c9da3bef308f689cf96a0318"
+    },
+    "closure": {
+      "path": "OS/ipados/16.5-20F66-iPad7_11/manifests/kext-closure.json",
+      "sha256": "3b837d5b5804086a1f2b00852d3bae221be5dfb6254c78068920f6597969b934"
+    },
+    "selected_components": [
+      {
+        "identifier": "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+        "observed_version": "1.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.dsep",
+            "requested_version": "8.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "7.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0d0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleARMPlatform",
+        "observed_version": "1.0.2",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.iokit.IOReportFamily",
+            "requested_version": "1.0",
+            "observed_version": "47",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+            "requested_version": "1.0",
+            "observed_version": "1.0.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOStorageFamily",
+            "requested_version": "1.5",
+            "observed_version": "2.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "22.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleAudioClockLibs",
+        "observed_version": "240.1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleEffaceableStorage",
+        "observed_version": "1.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleIISController",
+        "observed_version": "240.1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleM2ScalerCSCDriver",
+        "observed_version": "265.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.IODARTFamily",
+            "requested_version": "1.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOSurface",
+            "requested_version": "52.7.0",
+            "observed_version": "336.50.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.4.1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.4.1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.4.1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.4.1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.AppleMobileFileIntegrity",
+        "observed_version": "1.0.5",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.ApplePMGR",
+            "requested_version": "1.0.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.CoreAnalyticsFamily",
+            "requested_version": "1.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kec.corecrypto",
+            "requested_version": "1.0.0",
+            "observed_version": "12.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kext.CoreTrust",
+            "requested_version": "1.0.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.dsep",
+            "requested_version": "9.0.0d8",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.security.AppleImage4",
+            "requested_version": "3.0.0",
+            "observed_version": "5.0.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.ApplePMGR",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOReportFamily",
+            "requested_version": "1.0",
+            "observed_version": "47",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.driver.IODARTFamily",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.filesystems.apfs",
+        "observed_version": "2142.122.2",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleEffaceableStorage",
+            "requested_version": "1.0",
+            "observed_version": "1.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.CoreAnalyticsFamily",
+            "requested_version": "1.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOStorageFamily",
+            "requested_version": "2.1",
+            "observed_version": "2.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kec.corecrypto",
+            "requested_version": "1.0",
+            "observed_version": "12.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.dsep",
+            "requested_version": "19.4.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "15.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.security.AppleImage4",
+            "requested_version": "3.0.0",
+            "observed_version": "5.0.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.CoreAnalyticsFamily",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "15.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOAVFamily",
+        "observed_version": "1.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.AppleAudioClockLibs",
+            "requested_version": "1.0",
+            "observed_version": "240.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.AppleIISController",
+            "requested_version": "1.0.0",
+            "observed_version": "240.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOAudio2Family",
+            "requested_version": "1.0",
+            "observed_version": "1.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOCECFamily",
+            "requested_version": "1.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOHDCPFamily",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kec.Libm",
+            "requested_version": "1.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOAudio2Family",
+        "observed_version": "1.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOCECFamily",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "14.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "14.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOCryptoAcceleratorFamily",
+        "observed_version": "1.0.1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOGPUFamily",
+        "observed_version": "65.40.15",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.AppleMobileFileIntegrity",
+            "requested_version": "1.0.1",
+            "observed_version": "1.0.5",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOReportFamily",
+            "requested_version": "1.0",
+            "observed_version": "47",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOSurface",
+            "requested_version": "52.6.0",
+            "observed_version": "336.50.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOHDCPFamily",
+        "observed_version": "1.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOHIDEventDriverSafeBoot",
+        "observed_version": "2.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": false,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.iokit.IOHIDFamily",
+            "requested_version": "1.5",
+            "observed_version": "2.0.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOHIDFamily",
+        "observed_version": "2.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleMobileFileIntegrity",
+            "requested_version": "1.0.2",
+            "observed_version": "1.0.5",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "22.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0.0b2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOMobileGraphicsFamily",
+        "observed_version": "343.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleARMPlatform",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.2",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.AppleM2ScalerCSCDriver",
+            "requested_version": "1.0.0",
+            "observed_version": "265.0.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.driver.AppleMobileFileIntegrity",
+            "requested_version": "1.0.1",
+            "observed_version": "1.0.5",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOAVFamily",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.iokit.IOSurface",
+            "requested_version": "52.7.0",
+            "observed_version": "336.50.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.4.1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOReportFamily",
+        "observed_version": "47",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+        "observed_version": "1.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOStorageFamily",
+        "observed_version": "2.1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.iokit.IOSurface",
+        "observed_version": "336.50.1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "9.0.0b1",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.kec.Libm",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "8.0.0d0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.kec.corecrypto",
+        "observed_version": "12.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "12.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "8.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "11.2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "11.2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "11.2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "11.2",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.kext.AppleMatch",
+        "observed_version": "1.0.0d1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "7.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "9.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.kext.CoreTrust",
+        "observed_version": "1",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.kec.corecrypto",
+            "requested_version": "1.0.0",
+            "observed_version": "12.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "17.5",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "8.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.kpi.bsd",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.dsep",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.iokit",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.libkern",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.mach",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.private",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.kpi.unsupported",
+        "observed_version": "22.5.0",
+        "is_kernel_interface_record": true,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": []
+      },
+      {
+        "identifier": "com.apple.security.AppleImage4",
+        "observed_version": "5.0.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.iokit.IOCryptoAcceleratorFamily",
+            "requested_version": "1.0.0",
+            "observed_version": "1.0.1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kec.corecrypto",
+            "requested_version": "1.0.0",
+            "observed_version": "12.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kext.CoreTrust",
+            "requested_version": "1.0.0",
+            "observed_version": "1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.dsep",
+            "requested_version": "21.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "18.0.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      },
+      {
+        "identifier": "com.apple.security.sandbox",
+        "observed_version": "300.0",
+        "is_kernel_interface_record": false,
+        "has_prelink_executable_metadata": true,
+        "declared_dependencies": [
+          {
+            "identifier": "com.apple.driver.AppleMobileFileIntegrity",
+            "requested_version": "1.0.1",
+            "observed_version": "1.0.5",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kext.AppleMatch",
+            "requested_version": "1.0d1",
+            "observed_version": "1.0.0d1",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.bsd",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.dsep",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.iokit",
+            "requested_version": "7.0",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.libkern",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.mach",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.private",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          },
+          {
+            "identifier": "com.apple.kpi.unsupported",
+            "requested_version": "10.0.0d3",
+            "observed_version": "22.5.0",
+            "identifier_present": true
+          }
+        ]
+      }
+    ],
+    "stages": [
+      {
+        "id": "storage-basic-userland",
+        "roots": [
+          "com.apple.filesystems.apfs",
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.security.sandbox"
+        ],
+        "component_ids": [
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleARMPlatform",
+          "com.apple.driver.AppleEffaceableStorage",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.driver.ApplePMGR",
+          "com.apple.filesystems.apfs",
+          "com.apple.iokit.CoreAnalyticsFamily",
+          "com.apple.iokit.IOCryptoAcceleratorFamily",
+          "com.apple.iokit.IOReportFamily",
+          "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+          "com.apple.iokit.IOStorageFamily",
+          "com.apple.kec.corecrypto",
+          "com.apple.kext.AppleMatch",
+          "com.apple.kext.CoreTrust",
+          "com.apple.kpi.bsd",
+          "com.apple.kpi.dsep",
+          "com.apple.kpi.iokit",
+          "com.apple.kpi.libkern",
+          "com.apple.kpi.mach",
+          "com.apple.kpi.private",
+          "com.apple.kpi.unsupported",
+          "com.apple.security.AppleImage4",
+          "com.apple.security.sandbox"
+        ],
+        "component_count": 23,
+        "declared_edge_count": 110
+      },
+      {
+        "id": "cpu-display-touch",
+        "roots": [
+          "com.apple.filesystems.apfs",
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.security.sandbox",
+          "com.apple.iokit.IOSurface",
+          "com.apple.iokit.IOMobileGraphicsFamily",
+          "com.apple.iokit.IOHIDFamily",
+          "com.apple.iokit.IOHIDEventDriverSafeBoot"
+        ],
+        "component_ids": [
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleARMPlatform",
+          "com.apple.driver.AppleAudioClockLibs",
+          "com.apple.driver.AppleEffaceableStorage",
+          "com.apple.driver.AppleIISController",
+          "com.apple.driver.AppleM2ScalerCSCDriver",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.driver.ApplePMGR",
+          "com.apple.driver.IODARTFamily",
+          "com.apple.filesystems.apfs",
+          "com.apple.iokit.CoreAnalyticsFamily",
+          "com.apple.iokit.IOAVFamily",
+          "com.apple.iokit.IOAudio2Family",
+          "com.apple.iokit.IOCECFamily",
+          "com.apple.iokit.IOCryptoAcceleratorFamily",
+          "com.apple.iokit.IOHDCPFamily",
+          "com.apple.iokit.IOHIDEventDriverSafeBoot",
+          "com.apple.iokit.IOHIDFamily",
+          "com.apple.iokit.IOMobileGraphicsFamily",
+          "com.apple.iokit.IOReportFamily",
+          "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+          "com.apple.iokit.IOStorageFamily",
+          "com.apple.iokit.IOSurface",
+          "com.apple.kec.Libm",
+          "com.apple.kec.corecrypto",
+          "com.apple.kext.AppleMatch",
+          "com.apple.kext.CoreTrust",
+          "com.apple.kpi.bsd",
+          "com.apple.kpi.dsep",
+          "com.apple.kpi.iokit",
+          "com.apple.kpi.libkern",
+          "com.apple.kpi.mach",
+          "com.apple.kpi.private",
+          "com.apple.kpi.unsupported",
+          "com.apple.security.AppleImage4",
+          "com.apple.security.sandbox"
+        ],
+        "component_count": 36,
+        "declared_edge_count": 191
+      },
+      {
+        "id": "gpu",
+        "roots": [
+          "com.apple.filesystems.apfs",
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.security.sandbox",
+          "com.apple.iokit.IOSurface",
+          "com.apple.iokit.IOMobileGraphicsFamily",
+          "com.apple.iokit.IOHIDFamily",
+          "com.apple.iokit.IOHIDEventDriverSafeBoot",
+          "com.apple.iokit.IOGPUFamily"
+        ],
+        "component_ids": [
+          "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+          "com.apple.driver.AppleARMPlatform",
+          "com.apple.driver.AppleAudioClockLibs",
+          "com.apple.driver.AppleEffaceableStorage",
+          "com.apple.driver.AppleIISController",
+          "com.apple.driver.AppleM2ScalerCSCDriver",
+          "com.apple.driver.AppleMobileFileIntegrity",
+          "com.apple.driver.ApplePMGR",
+          "com.apple.driver.IODARTFamily",
+          "com.apple.filesystems.apfs",
+          "com.apple.iokit.CoreAnalyticsFamily",
+          "com.apple.iokit.IOAVFamily",
+          "com.apple.iokit.IOAudio2Family",
+          "com.apple.iokit.IOCECFamily",
+          "com.apple.iokit.IOCryptoAcceleratorFamily",
+          "com.apple.iokit.IOGPUFamily",
+          "com.apple.iokit.IOHDCPFamily",
+          "com.apple.iokit.IOHIDEventDriverSafeBoot",
+          "com.apple.iokit.IOHIDFamily",
+          "com.apple.iokit.IOMobileGraphicsFamily",
+          "com.apple.iokit.IOReportFamily",
+          "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+          "com.apple.iokit.IOStorageFamily",
+          "com.apple.iokit.IOSurface",
+          "com.apple.kec.Libm",
+          "com.apple.kec.corecrypto",
+          "com.apple.kext.AppleMatch",
+          "com.apple.kext.CoreTrust",
+          "com.apple.kpi.bsd",
+          "com.apple.kpi.dsep",
+          "com.apple.kpi.iokit",
+          "com.apple.kpi.libkern",
+          "com.apple.kpi.mach",
+          "com.apple.kpi.private",
+          "com.apple.kpi.unsupported",
+          "com.apple.security.AppleImage4",
+          "com.apple.security.sandbox"
+        ],
+        "component_count": 37,
+        "declared_edge_count": 201
+      }
+    ],
+    "forbidden_components": [
+      "com.apple.iokit.IONVMeFamily",
+      "com.apple.iokit.IOSkywalkFamily"
+    ]
+  },
+  "evidence": {
+    "ci": {
+      "run_id": 41666598049,
+      "attempt": 1,
+      "head_sha": "259a1d378ca683bfef5d463555a16f966ce65489",
+      "make_exit_code": 2
+    },
+    "consumer_report": {
+      "path": "log/ci/github/41666598049/attempt-1/platform-consumers.json",
+      "sha256": "a7b002a56070a140295e084a2b671a8bf7a021cf19fde5d33eceaf1a2bcbbccd"
+    },
+    "inputs": {
+      "original": {
+        "path": "OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.arm64.macho",
+        "bytes": 48087040,
+        "sha256": "600da9b3bfff3385f34f8cb51ef549a7070b4ce6f4d2a8494a9595c922b6f4b2"
+      },
+      "candidate": {
+        "path": "artifacts/ci/41666598049-attempt-1/xnu8796-reference-12/artifacts/8796-reference/mach.development.bcm2837.unstripped",
+        "bytes": 22887640,
+        "sha256": "16e9309ccf5960e932b433ac2d14ba25c672127a5ad44e7bd3b78addaba08555"
+      },
+      "closure": {
+        "path": "OS/ipados/16.5-20F66-iPad7_11/manifests/kext-closure.json",
+        "bytes": 77701,
+        "sha256": "3b837d5b5804086a1f2b00852d3bae221be5dfb6254c78068920f6597969b934"
+      },
+      "historical_attribution": {
+        "path": "log/ci/github/41642015502/attempt-2/export-attribution.json",
+        "bytes": 267511,
+        "sha256": "1aa68c04139bccd18f189a682555f6f280e0c1419f79b38dbc9bad095cab2146"
+      },
+      "analyzer": {
+        "path": "tools/inspect_platform_consumers.py",
+        "bytes": 21060,
+        "sha256": "6cc81886315b05e6aba030f0c24a66aabb5195d24be9605c9b5717b3b6f95e39"
+      },
+      "branch_decoder": {
+        "path": "tools/inspect_kext_branches.py",
+        "bytes": 20786,
+        "sha256": "d38f3ac3d95446eaf7e42ee97a98b1fd6558a3de2b6c437cf24eb110e325642f"
+      },
+      "macho_parser": {
+        "path": "src/XnuPrelink/native_prelink.py",
+        "bytes": 12723,
+        "sha256": "5bd80b8c63deec29b747c28253e02308a56d5f8cdb37c9d315e7c8af7012d017"
+      },
+      "literal_reference": {
+        "path": "src/XnuPrelink/emit_prelink.py",
+        "bytes": 20136,
+        "sha256": "4cbd97a7ca231cb56d8d7c6a02d09b86af33b5af3d05dba41edd00e51cd3a36a"
+      }
+    },
+    "summary": {
+      "inventory_component_count": 229,
+      "executable_kexts": 211,
+      "selected_component_count": 37,
+      "selected_executable_kexts": 29,
+      "watched_symbol_count": 30,
+      "remaining_export_failure_count": 24,
+      "additional_original_only_count": 6,
+      "unattributed_original_only_count": 0,
+      "watched_symbols_with_consumers": 7,
+      "watched_symbols_without_covered_references": 23,
+      "pointer_table_entries": 383870,
+      "pointer_sites_without_kext_owner": 0,
+      "watched_pointer_count": 7,
+      "watched_symbols_with_pointer_consumers": 7,
+      "instruction_sections": 421,
+      "scanned_instruction_section_bytes": 21851348,
+      "raw_B_BL_encoding_count": 469297,
+      "known_literal_B_BL_encoding_count": 38,
+      "known_literal_range_count": 12,
+      "known_literal_bytes": 7880,
+      "excluded_executable_or_mixed_section_count": 0,
+      "unsupported_stub_record_count": 0,
+      "standard_stub_counts": {
+        "qualified-standard-stub": 16771
+      },
+      "watched_standard_stub_count": 7,
+      "watched_raw_direct_branch_count": 0,
+      "watched_retained_stub_branch_count": 17,
+      "consumer_modules": [
+        "com.apple.iokit.IONVMeFamily",
+        "com.apple.iokit.IOSkywalkFamily"
+      ],
+      "selected_consumer_modules": []
+    },
+    "excluded_symbol_observations": [
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator10gMetaClassE",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff0078f02e0"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator10superClassE",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007196208"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator12commitUnmapsEv",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007819bbc"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator14prepareFWUnmapEyy",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781af14"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator17getPageTableEntryEy",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007818fb4"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator18setClientContextIDEjb",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781a50c"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator19isPageFaultExpectedEyj",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007818e14"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator21removeClientContextIDEv",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781a620"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator22registerTaskForServiceEP4taskP9IOService",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781a464"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator23createMappingInApertureEjP18IOMemoryDescriptorjym",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781b04c"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator23getTotalPageTableMemoryEv",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007818c94"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator3mapEP11IOMemoryMapj",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781aab4"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator5doMapEP18IOMemoryDescriptoryyj",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781a738"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator5unmapEP11IOMemoryMap",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781adb8"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator7doUnmapEP18IOMemoryDescriptoryy",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff00781ab34"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZN26IOUnifiedAddressTranslator8taskDiedEv",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007818ae4"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "__ZTV26IOUnifiedAddressTranslator",
+        "category": "uat_public_source_absent",
+        "original_addresses": [
+          "0xfffffff007196210"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "_pmap_iommu_alloc_contiguous_pages",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff007312b14"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 1,
+        "qualified_stub_count": 1,
+        "retained_stub_branch_count": 3,
+        "consumers": [
+          "com.apple.iokit.IONVMeFamily"
+        ],
+        "selected_consumers": [],
+        "observation": "bounded-references-found"
+      },
+      {
+        "symbol": "_pmap_iommu_init",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff007312130"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 1,
+        "qualified_stub_count": 1,
+        "retained_stub_branch_count": 2,
+        "consumers": [
+          "com.apple.iokit.IONVMeFamily"
+        ],
+        "selected_consumers": [],
+        "observation": "bounded-references-found"
+      },
+      {
+        "symbol": "_pmap_iommu_ioctl",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff0073129c4"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 1,
+        "qualified_stub_count": 1,
+        "retained_stub_branch_count": 8,
+        "consumers": [
+          "com.apple.iokit.IONVMeFamily"
+        ],
+        "selected_consumers": [],
+        "observation": "bounded-references-found"
+      },
+      {
+        "symbol": "_pmap_iommu_iovmalloc",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff0073123b8"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "_pmap_iommu_iovmfree",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff0073127b8"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      },
+      {
+        "symbol": "_pmap_iommu_map",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff007312580"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 1,
+        "qualified_stub_count": 1,
+        "retained_stub_branch_count": 1,
+        "consumers": [
+          "com.apple.iokit.IONVMeFamily"
+        ],
+        "selected_consumers": [],
+        "observation": "bounded-references-found"
+      },
+      {
+        "symbol": "_pmap_iommu_unmap",
+        "category": "platform_private_source_absent",
+        "original_addresses": [
+          "0xfffffff007312748"
+        ],
+        "missing_from_candidate_symtab": true,
+        "pointer_count": 0,
+        "qualified_stub_count": 0,
+        "retained_stub_branch_count": 0,
+        "consumers": [],
+        "selected_consumers": [],
+        "observation": "no-exact-reference-in-covered-forms"
+      }
+    ],
+    "limits": [
+      "The absence of exact pointers or supported branch forms does not prove a symbol is unused.",
+      "All inventoried executable kexts are scanned, but the main kernel text and non-executable metadata are not a general pointer-search corpus.",
+      "Pointer naming requires an exact original export address; an offset into a function or object is not inferred as a symbol match.",
+      "Standard stubs are resolved from original static GOT bytes only, with matching registers, 12-byte stride, same-component GOT and KASLR site membership.",
+      "General BR/BLR, virtual dispatch, conditional branches, ADRP consumer data flow and runtime-built references remain unanalysed.",
+      "PURE_INSTRUCTIONS section flags do not establish code reachability; only complete-hash known literal matches are excluded from retained branch evidence.",
+      "Unselected consumer modules may be needed by future feature stages; this report does not authorize deleting APIs or define substitute semantics."
+    ]
+  },
+  "revalidation_policy": "Any change to donor, roots, closure, source implementation/consumer or exact exclusion set requires renewed review; hashes are evidence identity, not proof of runtime non-use."
+}

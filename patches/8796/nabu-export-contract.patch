@@ -1,0 +1,50 @@
+--- a/config/Makefile
++++ b/config/Makefile
+@@ -45,8 +45,29 @@
+ EXPORT_SOURCE_ARCH_CONFIG_LC := $(CURRENT_ARCH_CONFIG_LC)
+ endif
+ 
++# The non-Apple reference build must opt into a reviewed, generated contract.
++# Default builds retain the complete upstream Private architecture export list.
++PRIVATE_ARCH_EXPORTS := Private.$(EXPORT_SOURCE_ARCH_CONFIG_LC).exports
++ifneq ($(NABU_EXPORT_CONTRACT),)
++ifneq ($(NABU_EXPORT_CONTRACT),20F66-37-v1)
++$(error Unsupported NABU_EXPORT_CONTRACT)
++endif
++ifneq ($(CURRENT_ARCH_CONFIG)/$(CURRENT_MACHINE_CONFIG)/$(ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG),ARM64/BCM2837/arm64)
++$(error NABU_EXPORT_CONTRACT requires ARM64 BCM2837 plain arm64)
++endif
++ifeq ($(NABU_EXPORT_CONTRACT_ROOT),)
++$(error NABU_EXPORT_CONTRACT_ROOT must identify the checked project)
++endif
++NABU_EXPORT_CONTRACT_STATUS := $(shell python3 "$(NABU_EXPORT_CONTRACT_ROOT)/tools/check_nabu_export_contract.py" --tree "$(SRCROOT)" --verify-generated --quiet)
++ifneq ($(NABU_EXPORT_CONTRACT_STATUS),20F66-37-v1)
++$(error NABU export contract is missing or stale; run check_nabu_export_contract.py)
++endif
++PRIVATE_ARCH_EXPORTS := Private.arm64.nabu.exports
++endif
++arch_exports_file = $(if $(filter Private,$(1)),$(PRIVATE_ARCH_EXPORTS),$(1).$(EXPORT_SOURCE_ARCH_CONFIG_LC).exports)
++
+ EXPORTS_FILES := $(foreach symbolset,$(SYMBOL_COMPONENT_LIST),$(symbolset).exports \
+-	$(symbolset).$(EXPORT_SOURCE_ARCH_CONFIG_LC).exports \
++	$(call arch_exports_file,$(symbolset)) \
+ 	$(notdir $(wildcard $(SOURCE)/$(symbolset).$(EXPORT_SOURCE_ARCH_CONFIG_LC).$(PLATFORM).exports))) \
+ 	Unused.exports
+ 
+@@ -123,14 +144,14 @@
+ 		-import $(TARGET)/allsymbols				\
+ 		$(foreach symbolset,$(filter-out Private,$(SYMBOL_COMPONENT_LIST)),	\
+ 			-export $(SOURCE)/$(symbolset).exports		\
+-			-export $(SOURCE)/$(symbolset).$(EXPORT_SOURCE_ARCH_CONFIG_LC).exports)	\
++			-export $(SOURCE)/$(call arch_exports_file,$(symbolset)))	\
+ 		-output /dev/null $(_vstdout)
+ 	$(_v)$(KEXT_CREATE_SYMBOL_SET)					\
+ 		$(ARCH_FLAGS_$(CURRENT_ARCH_CONFIG))			\
+ 		-import $(TARGET)/allsymbols				\
+ 		$(foreach symbolset,$(filter-out Unsupported,$(SYMBOL_COMPONENT_LIST)),	\
+ 			-export $(SOURCE)/$(symbolset).exports		\
+-			-export $(SOURCE)/$(symbolset).$(EXPORT_SOURCE_ARCH_CONFIG_LC).exports)	\
++			-export $(SOURCE)/$(call arch_exports_file,$(symbolset)))	\
+ 		-output /dev/null $(_vstdout)
+ 
+ $(OBJPATH)/$(MD_SUPPORTED_KPI_FILENAME): $(EXPORTS_FILES)

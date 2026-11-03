@@ -1,0 +1,42 @@
+name: nabu16 - 8796 standalone EFI
+
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/efi.yml'
+      - 'tools/build_8796_efi.sh'
+      - 'tools/prepare_8796_loader.py'
+      - 'tools/check_darwinboot_8796.py'
+      - 'configs/efi-build-inputs.json'
+      - 'configs/sources.lock.json'
+      - 'patches/darwinboot/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-efi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install host compiler and EDK II dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential clang-18 lld-18 llvm-18 nasm uuid-dev
+      - name: Compile and inspect UEFI binaries
+        run: bash tools/build_8796_efi.sh
+      - name: Preserve EFI outputs and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: efi8796-${{ github.run_number }}
+          path: |
+            log/ci/efi8796/
+            artifacts/efi8796/
+          retention-days: 14
+          if-no-files-found: warn
