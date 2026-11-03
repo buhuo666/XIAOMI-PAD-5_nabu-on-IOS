@@ -12,6 +12,7 @@
 | [本机内存](DEVICE-MEMORY.md) | 扩容内存和固定保留区的实测核对 |
 | [八核与内存实验](SMP-MEMORY-EXPERIMENT.md) | 八核目标、INTID 19、32 页早期页表和 8796 loader ABI |
 | [八核参考审计](NABU-SMP-REFERENCE.md) | 旧实现与实际机器码、设备 DT 和当前接口差异 |
+| [12 GB 容量审计](NABU-MEMORY-CAPACITY.md) | 物理资源、loader ABI、页粒度及候选窗口边界 |
 | [首轮参考构建](FIRST-BUILD.md) | 两个参考内核产物与导出检查失败 |
 | [20F66 用户态](USERLAND-20F66.md) | ZBM 解压、完整缓存组、原始代码哈希 |
 | [131 个导出缺项](EXPORTS-8796.md) | DriverKit、UAT 和平台接口逐项归因 |

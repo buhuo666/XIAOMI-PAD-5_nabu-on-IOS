@@ -110,8 +110,10 @@ def main():
         end = next((i for i, r in enumerate(insns) if r['mnemonic'] == 'ret'), len(insns))
         insns = insns[:end]
         msr = next(i for i, r in enumerate(insns) if 'icc_sgi1r_el1' in r['operands'].lower())
-        before = insns[msr-1]
-        assert before['mnemonic'] == 'dsb' and before['operands'] == 'ishst'
+        # Computing the SGI operand can be scheduled between DSB and MSR.
+        # Require order within this function, not artificial adjacency.
+        before = next(r for r in reversed(insns[:msr])
+                      if r['mnemonic'] == 'dsb' and r['operands'] == 'ishst')
         barrier_checks[name] = {'dsb_address': before['address'], 'sgi_address': insns[msr]['address']}
     report = {'candidate_sha256': digest, 'passed': True, 'device_boot_validated': False,
               'compiler_generated_sizes': assyms, 'bootstrap_guards': guards,

@@ -51,9 +51,11 @@ python -X utf8 tools/inspect_userland.py
 
 ## GitHub Actions
 
-推送本分支的 `tools`、`configs`、`patches/8796` 或构建工作流会运行 `.github/workflows/bootstrap.yml`，也定义了手动触发入口。
+推送本分支的 `tools`、`configs`、`patches/8796`、`patches/darwinboot` 或构建工作流会运行 `.github/workflows/bootstrap.yml`，也定义了手动触发入口。
 
 构建阶段为：固定 HakiOS／XNU → 固定 16.5 SDK → 选择原生 IIG → 应用 HakiOS 及项目补丁 → 准备 host 工具与依赖库 → 编译 8796 → 原版与候选的静态 LLDB 分析 → 保存日志、Mach-O 和构建报告。
+
+八核／内存实验还会生成独立的 Darwin 22 loader 源码树，执行 ABI、命令行与容量边界测试；在编译内核前用固定 Unicorn 2.1.4 执行抽取的早期建表汇编。链接后再用静态 LLDB 检查实际清池、分配限界与 SGI 屏障。loader 目前只有源码准备及主机契约验证，尚未产出经验证的 EFI 镜像。见 [实验记录](SMP-MEMORY-EXPERIMENT.md)。
 
 工作流使用 macOS 15、Xcode 16.4；Actions 和 Theos SDK 固定提交，MacOSX 13.3 SDK 固定归档 SHA-256。原生分析阶段从固定 Apple 固件取小成员、核对 KernelCache 的预期 SHA-256、解码原版，再创建静态 LLDB target。工作流归档分析记录和源码构建的内核，不归档原版系统镜像；没有在 runner 上启动内核。
 
