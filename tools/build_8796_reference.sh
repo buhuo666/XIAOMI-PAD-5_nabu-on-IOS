@@ -34,15 +34,18 @@ tar -xJf build/downloads/MacOSX13.3.sdk.tar.xz -C src/hakios-8796/xnu-deps --inc
 # place, and make may not regenerate them when IIG changes later.
 python3 tools/probe_iig.py --output log/ci/iig-probe.json --selected-path log/ci/iig-path.txt \
   --fallback src/hakios-8796/xnu-deps/host/bin/iig
-export IIG="$(cat log/ci/iig-path.txt)"
+export PROJECT_ROOT
+export NABU_NATIVE_IIG="$(cat log/ci/iig-path.txt)"
+if [ "$(python3 -c 'import json; print(json.load(open("log/ci/iig-probe.json"))["mode"])')" = native-xcode ]; then
+  export IIG="$PROJECT_ROOT/tools/iig_8796.py"
+else
+  export IIG="$NABU_NATIVE_IIG"
+fi
 
 cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 bash xnu-deps/setup.sh 2>&1 | tee "$PROJECT_ROOT/log/ci/setup.log"
-python3 "$PROJECT_ROOT/tools/probe_iig_targets.py" --source "$XNU_SRC" \
-  --sdk "$PROJECT_ROOT/src/hakios-8796/xnu-deps/sdk/iPhoneOS16.5.xnu.sdk" \
-  --output "$PROJECT_ROOT/log/ci/iig-targets"
 set +e
 bash xnu-build.sh -j"$JOBS" -k 2>&1 | tee "$PROJECT_ROOT/log/ci/kernel-build.log"
 BUILD_EXIT=${PIPESTATUS[0]}
