@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "original_sha256": "600da9b3bfff3385f34f8cb51ef549a7070b4ce6f4d2a8494a9595c922b6f4b2",
+  "kernelcache_im4p_sha256": "86744b0126f8e0df4387596ae0a53bf9aace0f76edba4665d049122e0c4c65ea",
+  "max_function_bytes": 16384,
+  "symbols": [
+    {
+      "name": "__ZN8OSAction9_DispatchEPS_5IORPC",
+      "reason": "observed-selected-kext-call"
+    },
+    {
+      "name": "__ZN9IOService9_DispatchEPS_5IORPC",
+      "reason": "observed-selected-kext-call"
+    },
+    {
+      "name": "__ZN9IOService12Start_InvokeE5IORPCP15OSMetaClassBasePFiS2_PS_E",
+      "reason": "observed-selected-kext-call"
+    },
+    {
+      "name": "__ZN9IOService11Stop_InvokeE5IORPCP15OSMetaClassBasePFiS2_PS_E",
+      "reason": "observed-selected-kext-call"
+    },
+    {
+      "name": "__ZN9IOService20SetProperties_InvokeE5IORPCP15OSMetaClassBasePFiS2_P12OSDictionaryE",
+      "reason": "observed-selected-kext-call"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator12commitUnmapsEv",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator23createMappingInApertureEjP18IOMemoryDescriptorjym",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator5doMapEP18IOMemoryDescriptoryyj",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator7doUnmapEP18IOMemoryDescriptoryy",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator10gMetaClassE",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator17getPageTableEntryEy",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator23getTotalPageTableMemoryEv",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator19isPageFaultExpectedEyj",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator3mapEP11IOMemoryMapj",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator14prepareFWUnmapEyy",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator22registerTaskForServiceEP4taskP9IOService",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator21removeClientContextIDEv",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator18setClientContextIDEjb",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator10superClassE",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator8taskDiedEv",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "__ZN26IOUnifiedAddressTranslator5unmapEP11IOMemoryMap",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "_nvme_ppl_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_cs_configuration",
+      "reason": "pmap_query_arm_implementation_absent"
+    },
+    {
+      "name": "_pmap_has_iofilter_protected_write",
+      "reason": "pmap_query_arm_implementation_absent"
+    },
+    {
+      "name": "_pmap_iommu_alloc_contiguous_pages",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_init",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_ioctl",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_iovmalloc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_iovmfree",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_map",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_pmap_iommu_unmap",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_sart_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t6000dart_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t6000dart_vo_tte",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8020dart_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8020dart_vo_tte",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8110dart_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8110dart_max_translation_levels",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8110dart_vo_tt_index",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_t8110dart_vo_tte",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "_uat_get_desc",
+      "reason": "platform_private_source_absent"
+    },
+    {
+      "name": "__ZTV26IOUnifiedAddressTranslator",
+      "reason": "uat_public_source_absent"
+    },
+    {
+      "name": "_kern_packet_set_fpd_command",
+      "reason": "additional-original-only"
+    },
+    {
+      "name": "_kern_packet_set_fpd_context_id",
+      "reason": "additional-original-only"
+    },
+    {
+      "name": "_kern_packet_set_fpd_sequence_number",
+      "reason": "additional-original-only"
+    },
+    {
+      "name": "_ml_amcc_error_inject_register",
+      "reason": "additional-original-only"
+    },
+    {
+      "name": "_ml_dcs_error_inject_register",
+      "reason": "additional-original-only"
+    },
+    {
+      "name": "_ml_mem_fault_report_enable_register",
+      "reason": "additional-original-only"
+    }
+  ]
+}

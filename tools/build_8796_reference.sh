@@ -45,6 +45,9 @@ fi
 cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
+git -C "$XNU_SRC" apply --check "$PROJECT_ROOT/patches/8796/pmap-nonmonitor-queries.patch"
+git -C "$XNU_SRC" apply "$PROJECT_ROOT/patches/8796/pmap-nonmonitor-queries.patch"
+shasum -a 256 "$PROJECT_ROOT/patches/8796/pmap-nonmonitor-queries.patch" > "$PROJECT_ROOT/log/ci/project-patches.sha256"
 bash xnu-deps/setup.sh 2>&1 | tee "$PROJECT_ROOT/log/ci/setup.log"
 set +e
 bash xnu-build.sh -j"$JOBS" -k 2>&1 | tee "$PROJECT_ROOT/log/ci/kernel-build.log"
@@ -57,7 +60,9 @@ root=pathlib.Path(os.environ['PROJECT_ROOT']);tree=pathlib.Path(os.environ['XNU_
 candidates=[p for p in tree.glob('BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837*') if p.is_file() and p.read_bytes()[:4]==bytes.fromhex('cffaedfe')]
 report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device image',
         'build_exit_code':int(os.environ['BUILD_EXIT']),'device_boot_validated':False,'kernels':[],
-        'iig':json.loads((root/'log/ci/iig-probe.json').read_text())}
+        'iig':json.loads((root/'log/ci/iig-probe.json').read_text()),
+        'project_patches':[{'path':'patches/8796/pmap-nonmonitor-queries.patch',
+          'sha256':hashlib.sha256((root/'patches/8796/pmap-nonmonitor-queries.patch').read_bytes()).hexdigest()}]}
 generated=[]
 for p in sorted((tree/'BUILD').rglob('*.iig.cpp')):
     raw=p.read_bytes()

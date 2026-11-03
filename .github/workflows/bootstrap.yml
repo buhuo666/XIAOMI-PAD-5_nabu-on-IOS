@@ -7,6 +7,7 @@ on:
       - '.github/workflows/bootstrap.yml'
       - 'tools/**'
       - 'configs/**'
+      - 'patches/8796/**'
   workflow_dispatch:
 
 permissions:
@@ -35,6 +36,9 @@ jobs:
           cat log/ci/host.txt
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
+      - name: Analyze original and candidate interfaces with native LLDB
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: bash tools/analyze_20f66_ci.sh
       - name: Retain build logs and source-built kernel
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
