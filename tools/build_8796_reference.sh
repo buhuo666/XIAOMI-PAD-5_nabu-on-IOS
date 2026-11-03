@@ -4,7 +4,9 @@ set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
-python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 --report log/ci/source-checkouts.json
+python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot --report log/ci/source-checkouts.json
+python3 tools/prepare_8796_loader.py --output build/darwinboot8796-capacity/tree
+python3 tools/check_darwinboot_8796.py --tree build/darwinboot8796-capacity/tree --output log/ci/darwinboot8796
 export JOBS=3
 export THEOS="$PROJECT_ROOT/build/reference-theos"
 export XNU_SRC="$PROJECT_ROOT/build/xnu8796-reference/tree"
@@ -46,11 +48,15 @@ cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 : > "$PROJECT_ROOT/log/ci/project-patches.sha256"
-for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch; do
+for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch; do
   git -C "$XNU_SRC" apply --check "$PROJECT_ROOT/patches/8796/$patch"
   git -C "$XNU_SRC" apply "$PROJECT_ROOT/patches/8796/$patch"
   shasum -a 256 "$PROJECT_ROOT/patches/8796/$patch" >> "$PROJECT_ROOT/log/ci/project-patches.sha256"
 done
+cd "$PROJECT_ROOT"
+python3 -m pip install --disable-pip-version-check --only-binary=:all: --target build/host-tools/capacity unicorn==2.1.4
+python3 tools/check_bootstrap_capacity.py --tree "$XNU_SRC" --output log/ci/bootstrap-capacity
+cd "$PROJECT_ROOT/src/hakios-8796"
 bash xnu-deps/setup.sh 2>&1 | tee "$PROJECT_ROOT/log/ci/setup.log"
 set +e
 bash xnu-build.sh -j"$JOBS" -k 2>&1 | tee "$PROJECT_ROOT/log/ci/kernel-build.log"
@@ -66,7 +72,8 @@ report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device ima
         'iig':json.loads((root/'log/ci/iig-probe.json').read_text()),
         'project_patches':[{'path':'patches/8796/'+name,
           'sha256':hashlib.sha256((root/'patches/8796'/name).read_bytes()).hexdigest()}
-          for name in ('pmap-nonmonitor-queries.patch','bcm2837-apple-iommu-query-returns.patch')]}
+          for name in ('pmap-nonmonitor-queries.patch','bcm2837-apple-iommu-query-returns.patch',
+                       'bcm2837-bootstrap-capacity.patch','generic-smp-diagnostics.patch')]}
 generated=[]
 for p in sorted((tree/'BUILD').rglob('*.iig.cpp')):
     raw=p.read_bytes()

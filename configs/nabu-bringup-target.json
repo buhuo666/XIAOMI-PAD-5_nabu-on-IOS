@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "investigation-target-not-a-bootable-ADT",
+  "kernel": "8796.121.2",
+  "os_build": "20F66",
+  "cpu": {
+    "count": 8,
+    "boot_args": "cpus=8 small_cores_after=0",
+    "physical_ids": ["0x0", "0x100", "0x200", "0x300", "0x400", "0x500", "0x600", "0x700"],
+    "psci_method": "smc",
+    "virtual_timer_intid": 19,
+    "timer_frequency_hz": 19200000,
+    "adt_property": "/arm-io/gic/virtual-timer-intid (uint32 little-endian)",
+    "signal_sgi": 0,
+    "stop_sgi": 1,
+    "acceptance": "All eight CPUs must initialize and show increasing SGI/timer counters, then pass cross-CPU scheduling and TLB tests. CPU_ON success or an IOCPU state alone is insufficient."
+  },
+  "memory": {
+    "parser_limit_bytes": 12884901888,
+    "hardware_page_bytes": 4096,
+    "software_page_policy": "Retain 8796 policy: more than 1 GiB selects 16 KiB software pages; user ABI remains to be qualified.",
+    "bootstrap_pages": 32,
+    "arm_large_memory": false,
+    "candidate_high_region": {"start": "0xc0000000", "end_exclusive": "0x380000000"},
+    "hypothetical_max_window_bytes": 11809062912,
+    "hypothesis": "Only if the entire high region is available to EFI and Kernel.Base modulo 2 MiB is 0x4000: 11 GiB minus 2 MiB. This is not an approved allocation.",
+    "selected_window": null,
+    "required_evidence": "Final UEFI descriptors and successful whole-window allocation; CPU address-width/granule report; boot_args and XNU managed totals; high-address CPU and DMA validation."
+  },
+  "historical_kernel_policy": "Reference only; no copied implementation or hardware-correctness claim.",
+  "device_boot_validated": false
+}

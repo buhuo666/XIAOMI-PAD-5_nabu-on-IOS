@@ -1,0 +1,66 @@
+--- a/DarwinBootPkg/Driver/BootArgs.h
++++ b/DarwinBootPkg/Driver/BootArgs.h
+@@ -4,7 +4,8 @@
+ 
+ #include <Base.h>
+ 
+-// Darwin 23 pexpert/pexpert/arm64/boot.h ABI; all fields are little-endian.
++// XNU 8796.121.2 arm64 boot.h ABI; all fields are little-endian.
++// This patch is specific to Darwin 22 and must not serve a Darwin 23 kernel.
+ typedef struct {
+   UINT16  Revision;
+   UINT16  Version;
+@@ -18,7 +19,7 @@
+   UINT32  TreePadding;
+   UINT64  DeviceTree;
+   UINT32  DeviceTreeLength;
+-  CHAR8   CommandLine[1024];
++  CHAR8   CommandLine[608];
+   UINT32  FlagsPadding;
+   UINT64  BootFlags;
+   UINT64  MemorySizeActual;
+@@ -27,7 +28,8 @@
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, DeviceTree) == 0x60, "DT ABI");
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, Video) == 0x28, "video ABI");
+ STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, CommandLine) == 0x6c, "command line ABI");
+-STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, MemorySizeActual) == 0x478, "memory ABI");
+-STATIC_ASSERT (sizeof (DARWIN_BOOT_ARGS) == 0x480, "boot_args ABI");
++STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, BootFlags) == 0x2d0, "flags ABI");
++STATIC_ASSERT (OFFSET_OF (DARWIN_BOOT_ARGS, MemorySizeActual) == 0x2d8, "memory ABI");
++STATIC_ASSERT (sizeof (DARWIN_BOOT_ARGS) == 0x2e0, "boot_args ABI");
+ 
+ #endif
+--- a/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -499,7 +499,7 @@
+   UINTN                           Stride;
+   UINT32                          Version;
+   UINTN                           Attempt;
+-  CHAR8                           CommandLine[1024];
++  CHAR8                           CommandLine[sizeof (((DARWIN_BOOT_ARGS *)0)->CommandLine)];
+   UINT64                          Video[6];
+ 
+   (VOID)This;
+--- a/DarwinBootPkg/Driver/WindowSize.h
++++ b/DarwinBootPkg/Driver/WindowSize.h
+@@ -4,6 +4,6 @@
+ // Allocation still requires one real conventional-memory run. This is a
+ // parser bound, never a declaration of available RAM or an allocation fallback.
+ static inline int DarwinWindowSizeValid(unsigned long long size) {
+-  return size >= 0x10000000ULL && size <= 0x200000000ULL && !(size & 0x1fffffULL);
++  return size >= 0x10000000ULL && size <= 0x300000000ULL && !(size & 0x1fffffULL);
+ }
+ #endif
+--- a/Test/window-size.c
++++ b/Test/window-size.c
+@@ -2,8 +2,8 @@
+ #include <assert.h>
+ #include "../DarwinBootPkg/Driver/WindowSize.h"
+ int main(void) {
+- const unsigned long long yes[]={0x10000000ULL,0xe0000000ULL,0x100000000ULL,0x130000000ULL,0x200000000ULL};
+- const unsigned long long no[]={0,0xfffffffULL,0x10000001ULL,0x130001000ULL,0x200200000ULL,~0ULL};
++ const unsigned long long yes[]={0x10000000ULL,0xe0000000ULL,0x100000000ULL,0x130000000ULL,0x200000000ULL,0x2bfe00000ULL,0x300000000ULL};
++ const unsigned long long no[]={0,0xfffffffULL,0x10000001ULL,0x130001000ULL,0x300200000ULL,~0ULL};
+  for(unsigned i=0;i<sizeof(yes)/sizeof(yes[0]);++i)assert(DarwinWindowSizeValid(yes[i]));
+  for(unsigned i=0;i<sizeof(no)/sizeof(no[0]);++i)assert(!DarwinWindowSizeValid(no[i]));
+ }

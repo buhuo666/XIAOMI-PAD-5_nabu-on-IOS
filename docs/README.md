@@ -10,6 +10,8 @@
 | [开工与构建命令](BOOTSTRAP.md) | 固定源码、固件提取、Actions 操作 |
 | [源码基线](SOURCE-BASELINE.md) | 23 个仓库、gitlink 和图形依赖记录 |
 | [本机内存](DEVICE-MEMORY.md) | 扩容内存和固定保留区的实测核对 |
+| [八核与内存实验](SMP-MEMORY-EXPERIMENT.md) | 八核目标、INTID 19、32 页早期页表和 8796 loader ABI |
+| [八核参考审计](NABU-SMP-REFERENCE.md) | 旧实现与实际机器码、设备 DT 和当前接口差异 |
 | [首轮参考构建](FIRST-BUILD.md) | 两个参考内核产物与导出检查失败 |
 | [20F66 用户态](USERLAND-20F66.md) | ZBM 解压、完整缓存组、原始代码哈希 |
 | [131 个导出缺项](EXPORTS-8796.md) | DriverKit、UAT 和平台接口逐项归因 |

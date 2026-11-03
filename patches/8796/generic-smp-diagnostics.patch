@@ -1,0 +1,141 @@
+--- a/osfmk/arm64/gic_v3_irq.c
++++ b/osfmk/arm64/gic_v3_irq.c
+@@ -72,11 +72,16 @@
+ 
+ #define GIC_SGI_SIGNAL          0           /* cpu_signal(): another processor wants this one's attention */
+ #define GIC_SGI_STOP            1           /* psci_smp_stop_here(): the system is going back to the boot loader */
+-#define GIC_INTID_VTIMER        27          /* EL1 virtual timer PPI */
++static uint32_t gic_virtual_timer_intid = 27; /* default; ADT can select a board PPI */
+ #define GIC_INTID_SPI_MIN       32
+ #define GIC_INTID_SPURIOUS_MIN  1020
+ #define GIC_SPI_MOST            48          /* attached at a time */
+ #define GIC_PRIORITY_DEFAULT    0xa0
++
++/* Per-CPU debugger counters; a running IOCPU alone does not prove IRQ delivery. */
++uint64_t gic_timer_count[MAX_CPUS], gic_signal_count[MAX_CPUS];
++uint64_t gic_cpu_mpidr[MAX_CPUS];
++uint32_t gic_last_intid[MAX_CPUS];
+ 
+ static vm_offset_t gicd_base, gicr_base;
+ static vm_size_t   gicr_size;
+@@ -153,6 +158,8 @@
+ {
+ 	uint64_t aff0 = phys_id & 0xff, aff1 = (phys_id >> 8) & 0xff;
+ 
++	/* Also covers direct self-SGI and stop calls outside cpu_signal(). */
++	__builtin_arm_dsb(DSB_ISHST);
+ 	__builtin_arm_wsr64("ICC_SGI1R_EL1", ((uint64_t)sgi << 24) | (aff1 << 16) | (1ULL << (aff0 & 15)));
+ 	__builtin_arm_isb(ISB_SY);
+ }
+@@ -309,13 +316,16 @@
+ 			break;
+ 		}
+ 		gic_active_iar[cpu] = iar | GIC_IAR_TAKEN;
+-
+-		if (intid == GIC_INTID_VTIMER) {
++		gic_last_intid[cpu] = intid;
++
++		if (intid == gic_virtual_timer_intid) {
++			gic_timer_count[cpu]++;
+ 			/* same sequence as the FIQ path in sleh_fiq() */
+ 			getCpuDatap()->cpu_decrementer = -1; /* Large */
+ 			rtclock_intr(TRUE);
+ 		} else if (intid == GIC_SGI_SIGNAL) {
+ 			cpu_signal_handler();
++			gic_signal_count[cpu]++;
+ 		} else if (intid == GIC_SGI_STOP) {
+ 			/* comes back only if nobody has in fact asked for that */
+ 			psci_smp_stop_here();
+@@ -418,7 +428,7 @@
+ {
+ 	int cpu = cpu_number();
+ 	vm_offset_t gicr;
+-	uint32_t mine = 1u << GIC_INTID_VTIMER;
++	uint32_t mine;
+ 
+ 	if (gicd_base == 0) {
+ 		DTEntry entry;
+@@ -437,12 +447,25 @@
+ 		gicd_base = ml_io_map(soc_base + reg[0], reg[1]);
+ 		gicr_base = ml_io_map(soc_base + reg[2], reg[3]);
+ 		gicr_size = reg[3];
++		/* ADT integers are native little-endian; FDT PPI numbers need +16. */
++		if (SecureDTGetProperty(entry, "virtual-timer-intid", &prop, &prop_size) == kSuccess) {
++			if (prop_size != sizeof(uint32_t)) {
++				panic("gic: virtual-timer-intid must be a 32-bit INTID");
++			}
++			gic_virtual_timer_intid = *(const uint32_t *)prop;
++			if (gic_virtual_timer_intid < 16 || gic_virtual_timer_intid >= 32) {
++				panic("gic: virtual-timer-intid is not a PPI");
++			}
++		}
+ 		if (gicd_base == 0 || gicr_base == 0) {
+ 			panic("gic: cannot map the distributor/redistributor");
+ 		}
+ 	} else if (gicr_cpu_base[cpu] != 0) {
+ 		return;
+ 	}
++
++	mine = 1u << gic_virtual_timer_intid;
++	gic_cpu_mpidr[cpu] = __builtin_arm_rsr64("MPIDR_EL1");
+ 
+ 	/* System-register CPU interface */
+ 	__builtin_arm_wsr64("ICC_SRE_EL1", __builtin_arm_rsr64("ICC_SRE_EL1") | 1);
+@@ -476,7 +499,7 @@
+ 	/* Virtual timer PPI (and those): Group 1 (IRQ), default priority, enabled */
+ 	gic_write32(gicr + GICR_IGROUPR0, gic_read32(gicr + GICR_IGROUPR0) | mine);
+ 	gic_write32(gicr + GICR_IGRPMODR0, gic_read32(gicr + GICR_IGRPMODR0) & ~mine);
+-	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(GIC_INTID_VTIMER)) = GIC_PRIORITY_DEFAULT;
++	*(volatile uint8_t *)(gicr + GICR_IPRIORITYR(gic_virtual_timer_intid)) = GIC_PRIORITY_DEFAULT;
+ 	gic_write32(gicr + GICR_ISENABLER0, mine);
+ 
+ 	/* Distributor: affinity routing, Group 1 enabled (normally already so) */
+@@ -501,8 +524,8 @@
+ 	__builtin_arm_isb(ISB_SY);
+ 
+ 	ml_install_interrupt_handler(NULL, 0, NULL, gic_irq_handler, NULL);
+-	kprintf("gic: v3, distributor %p, cpu %d's redistributor %p, virtual timer on PPI %d\n",
+-	    (void *)gicd_base, cpu, (void *)gicr, GIC_INTID_VTIMER);
++	kprintf("gic: v3, distributor %p, cpu %d's redistributor %p, virtual timer INTID %u\n",
++	    (void *)gicd_base, cpu, (void *)gicr, gic_virtual_timer_intid);
+ }
+ 
+ #endif /* GENERIC_GIC_V3_IRQ */
+--- a/osfmk/arm64/psci_smp.c
++++ b/osfmk/arm64/psci_smp.c
+@@ -186,7 +186,10 @@
+ 	__builtin_arm_dsb(DSB_SY);
+ 
+ 	os_atomic_store(&psci_smp_cpu_stage[cpu], PSCI_SMP_CPU_ASKED, release);
++	printf("psci: CPU_ON cpu %d MPIDR 0x%x entry 0x%llx via %s\n",
++	    cpu, phys_id, entry, psci_smp_hvc ? "hvc" : "smc");
+ 	status = psci_call(PSCI_CPU_ON, phys_id, entry, 0);
++	printf("psci: CPU_ON cpu %d returned %lld\n", cpu, status);
+ 	if (status != 0) {
+ 		os_atomic_store(&psci_smp_cpu_stage[cpu], 0, release);
+ 		printf("psci: cpu %d (MPIDR 0x%x) was not started: the firmware answers %lld (%s)\n",
+@@ -198,7 +201,8 @@
+ 	clock_interval_to_deadline(PSCI_SMP_START_SECONDS, NSEC_PER_SEC, &deadline);
+ 	do {
+ 		stage = os_atomic_load(&psci_smp_cpu_stage[cpu], acquire);
+-		if (stage >= PSCI_SMP_CPU_RUNNING) {
++		if (stage == PSCI_SMP_CPU_RUNNING) {
++			printf("psci: cpu %d reached initCPU; verify SGI/timer counters separately\n", cpu);
+ 			return KERN_SUCCESS;
+ 		}
+ 		/* memory, not this processor's copy of it */
+--- a/iokit/Kernel/GenericARMPE.cpp
++++ b/iokit/Kernel/GenericARMPE.cpp
+@@ -120,7 +120,11 @@
+ void
+ GenericARMCPU::run(void)
+ {
+-	processor_start(machProcessor);
++	kern_return_t result = processor_start(machProcessor);
++	if (result != KERN_SUCCESS) {
++		IOLog("GenericARMCPU: cpu %u processor_start failed: 0x%x\n",
++		    (unsigned)getCPUNumber(), result);
++	}
+ }
+ 
+ /* On the processor itself, with its interrupts off, when it joins (or rejoins) the scheduler. */
