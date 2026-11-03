@@ -129,6 +129,10 @@ static uint32_t nabu_smp_config_hash(int first, int interval, unsigned int count
 static void nabu_smp_task(const char *name, int pid, uint64_t uid, task_t task) {
     assert(name && pid && task); assert(uid == UINT64_C(1000) + (uint64_t)pid); ++selected;
 }
+static int nabu_log_record(const char *line, int size) {
+    assert(line && size > 0 && size < 241); return 1;
+}
+static void nabu_smp_finish(void) { }
 static void nabu_smp_begin_sample(void) { }
 static void nabu_smp_end_sample(unsigned int procs, unsigned int instances,
     unsigned int instances_limited) {

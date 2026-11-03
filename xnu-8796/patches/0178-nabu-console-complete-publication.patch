@@ -1,0 +1,218 @@
+diff --git a/bsd/dev/nabu_ufs.c b/bsd/dev/nabu_ufs.c
+index 3db73e3..87efc13 100644
+--- a/bsd/dev/nabu_ufs.c
++++ b/bsd/dev/nabu_ufs.c
+@@ -783,49 +783,123 @@ static uint64_t _Atomic nabu_log_committed;
+ static int nabu_log_chan;
+ static uint32_t nabu_log_secs = NABU_LOG_SECS;
+ 
+-/* Called for all console output, any context: never blocks. */
+-void nabu_log_append(const char *c, int size);
++/* Producers never wait, including interrupt/panic contexts. Publish the end
++ * only after the complete byte range is copied. Contention is explicit loss,
++ * not a reservation that readers can mistake for initialized data. */
++static unsigned int nabu_log_lock;
++static uint64_t nabu_log_dropped_bytes, nabu_log_dropped_calls;
++static uint64_t nabu_log_read_retries;
+ 
+-void
+-nabu_log_append(const char *c, int size)
++static int
++nabu_log_try_lock(void)
++{
++	unsigned int expected = 0;
++	return __atomic_compare_exchange_n(&nabu_log_lock, &expected, 1u, 0,
++	           __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
++}
++
++static void
++nabu_log_unlock(void)
++{
++	__atomic_store_n(&nabu_log_lock, 0u, __ATOMIC_RELEASE);
++}
++
++static int
++nabu_log_publish(const char *c, int size)
+ {
+ 	if (size <= 0) {
+-		return;
++		return 0;
++	}
++	if ((unsigned int)size > NABU_LOG_SIZE || !nabu_log_try_lock()) {
++		__atomic_fetch_add(&nabu_log_dropped_bytes, (uint64_t)size, __ATOMIC_RELAXED);
++		__atomic_fetch_add(&nabu_log_dropped_calls, 1ULL, __ATOMIC_RELAXED);
++		return 0;
+ 	}
+-	uint64_t at = os_atomic_add_orig(&nabu_log_total, (uint64_t)size, relaxed);
++	uint64_t at = os_atomic_load(&nabu_log_total, relaxed);
+ 	for (int i = 0; i < size; i++) {
+ 		nabu_log_ring[(at + (uint64_t)i) % NABU_LOG_SIZE] = c[i];
+ 	}
++	os_atomic_store(&nabu_log_total, at + (uint64_t)size, release);
++	nabu_log_unlock();
++	return 1;
+ }
+ 
+-/*
+- * Copy console bytes [*pos, total) (at most max) for live log streaming
+- * (nabu_usb.c). A reader that fell more than the ring behind skips ahead.
+- * Returns the byte count; *pos advances.
+- */
+-uint32_t nabu_log_copy(uint64_t *pos, char *out, uint32_t max);
++void nabu_log_append(const char *c, int size);
++void
++nabu_log_append(const char *c, int size)
++{
++	(void)nabu_log_publish(c, size);
++}
+ 
++/* Background diagnostics bypass the per-character printf path. One bounded
++ * record gets one complete reservation, even when legacy console lines mix.
++ * The leading newline resynchronizes readers after a partial legacy line. */
++int nabu_log_record(const char *line, int size);
++int
++nabu_log_record(const char *line, int size)
++{
++	char record[514];
++	if (size <= 0 || size > 512 || line[size - 1] != '\n') {
++		return 0;
++	}
++	record[0] = '\n';
++	memcpy(record + 1, line, (size_t)size);
++	return nabu_log_publish(record, size + 1);
++}
++
++/* Short held-copy sections prevent concurrent RAM wrap from tearing a copy.
++ * No storage I/O, formatting, sleeping or wakeup occurs under this lock. */
++static int
++nabu_log_copy_block(uint64_t pos, void *out, uint32_t bytes)
++{
++	if (!nabu_log_try_lock()) {
++		__atomic_fetch_add(&nabu_log_read_retries, 1ULL, __ATOMIC_RELAXED);
++		return 0;
++	}
++	uint64_t latest = os_atomic_load(&nabu_log_total, acquire);
++	if (latest < pos || latest - pos > NABU_LOG_SIZE) {
++		nabu_log_unlock();
++		return -1;
++	}
++	memcpy(out, nabu_log_ring + pos % NABU_LOG_SIZE, bytes);
++	nabu_log_unlock();
++	return 1;
++}
++
++uint32_t nabu_log_copy(uint64_t *pos, char *out, uint32_t max);
+ uint32_t
+ nabu_log_copy(uint64_t *pos, char *out, uint32_t max)
+ {
+-	uint64_t total = os_atomic_load(&nabu_log_total, relaxed);
++	if (!nabu_log_try_lock()) {
++		return 0;
++	}
++	uint64_t total = os_atomic_load(&nabu_log_total, acquire);
+ 	if (total - *pos > NABU_LOG_SIZE) {
+ 		*pos = total - NABU_LOG_SIZE;
+ 	}
+-	uint32_t n = (uint32_t)MIN((uint64_t)max, total - *pos);
++	/* The USB caller currently requests 1400 bytes; bound future callers too. */
++	uint32_t n = (uint32_t)MIN(MIN((uint64_t)max, 4096ULL), total - *pos);
+ 	for (uint32_t i = 0; i < n; i++) {
+ 		out[i] = nabu_log_ring[(*pos + i) % NABU_LOG_SIZE];
+ 	}
+ 	*pos += n;
++	nabu_log_unlock();
+ 	return n;
+ }
+ 
++void nabu_log_request_flush(void);
++void
++nabu_log_request_flush(void)
++{
++	wakeup(&nabu_log_chan);
++}
++
+ uint64_t nabu_log_position(void);
+ 
+ uint64_t
+ nabu_log_position(void)
+ {
+-	return os_atomic_load(&nabu_log_total, relaxed);
++	return os_atomic_load(&nabu_log_total, acquire);
+ }
+ 
+ 
+@@ -852,10 +926,20 @@ nabu_log_thread(__unused void *arg, __unused wait_result_t wr)
+ 		    nabu_log_secs, 0, 0);
+ 		(void)tsleep(&nabu_log_chan, PZERO, "nabulog", hz * (int)nabu_log_secs);
+ 		nabu_gpu_diag_end(NABU_DIAG_LOG, nabu_log_secs, 0);
++		char quality[241];
++		int quality_n = snprintf(quality, sizeof(quality),
++		    "NABU LOGQ: v=1 pub=%llu saved=%llu lost=%llu calls=%llu retry=%llu\n",
++		    nabu_log_position(), nabu_log_committed_position(),
++		    __atomic_load_n(&nabu_log_dropped_bytes, __ATOMIC_RELAXED),
++		    __atomic_load_n(&nabu_log_dropped_calls, __ATOMIC_RELAXED),
++		    __atomic_load_n(&nabu_log_read_retries, __ATOMIC_RELAXED));
++		if (quality_n > 0 && quality_n < (int)sizeof(quality)) {
++			(void)nabu_log_record(quality, quality_n);
++		}
+ 		nabu_gpu_diag_begin(NABU_DIAG_LOG, NABU_DIAG_LOG_LOCK, 0, 0, 0, 0);
+ 		lck_mtx_lock(&nabu_ufs_lock);
+ 		nabu_gpu_diag_end(NABU_DIAG_LOG, 1, 0);
+-		uint64_t total = os_atomic_load(&nabu_log_total, relaxed);
++		uint64_t total = os_atomic_load(&nabu_log_total, acquire);
+ 		if (total == flushed) {
+ 			lck_mtx_unlock(&nabu_ufs_lock);
+ 			continue;
+@@ -872,14 +956,17 @@ nabu_log_thread(__unused void *arg, __unused wait_result_t wr)
+ 			valid_from = total - NABU_LOG_STORAGE_BYTES;
+ 		}
+ 		uint64_t write_from = pos;
+-		int error = 0;
++		int error = 0, retry = 0;
+ 		while (pos < total && !error) {
+-			struct nabu_log_chunk plan = nabu_log_plan(pos, total, BOUNCE_SIZE / UFS_BLOCK);
+-			memcpy(bounce, nabu_log_ring + (uint64_t)plan.ram_block * UFS_BLOCK,
+-			    plan.blocks * UFS_BLOCK);
+-			/* Never claim a contiguous range that RAM overwrote during this flush. */
+-			uint64_t latest = os_atomic_load(&nabu_log_total, relaxed);
+-			if (latest - pos / UFS_BLOCK * UFS_BLOCK > NABU_LOG_SIZE) {
++			/* At most 64 KiB is copied under the nonwaiting RAM lock. */
++			struct nabu_log_chunk plan = nabu_log_plan(pos, total, 16u);
++			int copied = nabu_log_copy_block(pos / UFS_BLOCK * UFS_BLOCK,
++			    bounce, plan.blocks * UFS_BLOCK);
++			if (copied == 0) {
++				retry = 1;
++				break;
++			}
++			if (copied < 0) {
+ 				ram_lost += total - pos;
+ 				valid_from = total;
+ 				break;
+@@ -890,7 +977,7 @@ nabu_log_thread(__unused void *arg, __unused wait_result_t wr)
+ 			nabu_gpu_diag_end(NABU_DIAG_LOG, (uint32_t)error, plan.blocks);
+ 			pos = plan.next;
+ 		}
+-		if (!error && total > write_from) {
++		if (!error && !retry && total > write_from) {
+ 			/* Sync only the blocks touched, split at the disk ring boundary. */
+ 			uint64_t first = write_from / UFS_BLOCK;
+ 			uint64_t last = (total + UFS_BLOCK - 1) / UFS_BLOCK;
+@@ -907,7 +994,7 @@ nabu_log_thread(__unused void *arg, __unused wait_result_t wr)
+ 				first += count;
+ 			}
+ 		}
+-		if (!error) {
++		if (!error && !retry) {
+ 			struct nabu_log_header h = {
+ 				.magic = { 'S', 'W', 'E', 'E', 'T', 'L', 'O', 'G' },
+ 				.version = NABU_LOG_FORMAT_VERSION, .size = NABU_LOG_STORAGE_BYTES,
+@@ -926,6 +1013,9 @@ nabu_log_thread(__unused void *arg, __unused wait_result_t wr)
+ 			}
+ 		}
+ 		lck_mtx_unlock(&nabu_ufs_lock);
++		if (retry) {
++			continue; /* Header/committed position stays at the previous flush. */
++		}
+ 		if (error) {
+ 			printf("NABU LOG: write failed (%d), stopping\n", error);
+ 			return;

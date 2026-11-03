@@ -48,6 +48,14 @@ static unsigned char bounce[BOUNCE_SIZE];
 static uint64_t _Atomic nabu_log_total, nabu_log_committed;
 static int nabu_log_chan, nabu_ufs_lock, hz=100;
 static uint32_t nabu_log_secs=1;
+static unsigned int nabu_log_lock;
+static uint64_t nabu_log_dropped_bytes, nabu_log_dropped_calls, nabu_log_read_retries;
+static uint64_t nabu_log_position(void) { return atomic_load(&nabu_log_total); }
+static uint64_t nabu_log_committed_position(void) { return atomic_load(&nabu_log_committed); }
+/* Isolate fixed synthetic storage payloads from periodic quality telemetry.
+ * The actual publisher/record helper has its own concurrency test. */
+static int nabu_log_record(const char *line,int n) { assert(line && n>0); return 1; }
+
 static struct { uint64_t first_block,nblocks; uintptr_t dma; } su;
 static bool held;
 static unsigned sleeps,writes,syncs,fail_write,fail_sync;
@@ -159,6 +167,17 @@ int main(void) {
 """
 
 
+def extract(source, name):
+    at = source.index("\n" + name + "(") + 1
+    start = source.rfind("\n", 0, at - 1) + 1
+    brace = source.index("{", at)
+    depth, end = 1, brace + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[start:end]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xnu-source", type=Path, required=True)
@@ -172,7 +191,9 @@ def main():
         (root / "nabu_log_storage.h").write_bytes(
             (args.xnu_source / "bsd/dev/nabu_log_storage.h").read_bytes())
         harness, binary = root / "test.c", root / "test.exe"
-        harness.write_text(PRELUDE + source[start:end] + MAIN, encoding="utf-8", newline="\n")
+        helpers = "\n".join(extract(source, name) for name in (
+            "nabu_log_try_lock", "nabu_log_unlock", "nabu_log_copy_block"))
+        harness.write_text(PRELUDE + helpers + source[start:end] + MAIN, encoding="utf-8", newline="\n")
         subprocess.run([args.cc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                         "-I", str(root), str(harness), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True, timeout=30)

@@ -1,0 +1,137 @@
+diff --git a/bsd/dev/nabu_boottrace.c b/bsd/dev/nabu_boottrace.c
+index ddefde5..f8b1d3d 100644
+--- a/bsd/dev/nabu_boottrace.c
++++ b/bsd/dev/nabu_boottrace.c
+@@ -157,14 +157,27 @@ nabu_boottrace_end(struct nabu_bt_token token, unsigned int kind, int result, in
+ 	(void)nabu_bt_push(&nabu_bt_events, &event);
+ }
+ 
++extern int nabu_log_record(const char *line, int size);
++static uint64_t nabu_bt_emit_lost;
++
++static void
++nabu_bt_record(char *line, int size)
++{
++	if (size <= 0 || size >= 384 || !nabu_log_record(line, size)) {
++		nabu_bt_emit_lost++;
++	}
++}
++
+ static void
+ nabu_bt_emit(const struct nabu_bt_event *event)
+ {
+ 	/* Each line fits the port's console limit. Hex preserves path bytes. */
+-	printf("BTE q=%llu id=%llu ns=%llu pid=%d pp=%d tid=%llu k=%u e=%u r=%d a=%d dt=%llu n=%s len=%u cut=%u\n",
++	char line[384];
++	int n = snprintf(line, sizeof(line), "BTE q=%llu id=%llu ns=%llu pid=%d pp=%d tid=%llu k=%u e=%u r=%d a=%d dt=%llu n=%s len=%u cut=%u\n",
+ 	    event->sequence, event->id, event->ns, event->pid, event->ppid, event->tid,
+ 	    event->kind, event->edge, event->result, event->auxiliary,
+ 	    event->elapsed_ns, event->name, event->path_bytes, event->truncated);
++	nabu_bt_record(line, n);
+ 	static const char digits[] = "0123456789abcdef";
+ 	for (unsigned int at = 0; at < event->path_bytes; at += 64) {
+ 		char hex[129];
+@@ -175,33 +188,63 @@ nabu_bt_emit(const struct nabu_bt_event *event)
+ 			hex[i * 2 + 1] = digits[byte & 15];
+ 		}
+ 		hex[count * 2] = 0;
+-		printf("BTP q=%llu id=%llu off=%u hex=%s\n",
++		n = snprintf(line, sizeof(line), "BTP q=%llu id=%llu off=%u hex=%s\n",
+ 		    event->sequence, event->id, at, hex);
++		nabu_bt_record(line, n);
+ 	}
+ }
+ 
++/* Short bounded draining replaces the 128-events/second bottleneck. Hot
++ * producers still never wait. The worker yields at least one scheduler tick
++ * after each batch, and records queue pressure separately from output loss. */
+ static void
+ nabu_bt_worker(__unused void *arg, __unused wait_result_t wr)
+ {
+ 	static int channel;
+-	unsigned int tick = 0;
+ 	struct nabu_bt_event event;
+-	printf("BTS v=2 slots=%u path=%u drain=128 period=1 kinds=0x%x names=%u\n",
++	char line[384];
++	uint64_t next_report = 0;
++	unsigned int drained = 0;
++	int n = snprintf(line, sizeof(line),
++	    "BTS v=3 slots=%u path=%u drain=256 idle_ms=20 slice_ms=5 kinds=0x%x names=%u\n",
+ 	    NABU_BT_SLOTS, NABU_BT_PATH, nabu_bt_kind_mask, nabu_bt_name_count);
++	nabu_bt_record(line, n);
+ 	for (;;) {
+-		(void)tsleep(&channel, PZERO, "nabubtrace", hz);
+-		for (unsigned int i = 0; i < 128 && nabu_bt_pop(&nabu_bt_events, &event); ++i) {
++		int ticks = drained ? 1 : (hz + 49) / 50;
++		(void)tsleep(&channel, PZERO, "nabubtrace", ticks > 0 ? ticks : 1);
++		uint64_t begin = nabu_bt_now();
++		drained = 0;
++		while (drained < 256 && nabu_bt_pop(&nabu_bt_events, &event)) {
+ 			nabu_bt_emit(&event);
++			drained++;
++			if (nabu_bt_now() - begin >= 5000000ULL) {
++				break;
++			}
+ 		}
+-		if (++tick % 10u == 0) {
+-			printf("BTC ns=%llu offered=%llu accepted=%llu busy=%llu full=%llu flt=%llu out=%llu\n",
+-			    nabu_bt_now(),
++		uint64_t now = nabu_bt_now();
++		if (now >= next_report) {
++			next_report = now + 5000000000ULL;
++			n = snprintf(line, sizeof(line),
++			    "BTC ns=%llu offered=%llu accepted=%llu busy=%llu full=%llu flt=%llu out=%llu\n",
++			    now,
+ 			    __atomic_load_n(&nabu_bt_events.offered, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.accepted, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.busy_dropped, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.full_dropped, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_filtered, __ATOMIC_RELAXED),
+ 			    __atomic_load_n(&nabu_bt_events.consumed, __ATOMIC_RELAXED));
++			nabu_bt_record(line, n);
++			unsigned int pending = 0, highwater = 0, valid = 0;
++			if (nabu_bt_try_lock(&nabu_bt_events)) {
++				pending = nabu_bt_events.count;
++				highwater = nabu_bt_events.highwater;
++				valid = 1;
++				nabu_bt_unlock(&nabu_bt_events);
++			}
++			n = snprintf(line, sizeof(line),
++			    "BTQ v=1 ns=%llu ok=%u pending=%u high=%u emit_lost=%llu batch=%u\n",
++			    now, valid, pending, highwater, nabu_bt_emit_lost, drained);
++			nabu_bt_record(line, n);
+ 		}
+ 	}
+ }
+diff --git a/bsd/sys/nabu_boottrace_queue.h b/bsd/sys/nabu_boottrace_queue.h
+index eac7ae1..c65374a 100644
+--- a/bsd/sys/nabu_boottrace_queue.h
++++ b/bsd/sys/nabu_boottrace_queue.h
+@@ -3,7 +3,7 @@
+ #define NABU_BOOTTRACE_QUEUE_H
+ #include <stdint.h>
+ 
+-#define NABU_BT_SLOTS 4096u
++#define NABU_BT_SLOTS 8192u
+ #define NABU_BT_PATH 320u
+ #define NABU_BT_NAME 17u
+ #define NABU_BT_MAX_NAMES 4u
+@@ -17,7 +17,7 @@ struct nabu_bt_event {
+ };
+ 
+ struct nabu_bt_queue {
+-	unsigned int lock, read_at, write_at, count;
++	unsigned int lock, read_at, write_at, count, highwater;
+ 	uint64_t offered, accepted, busy_dropped, full_dropped, consumed;
+ 	struct nabu_bt_event events[NABU_BT_SLOTS];
+ };
+@@ -52,6 +52,9 @@ nabu_bt_push(struct nabu_bt_queue *q, struct nabu_bt_event *event)
+ 	q->events[q->write_at] = *event;
+ 	q->write_at = (q->write_at + 1u) % NABU_BT_SLOTS;
+ 	++q->count;
++	if (q->count > q->highwater) {
++		__atomic_store_n(&q->highwater, q->count, __ATOMIC_RELAXED);
++	}
+ 	__atomic_fetch_add(&q->accepted, 1ULL, __ATOMIC_RELAXED);
+ 	nabu_bt_unlock(q);
+ 	return 1;
