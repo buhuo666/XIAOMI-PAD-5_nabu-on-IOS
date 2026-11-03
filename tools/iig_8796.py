@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run native IIG and select its contiguous-message code for the 8796 IORPC ABI.
 
-Only generated implementation branches for the newer kernelContent layout are
-changed. Kernel includes, class dispatch, generated headers and IORPC.h remain
-unchanged. Native and adapted output are retained for comparison.
+Select the older message layout and preserve the observed 20F66 null-reply
+checks in three IOService Invoke methods. Native and adapted output are
+retained for comparison; generated headers and IORPC.h are not changed.
 """
 import hashlib
 import json
@@ -18,7 +18,28 @@ def adapt(source):
     lines = source.splitlines(keepends=True)
     output, changes = [], []
     index = 0
+    invoke = None
     while index < len(lines):
+        match = re.match(r'^IOService::(Start|Stop|SetProperties)_Invoke\(', lines[index])
+        if match:
+            invoke = match.group(1)
+        elif lines[index].startswith('}'):
+            invoke = None
+        if invoke and lines[index].strip() == '#if __has_builtin(__builtin_assume)':
+            block = [line.strip() for line in lines[index:index + 3]]
+            if block != ['#if __has_builtin(__builtin_assume)',
+                         '__builtin_assume(reply != NULL);',
+                         '#endif /* __has_builtin(__builtin_assume) */']:
+                raise ValueError('Unrecognized reply assumption in IOService::' + invoke)
+            # The donor skips replySize validation when reply is NULL, and can
+            # return a type/handler error without dereferencing it. The modern
+            # assumption removes that branch even in the contiguous layout.
+            changes.append({'native_start_line': index + 1, 'native_end_line': index + 3,
+                            'reason': '20F66 nullable reply before error return',
+                            'method': 'IOService::' + invoke + '_Invoke'})
+            output.append('/* 20F66: retain the conditional reply-size check before error returns. */\n')
+            index += 3
+            continue
         if lines[index].strip() != '#ifdef KERNEL':
             output.append(lines[index])
             index += 1

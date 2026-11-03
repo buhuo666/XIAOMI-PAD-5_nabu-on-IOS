@@ -80,3 +80,26 @@ Actions `41649343964 / attempt 1`，提交 `e14c3405a80220c4ec5f2fa7440ba1ccd0aa
 本轮 CI 归档了原生 CPP、适配 CPP 及变换记录。随后已将日志留存改为在适配前保存原件，并同时保存生成头文件；实际 OSObject 样本与未识别分支失败路径均通过本地检查，记录在 `log/host/iig-wrapper-check.json`。该留存改动不改变 `adapt()` 输出；本轮 CI 没有归档的生成头文件仍不能算作已取得证据。
 
 后续需要验证原版 kext 的方法 ID、类布局、对象生命周期、初始化顺序和运行行为，并解决 nabu 平台服务归属。此构建没有原版组件预链接、板级 ADT、启动内存布局或设备启动验证。
+
+## 20F66 空 reply 分支
+
+Actions `41655737937 / attempt 1` 的原生 LLDB 分析已成功。原版
+`Start_Invoke`／`Stop_Invoke`／`SetProperties_Invoke` 在 reply 为 NULL 时跳过
+`replySize` 检查，仍可因类型不符或 handler 返回错误而退出。原版对应 `cbz`
+地址分别为 `0xfffffff00775d668`、`0xfffffff00775d75c`、`0xfffffff00775dd0c`。
+候选 `216993adb1adc704fb9c8ddc8c94db9e53c3604c42432ffd94ec23d8664c8b9d`
+则无条件检查 `replySize >= 0x3c`，NULL 分支已被优化掉。
+
+生成源码虽然写有 `reply != NULL && rpc.replySize < sizeof(*reply)`，但前面的
+`__builtin_assume(reply != NULL)` 允许编译器删除该条件。兼容层现仅对这三个已有
+二进制证据的 Invoke 删除这一假设，保留生成器已有的条件检查、回调及 reply 写入。
+其他方法的假设不在本次修改范围。34 份实际原生生成文件重放后，仅两个目录中的
+这三处发生额外变换，共 6 处；未知假设块会停止适配。
+
+这不是把 NULL reply 变成可成功回复的输入：原版 handler 成功后同样无条件写入
+reply，NULL 下的成功路径仍不可用。本修正恢复的是已观察到的早期错误返回路径。
+源码变换已通过本地核对；修改后的内核分支还需下一轮 macOS 构建确认。
+
+完整逐指令证据位于
+`artifacts/ci/41655737937-attempt-1/xnu8796-reference-6/log/ci/native-20f66/instructions.json`，
+SHA-256 为 `8ddc9cec9fecdccb045294a230871a8ceadac62fbe7cecda223c33ed95650960`。
