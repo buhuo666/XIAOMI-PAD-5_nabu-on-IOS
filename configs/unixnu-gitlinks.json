@@ -1,0 +1,112 @@
+{
+  "repository": "https://github.com/UniXNU/UniXNU",
+  "commit": "245aca1a9ec5b730b1cad80fade295800d2981f1",
+  "role": "reference inventory, not selected 8796 build closure",
+  "gitlinks": [
+    {
+      "path": "drivers/ArmCpu",
+      "repository": "https://github.com/UniXNU/ArmCpu.git",
+      "commit": "1951cc8444b340d7d8879e9418220cf29eb711d7"
+    },
+    {
+      "path": "drivers/ArmDTPlatform",
+      "repository": "https://github.com/UniXNU/ArmDTPlatform.git",
+      "commit": "0d544705c2e89725caabc0542bb96bc8febd8c70"
+    },
+    {
+      "path": "drivers/ArmVirtPlatform",
+      "repository": "https://github.com/UniXNU/ArmVirtPlatform.git",
+      "commit": "532de8c017e394e69a0b48dc0ffc4ac0d0701177"
+    },
+    {
+      "path": "drivers/DarwinBoot",
+      "repository": "https://github.com/UniXNU/DarwinBoot.git",
+      "commit": "d099354d0eab34df5088ca1ba89c9c88bc3260bb"
+    },
+    {
+      "path": "drivers/NativeAES",
+      "repository": "https://github.com/UniXNU/NativeAES.git",
+      "commit": "a34964b8c2fec2e83c8e4f68fb7d6fb7e4b2227b"
+    },
+    {
+      "path": "drivers/NativeAdreno",
+      "repository": "https://github.com/UniXNU/NativeAdreno.git",
+      "commit": "b686b9054f57d393c80195b82568a09f8ca106a2"
+    },
+    {
+      "path": "drivers/NativeGeniSpi",
+      "repository": "https://github.com/UniXNU/NativeGeniSpi.git",
+      "commit": "b5399b5646c4d7415deec6d887fd51715a97a024"
+    },
+    {
+      "path": "drivers/NativeHidInput",
+      "repository": "https://github.com/UniXNU/NativeHidInput.git",
+      "commit": "ba03e5d147452b2166aab7435d219fa10877672b"
+    },
+    {
+      "path": "drivers/NativeKeyStoreEvents",
+      "repository": "https://github.com/UniXNU/NativeKeyStoreEvents.git",
+      "commit": "e59bac4ad1ac8825919ae94da8440a64d8ab90b3"
+    },
+    {
+      "path": "drivers/NativeMetal",
+      "repository": "https://github.com/UniXNU/NativeMetal.git",
+      "commit": "c6d29caad6d880cc8204ebe3bc34d77479a3255d"
+    },
+    {
+      "path": "drivers/NativeMobileDisplay",
+      "repository": "https://github.com/UniXNU/NativeMobileDisplay.git",
+      "commit": "8666a9950c9699b368931d18cac92c0fdb2ce9c0"
+    },
+    {
+      "path": "drivers/NativeRamBlock",
+      "repository": "https://github.com/UniXNU/NativeRamBlock.git",
+      "commit": "d4d22d9819b0162eda49f6402235dddc2279410d"
+    },
+    {
+      "path": "drivers/NativeUfs",
+      "repository": "https://github.com/UniXNU/NativeUfs.git",
+      "commit": "af785c1777161a62931425c2faaa536ce0bebd5b"
+    },
+    {
+      "path": "drivers/NativeVirtioBlock",
+      "repository": "https://github.com/UniXNU/NativeVirtioBlock.git",
+      "commit": "98909eb9198a4360d7a43be831887cb8b74d814d"
+    },
+    {
+      "path": "drivers/NativeVirtioConsole",
+      "repository": "https://github.com/UniXNU/NativeVirtioConsole.git",
+      "commit": "066f9bded311233ed56824e13a5628077619efda"
+    },
+    {
+      "path": "kits/AdrenoFirmware",
+      "repository": "https://github.com/UniXNU/AdrenoFirmware.git",
+      "commit": "40fdb8ea87606612ac6f1e80bbb49955d0ce4051"
+    },
+    {
+      "path": "kits/AdrenoPM4",
+      "repository": "https://github.com/UniXNU/AdrenoPM4.git",
+      "commit": "445f8fe6d115738352b9d78dc70af6d61aa7f62f"
+    },
+    {
+      "path": "kits/AirNir",
+      "repository": "https://github.com/UniXNU/AirNir.git",
+      "commit": "032a867b5dc3121164bbd706e4e81e3b9fcd2b8f"
+    },
+    {
+      "path": "kits/ArmSmmu4K",
+      "repository": "https://github.com/UniXNU/ArmSmmu4K.git",
+      "commit": "4d0d6598b1a36aeec3de01091893fa6660e49388"
+    },
+    {
+      "path": "kits/NativePrelink",
+      "repository": "https://github.com/UniXNU/NativePrelink.git",
+      "commit": "2b6ffb50117eee820b98aca9bd51b5c7dfb2970e"
+    },
+    {
+      "path": "kits/VerifiedRoot",
+      "repository": "https://github.com/UniXNU/VerifiedRoot.git",
+      "commit": "2854c61f6c4dfda870ac3d93e1f03d9181edb041"
+    }
+  ]
+}

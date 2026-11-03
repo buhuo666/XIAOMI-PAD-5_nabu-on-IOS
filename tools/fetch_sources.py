@@ -80,7 +80,8 @@ def main():
     parser.add_argument('--lock', type=Path, default=ROOT / 'configs/sources.lock.json')
     parser.add_argument('--only', nargs='+')
     parser.add_argument('--jobs', type=int, default=4)
-    parser.add_argument('--proxy', default=os.environ.get('NABU_PROXY'))
+    parser.add_argument('--proxy', default=os.environ.get(
+        'NABU_PROXY', 'http://127.0.0.1:19999' if os.name == 'nt' else None))
     parser.add_argument('--verify-only', action='store_true')
     parser.add_argument('--report', type=Path, default=ROOT / 'log/host/source-checkouts.json')
     args = parser.parse_args()

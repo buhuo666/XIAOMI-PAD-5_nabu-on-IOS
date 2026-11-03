@@ -2,6 +2,8 @@
 
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
+当前编译进展：原生 IIG 兼容层已编译通过 17 份实现，参考内核缺失导出从 131 降至 37；完整构建仍未通过，尚无 nabu 启动镜像。实测结果见 [IIG-COMPATIBILITY](docs/IIG-COMPATIBILITY.md)。
+
 推荐主目录名：`XIAOMI_PAD5-NABU`。目录名用英文、数字、连字符或下划线，文件夹名称保持简短；研究文档可以使用中文文件名。主目录已在开工时去掉空格：HakiOS 的 [构建说明](D:/github-IOS/research-sources/hakios-xnu-kernel/xnu/README.md) 明确要求仓库路径没有空格。
 
 项目进展见 [STATUS](docs/STATUS.md)，开工命令和 CI 说明见 [BOOTSTRAP](docs/BOOTSTRAP.md)。
@@ -98,7 +100,7 @@ log/
 
 ## 设备资料与备份
 
-建议 `device` 中逐步形成这些文件；目前尚未采集：
+设备采集快照和 `memory-map.json` 已保存到 `device`，GPT 备份位于 `backup/gpt`。以下是资料的用途：
 
 - `inventory.md`：实际设备和当前固件信息。
 - `memory-map.json`：物理内存、保留区、装载窗口和内核管理窗口。

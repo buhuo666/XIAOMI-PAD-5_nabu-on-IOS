@@ -1,0 +1,22 @@
+{
+  "source": "src/nabu/device_bringup/ipados17_inputs/tools/dyld_cache_format-a571176.h",
+  "source_sha256": "92aaee85ba9724030b7eb512b8352c780023116f3550ae90e647af029245ae80",
+  "upstream_reference": "apple-oss-distributions/dyld@a571176e8e00c47e95b95e3156820ebec0cbd5e6",
+  "local_container_commit": "54b4f98457f8e9e232cc0a077c20d08d0b2f0ac9",
+  "offsets": {
+    "mappingOffset": 16,
+    "codeSignatureOffset": 40,
+    "uuid": 88,
+    "sharedRegionStart": 224,
+    "platform": 216,
+    "osVersion": 364,
+    "subCacheArrayOffset": 392,
+    "symbolFileUUID": 400,
+    "imagesOffset": 448,
+    "cacheSubType": 456,
+    "mappingWithSlideOffset": 312,
+    "localSymbolsOffset": 72,
+    "subcache_entry_bytes": 56
+  },
+  "method": "offsetof and sizeof compiled by WSL cc from the exact two structs in the pinned header"
+}

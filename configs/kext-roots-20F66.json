@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "purpose": "Declaration-only OSBundleLibraries analysis; not a prelink manifest",
+  "firmware": {
+    "product": "iPad7,11",
+    "device_class": "j171ap",
+    "version": "16.5",
+    "build": "20F66",
+    "kernel_sha256": "600da9b3bfff3385f34f8cb51ef549a7070b4ce6f4d2a8494a9595c922b6f4b2"
+  },
+  "root_selection_reference": {
+    "repository": "nabu",
+    "commit": "54b4f98457f8e9e232cc0a077c20d08d0b2f0ac9",
+    "path": "source-ci/prepare_source.py",
+    "scope": "Bundle identifier grouping only. All dependency edges and observed versions come from 20F66. No 21H16 addresses, initializers, slide, UUIDs or policies are reused."
+  },
+  "stages": [
+    {
+      "id": "storage-basic-userland",
+      "label": "存储与基本用户态声明依赖",
+      "roots": [
+        "com.apple.filesystems.apfs",
+        "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+        "com.apple.driver.AppleMobileFileIntegrity",
+        "com.apple.security.sandbox"
+      ]
+    },
+    {
+      "id": "cpu-display-touch",
+      "label": "CPU 显示与触摸声明依赖",
+      "roots": [
+        "com.apple.filesystems.apfs",
+        "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+        "com.apple.driver.AppleMobileFileIntegrity",
+        "com.apple.security.sandbox",
+        "com.apple.iokit.IOSurface",
+        "com.apple.iokit.IOMobileGraphicsFamily",
+        "com.apple.iokit.IOHIDFamily",
+        "com.apple.iokit.IOHIDEventDriverSafeBoot"
+      ]
+    },
+    {
+      "id": "gpu",
+      "label": "GPU 声明依赖",
+      "roots": [
+        "com.apple.filesystems.apfs",
+        "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+        "com.apple.driver.AppleMobileFileIntegrity",
+        "com.apple.security.sandbox",
+        "com.apple.iokit.IOSurface",
+        "com.apple.iokit.IOMobileGraphicsFamily",
+        "com.apple.iokit.IOHIDFamily",
+        "com.apple.iokit.IOHIDEventDriverSafeBoot",
+        "com.apple.iokit.IOGPUFamily"
+      ]
+    }
+  ]
+}

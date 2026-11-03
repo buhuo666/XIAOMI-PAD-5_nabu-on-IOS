@@ -134,6 +134,34 @@
       "commit": "e634ca58b4821d9f3d560cdc6df5dec02ffc93fd",
       "path": "src/lzfse",
       "purpose": "Apple LZFSE decoder for local firmware inspection"
+    },
+    {
+      "name": "ArmSmmu4K-nabu",
+      "repository": "https://github.com/RigoLigoRLC/unixnu-arm-smmu4k",
+      "commit": "599ba82f96f3e10b0afbd784c040127d38e2683a",
+      "path": "src/ArmSmmu4K-nabu",
+      "purpose": "A640 vendored provenance in nabu/gpu/upstream/ArmSmmu4K; differs from reference core gitlink"
+    },
+    {
+      "name": "AdrenoPM4-nabu",
+      "repository": "https://github.com/UniXNU/AdrenoPM4.git",
+      "commit": "282606b528b2595bc4274ea7490b62b323f35a5f",
+      "path": "src/AdrenoPM4-nabu",
+      "purpose": "A640 vendored provenance and Metal plugin pin; differs from reference core gitlink"
+    },
+    {
+      "name": "AdrenoFirmware-reference",
+      "repository": "https://github.com/UniXNU/AdrenoFirmware.git",
+      "commit": "40fdb8ea87606612ac6f1e80bbb49955d0ce4051",
+      "path": "src/AdrenoFirmware-reference",
+      "purpose": "reference core firmware-format library gitlink; vendor firmware excluded"
+    },
+    {
+      "name": "UniXNU-turnip-reference",
+      "repository": "https://github.com/UniXNU/UniXNU.git",
+      "commit": "cd2dd1bd0d79a441424f2bd014144bd719ba56f7",
+      "path": "src/unixnu-turnip",
+      "purpose": "nabu 19-patch Turnip/Metal reference pipeline; separate from 245aca1a kernel core"
     }
   ]
 }

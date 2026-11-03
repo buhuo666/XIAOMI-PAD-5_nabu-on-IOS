@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import plistlib
 import urllib.request
@@ -52,7 +53,8 @@ class RemoteZip(io.RawIOBase):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=ROOT / 'configs/firmware.json')
-    parser.add_argument('--proxy')
+    parser.add_argument('--proxy', default=os.environ.get(
+        'NABU_PROXY', 'http://127.0.0.1:19999' if os.name == 'nt' else None))
     parser.add_argument('--include-os', action='store_true')
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding='utf-8'))

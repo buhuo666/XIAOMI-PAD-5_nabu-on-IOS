@@ -75,19 +75,30 @@ def main():
         return result.returncode
     implementation = Path(arguments[arguments.index('--impl') + 1]).resolve()
     native = implementation.read_bytes()
-    adapted, changes, invocations = adapt(native.decode('utf-8'))
-    adapted_bytes = adapted.encode('utf-8')
     project = Path(os.environ['PROJECT_ROOT'])
     relative = implementation.relative_to(Path(os.environ['XNU_SRC']) / 'BUILD')
     output = project / 'log/ci/iig-8796' / relative.parent
     output.mkdir(parents=True, exist_ok=True)
     (output / (implementation.name + '.native')).write_bytes(native)
-    (output / implementation.name).write_bytes(adapted_bytes)
     report = {'implementation': relative.as_posix(), 'native_sha256': hashlib.sha256(native).hexdigest(),
-              'adapted_sha256': hashlib.sha256(adapted_bytes).hexdigest(), 'changes': changes,
-              'invocation_layout_assertions': invocations,
               'iorpc_header_modified': False, 'headers_modified': False}
-    (output / (implementation.name + '.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    if '--header' in arguments:
+        header = Path(arguments[arguments.index('--header') + 1])
+        header_bytes = header.read_bytes()
+        (output / header.name).write_bytes(header_bytes)
+        report['header'] = {'name': header.name, 'sha256': hashlib.sha256(header_bytes).hexdigest()}
+    receipt = output / (implementation.name + '.json')
+    try:
+        adapted, changes, invocations = adapt(native.decode('utf-8'))
+    except (ValueError, UnicodeError) as error:
+        report.update(status='adaptation-failed', error=str(error))
+        receipt.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+        raise
+    adapted_bytes = adapted.encode('utf-8')
+    (output / implementation.name).write_bytes(adapted_bytes)
+    report.update(status='adapted', adapted_sha256=hashlib.sha256(adapted_bytes).hexdigest(), changes=changes,
+              invocation_layout_assertions=invocations)
+    receipt.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     implementation.write_bytes(adapted_bytes)
     return 0
 
