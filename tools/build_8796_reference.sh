@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
-python3 tools/fetch_sources.py --only hakios-8796 xnu-8796 --report log/ci/source-checkouts.json
+python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 --report log/ci/source-checkouts.json
 export JOBS=3
 export THEOS="$PROJECT_ROOT/build/reference-theos"
 export XNU_SRC="$PROJECT_ROOT/build/xnu8796-reference/tree"
