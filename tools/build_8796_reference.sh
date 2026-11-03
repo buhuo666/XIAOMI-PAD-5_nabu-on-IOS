@@ -40,6 +40,9 @@ cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 bash xnu-deps/setup.sh 2>&1 | tee "$PROJECT_ROOT/log/ci/setup.log"
+python3 "$PROJECT_ROOT/tools/probe_iig_targets.py" --source "$XNU_SRC" \
+  --sdk "$PROJECT_ROOT/src/hakios-8796/xnu-deps/sdk/iPhoneOS16.5.xnu.sdk" \
+  --output "$PROJECT_ROOT/log/ci/iig-targets"
 set +e
 bash xnu-build.sh -j"$JOBS" -k 2>&1 | tee "$PROJECT_ROOT/log/ci/kernel-build.log"
 BUILD_EXIT=${PIPESTATUS[0]}
