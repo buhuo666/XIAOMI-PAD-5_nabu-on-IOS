@@ -1,0 +1,185 @@
+--- a/osfmk/kern/exception.c
++++ b/osfmk/kern/exception.c
+@@ -837,6 +837,174 @@
+ void nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode);
+ static void nabu_crash_strings(const char *name);
+ 
++
++/* NABU_MTL1_BEGIN
++ * Read saved operands of one known mediaserverd SIGABRT. No user code runs,
++ * no memory is written, and no heap is scanned. A mismatch yields unknown.
++ * Static derivation: docs/metal-abort-observation.md. Code guards describe
++ * this layout only; they do not authenticate the whole shared cache.
++ */
++struct nabu_mtl_result {
++	unsigned int status, line, function_null, index, library_null, pipeline_null;
++};
++struct nabu_mtl_codeword { uint64_t address; uint32_t word; };
++static const struct nabu_mtl_codeword nabu_mtl_code[] = {
++	{0x181c1c3ecULL, 0xd10103ffu},
++	{0x181c1c3f0ULL, 0xa90157f6u},
++	{0x181c1c3f4ULL, 0xa9024ff4u},
++	{0x181c1c3f8ULL, 0xa9037bfdu},
++	{0x181c1c3fcULL, 0x9100c3fdu},
++	{0x181c1c400ULL, 0xaa0203f3u},
++	{0x181c1c404ULL, 0xaa0003f4u},
++	{0x181c1c474ULL, 0xd2800000u},
++	{0x181c1c478ULL, 0x52805682u},
++	{0x181c1c4c8ULL, 0x52800020u},
++	{0x181c1c4ccULL, 0x52805722u},
++	{0x181c1c4d0ULL, 0x9404364du},
++	{0x181d29e08ULL, 0xd10343ffu},
++	{0x181d29e0cULL, 0xa90867fau},
++	{0x181d29e10ULL, 0xa9095ff8u},
++	{0x181d29e14ULL, 0xa90a57f6u},
++	{0x181d29e18ULL, 0xa90b4ff4u},
++	{0x181d29e1cULL, 0xa90c7bfdu},
++	{0x181d29e20ULL, 0x910303fdu},
++	{0x181d29e24ULL, 0xaa0303f4u},
++	{0x181d29e28ULL, 0xaa0203f3u},
++	{0x181d29e2cULL, 0xaa0103f5u},
++	{0x181d29e30ULL, 0xaa0003f6u},
++	{0x181d29fc4ULL, 0xaa1403e0u},
++	{0x181d29fc8ULL, 0xaa1503e1u},
++	{0x181d29fccULL, 0xaa1303e2u},
++	{0x181d29fd0ULL, 0x9400845du},
++	{0x181d4b148ULL, 0xa9be4ff4u},
++	{0x181d4b14cULL, 0xa9017bfdu},
++	{0x181d4b150ULL, 0x910043fdu},
++	{0x1c22f1cc8ULL, 0xd10203ffu},
++	{0x1c22f1cccULL, 0xa9026ffcu},
++	{0x1c22f1cd0ULL, 0xa90367fau},
++	{0x1c22f1cd4ULL, 0xa9045ff8u},
++	{0x1c22f1cd8ULL, 0xa90557f6u},
++	{0x1c22f1cdcULL, 0xa9064ff4u},
++	{0x1c22f1ce0ULL, 0xa9077bfdu},
++	{0x1c22f1ce4ULL, 0x9101c3fdu},
++	{0x1c22f1ce8ULL, 0xaa0003f3u},
++	{0x1c22f1d48ULL, 0xf9400fe0u},
++	{0x1c22f1d4cULL, 0xaa1603e2u},
++	{0x1c22f1d50ULL, 0x9402785cu},
++	{0x1c22f1d54ULL, 0xaa0003f5u},
++	{0x1c22f1d68ULL, 0xf9400be2u},
++	{0x1c22f1d6cULL, 0x940281bdu},
++	{0x1c22f1d70ULL, 0xaa1703e0u},
++	{0x1c22f1d74ULL, 0xaa1503e2u},
++	{0x1c22f1d78ULL, 0x94027e92u},
++	{0x1c22f1dccULL, 0x91002339u},
++	{0x1c22f1dd0ULL, 0xf101833fu},
++	{0x1c22f1dd4ULL, 0x54fffae1u},
++};
++
++static int
++nabu_mtl_read(uint64_t address, void *out, size_t bytes)
++{
++	/* This diagnostic is for the frozen low-address shared-cache ABI only. */
++	if (address < 0x10000ULL || address >= (1ULL << 39) ||
++	    bytes > 256 || bytes > (1ULL << 39) - address) {
++		return 0;
++	}
++	return copyin((user_addr_t)address, out, bytes) == 0;
++}
++
++static void
++nabu_mtl_observe(uint64_t fp, uint64_t slide, struct nabu_mtl_result *out)
++{
++	uint64_t cold = 0, report, setter, setup;
++	uint64_t f[2], g[2], h[2], line, function, loop, libraries[2];
++	memset(out, 0, sizeof(*out));
++	out->status = 1; /* no matching call chain / unreadable frame */
++	if (slide > 0x100000000ULL || (slide & 0xfff)) {
++		return;
++	}
++	for (unsigned int i = 0; i < 16; i++) {
++		if ((fp & 15) || !nabu_mtl_read(fp, f, sizeof(f))) {
++			return;
++		}
++		if (f[1] == 0x181d29fd4ULL + slide) {
++			cold = fp;
++			break;
++		}
++		if (f[0] <= fp || f[0] - fp > 65536) {
++			return;
++		}
++		fp = f[0];
++	}
++	if (!cold) {
++		return;
++	}
++	report = f[0];
++	if (report != cold + 208 || !nabu_mtl_read(report, g, sizeof(g)) ||
++	    g[1] != 0x181c1c4d4ULL + slide) {
++		return;
++	}
++	setter = g[0];
++	if (setter != report + 64 || !nabu_mtl_read(setter, h, sizeof(h)) ||
++	    h[1] != 0x1c22f1d7cULL + slide) {
++		return;
++	}
++	setup = h[0];
++	if (setup != setter + 128) {
++		return;
++	}
++	out->status = 2; /* code layout unknown */
++	for (unsigned int i = 0; i < sizeof(nabu_mtl_code) / sizeof(nabu_mtl_code[0]); i++) {
++		uint32_t word;
++		if (!nabu_mtl_read(nabu_mtl_code[i].address + slide, &word, sizeof(word)) ||
++		    word != nabu_mtl_code[i].word) {
++			return;
++		}
++	}
++	out->status = 3; /* saved operands unavailable */
++	if (!nabu_mtl_read(cold - 8, &line, sizeof(line)) ||
++	    !nabu_mtl_read(report - 8, &function, sizeof(function)) ||
++	    !nabu_mtl_read(report - 56, &loop, sizeof(loop)) ||
++	    !nabu_mtl_read(setup - 96, libraries, sizeof(libraries))) {
++		return;
++	}
++	out->status = 4; /* inconsistent branch/object or loop; do not interpret */
++	if (!((line == 692 && function == 0) || (line == 697 && function != 0)) ||
++	    loop >= 96 || (loop & 7)) {
++		return;
++	}
++	out->line = (unsigned int)line;
++	out->function_null = function == 0;
++	out->index = (unsigned int)(loop / 8);
++	out->library_null = libraries[1] == 0;
++	out->pipeline_null = libraries[0] == 0;
++	out->status = 0;
++}
++/* NABU_MTL1_END */
++
++extern int nabu_log_record(const char *line, int n);
++
++static void
++nabu_mtl_crash(const char *name, int pid, int sig, uint64_t fp, uint64_t slide)
++{
++	unsigned int enabled = 0;
++	struct nabu_mtl_result observed;
++	char line[224];
++	int n;
++	if (sig != 6 || strcmp(name, "mediaserverd") != 0 ||
++	    !PE_parse_boot_argn("nabumtlprobe", &enabled, sizeof(enabled)) || enabled != 1) {
++		return;
++	}
++	nabu_mtl_observe(fp, slide, &observed);
++	n = snprintf(line, sizeof(line),
++	    "NABU MTL1: pid=%d status=%u line=%u fn_null=%u index=%u lib_null=%u pipe_null=%u\n",
++	    pid, observed.status, observed.line, observed.function_null, observed.index,
++	    observed.library_null, observed.pipeline_null);
++	if (n > 0 && n < (int)sizeof(line)) {
++		(void)nabu_log_record(line, n);
++	}
++}
++
+ void
+ nabu_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
+ {
+@@ -856,6 +1024,7 @@
+ 		return;
+ 	}
+ 	uint64_t fp = get_saved_state_fp(ss);
++	nabu_mtl_crash(name, pid, sig, fp, slide);
+ 	printf("CRASH %s pc 0x%llx lr 0x%llx sp 0x%llx fp 0x%llx far 0x%llx\n", name,
+ 	    get_saved_state_pc(ss), get_saved_state_lr(ss), get_saved_state_sp(ss), fp,
+ 	    (uint64_t)saved_state64(ss)->far);
