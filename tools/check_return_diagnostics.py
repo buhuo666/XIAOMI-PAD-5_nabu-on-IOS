@@ -151,8 +151,12 @@ int main(void) {
               'scope':'Extracted timer routing and diagnostic formatting; mock IRQ/scheduler/hardware. No board claim.'}
     if a.candidate:
         data=a.candidate.read_bytes(); syms,segments=symbols(data)
-        for name in ('_loader_diag_initial','_loader_diag_expired','_loader_diag_route','_loader_diag_callback'):
-            assert name in syms, name
+        # LLVM may merge internal globals and remove their individual nlist
+        # names. Verify code paths and literals rather than local symbol names.
+        for marker in (b'nabu_diag %s on cpu %d:', b'nabu_diag callback on cpu %d mode=%s',
+                       b'nabu_diag xcall target=%u result=0x%x', b'--- nabu return diagnostic ---',
+                       b'nabu_diag cpu %u mpidr=0x%llx timer=%llu->%llu sgi=%llu->%llu last=%u'):
+            assert marker in data, marker
         names=('_PE_parse_boot_argn','_PE_boot_args','_loader_return_timer_init','_loader_return_timer',
                '_loader_return_test','_loader_return')
         ranges=[]
@@ -178,6 +182,24 @@ int main(void) {
         assert run.returncode==0, 'Native LLDB failed'
         native=json.loads((a.output/'native-instructions.json').read_text())
         assert native['all_ranges_decoded']
+        decoded={s['name']:s['instructions'] for s in native['targets'][0]['symbols']}
+        def direct_calls(name):
+            calls=[]
+            for row in decoded[name]:
+                word=int.from_bytes(bytes.fromhex(row['bytes']),'little')
+                if word & 0xfc000000 == 0x94000000:
+                    displacement=word & 0x03ffffff
+                    if displacement & 0x02000000: displacement-=0x04000000
+                    calls.append(int(row['address'],16)+displacement*4)
+            return calls
+        init_calls=direct_calls('_loader_return_timer_init')
+        timer_calls=direct_calls('_loader_return_timer')
+        assert init_calls.count(syms['_PE_parse_boot_argn'])==3
+        assert timer_calls.count(syms['_PE_parse_boot_argn'])==2
+        assert syms['_cpu_xcall'] in timer_calls
+        assert syms['_snprintf'] in init_calls and syms['_snprintf'] in timer_calls
+        report['native_call_checks']={'init_parse_calls':3,'timer_parse_calls':2,
+                                      'timer_cpu_xcall':True,'initial_and_expired_formatting':True}
         report['candidate_sha256']=plan['targets'][0]['sha256']
         report['native_summary']=native['summary']
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
