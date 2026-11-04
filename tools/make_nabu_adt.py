@@ -113,7 +113,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
     if userland_serial is not None:
         # IOPlatformExpertDevice publishes this NUL-terminated ADT data as
         # IOPlatformSerialNumber. Keep the value local and explicit.
-        tree.props['serial-number'] = STR(validate_userland_serial(userland_serial))
+        # The normal publication uses the first C string. If its allocation
+        # fails, the inherited IODT fallback reads legacy offsets 13..20;
+        # keep that read within this property without changing the C string.
+        tree.props['serial-number'] = STR(validate_userland_serial(userland_serial)).ljust(32, b'\0')
     return tree
 
 

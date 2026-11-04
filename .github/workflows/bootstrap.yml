@@ -11,6 +11,7 @@ on:
       - 'patches/darwinboot/**'
       - 'patches/nabu-storage/**'
       - 'patches/nabu-userland/**'
+      - 'userland/nabu/**'
   workflow_dispatch:
     inputs:
       runner:
@@ -45,6 +46,11 @@ jobs:
             python3 --version
           } > log/ci/host.txt
           cat log/ci/host.txt
+      - name: Check and compile the explicit SpringBoard UI compatibility library
+        run: |
+          python3 tools/check_nabu_setup_compat.py --output log/ci/nabu-setup-compat
+          python3 tools/build_nabu_setup_compat.py --output artifacts/nabu-setup-compat
+          cp log/ci/nabu-setup-compat/report.json artifacts/nabu-setup-compat/host-check.json
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
       - name: Verify linked kernel against the selected export contract
@@ -74,6 +80,7 @@ jobs:
             log/ci/
             artifacts/8796-reference/
             artifacts/nabu-userland/
+            artifacts/nabu-setup-compat/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14

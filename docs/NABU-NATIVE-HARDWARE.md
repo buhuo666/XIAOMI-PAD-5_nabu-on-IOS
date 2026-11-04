@@ -70,6 +70,12 @@ ADT/部署工具新增显式 `--userland-serial-file`，仅增加 root 的 NUL �
 不作为 Apple 激活记录。加入该字段后，硬件节点保持逐字节相同，实际 loader ADT
 解析/截断/分配场景检查通过。
 
-原生构建 `41855566365` attempt 1 因 hosted runner 未接单而取消，没有执行编译。
-已发起 attempt 2；工作流另增加 Intel macOS 15 备选执行池，仍锁定 Xcode 16.4、
+原生构建 `41855566365` 的两次尝试均因 hosted runner 未接单而结束，没有执行编译。
+Intel macOS 15 备选任务 `41859793121` 仍在等待；两种执行池都锁定 Xcode 16.4、
 arm64 内核目标及所有原生检查。
+
+序列号读取的后续核对：ARM 启动先 ConfigureIOKit 再启动服务匹配；原版 MobileGestalt
+确认从 IOPlatformExpertDevice 的 IOPlatformSerialNumber 读取。7 段原版函数、276 条
+指令通过独立 LLVM 字节核对，三种读取结果经过有界仿真。ADT 属性在 NUL 后补零至
+至少 32 bytes，以容纳上游分配失败回退路径的旧式偏移读取；正常 C 字符串不变。
+来源、反汇编及边界报告保存在 `log/host/display-v25/serial-path*`。

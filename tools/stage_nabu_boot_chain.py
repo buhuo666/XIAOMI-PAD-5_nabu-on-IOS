@@ -22,6 +22,26 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def check_setup_compat_boot_policy(args, boot_report):
+    """The explicit UI policy switch must match the qualified RAM image."""
+    switches = [x for x in args if x.startswith('nabu-setup-compat')]
+    compat = boot_report.get('setup_compat')
+    if compat is None:
+        assert not switches and not boot_report.get('private_address_injections_enabled'), \
+            'Setup compatibility requires a qualified library in the bootstrap image'
+        return False
+    assert switches == ['nabu-setup-compat=1'], 'Qualified setup library requires one exact boot switch'
+    assert boot_report.get('private_address_injections_enabled') is True
+    assert compat['library'] == '/redwood/lib/libnabu.setup.dylib'
+    assert compat['process'] == 'SpringBoard' and compat['host_tests_passed'] is True
+    assert compat['required_bootarg'] == 'nabu-setup-compat=1'
+    assert re.fullmatch(r'[0-9a-f]{64}', compat['binary_sha256'])
+    source = (ROOT/'userland/nabu/src/setup_compat.c').read_text(encoding='utf-8')
+    assert hashlib.sha256(source.encode()).hexdigest() == compat['source_sha256_lf'], \
+        'Setup library source differs from the qualified bootstrap image'
+    return True
+
+
 def check_gpt(shell, baseline):
     """Compare only bounded GPT metadata reads with the verified backup."""
     records = []
@@ -89,6 +109,7 @@ def main():
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
     bootstrap_mode='initrd' in entry
+    setup_compat_enabled = False
     log_args=[x for x in entry['args'].split() if x.startswith(('nabu-log-slot','nabu-log-span'))]
     log_prepared=checked_receipt(a.log_preparation) if a.log_preparation else None
     if log_args or log_prepared:
@@ -106,8 +127,10 @@ def main():
         boot_report=json.loads((a.bootstrap.parent/'bootstrap-report.json').read_text())
         assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024
         assert sha(a.bootstrap)==boot_report['sha256'] and len(boot_report['containers'])==2
+        setup_compat_enabled = check_setup_compat_boot_policy(args, boot_report)
     else:
         assert a.bootstrap is None, 'Config has no initrd'
+        assert not any(x.startswith('nabu-setup-compat') for x in entry['args'].split())
     files = {
         'EFI/Nabu16/UniXNU.efi': (efi/'UniXNU.efi').read_bytes(),
         'EFI/Nabu16/DarwinBoot.efi': (efi/'DarwinBoot.efi').read_bytes(),
@@ -139,6 +162,7 @@ def main():
                'storage_writes_enabled': bool(log_prepared), 'system_data_writes_enabled': False,
                'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
+    receipt['setup_compat_enabled'] = setup_compat_enabled
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

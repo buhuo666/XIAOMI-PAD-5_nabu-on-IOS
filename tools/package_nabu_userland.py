@@ -18,6 +18,31 @@ def digest(p):
     with p.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
 
 
+def qualified_setup_compat(directory):
+    """Bind the optional source-built library to this source and its host checks."""
+    from build_nabu_setup_compat import verify
+    library=directory/'libnabu.setup.dylib'
+    build=json.loads((directory/'build-report.json').read_text())
+    checks=json.loads((directory/'host-check.json').read_text())
+    source=(ROOT/'userland/nabu/src/setup_compat.c').read_text(encoding='utf-8')
+    source_sha=hashlib.sha256(source.encode()).hexdigest()
+    binary=verify(library)
+    assert build['binary']==binary, 'Setup library differs from its native build report'
+    assert build['source_sha256_lf']==checks['source_sha256_lf']==source_sha
+    checker=(ROOT/'tools/check_nabu_setup_compat.py').read_text(encoding='utf-8')
+    assert checks['checker_sha256_lf']==hashlib.sha256(checker.encode()).hexdigest()
+    assert checks['passed'] is True, 'Setup library host checks did not pass'
+    return library, {
+        'library':'/redwood/lib/libnabu.setup.dylib', 'process':'SpringBoard',
+        'required_bootarg':'nabu-setup-compat=1', 'host_tests_passed':True,
+        'source_sha256_lf':source_sha, 'binary_sha256':binary['sha256'],
+        'build_report_sha256':digest(directory/'build-report.json'),
+        'host_check_sha256':digest(directory/'host-check.json'),
+        'build_report':build, 'host_check':checks,
+        'device_execution_validated':False,
+    }
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--programs',type=Path,required=True)
@@ -25,7 +50,10 @@ def main():
     ap.add_argument('--work',type=Path,required=True)
     ap.add_argument('--output',type=Path,required=True)
     ap.add_argument('--apfsck',type=Path,required=True)
+    ap.add_argument('--setup-compat',type=Path,
+                    help='Explicit qualified source-built setup library directory, including host-check.json')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
+    setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     assert not a.work.exists() and not a.output.exists()
     a.work.mkdir(parents=True);a.output.mkdir(parents=True)
     source=ROOT/'src/hakios-8796';build=json.loads((a.programs/'build-report.json').read_text())
@@ -87,7 +115,13 @@ def main():
     skeleton+='d\t700\t501\t501\t/private/var/mobile/tmp\n'
     assert len(skeleton.encode())<16383 and skeleton.count('d\t')>50
     (root/'etc/var.skel').write_text(skeleton)
-    (root/'etc/inject.conf').write_text('') # Private-address compatibility hooks are not enabled without qualification.
+    injection=''
+    if setup_library:
+        target=root/'lib/libnabu.setup.dylib'
+        shutil.copy2(setup_library,target);target.chmod(0o755)
+        assert digest(target)==setup_report['binary_sha256']
+        injection=setup_report['library']+' '+setup_report['process']+'\n'
+    (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; temporary Data bootstrap\n')
     images=[]
@@ -110,7 +144,8 @@ def main():
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
             'temporary_data':True,'setup_assistant_skipped_in_seed':True,
-            'private_address_injections_enabled':False,'device_execution_validated':False,
+            'private_address_injections_enabled':setup_report is not None,
+            'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}
     (a.output/'bootstrap-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
