@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "layout_id": "nabu-20F66-persistent-v1",
+  "partition_name": "nabu_system",
+  "partition_bytes": 64424509440,
+  "image_bytes": 10737418240,
+  "logical_block_bytes": 4096,
+  "windows": [
+    {
+      "name": "OS",
+      "offset": 1048576,
+      "bytes": 5068816384,
+      "image_sha256": "437891d485a5812f9e4c7a5870e27b83dd54e506d18aa679f0c549902ed63c7a",
+      "superblock_sha256": "42bf932594095879869d6e01867be9c1c67894b09d96231affa534c905bd7675"
+    },
+    {
+      "name": "SystemOS",
+      "offset": 6442450944,
+      "bytes": 2663383040,
+      "image_sha256": "ed44dccbbe29287ad659dba892a50eb03ac1df2ec604da4256e48c741f15d626",
+      "superblock_sha256": "420704e0478020292a977253bd5e56a972e4b667a5445ba52015aa2b6a79332a"
+    }
+  ],
+  "probe_file": {
+    "path": "/sbin/launchd",
+    "bytes": 525088,
+    "sha256": "4c61512d19b9a55a6ddad27e23b88fc5008fbf77d0c0b5e6bdd7c7d90cef3e06"
+  },
+  "writes_enabled": false,
+  "device_execution_validated": false
+}

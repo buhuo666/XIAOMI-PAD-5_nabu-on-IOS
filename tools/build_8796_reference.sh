@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
-python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot --report log/ci/source-checkouts.json
+python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot ShengUfs nabu --report log/ci/source-checkouts.json
 python3 tools/prepare_8796_loader.py --output build/darwinboot8796-capacity/tree
 python3 tools/check_darwinboot_8796.py --tree build/darwinboot8796-capacity/tree --output log/ci/darwinboot8796
 export JOBS=3
@@ -54,6 +54,8 @@ for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.pat
   shasum -a 256 "$PROJECT_ROOT/patches/8796/$patch" >> "$PROJECT_ROOT/log/ci/project-patches.sha256"
 done
 cd "$PROJECT_ROOT"
+python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
+python3 tools/check_nabu_storage.py --tree "$XNU_SRC" --output log/ci/nabu-storage/host
 python3 tools/check_return_diagnostics.py --tree "$XNU_SRC" --output log/ci/return-diagnostics-host
 python3 tools/check_nabu_export_contract.py --tree "$XNU_SRC" --output log/ci/nabu-export-contract.json
 export NABU_EXPORT_CONTRACT=20F66-37-v1
