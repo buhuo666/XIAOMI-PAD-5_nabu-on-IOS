@@ -170,3 +170,5 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 第二十三轮日志候选已由 macOS Actions `41839045982` 完整编译和验证，stripped 内核 SHA-256 `7df502f2a4ef936fe6b990d74cbf49227585710f19ddfa232d1fd025b9b32c74`。两份内核及项目补丁哈希、七组验收报告、十四个原生指令范围均已核对；capture/runtime 的源哈希与 CI 一致。第一轮 Actions `41838242673` 因测试辅助代码重定义 macOS `__unused` 失败，修正仅为宏定义保护，后续全部通过。
 
 `artifacts/nabu-chain-desktop-v23` 只更换上述内核并添加 `nabu-log-slot=1`；十分钟返回、240／360／480 秒采样保持，EFI、bootstrap、设备树及随机种子、boot.img 均与第二十二轮一致。Android 已为槽 1 准备新清单并回读整个 64 MiB，旧非零槽 0 保留。分区内唯一写入是日志清单的 4096 bytes，30 份 GPT 元数据前后相同；XNU 日志保存本身仍待本轮运行及 Android 回收验证。
+
+第二十三轮于 `2026-11-04T21:49:27.207227+08:00` 执行 `fastboot boot`，发送及 Booting 均成功。源提交 `8c952ed3330f2e1dc3f718cf1fd17bdc4918db82`，六个启动文件回读一致，启动前再次核对槽 1 仍只有本轮清单和全零后缀、30 份 GPT 元数据一致并记录 14 个引导分区哈希。217 份输入／验收证据及确切 boot.img 冻结在 `log/device/nabu-boot-20261104-23/`。当前仅确认临时启动命令成功；等待十分钟后的定时报告并恢复 Android，本轮 `--collect` 将自动回收原始日志槽、校验连续记录和 END／全流 SHA-256，只有 `runtime-log/report.json` 中 complete=true 才确认本轮完整落盘回读成功。
