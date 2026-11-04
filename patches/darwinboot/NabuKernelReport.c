@@ -56,23 +56,34 @@ static uint64_t find_marker(const volatile unsigned char *log, uint64_t length,
 struct selected_lines { uint64_t at[3]; unsigned count; };
 
 struct stack_lines {
-  uint64_t at[12], bytes[12];
+  uint64_t at[12], bytes[12], header[12], header_bytes[12];
   unsigned count, omitted;
 };
 
+static int same_log_text(const volatile unsigned char *log,
+    uint64_t at, uint64_t bytes, uint64_t other, uint64_t other_bytes)
+{
+  if (bytes != other_bytes) return 0;
+  for (uint64_t j = 0; j < bytes; ++j)
+    if (log[at + j] != log[other + j]) return 0;
+  return 1;
+}
+
 /* The same message can appear in both the plain log and the appended kernel
- * message buffer. Compare the payload after the timestamp, not its prefix. */
+ * message buffer. Strip their timestamp prefixes, but retain the full sample
+ * header: PID, slide and sampling time must travel with each thread. */
 static void select_stack(struct stack_lines *lines,
-    const volatile unsigned char *log, uint64_t at, uint64_t bytes)
+    const volatile unsigned char *log, uint64_t at, uint64_t bytes,
+    uint64_t header, uint64_t header_bytes)
 {
   for (unsigned i = 0; i < lines->count; ++i) {
-    if (lines->bytes[i] != bytes) continue;
-    uint64_t j = 0;
-    while (j < bytes && log[lines->at[i] + j] == log[at + j]) ++j;
-    if (j == bytes) return;
+    if (same_log_text(log, lines->header[i], lines->header_bytes[i], header, header_bytes) &&
+        same_log_text(log, lines->at[i], lines->bytes[i], at, bytes)) return;
   }
   if (lines->count == 12) { lines->omitted = 1; return; }
   lines->at[lines->count] = at;
+  lines->header[lines->count] = header;
+  lines->header_bytes[lines->count] = header_bytes;
   lines->bytes[lines->count++] = bytes;
 }
 
@@ -104,6 +115,21 @@ static unsigned draw_log_line(const volatile unsigned char *log, uint64_t length
   return used;
 }
 
+/* Count the same (at most two) rows as draw_log_line, including its empty
+ * continuation when a newline falls exactly on the column boundary. */
+static unsigned log_line_rows(const volatile unsigned char *log, uint64_t length,
+    uint64_t at, unsigned columns)
+{
+  unsigned n = 0;
+  if (at >= length) return 0;
+  while (at < length) {
+    unsigned c = log[at++];
+    if (c == '\n') return n >= columns ? 2 : 1;
+    if (c != '\r' && ++n > columns) return 2;
+  }
+  return 1;
+}
+
 static unsigned draw_stacks(const volatile unsigned char *log, uint64_t length,
     const struct stack_lines *stacks, uint64_t header,
     uint64_t y, unsigned rows, unsigned columns)
@@ -112,10 +138,25 @@ static unsigned draw_stacks(const volatile unsigned char *log, uint64_t length,
   if (!rows) return 0;
   draw("THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES", y, 12, 2, 0xffffff00);
   ++used;
-  if (header < length && used + 1 < rows)
+  if (!stacks->count && header < length && used + 1 < rows)
     used += draw_log_line(log, length, header, y + used * 28, rows - used - 1, columns);
   /* Keep a row for an explicit notice if capacity or the screen clips lines. */
-  while (shown < stacks->count && used + 1 < rows) {
+  while (shown < stacks->count) {
+    unsigned context_changed = !shown ||
+      !same_log_text(log, stacks->header[shown - 1], stacks->header_bytes[shown - 1],
+          stacks->header[shown], stacks->header_bytes[shown]);
+    unsigned header_rows = context_changed ? (stacks->header_bytes[shown] ?
+      log_line_rows(log, length, stacks->header[shown], columns) : 1) : 0;
+    unsigned thread_rows = log_line_rows(log, length, stacks->at[shown], columns);
+    /* Reserve the header's rows together with the thread's rows. */
+    if (used + header_rows + thread_rows + 1 > rows) break;
+    if (context_changed) {
+      if (stacks->header_bytes[shown])
+        used += draw_log_line(log, length, stacks->header[shown],
+            y + used * 28, header_rows, columns);
+      else
+        draw("THREAD SAMPLE HEADER NOT CAPTURED", y + used++ * 28, 12, 2, 0xffff8000);
+    }
     used += draw_log_line(log, length, stacks->at[shown++],
         y + used * 28, rows - used - 1, columns);
   }
@@ -137,7 +178,7 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
   const char *labels[5] = {"SPRINGBOARD: SELECTED LOG LINES",
     "BACKBOARDD: SELECTED LOG LINES", "RUNNINGBOARDD: SELECTED LOG LINES",
     "DISPLAY / SURFACES: SELECTED LOG LINES", "DYLD / EXIT: SELECTED LOG LINES"};
-  uint64_t status = length, reads = length, stack_header = length;
+  uint64_t status = length, reads = length, stack_header = length, stack_header_bytes = 0;
   for (uint64_t start = 0; start < length;) {
     uint64_t end = start;
     while (end < length && log[end] != '\n') ++end;
@@ -145,7 +186,13 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 #define HAS(s) (find_marker(log + start, n, (s)) < n)
     if (HAS("NABU USERLAND:")) status = start;
     if (HAS("IO reads=")) reads = start;
-    if (HAS("nabu_diag ") || HAS("boot-args =")) {
+    if (HAS("--- kernel message buffer ---") ||
+        HAS("[... the log between the first 256 KB and the last 1 MB was dropped ...]")) {
+      /* The next stream/ring fragment can start halfway through a sample. */
+      stack_header = length;
+      stack_header_bytes = 0;
+    }
+    else if (HAS("nabu_diag ") || HAS("boot-args =")) {
       /* Both the kernel diagnostic and launchd print service names in args. */
     }
     else if (HAS("ustacks:")) {
@@ -153,8 +200,11 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
       uint64_t payload = at + 8;
       while (payload < end && log[payload] == ' ') ++payload;
       if (end - payload >= 7 && find_marker(log + payload, end - payload, "thread ") == 0)
-        select_stack(&stacks, log, at, end - at);
-      else if (HAS("shared cache slide")) stack_header = at;
+        select_stack(&stacks, log, at, end - at, stack_header, stack_header_bytes);
+      else if (HAS("shared cache slide")) {
+        stack_header = at;
+        stack_header_bytes = end - at;
+      }
     }
     else {
       if (HAS("SpringBoard")) select_line(&groups[0], start);
@@ -177,13 +227,9 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
     if (expanded && g == 2) continue;
     const struct selected_lines *selected = &groups[g];
     const char *label = labels[g];
-    struct selected_lines compact;
     if (!expanded && g == 2 && (stacks.count || stack_header < length)) {
-      compact.count = 0;
-      if (stack_header < length) compact.at[compact.count++] = stack_header;
-      for (unsigned i = 0; i < stacks.count; ++i) compact.at[compact.count++] = stacks.at[i];
-      selected = &compact;
-      label = "THREAD STACK SAMPLES: FIRST / LAST LOG LINES";
+      used += draw_stacks(log, length, &stacks, stack_header, y + used * 28, rows - used, columns);
+      continue;
     }
     draw(label, y + used++ * 28, 12, 2, 0xffffff00);
     unsigned count = selected->count < 3 ? selected->count : 3;

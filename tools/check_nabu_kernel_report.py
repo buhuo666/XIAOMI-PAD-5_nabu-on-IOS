@@ -55,7 +55,13 @@ def main():
             (0x181448000, 0, 0, True, 'desktop-wrap'),
             (0x181448000, 0, 0, True, 'desktop-stacks'),
             (0x181448000, 0, 0, True, 'desktop-twelve-stacks'),
-            (0x181448000, 0, 0, True, 'desktop-stack-overflow')]):
+            (0x181448000, 0, 0, True, 'desktop-stack-overflow'),
+            (0x181448000, 0, 0, True, 'desktop-two-process-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-multiprocess-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-repeat-sample-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-header-capacity-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-multiheader-overflow-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-no-header-stacks')]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
         uc.mem_write(base-4096, b'G'*4096)
@@ -69,6 +75,7 @@ def main():
         uc.mem_write(config+64, struct.pack('<6Q95Q', *video, *font))
         owned, owned_bytes, log_address, log_length = 0x180000000, 0x2000000, 0x180bc0000, 0
         log_data = b''
+        expected_stack_rows = None
         if log_case in ('valid', 'long'):
             prefix = b'line\r\n' * (12000 if log_case == 'long' else 80)
             if log_case == 'long':
@@ -110,13 +117,81 @@ def main():
                             ' '.join(f'0x{0x180000000+t*0x1000+j*4:x}' for j in range(16))
                             for t in range(12 if log_case=='desktop-twelve-stacks' else 16)]
                 log_data+=b'ustacks: SpringBoard[5] 12 threads, shared cache slide 0xaaaa0000\n'
-                # Repeated plain/kprintf messages must not consume thread slots;
-                # the latest header must survive independently of line capacity.
+                # A header without threads must not change another sample's
+                # attribution; repeated plain/kprintf copies consume no slots.
                 log_data+=(stack_header+'\n'+'\n'.join(stack_text)+'\n').encode()
                 log_data+=('[ 113.428460]: '+stack_header+'\n').encode()
                 log_data+=''.join('[ 113.428503]: '+line+'\n' for line in stack_text).encode()
+                log_data+=b'ustacks: lsd[99] 0 threads, shared cache slide 0xbbbb0000\n'
                 log_data+=(b'nabu_diag expired args=ustacks=SpringBoard backboardd\n'
                            b'com.apple.xpc.launchd <Notice>: boot-args = -v ustacks=SpringBoard backboardd\n')
+            elif log_case.endswith('-stacks'):
+                header_a='ustacks: lsd[22] 2 threads, shared cache slide 0x10000, uptime 113.100, at 113100000'
+                header_b='ustacks: lsd[31] 2 threads, shared cache slide 0x20000, uptime 113.200, at 113200000'
+                thread_a='ustacks: thread 0x101: 0x111 0x222'
+                thread_b='ustacks: thread 0x102: 0x333 0x444'
+                thread_c='ustacks: thread 0x103: 0x555 0x666'
+                expected_omitted=False
+                between_copies=b''
+                if log_case=='desktop-two-process-stacks':
+                    # Identical thread text belongs to two different processes.
+                    sample_lines=[header_a,thread_a,header_b,thread_a]
+                    expected_groups=[(header_a,[thread_a]),(header_b,[thread_a])]
+                    expected_expanded=False
+                elif log_case=='desktop-multiprocess-stacks':
+                    sample_lines=[header_a,thread_a,thread_b,header_b,thread_a,thread_c]
+                    expected_groups=[(header_a,[thread_a,thread_b]),(header_b,[thread_a,thread_c])]
+                    expected_expanded=True
+                elif log_case=='desktop-repeat-sample-stacks':
+                    # PID and slide alone are insufficient: sampling time differs.
+                    headers=[header_a.replace('113.100',f'{113+t}.100').replace('113100000',str(113100000+t*1000000))
+                             for t in range(3)]
+                    sample_lines=[line for h in headers for line in (h,thread_a)]
+                    expected_groups=[(h,[thread_a]) for h in headers]
+                    expected_expanded=True
+                elif log_case=='desktop-header-capacity-stacks':
+                    # Twelve contexts fit in storage, but only nine complete
+                    # two-row headers + two-row threads fit on the screen.
+                    headers=[f'ustacks: lsd[{22+t}] 1 threads, shared cache slide 0x{0x10000+t*0x1000:x}, '
+                             f'uptime 113.{100+t:03d}, at {113100000+t*1000}, details='+('h'*70) for t in range(12)]
+                    long_thread='ustacks: thread 0x101: '+' '.join(f'0x{0x180000000+j*4:x}' for j in range(16))
+                    assert all(128<len(h)<=256 for h in headers) and 128<len(long_thread)<=256
+                    sample_lines=[line for h in headers for line in (h,long_thread)]
+                    expected_groups=[(h,[long_thread]) for h in headers[:9]]
+                    expected_expanded=expected_omitted=True
+                elif log_case=='desktop-multiheader-overflow-stacks':
+                    headers=[f'ustacks: lsd[{22+t}] 1 threads, shared cache slide 0x{0x10000+t*0x1000:x}, '
+                             f'uptime 113.{100+t:03d}, at {113100000+t*1000}' for t in range(13)]
+                    sample_lines=[line for h in headers for line in (h,thread_a)]
+                    expected_groups=[(h,[thread_a]) for h in headers[:12]]
+                    expected_expanded=expected_omitted=True
+                else:
+                    assert log_case=='desktop-no-header-stacks'
+                    sample_lines=[header_a,thread_a]
+                    # Both real loader boundaries can remove the first part of
+                    # a sample. Neither orphan may inherit the previous PID,
+                    # nor receive a header encountered later in the fragment.
+                    log_data+=(header_b+'\n[... the log between the first 256 KB and the last 1 MB was dropped ...]\n'+
+                               thread_a+'\n').encode()
+                    between_copies=(header_b+'\n--- kernel message buffer ---\n'+thread_a+'\n').encode()
+                    expected_groups=[(None,[thread_a]),(header_a,[thread_a])]
+                    expected_expanded=False
+                log_data+=('\n'.join(sample_lines)+'\n').encode()
+                log_data+=between_copies
+                log_data+=''.join('[ 113.999999]: '+line+'\n' for line in sample_lines).encode()
+                # This last header deliberately has no thread. It is not the
+                # context of any preceding retained sample.
+                log_data+=b'ustacks: lsd[99] 0 threads, shared cache slide 0xdead0000, uptime 114.000, at 114000000\n'
+                expected_stack_rows=[]
+                for h,threads in expected_groups:
+                    if h is None:
+                        expected_stack_rows.append(('THREAD SAMPLE HEADER NOT CAPTURED',0xffff8000))
+                    else:
+                        expected_stack_rows.extend((h[at:at+128],0xffffffff) for at in range(0,len(h),128))
+                    for line in threads:
+                        expected_stack_rows.extend((line[at:at+128],0xffffffff) for at in range(0,len(line),128))
+                if expected_omitted:
+                    expected_stack_rows.append(('MORE THREAD STACK LINES OMITTED',0xffff8000))
             log_data+=b'NABU USERLAND: phase=7 errno=0\nIO reads=15502 failures=0\nSpringBoar'
             log_length=len(log_data)
             uc.mem_map(log_address,(log_length+4095)&~4095)
@@ -174,7 +249,21 @@ def main():
                     glyphs_match('DESKTOP LOG SUMMARY - HALTED',24,height//4+11*56,4,0xffffffff)
                     glyphs_match('NABU USERLAND: phase=7 errno=0',12,log_y+28,2,0xffffffff)
                     glyphs_match('IO reads=15502 failures=0',12,log_y+56,2,0xffffffff)
-                    if log_case in ('desktop-twelve-stacks','desktop-stack-overflow'):
+                    if expected_stack_rows is not None:
+                        stack_y=log_y+(84 if expected_expanded else 252)
+                        glyphs_match('THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES',12,stack_y,2,0xffffff00)
+                        for row,(line,color) in enumerate(expected_stack_rows):
+                            glyphs_match(line,12,stack_y+28*(row+1),2,color)
+                        service_y=stack_y+28*(len(expected_stack_rows)+1)
+                        if service_y+24<=log_y+40*28:
+                            glyphs_match(('SPRINGBOARD' if expected_expanded else 'DISPLAY / SURFACES')+
+                                         ': SELECTED LOG LINES',12,service_y,2,0xffffff00)
+                        if expected_expanded and service_y+52<=log_y+40*28:
+                            glyphs_match('SpringBoard: last event',12,service_y+28,2,0xffffffff)
+                        if not expected_expanded:
+                            glyphs_match('SPRINGBOARD: SELECTED LOG LINES',12,log_y+84,2,0xffffff00)
+                            glyphs_match('SpringBoard: first event',12,log_y+112,2,0xffffffff)
+                    elif log_case in ('desktop-twelve-stacks','desktop-stack-overflow'):
                         glyphs_match('THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES',12,log_y+84,2,0xffffff00)
                         glyphs_match(stack_header,12,log_y+112,2,0xffffffff)
                         for t, line in enumerate(stack_text[:12]):
@@ -201,7 +290,7 @@ def main():
                             if log_case=='desktop':
                                 glyphs_match('dyld: cache is available',12,log_y+448,2,0xffffffff)
                             else:
-                                glyphs_match('THREAD STACK SAMPLES: FIRST / LAST LOG LINES',12,log_y+252,2,0xffffff00)
+                                glyphs_match('THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES',12,log_y+252,2,0xffffff00)
                                 glyphs_match('ustacks: backboardd[8] 2 threads, shared cache slide 0x10000',12,log_y+280,2,0xffffffff)
                                 glyphs_match('ustacks: thread sync: 0x333 0x444',12,log_y+336,2,0xffffffff)
                         else:
