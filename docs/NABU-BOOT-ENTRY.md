@@ -130,6 +130,10 @@ v8 已在 `/home/buhuo/nabu16-efi-v8` 构建成功：UniXNU.efi 为 95,232 bytes
 
 第八轮已确认定时器标记，但没有预期的 CPU 7 panic 记录。已回收完整交接参数并确认 GPT／引导分区哈希一致，调查与 macOS Actions 验收见 [定时返回诊断](RETURN-DIAGNOSTIC.md)。Actions `41765915458` 全部成功后，第九轮于 2026-11-04 11:22:09（Asia/Shanghai）使用新内核执行 `fastboot boot`，发送与 Booting 成功。运行目录 `log/device/nabu-boot-20261104-09/` 保留确切候选及检查；屏幕结果待确认。
 
+### 第十轮：原生只读 UFS 与 OS 挂载探针
+
+macOS Actions `41772094078` 生成并验证了原生 UFS／BSD 根窗口候选。2026-11-04 12:25:43（Asia/Shanghai）使用源提交 `5852715f1b0f26c273447a2b4ea64dcced5a189a` 执行第十次临时启动，发送与 Booting 成功。冻结证据在 `log/device/nabu-boot-20261104-10/`；首轮目标是实际 OS 挂载及完整 launchd 哈希一致，结果待屏幕确认。详见 [存储接入记录](NABU-STORAGE-BRINGUP.md)。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。

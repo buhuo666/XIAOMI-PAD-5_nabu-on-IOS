@@ -8,6 +8,8 @@
 
 桌面主线进展：原生只读 UFS、固定 OS／SystemOS 窗口、BSD 根选择及挂载后读取 launchd 的候选已由 macOS Actions `41772094078` 全部验收。设备端元数据只读复核一致；准备第十轮实机测试，尚未确认 XNU 挂载成功。用户要求跳过首次设置／激活引导，偏好种子已准备但尚未部署。详见 [存储接入](NABU-STORAGE-BRINGUP.md) 与 [用户态初始化策略](../userland/nabu/README.md)。
 
+第十轮于 2026-11-04 12:25:43（Asia/Shanghai）执行 `fastboot boot`，发送与 Booting 成功。`log/device/nabu-boot-20261104-10/` 保留确切候选和验收证据；屏幕存储报告及恢复 Android 后回读待收集。此轮是 OS 挂载／完整 launchd 文件读取探针，不能作为桌面已经启动的证据。
+
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
 最新实机结果：第七轮照片显示 `GenericARMPE: 8 of 8 processors are running`，CPU 3–7 逐个 online／initCPU，以及 MiniIOMobileFramebuffer 初始化。返回报告 REASON=0、CODE=0，日志长度 `0x4B86`（19,334 bytes）。这已提供副核执行和八核计数的板上证据，但尚无各核 SGI／timer 增长、跨核调度或 TLB 验收结果。照片末尾没有可见的定时器到期／panic 标记，返回原因仍未单独确认。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。

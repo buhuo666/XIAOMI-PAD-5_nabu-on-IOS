@@ -41,3 +41,5 @@ macOS Actions `41772094078`（提交 `9b7b0b5f888642a57ed8e61ffbc7245533500928`�
 Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确认设备仍为同一台 nabu、目标仍为 60 GiB 的 `sda36`，已安装 SHNGROOT 元数据哈希和两个 APFS 首块哈希均与配置一致。这属于 ADB 读取证据，不算 XNU 原生存储测试。
 
 第十轮候选沿用 v8 EFI 与原临时 boot.img，启用 `nabu-storage=1 nabu-root-probe=1`。检查点仍为 0，未启用主动 panic 或定时返回。成功或明确失败时直接显示存储报告；挂载成功后探针会有意停止，尚不执行用户态。
+
+2026-11-04 12:24:32（Asia/Shanghai）完成 ESP 五个文件部署与哈希回读，收据 `log/device/nabu-chain-20261104-122432/deployment.json`。12:25:43 执行第十次临时启动，发送与 Booting 均为 OKAY，源提交 `5852715f1b0f26c273447a2b4ea64dcced5a189a`。运行目录 `log/device/nabu-boot-20261104-10/` 已冻结启动链、macOS 检查、生成存储源码、合同和 Android 只读预检。当前仅确认命令成功；原生读取、挂载及 launchd 校验结果等待屏幕证据，恢复 Android 后还需回读分区哈希。
