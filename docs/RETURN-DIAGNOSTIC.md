@@ -30,3 +30,5 @@ Actions `41765915458`、提交 `f89d0d19e2f4c9136bb1b6c055238711cbdd27ed` 全部
 下载后核对全部内核和项目补丁的哈希，将六个原生代码范围的 1,499 条 LLDB 指令逐字节与待启动的 stripped 内核对照一致。初始化处三次参数解析、定时回调处两次参数解析、`cpu_xcall` 及早晚格式化调用均存在。验收收据为 `log/host/return-diagnostic-08/ci-candidate-verification.json`。
 
 第九轮采用此内核，沿用 v8 EFI、原有临时 boot.img 及 `loader_return_after=30 return_cpu=7 return_panic=1`。重点记录末尾的 `nabu_diag init`、`expired`、`xcall`、`callback` 和各核计数；实际结果仍需屏幕及恢复 Android 后回读确认。
+
+2026-11-04 11:21:23（Asia/Shanghai）完成部署并回读全部 5 个文件，收据 `log/device/nabu-chain-20261104-112123/deployment.json`。11:22:09 执行第九次 `fastboot boot`，发送与 Booting 成功，源提交 `585d29c81a60c4319842ed58ca121b4f1e330d00`。运行目录 `log/device/nabu-boot-20261104-09/` 已冻结启动链、macOS 构建报告、原生指令与主机检查、部署收据和 boot.img。新内核的 `XNULDRST` slot 在文件中唯一且尚未绑定。当前仅确认启动命令成功，未确认新诊断在实机执行。
