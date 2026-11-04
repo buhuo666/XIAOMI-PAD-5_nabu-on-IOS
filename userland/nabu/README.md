@@ -4,7 +4,7 @@
 
 `var/mobile/Library/Preferences/com.apple.purplebuddy.plist` 是后续 Data 种子的偏好文件，包含 `SetupDone=true` 和 `ForceNoBuddy=true`。目的仅是初次设置界面的启动策略；它不是 Apple 激活记录，也不代表联网注册成功。
 
-部署时将此文件置于 `/private/var/mobile/Library/Preferences/`，归属 mobile（UID/GID 501），权限 0644。已有 Data 中的其他偏好和用户状态应保留，只合并这两个键。当前没有向设备写入该文件，Data 初始化／挂载路径也尚未接通。
+部署时将此文件置于 `/private/var/mobile/Library/Preferences/`，归属 mobile（UID/GID 501），权限 0644。已有 Data 中的其他偏好和用户状态应保留，只合并这两个键。第十二轮已把合并后的种子打包进 ESP 上的 RAM 启动镜像，实际用户态部署仍待设备结果；磁盘 Data 初始化／挂载路径尚未接通。
 
 现有固定 HakiOS 源码在 `userland/mkjobs.py` 中排除 purplebuddy 相关启动项，并在 `userland/src/inject_sb.c` 中另有 SpringBoard 的 setup/activation 兼容逻辑。后者包含特定二进制地址和对象布局，不能直接复制为本机 20F66 已验证实现。待 launchd 和桌面服务启动后，根据实际 20F66 组件确认是否还存在额外的界面阻塞。
 
@@ -45,3 +45,7 @@ macOS Actions `41778561798`（attempt 1，源码提交 `f613199a1f32640e10b6b248
 本地补充的实际 EFI ADT 解析器测试通过 13,644 个截断输入、5 个分配场景、46 个检查点和 3 个 bootstrap 场景；这 3 个新增场景在上述 CI 完成后运行，不能计入该次 CI。主机记录为 `log/host/nabu-userland-verification.json`、`log/host/nabu-bootstrap-adt/report.json` 和 `log/host/nabu-storage/ci-userland-source-verification.json`。
 
 当前启动配置使用 `nabu-storage=1 nabu-bootstrap=1 rd=md0 root_apfs=nabu_os loader_return_after=120`，加载本地 bootstrap.apfs，已移除原挂载探针。第十二轮将验证这条用户态路径；截至准备阶段，未确认 stage0、init、原版 launchd 或桌面在设备上执行。RAM Data 不具备跨重启持久性，12 GB 全容量接管也仍待完成。
+
+2026-11-04 13:36:26（Asia/Shanghai）完成六个 ESP 启动文件的部署和哈希回读，收据为 `log/device/nabu-chain-20261104-133626/deployment.json`。13:37:10 开始第十二轮临时启动，源提交 `4bceed619b56135435225abdca4ac59c689e66fb`，`fastboot boot` 的发送和 Booting 均返回 OKAY。启动前核对了 30 份 GPT 元数据并记录 14 个受检引导分区哈希；336 个启动链／构建／检查证据文件与 boot.img 保存在 `log/device/nabu-boot-20261104-12/`。
+
+目前仅确认启动命令成功，设备执行结果等待屏幕证据。恢复 Android 后用同一目录运行 `tools/run_nabu_temporary_boot.py --collect` 回读交接日志并复核分区。屏幕若显示 phase 7，只能证明已尝试 exec；还须查看 launchd／dyld 的后续输出或实际桌面，不能据此认定原版 launchd 执行成功。

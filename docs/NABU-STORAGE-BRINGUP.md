@@ -1,8 +1,8 @@
 # nabu 原生只读系统盘与挂载探针
 
-更新：2026-11-04。当前目标是让已运行的 8796 内核读取 `nabu_system`，挂载 OS，并读取完整 `/sbin/launchd`。这一步还不执行 launchd，不代表进入桌面。
+更新：2026-11-04。第十一轮已验证 8796 内核读取 `nabu_system`、挂载 OS，并读取完整 `/sbin/launchd`。第十二轮正在尝试用户态初始化，详细状态见 [`userland/nabu/README.md`](../userland/nabu/README.md)；存储探针的成功不代表 launchd 执行或进入桌面。
 
-用户态目标补充：按用户要求跳过首次设置／激活引导，直接进入 SpringBoard。后续 Data 种子与启动项策略见 [`userland/nabu/README.md`](../userland/nabu/README.md)，该配置当前尚未部署。
+用户态目标补充：按用户要求跳过首次设置／激活引导，直接进入 SpringBoard。Data 种子与启动项策略已进入第十二轮 RAM 启动包，实际生效与桌面仍待验证。
 
 ## 路线与范围
 
