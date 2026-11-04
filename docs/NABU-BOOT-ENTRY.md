@@ -90,6 +90,8 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 `stage_nabu_boot_chain.py --checkpoint N` 将选定值写入 ADT 并记录在部署收据中，重复输出目录必须匹配原 ADT，防止意外改变已冻结的候选。WSL v6 构建通过；ADT 的 46 个检查点接受／拒绝用例、13,644 个截断输入、5 个分配场景、9 个实际 binder 场景和 3 个报告 blob 仿真场景均通过。报告 blob 与第三轮相同；UniXNU.efi SHA-256 为 `bb23ca127907b8b90359c479b25c84f6c5e67ba724c6cf49547bf21bac1f8c06`（95,232 bytes），DarwinBoot.efi 为 `25727a0474692c527b0ac6115a66cfacd5683996ea5281acdba06f1b04c0b214`（32,256 bytes）。
 
+2026-11-04 10:22:05 部署检查点 12 链，收据 `log/device/nabu-chain-20261104-102205/deployment.json`。10:22:42 的第四次临时启动绑定源码提交 `db9c8ea9df2bb025c83383656b59740dc0da6eba`，实际执行 `adb reboot bootloader`、`fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-04\boot.img`，发送与 Booting 均为 OKAY。冻结产物、主机报告和反汇编在 `log/device/nabu-boot-20261104-04/`；该轮屏幕结果与返回 Android 后核验仍待完成。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。
