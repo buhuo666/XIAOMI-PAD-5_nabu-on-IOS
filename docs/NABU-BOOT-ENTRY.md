@@ -124,6 +124,8 @@ v7 EFI 在 checkpoint=0 时仍安装回调，只取消检查点主动停止。�
 
 v8 已在 `/home/buhuo/nabu16-efi-v8` 构建成功：UniXNU.efi 为 95,232 bytes、SHA-256 `9cc5a5c8e26c7f9db605309289d43579507c28ad9f1b5cf90e50b3f2a0df95a4`；DarwinBoot.efi 为 33,792 bytes、SHA-256 `840080d6a2a6a053b7c7b9a6d4dcf1306568b426d4a1a844995cb50305ecc3cb`。3680 字节报告 blob 的 SHA-256 为 `ae9f96ce901e6609b0ff0dae9ee4e3805e98cce5233c5680b75b19133d286ab9`，与 EFI 内嵌字节一致。8 个仿真场景、12 个 binder 场景及 ABI／ADT 检查通过；补充验证了超过尾部 64 KiB 的标记仍显示、不完整标记不会匹配，并监视日志最后一页的填充区域以捕获越界读取。仿真图仅为测试输出，不是实机证据。
 
+2026-11-04 10:53:07 完成第八轮部署并回读全部 5 个启动文件，收据 `log/device/nabu-chain-20261104-105307/deployment.json`。10:53:47 执行第八次临时启动，源提交 `07d5abddb0c4bac796953daaf8ec1f1e49fe448a`，fastboot 的发送与 Booting 均成功。确切文件、测试、部署及启动记录保存在 `log/device/nabu-boot-20261104-08/`，实机屏幕与返回 Android 后回读仍待收集。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。

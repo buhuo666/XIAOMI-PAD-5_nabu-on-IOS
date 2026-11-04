@@ -12,6 +12,8 @@ v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长�
 
 用户再次确认设备物理配置为 12 GB 扩容 RAM。当前约 7.89 GiB 是 loader 在现有固件内存图中整段分配并交给 XNU 的连续窗口，不能当作整机容量；后续目标仍是核对并利用所有可安全管理的 RAM，区分物理容量、固定与固件动态预留、loader 所有权和 XNU 实际管理量。
 
+第八轮已于 2026-11-04 10:53:47（Asia/Shanghai）执行 `fastboot boot`，发送与 Booting 成功。v8 回调构建、8 个仿真场景、12 个 binder 场景和 ABI／ADT 检查通过，部署文件 SHA-256 回读一致。记录在 `log/device/nabu-boot-20261104-08/`；实机诊断结果待用户照片确认。
+
 2026-11-04 本地启动链更新：WSL Ubuntu 22.04、LLVM 18.1.8、Python 3.12.16 已成功构建 nabu DEBUG／NoSb 固件和两个 EFI 程序。临时 `boot.img` 为 3,616,768 bytes，SHA-256 `bca20de2c74522394c1b0005ca82ae5b03daeefb22a2f1cb7b221a40eecf1adc`，独立解包校验通过。5 个启动文件已写入现有 ESP，SHA-256 回读通过。首次实机启动到达 DarwinBoot 的退出 Boot Services 前交接阶段，EL1、19.2 MHz counter、1600×2560 framebuffer，成功分配 7.88671875 GiB 连续内存。返回 Android 后六个 LUN 的 GPT 元数据及所检查的引导分区 SHA-256 均与启动前一致，槽位仍为 A。首次记录本身未证明内核执行；后续通过三色条与内核回调继续定位，最新结果见上文及 [启动入口](NABU-BOOT-ENTRY.md)。
 
 2026-11-04 接手验收：提交 `f77e851c0e7d153cd9bf23b39f04fcccabbc78f4` 的内核 Actions `41671552454` 和 EFI Actions `41671552536` 均成功。已下载并逐个核对两个内核、UniXNU.efi 和 DarwinBoot.efi 的大小、SHA-256 与架构；完整内核 `build_exit_code=0`，构建日志没有缺失导出或编译错误。内核仍为参考配置，实机验证进展见上文。
