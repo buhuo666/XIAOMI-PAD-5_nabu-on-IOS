@@ -155,3 +155,13 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 候选 `artifacts/nabu-chain-desktop-v22` 已通过 TOML 结构对照、五个载荷逐字节比较与 boot.img 一致性检查。现有内核／EFI 与上一轮一致，沿用已有原生验证和覆盖多次采样／十二条容量的报告检查，配置调整不重复重建。部署与临时启动回执待记录。
 
 第二十二轮于 `2026-11-04T20:23:33.582954+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `34945eda2e7a53b945fe5c3549d48b2439200081`；部署回执 `log/device/nabu-chain-20261104-202214/deployment.json`，六个启动文件回读一致。启动前核对 30 份 GPT 元数据并记录 14 个受检引导分区哈希，64 份输入与验证文件及确切 boot.img 保存在 `log/device/nabu-boot-20261104-22/`。当前仅确认临时启动命令成功，等待十分钟运行窗口内的桌面或定时报告，再恢复 Android 执行本轮 `--collect`。
+
+## 第二十二轮结果与日志持久化调整
+
+十分钟正常定时返回，照片 REASON／CODE=0，TIMER MARKER=YES，日志 `0x1608df`，读取 32,768 次、失败 0；未见桌面，也未显示 THREAD STACK SAMPLES 区域。原图与观察文件在 `log/device/nabu-boot-20261104-22/`。恢复 Android 后 30 份 GPT 元数据和 14 个受检引导分区一致。
+
+回收的 `handoff-19D78660.txt` 完整保留 266 字节参数，包括末尾 `ustacks_tname=*`，与本轮 TOML 一致。已核对实际 608 字节 ABI 和解析器，无 256 字节截断证据。旧环形日志可能覆盖采样，但无法单凭照片区分采样未执行、未完成与记录丢失。十分钟仍未出桌面，也不能据此认定数据库完成或故障位于 sleepd。
+
+用户要求日志不覆盖并直接保存，因此取消仅将采样挪到退出前的配置方案，恢复原 240／360／480 秒采样设置。新实现使用 `nabu_system` 尾部已规划的 1 GiB 预留区，每轮使用新的 64 MiB 日志槽，旧槽不复用；不开放 OS／SystemOS／Data 写入。56 MiB RAM capture 只追加，并实时保留原 msgbuf 字符，普通内核回调定期写入带 CRC／SHA-256 的追加记录；正常定时返回在停止 CPU／UFS 前封存并完成同步。异常中止恢复有效连续前缀，容量／写入失败明确标为不完整。屏幕摘要环形缓冲不代表持久日志覆盖。详细格式、边界与使用方式见 [日志落盘格式](NABU-PERSISTENT-LOG-FORMAT.md)。
+
+现阶段真实源码 host ASan／UBSan 的 capture、writer、runtime、原存储及返回路径检查和 Python 18 组恢复检查通过。C++ writer 生成槽已由 Python 独立读回，65,541 字节逐字一致。尚待 macOS 完整构建、原生链接检查和真机日志落盘／Android 回读；没有把主机模拟等同于设备成功。

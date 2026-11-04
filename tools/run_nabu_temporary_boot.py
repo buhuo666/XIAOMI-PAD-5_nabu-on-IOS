@@ -9,7 +9,7 @@ import re
 import subprocess
 import time
 
-from stage_nabu_boot_chain import check_gpt
+from stage_nabu_boot_chain import check_gpt, verify_prepared_log
 from verify_nabu_boot_image import verify
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +115,24 @@ def main():
                            'source': 'Android-exposed pstore; producer not attributed'})
         report['pstore_files'] = pstore
         report['esp_logs'] = captured
+        prepared=report.get('runtime_log_preparation')
+        if prepared:
+            saved=a.output/'runtime-log-preparation.json'
+            if saved.exists():
+                assert json.loads(saved.read_text()) == prepared
+            else:
+                saved.write_text(json.dumps(prepared,indent=2)+'\n')
+            import sys
+            runtime_output=a.output/'runtime-log'
+            if runtime_output.exists() and any(runtime_output.iterdir()):
+                stamp=datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+                runtime_output=a.output/('runtime-log-'+stamp)
+            subprocess.run([sys.executable,str(ROOT/'tools/nabu_runtime_logs.py'),'--collect',
+                            '--receipt',str(saved),'--gpt-backup',str(a.gpt_backup),
+                            '--adb',a.adb,'--output',str(runtime_output)],check=True)
+            decoded=json.loads((runtime_output/'report.json').read_text())
+            report['runtime_log']={'directory':str(runtime_output), 'complete':decoded['complete'],
+                                   'data_bytes':decoded.get('data_bytes'), 'data_sha256':decoded.get('data_sha256')}
         report['status'] = 'returned-to-android-evidence-collected'
         report_path.write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps({'status': report['status'], 'logs': captured, 'boot_partitions_unchanged': True}, indent=2))
@@ -124,6 +142,11 @@ def main():
     deployment = json.loads(a.deployment.read_text())
     assert deployment['status'] == 'deployed-and-readback-verified'
     assert deployment['device_serial_sha256'] == inv['device_serial_sha256']
+    log_prepared=deployment.get('runtime_log_preparation')
+    log_preflight=None
+    if log_prepared:
+        kernel=next(x for x in deployment['files'] if x['path']=='EFI/Nabu16/Payloads/kernel.macho')
+        log_preflight=verify_prepared_log(shell,log_prepared,kernel['sha256'],inv['device_serial_sha256'])
     assert not report_path.exists(), 'Keep previous run receipts; use a fresh output folder'
     fw = ROOT/'artifacts/nabu-firmware'
     verified = verify(fw/'boot.img', fw/'BootShim.bin', fw/'SM8150_EFI.fd', fw/'android-nabu.dtb', fw/'emptyramdisk')
@@ -139,7 +162,8 @@ def main():
               'image': verified, 'integration': integration, 'deployment': str(a.deployment),
               'chain_files': deployment['files'],
               'boot_partitions_before': partitions, 'gpt_before_verified': current_gpt,
-              'kernel_execution_validated': False, 'android_returned': False, 'commands': []}
+              'kernel_execution_validated': False, 'android_returned': False, 'commands': [],
+              'runtime_log_preparation':log_prepared, 'runtime_log_preflight':log_preflight}
 
     def save():
         report_path.write_text(json.dumps(report, indent=2)+'\n')

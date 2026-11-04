@@ -92,20 +92,21 @@ int main() {
     shutil.copy2(ROOT/'patches/nabu-storage/SmmuFirmwareRouteTest.cpp',a.output/'SmmuFirmwareRoute.cpp')
     for name in ('TransferPoll','SmmuTakeover','SmmuFirmwareRoute','RootLayout','RootCommands','Policy'):
         src=a.output/(name+'.cpp');exe=a.output/name
-        command=['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-g',host_path(src),'-o',host_path(exe)]
+        command=['clang++','-std=c++17','-Wall','-Wextra','-Werror','-Wno-unused-function','-fsanitize=address,undefined','-g',host_path(src),'-o',host_path(exe)]
         if name=='RootLayout' and sys.platform!='darwin':command+=['-lcrypto']
         subprocess.run(host_command(command),check=True)
         run=subprocess.run(host_command([host_path(exe)]),capture_output=True,text=True,encoding='utf-8',errors='replace',check=True)
         (a.output/(name+'.log')).write_text(run.stdout+run.stderr,encoding='utf-8')
         results.append({'name':name,'passed':True,'output':run.stdout.strip()})
-    # Ensure the active generated build never includes the removed write API.
+    # Generic Data writes remain removed. The separate writer harness exercises
+    # the only admitted WRITE(10) capability, which defaults to closed.
     commands=(source/'RootCommands.h').read_text()
-    assert '0x2a' not in commands and 'hostWrite4k (' not in commands
-    assert '(direction == 1 || direction > 2)' in commands
+    assert 'hostWrite4k (' not in commands and 'hostStoreOpen' not in commands
+    assert '// NABU_LOG_WRITE_GATE_V1' in commands
     report={'passed':True,'tests':results,'scope':'ASan/UBSan on actual generated policies; simulated MMIO/DMA only; no device claim'}
     if a.candidate:
         data=a.candidate.read_bytes();s,segs=symbols(data)
-        names=['_nabu_storage_prepare','_nabu_storage_read','_nabu_root_device','_nabu_root_probe_mounted','_nabu_storage_finish']
+        names=['_nabu_storage_prepare','_nabu_storage_read','_nabu_root_device','_nabu_root_probe_mounted','_nabu_storage_finish','_nabu_log_finish','_nabu_log_capture_seal','_nabu_log_capture_msgbuf']
         ranges=[]
         for name in names:
             va=s[name];end=min(v for v in s.values() if v>va);n=min(end-va,16384)

@@ -53,7 +53,7 @@ typedef void *thread_call_param_t, *thread_call_t;
 #define os_atomic_load(p, order) (*(p))
 static char captured[16000], arguments[2000];
 static size_t captured_length;
-static int current_cpu, target_cpu, target_mode, xcall_result, shutdowns;
+static int current_cpu, target_cpu, target_mode, xcall_result, shutdowns, log_finishes;
 static uint32_t requested_cpu, requested_panic, seconds;
 static bool cpu_present, panic_present, scheduled;
 static jmp_buf stop;
@@ -86,6 +86,7 @@ static kern_return_t cpu_xcall(int cpu, void (*callback)(void *), void *arg) {
   return xcall_result;
 }
 static void delay_for_interval(int a,int b) { (void)a;(void)b; assert(0); }
+static void nabu_log_finish(void) { assert(shutdowns==0); log_finishes++; }
 static void hakios_var_save_on_return(void) { shutdowns++; }
 static void hakios_adreno_stop(void) { shutdowns++; }
 static void hakios_wifi_stop(void) { shutdowns++; }
@@ -99,7 +100,7 @@ static void thread_call_enter_delayed(thread_call_t c,uint64_t d) { assert(c && 
 '''
     tests = r'''
 static void reset(void) {
-  current_cpu=0; target_cpu=-1; target_mode=0; xcall_result=0; shutdowns=0;
+  current_cpu=0; target_cpu=-1; target_mode=0; xcall_result=0; shutdowns=0; log_finishes=0;
   requested_cpu=7; requested_panic=1; seconds=30; cpu_present=panic_present=true;
   captured_length=0; captured[0]=0; scheduled=loader_diag_enabled=false;
   memset(loader_diag_initial,0,sizeof(loader_diag_initial));
@@ -129,6 +130,7 @@ int main(void) {
     assert(target_cpu==(scenario==0||scenario==1||scenario==2 ? 7:-1));
     assert(current_cpu==(scenario<=1 ? 7:0));
     assert(shutdowns==(scenario==1||scenario>=4 ? 5:0));
+    assert(log_finishes==(scenario==1||scenario>=4 ? 1:0));
     assert(strstr(captured,"nabu_diag cpu 7 mpidr=0x700 timer=17->117 sgi=27->34 last=19"));
     if (scenario==5) {
       assert(strstr(captured,"init on cpu 0: return_cpu found=1 value=7 return_panic found=1 value=1"));

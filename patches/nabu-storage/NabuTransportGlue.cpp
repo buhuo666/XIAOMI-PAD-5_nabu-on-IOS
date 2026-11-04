@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Appended to the source-verified read-only ShengUfs transport for XNU 8796.
+// Verified system reads and a separately admitted append-only log slot for XNU 8796.
 namespace {
 #include "RootLayout.h"
 RootLayout gNabuLayout;
@@ -8,6 +8,8 @@ bool gNabuAttempted, gNabuPublished;
 char gNabuResult[256] = "not selected";
 char gNabuCause[192];
 char gNabuReport[2300];
+#include "NabuLogWriter.h"
+int nabuLogBeginConfigured(void);
 
 bool nabuContract(const char **why)
 {
@@ -56,6 +58,13 @@ extern "C" int nabu_storage_prepare(void)
     strlcpy(gNabuResult,why,sizeof(gNabuResult));
     strlcpy(gNabuCause,why,sizeof(gNabuCause)); return EIO;
   }
+  int logError=nabuLogBeginConfigured();
+  if (logError) {
+    gNabuPublished=false;
+    strlcpy(gNabuResult,"prepared append-only log slot could not be opened",sizeof(gNabuResult));
+    strlcpy(gNabuCause,gNabuResult,sizeof(gNabuCause));
+    return logError;
+  }
   strlcpy(gNabuResult,"OS/SystemOS validated; both windows read-only",sizeof(gNabuResult));
   return 0;
 }
@@ -96,6 +105,7 @@ extern "C" void nabu_storage_append_report(void)
   snprintf(userland,sizeof(userland),"NABU USERLAND: phase=%u errno=%u (PID1 reported; phase 7 is exec attempt)\n",
       status>>16,status&0xffff);
   loader_log_line(userland);
+  nabu_log_append_report();
   const char *failure=nabu_userland_failure();
   if (failure) { loader_log_line(failure); loader_log_line("\n"); }
   if (gNabuCause[0]) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned, read-only native UFS transport and BSD root probe in a generated XNU tree."""
+"""Prepare read-only system windows and a separately bounded append-only native log writer."""
 import argparse
 import hashlib
 import json
@@ -100,7 +100,7 @@ def main():
     smmu=replace_once(smmu,'    rootDiagnosticFailure (failure);\n    panic ("NATIVE_UFS smmu: %s idx=%u bank=%u cba2r=%x", failure, index, bank,\n           gRootDiagnostic.cba2r);',
         '    *why=failure; return false;')
     smmu=replace_once(smmu,'  report[2] = sctlr;','  report[2] = sctlr;\n  return true;')
-    prefix='''// Generated read-only UFS core from pinned ShengUfs + nabu board patch.
+    prefix='''// Pinned UFS core: read-only system windows plus one explicitly prepared log slot.
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <IOKit/IOService.h>
 #include <IOKit/IOPlatformExpert.h>
@@ -112,6 +112,7 @@ def main():
 #include <vm/vm_kern.h>
 #include <kern/clock.h>
 #include <kern/thread.h>
+#include <kern/thread_call.h>
 #include <pexpert/pexpert.h>
 #include <sys/errno.h>
 #include "NabuBoard.h"
@@ -124,24 +125,33 @@ def main():
 #include "SmmuTakeover.h"
 extern "C" void loader_log_line(const char *);
 extern "C" void loader_return(void);
+extern "C" void nabu_log_append_report(void);
 static UfsRootDiagnostics gRootDiagnostic;
 static bool gRootDiagnosticEnabled;
 '''
-    generated=prefix+'\n'.join(c_function(original,n) for n in ('read32','write32','mapPhys'))+'\n'+smmu+'\n'+transport+'\n'+(ROOT/'patches/nabu-storage/NabuTransportGlue.cpp').read_text()
+    generated=prefix+'\n'.join(c_function(original,n) for n in ('read32','write32','mapPhys'))+'\n'+smmu+'\n'+transport+'\n'+(ROOT/'patches/nabu-storage/NabuTransportGlue.cpp').read_text()+'\n'+(ROOT/'patches/nabu-storage/NabuLogRuntime.inc').read_text()
     dest=a.tree/'iokit/Kernel/nabu_ufs';assert not dest.exists();dest.mkdir(parents=True)
     for name in ('NabuBoard.h','RootTransportLayout.h','RootDiagnostics.h','RootQueue.h','TransferPoll.h','SmmuTakeover.h'):
         shutil.copy2(a.work/name,dest/name)
     commands=(a.work/'RootCommands.h').read_text();commands=commands[:commands.index('// ---- Persistent store and log windows')]
-    commands=replace_once(commands,'direction > 2 ||','(direction == 1 || direction > 2) ||')
+    commands='#include "NabuLogWriteCommands.h"\n'+commands
+    command_anchor='  if (!hostClearUcd ()) return kIOReturnNotReady;\n  uint8_t *ucd = gHost.virt + kUcdOffset;\n  ucd[0] = 0x01;'
+    commands=replace_once(commands,command_anchor,
+        '  // NABU_LOG_WRITE_GATE_V1\n'
+        '  if ((direction == 1 && !nabuLogWriteCommandAllowed(lun,cdb,cdbLength,dataBytes)) ||\n'
+        '      (cdb[0] == 0x2a && direction != 1)) return kIOReturnBadArgument;\n'
+        +command_anchor)
     commands=replace_once(commands,'lba > 0xffffffffULL - (blocks - 1))',
         'lba > 0xffffffffULL - (blocks - 1) || lba >= gHost.blocks || blocks > gHost.blocks-lba)')
-    assert '0x2a' not in commands and 'static IOReturn hostWrite4k' not in commands
+    assert 'static IOReturn hostWrite4k' not in commands and 'hostStoreOpen' not in commands
     (dest/'RootCommands.h').write_text(commands)
     layout=(a.work/'RootLayout.h').read_text();layout=replace_once(layout,'static const char wanted[] = "userdata";','static const char wanted[] = "nabu_system";')
     (dest/'RootLayout.h').write_text(layout)
     resources=(ROOT/'src/nabu/ufs/NabuUfsResources.h').read_text().replace('static bool ','static inline bool ')
     (dest/'NabuUfsResources.h').write_text(resources)
-    for name in ('NabuStorageApi.h','NabuStoragePolicy.h'):shutil.copy2(ROOT/'patches/nabu-storage'/name,dest/name)
+    for name in ('NabuStorageApi.h','NabuStoragePolicy.h','NabuLogFormat.h','NabuLogWriteCommands.h','NabuLogWriter.h'):
+        shutil.copy2(ROOT/'patches/nabu-storage'/name,dest/name)
+    shutil.copy2(ROOT/'patches/nabu-storage/NabuLogCapture.h',a.tree/'osfmk/arm64/NabuLogCapture.h')
     cfg=json.loads((ROOT/'configs/nabu-storage-probe.json').read_text());(dest/'NabuStorageContract.h').write_text(contract_header(cfg))
     (dest/'NabuUfsTransport.cpp').write_text(generated)
     shutil.copy2(ROOT/'patches/nabu-storage/NabuRoot.c',a.tree/'bsd/dev/nabu_root.c')
@@ -166,7 +176,9 @@ static bool gRootDiagnosticEnabled;
             'firmware_route_patch_sha256':hashlib.sha256(route_patch.read_bytes()).hexdigest(),
             'generated':[{'path':str(p.relative_to(a.tree)),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(dest.iterdir())],
             'storage_contract_sha256':hashlib.sha256((ROOT/'configs/nabu-storage-probe.json').read_bytes()).hexdigest(),
-            'scope':'Read-only native UFS, fixed OS/SystemOS windows, explicit root/launchd read probe; no Data writes or userland claim'}
+            'log_capture_header_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogCapture.h').read_bytes()).hexdigest(),
+            'log_runtime_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogRuntime.inc').read_bytes()).hexdigest(),
+            'scope':'OS/SystemOS/Data stay read-only; explicit nabu-log-slot admits one newly prepared 64 MiB slot in the existing 1 GiB reserved area'}
     a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
 

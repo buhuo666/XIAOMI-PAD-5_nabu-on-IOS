@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import tomllib
 from make_nabu_adt import make_tree, parse, validate_wifi_mac, CHECKPOINTS, DEFAULT_CHECKPOINT
+from nabu_log_format import parse_manifest, slot_offset, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
+from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41784700433-attempt-1/xnu8796-reference-23/artifacts/8796-reference/mach.development.bcm2837'
@@ -38,6 +40,23 @@ def check_gpt(shell, baseline):
     return records
 
 
+def verify_prepared_log(shell, prepared, kernel_sha, serial_sha):
+    """Read-only bind of one untouched prepared slot to this device and kernel."""
+    assert prepared['device_serial_sha256'] == serial_sha
+    assert prepared['kernel_sha256'] == kernel_sha
+    assert shell('readlink -f /dev/block/by-name/nabu_system').strip() == b'/dev/block/sda36'
+    assert int(shell('blockdev --getsize64 /dev/block/sda36')) == PARTITION_BYTES
+    offset = slot_offset(prepared['slot'])
+    raw = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} count=1 status=none')
+    parse_manifest(raw, expected_slot=prepared['slot'], expected_run_uuid=prepared['run_uuid'],
+                   expected_kernel_sha256=kernel_sha, expected_manifest_sha256=prepared['manifest_sha256'])
+    expected = zero_suffix_sha256(raw, SLOT_BYTES)
+    actual = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} '
+                   f'count={SLOT_BYTES//BLOCK_BYTES} status=none | sha256sum').decode().split()[0]
+    assert actual == expected, 'Prepared runtime log slot was already used or changed; preserve it and select a fresh slot'
+    return {'slot': prepared['slot'], 'run_uuid': prepared['run_uuid'], 'prepared_slot_sha256': actual}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--output', type=Path, default=ROOT/'artifacts/nabu-chain')
@@ -48,6 +67,7 @@ def main():
     ap.add_argument('--bootstrap', type=Path, help='Verified local bootstrap.apfs; report must be beside it')
     ap.add_argument('--wifi-mac-file', type=Path,
                     help='Six binary octets from this device; rechecked against Android before deployment')
+    ap.add_argument('--log-preparation', type=Path, help='Verified fresh runtime-log slot preparation receipt')
     a = ap.parse_args()
     wifi_mac = validate_wifi_mac(a.wifi_mac_file.read_bytes()) if a.wifi_mac_file else None
     assert sha(KERNEL) == KERNEL_SHA, 'Kernel differs from verified successful build'
@@ -58,6 +78,11 @@ def main():
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
     bootstrap_mode='initrd' in entry
+    log_args=[x for x in entry['args'].split() if x.startswith('nabu-log-slot')]
+    log_prepared=checked_receipt(a.log_preparation) if a.log_preparation else None
+    if log_args or log_prepared:
+        assert log_prepared and log_args == [f"nabu-log-slot={log_prepared['slot']}"]
+        assert log_prepared['kernel_sha256'] == KERNEL_SHA
     if bootstrap_mode:
         assert a.bootstrap is not None and entry['initrd']==r'\EFI\Nabu16\Payloads\bootstrap.apfs'
         args=entry['args'].split()
@@ -94,7 +119,8 @@ def main():
     receipt = {'files': manifest, 'status': 'prepared', 'kernel_execution_validated': False,
                'checkpoint': a.checkpoint,
                'root_storage_integrated': True, 'root_mount_validated': False,
-               'storage_writes_enabled': False, 'deployment_scope': 'nabu_esp files only'}
+               'storage_writes_enabled': bool(log_prepared), 'system_data_writes_enabled': False,
+               'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     if wifi_mac is not None:
@@ -127,6 +153,8 @@ def main():
     assert shell('blockdev --getsize64 /dev/block/sda35').strip() == b'4294967296'
     assert b'uid=0' in shell('id')
     receipt['gpt_before_verified'] = check_gpt(shell, gpt)
+    if log_prepared:
+        receipt['runtime_log_preflight'] = verify_prepared_log(shell,log_prepared,KERNEL_SHA,inv['device_serial_sha256'])
     receipt['source_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     receipt['deployment_tool_sha256'] = sha(Path(__file__))
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')

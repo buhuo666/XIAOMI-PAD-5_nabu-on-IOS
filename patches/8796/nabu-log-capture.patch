@@ -1,0 +1,189 @@
+--- a/osfmk/arm64/loader_return.c
++++ b/osfmk/arm64/loader_return.c
+@@ -26,6 +26,8 @@
+ #include <pexpert/arm64/board_config.h>
+ #include <vm/vm_page.h>
+ #include <vm/vm_compressor.h>
++#include <sys/errno.h>
++#include "NabuLogCapture.h"
+ 
+ /*
+  * The console log handed back to the loader. A long session writes more than fits, and both
+@@ -83,50 +85,121 @@
+  * inside this very function) goes ahead without it.
+  */
+ static uint32_t loader_log_lock;
+-
+-static void loader_log_put_locked(char c);
+-
++static struct NabuLogCaptureState nabu_capture;
++
++/* Stable, immutable-prefix snapshots; callers must not read beyond Length. */
++const char *nabu_log_capture_data(void);
++uint32_t nabu_log_capture_length(void);
++uint64_t nabu_log_capture_lost(void);
++int nabu_log_capture_seal(void);
++void nabu_log_capture_msgbuf(char c);
++
++const char *
++nabu_log_capture_data(void)
++{
++	return nabu_capture.data;
++}
++
++uint32_t
++nabu_log_capture_length(void)
++{
++	return nabuLogCaptureLength(&nabu_capture);
++}
++
++uint64_t
++nabu_log_capture_lost(void)
++{
++	return nabuLogCaptureLostBytes(&nabu_capture);
++}
++
++/* Normal thread context only. Never invoke I/O or printf with this lock held.
++ * EBUSY leaves the stream unsealed; the caller must not claim a complete END. */
++int
++nabu_log_capture_seal(void)
++{
++	uint64_t daif = __builtin_arm_rsr64("DAIF");
++	bool locked = false;
++	__builtin_arm_wsr("DAIFSet", DAIFSC_IRQF | DAIFSC_FIQF);
++	for (uint32_t tries = 0; !locked && tries < 10000000; tries++) {
++		locked = os_atomic_cmpxchg(&loader_log_lock, 0, 1, acquire);
++	}
++	if (locked) {
++		nabuLogCaptureSealLocked(&nabu_capture);
++		os_atomic_store(&loader_log_lock, 0, release);
++	}
++	__builtin_arm_wsr64("DAIF", daif);
++	return locked ? 0 : EBUSY;
++}
++
++/* msgbuf-only producer: do not mirror into the screen ring or call printf.
++ * The lock order is BSD msgbuf -> loader log; no capture path reverses it. */
+ void
+-loader_log_putc(char c)
++nabu_log_capture_msgbuf(char c)
+ {
+ 	uint64_t daif;
+ 	bool locked = false;
+-
+-	if (c == '\r') {
+-		return;
+-	}
++	if (c == '\r') return;
+ 	daif = __builtin_arm_rsr64("DAIF");
+ 	__builtin_arm_wsr("DAIFSet", DAIFSC_IRQF | DAIFSC_FIQF);
+ 	for (uint32_t tries = 0; !locked && tries < 10000000; tries++) {
+ 		locked = os_atomic_cmpxchg(&loader_log_lock, 0, 1, acquire);
+ 	}
+-	loader_log_put_locked(c);
+ 	if (locked) {
++		nabuLogCapturePutLocked(&nabu_capture, c);
+ 		os_atomic_store(&loader_log_lock, 0, release);
++	} else {
++		nabuLogCaptureLost(&nabu_capture);
+ 	}
+ 	__builtin_arm_wsr64("DAIF", daif);
+ }
+ 
+-/*
+- * A whole line at once, under the lock: lines written from several processors at the same time
+- * (tools/latency.py's "tl:" lines, a frame's on one and a touch's on another) are not mixed up.
+- */
+-void loader_log_line(const char *line);
++static void loader_log_put_locked(char c);
+ 
+ void
+-loader_log_line(const char *line)
++loader_log_putc(char c)
+ {
+ 	uint64_t daif;
+ 	bool locked = false;
+ 
++	if (c == '\r') {
++		return;
++	}
+ 	daif = __builtin_arm_rsr64("DAIF");
+ 	__builtin_arm_wsr("DAIFSet", DAIFSC_IRQF | DAIFSC_FIQF);
+ 	for (uint32_t tries = 0; !locked && tries < 10000000; tries++) {
+ 		locked = os_atomic_cmpxchg(&loader_log_lock, 0, 1, acquire);
+ 	}
++	loader_log_put_locked(c);
++	if (locked) nabuLogCapturePutLocked(&nabu_capture, c);
++	else nabuLogCaptureLost(&nabu_capture);
++	if (locked) {
++		os_atomic_store(&loader_log_lock, 0, release);
++	}
++	__builtin_arm_wsr64("DAIF", daif);
++}
++
++/*
++ * A whole line at once, under the lock: lines written from several processors at the same time
++ * (tools/latency.py's "tl:" lines, a frame's on one and a touch's on another) are not mixed up.
++ */
++void loader_log_line(const char *line);
++
++void
++loader_log_line(const char *line)
++{
++	uint64_t daif;
++	bool locked = false;
++
++	daif = __builtin_arm_rsr64("DAIF");
++	__builtin_arm_wsr("DAIFSet", DAIFSC_IRQF | DAIFSC_FIQF);
++	for (uint32_t tries = 0; !locked && tries < 10000000; tries++) {
++		locked = os_atomic_cmpxchg(&loader_log_lock, 0, 1, acquire);
++	}
+ 	for (; *line != 0; line++) {
+ 		if (*line != '\r') {
+ 			loader_log_put_locked(*line);
++			if (locked) nabuLogCapturePutLocked(&nabu_capture, *line);
++			else nabuLogCaptureLost(&nabu_capture);
+ 		}
+ 	}
+ 	if (locked) {
+@@ -494,6 +567,9 @@
+ 	}
+ 	panic_found = PE_parse_boot_argn("return_panic", &as_panic, sizeof(as_panic));
+ 	if (!as_panic) {
++		/* Seal/drain while ordinary threads and native UFS are still usable. */
++		extern void nabu_log_finish(void);
++		nabu_log_finish();
+ 		hakios_var_save_on_return();   /* the data volume kept, while the system is still whole */
+ 		hakios_adreno_stop();          /* a GPU kept for the system is given back while there is a thread to wait in */
+ 		hakios_wifi_stop();            /* and the Wi-Fi DSP, if it runs, shut down */
+--- a/bsd/kern/subr_log.c
++++ b/bsd/kern/subr_log.c
+@@ -566,9 +566,17 @@
+  *		log entries do not end up interspersed due to preemption or
+  *		SMP reentrancy.
+  */
++/* The Nabu capture is memory-only; do not call printf from that producer. */
++#if defined(__arm64__)
++extern void nabu_log_capture_msgbuf(char c);
++#endif
++
+ void
+ log_putc_locked(struct msgbuf *mbp, char c)
+ {
++#if defined(__arm64__)
++	if (mbp == msgbufp) nabu_log_capture_msgbuf(c);
++#endif
+ 	mbp->msg_bufc[mbp->msg_bufx++] = c;
+ 	if (mbp->msg_bufx >= mbp->msg_size) {
+ 		mbp->msg_bufx = 0;
+@@ -592,6 +600,10 @@
+ log_putc(char c)
+ {
+ 	if (!bsd_log_lock(oslog_is_safe())) {
++#if defined(__arm64__)
++		/* Preserve the character even when the BSD ring declines it. */
++		nabu_log_capture_msgbuf(c);
++#endif
+ 		os_atomic_inc(&oslog_msgbuf_dropped_charcount, relaxed);
+ 		return;
+ 	}
