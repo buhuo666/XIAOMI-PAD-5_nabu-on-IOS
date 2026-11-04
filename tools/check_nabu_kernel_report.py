@@ -53,7 +53,9 @@ def main():
             (0x181448000, 0, 0, True, 'desktop'),
             (0x181448000, 0, 0, True, 'desktop-empty'),
             (0x181448000, 0, 0, True, 'desktop-wrap'),
-            (0x181448000, 0, 0, True, 'desktop-stacks')]):
+            (0x181448000, 0, 0, True, 'desktop-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-twelve-stacks'),
+            (0x181448000, 0, 0, True, 'desktop-stack-overflow')]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
         uc.mem_write(base-4096, b'G'*4096)
@@ -85,8 +87,9 @@ def main():
         elif log_case == 'overflow': owned,owned_bytes,log_length = (1<<64)-0x1000,0x2000,16
         elif log_case.startswith('desktop'):
             log_data=b'--- loader_return_after expired ---\n'
-            if log_case=='desktop-stacks':
-                log_data+=b'nabu_diag init args=ustacks=SpringBoard backboardd\n'
+            if 'stack' in log_case:
+                log_data+=(b'nabu_diag init args=ustacks=SpringBoard backboardd\n'
+                           b'com.apple.xpc.launchd <Notice>: boot-args = -v ustacks=SpringBoard backboardd\n')
             if log_case != 'desktop-empty':
                 log_data+=(b'SpringBoard: first event\nbackboardd: first event\nrunningboardd: first event\n'
                            b'MiniIOMobileFramebuffer: first display\ndyld: cache is available\n')
@@ -96,9 +99,24 @@ def main():
                            b'MiniIOSurface: last display\n')
             if log_case=='desktop-stacks':
                 log_data+=(b'ustacks: backboardd[8] 2 threads, shared cache slide 0x10000\n'
+                           b'[ 113.428460]: ustacks: backboardd[8] 2 threads, shared cache slide 0x10000\n'
                            b'ustacks: thread render-server: 0x111 0x222\n'
+                           b'[ 113.428503]: ustacks: thread render-server: 0x111 0x222\n'
                            b'ustacks: thread sync: 0x333 0x444\n'
                            b'nabu_diag expired args=ustacks=SpringBoard backboardd\n')
+            elif log_case in ('desktop-twelve-stacks', 'desktop-stack-overflow'):
+                stack_header='ustacks: SpringBoard[5] 12 threads, shared cache slide 0x12340000'
+                stack_text=[f'ustacks:  thread 0x{0x100+t:x}: '+
+                            ' '.join(f'0x{0x180000000+t*0x1000+j*4:x}' for j in range(16))
+                            for t in range(12 if log_case=='desktop-twelve-stacks' else 16)]
+                log_data+=b'ustacks: SpringBoard[5] 12 threads, shared cache slide 0xaaaa0000\n'
+                # Repeated plain/kprintf messages must not consume thread slots;
+                # the latest header must survive independently of line capacity.
+                log_data+=(stack_header+'\n'+'\n'.join(stack_text)+'\n').encode()
+                log_data+=('[ 113.428460]: '+stack_header+'\n').encode()
+                log_data+=''.join('[ 113.428503]: '+line+'\n' for line in stack_text).encode()
+                log_data+=(b'nabu_diag expired args=ustacks=SpringBoard backboardd\n'
+                           b'com.apple.xpc.launchd <Notice>: boot-args = -v ustacks=SpringBoard backboardd\n')
             log_data+=b'NABU USERLAND: phase=7 errno=0\nIO reads=15502 failures=0\nSpringBoar'
             log_length=len(log_data)
             uc.mem_map(log_address,(log_length+4095)&~4095)
@@ -156,10 +174,25 @@ def main():
                     glyphs_match('DESKTOP LOG SUMMARY - HALTED',24,height//4+11*56,4,0xffffffff)
                     glyphs_match('NABU USERLAND: phase=7 errno=0',12,log_y+28,2,0xffffffff)
                     glyphs_match('IO reads=15502 failures=0',12,log_y+56,2,0xffffffff)
-                    glyphs_match('SPRINGBOARD: FIRST / LAST LOG LINES',12,log_y+84,2,0xffffff00)
-                    if log_case=='desktop-empty':
+                    if log_case in ('desktop-twelve-stacks','desktop-stack-overflow'):
+                        glyphs_match('THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES',12,log_y+84,2,0xffffff00)
+                        glyphs_match(stack_header,12,log_y+112,2,0xffffffff)
+                        for t, line in enumerate(stack_text[:12]):
+                            assert 128 < len(line) <= 256
+                            glyphs_match(line[:128],12,log_y+140+t*56,2,0xffffffff)
+                            glyphs_match(line[128:],12,log_y+168+t*56,2,0xffffffff)
+                        service_y=log_y+812
+                        if log_case=='desktop-stack-overflow':
+                            glyphs_match('MORE THREAD STACK LINES OMITTED',12,service_y,2,0xffff8000)
+                            service_y+=28
+                        glyphs_match('SPRINGBOARD: SELECTED LOG LINES',12,service_y,2,0xffffff00)
+                        glyphs_match('SpringBoard: last event',12,service_y+28,2,0xffffffff)
+                        glyphs_match('backboardd: last event',12,service_y+84,2,0xffffffff)
+                    elif log_case=='desktop-empty':
+                        glyphs_match('SPRINGBOARD: SELECTED LOG LINES',12,log_y+84,2,0xffffff00)
                         glyphs_match('NO MATCH IN CAPTURED LOG',12,log_y+112,2,0xffffffff)
                     else:
+                        glyphs_match('SPRINGBOARD: SELECTED LOG LINES',12,log_y+84,2,0xffffff00)
                         # This first event is over 64 KiB before the tail.
                         glyphs_match('SpringBoard: first event',12,log_y+112,2,0xffffffff)
                         if log_case in ('desktop','desktop-stacks'):

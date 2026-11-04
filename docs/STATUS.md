@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十六轮已注册 framebuffer selector72/type5，并取得 backboardd 两个渲染相关线程样本：render-server 位于 mach_msg／server_thread，display.primary 位于 CFRunLoop／IOMFBServer。共享缓存slide为0x39484000，20个地址已对照原缓存符号；本次样本不证明长期死锁或刷新未送达。读取15,524次无失败，返回Android后GPT／14个受检引导分区一致，仍无桌面。第十七轮保持内核和RAM包，只转向SpringBoard第一个线程采样，并修正报告误收启动参数行的问题；本地EFI与回归检查通过，准备实机验证。详见 [主线程采样](SPRINGBOARD-MAIN-THREAD.md)。
+最新主线结果：第十七轮取得 SpringBoard 第一个线程的完整 16 地址样本，调用链为控制中心模块应用检查 → LaunchServices → gSessionLock → ulock 等待；原缓存指令与局部符号已核对，但持锁线程和死锁与否尚未确认。读取 15,514 次无失败，正常定时返回，仍无桌面；恢复 Android 后 GPT／14 个受检引导分区一致。第十八轮候选保持内核和 RAM 包，扩大至 SpringBoard 前 12 个线程，并让报告保留中间线程。详见 [主线程采样](SPRINGBOARD-MAIN-THREAD.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

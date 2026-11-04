@@ -26,3 +26,25 @@
 同时修正返回报告：`nabu_diag` 的启动参数行可能含进程名，之前被误收入服务分组，现在明确排除。线程区域标题改为 `THREAD STACK SAMPLES`。新增回归数据含带 SpringBoard／backboardd 字样的早晚参数行，验证它们不会挤掉真实服务日志。12 个机器码仿真场景、12 个实际 binder 的 ASan／UBSan 场景均通过，ABI／handoff 检查通过。
 
 新回调 blob 为 6112 bytes，SHA-256 `9dcf65aa3d1bcd3e068b98c91f9a4381123fff3f995341ca2437571aabc0b2ce`；DarwinBoot.efi 为 35,840 bytes，SHA-256 `6230f3ed95b1791b671abb85e72d6bec9d0b35591eb8437222475df734d60ba5`，内嵌字节与通过测试的 blob 相同。UniXNU、内核、bootstrap.apfs 和 boot.img 沿用确切的第十六轮字节，120 秒返回窗口不变。主线程实际状态待设备照片。
+
+## 第十七轮执行回执
+
+接手后已重新只读回查设备上的六个启动文件，全部与部署清单一致，并将启动链、回调检查及分析记录冻结到 `log/device/nabu-boot-20261104-17/`。于 `2026-11-04T17:50:16.042649+08:00` 执行临时 `fastboot boot`，发送与 Booting 均成功；启动前 30 份 GPT 元数据检查通过，记录了 14 个受检引导分区哈希。当前仅确认命令成功，SpringBoard 主线程样本、桌面画面和恢复 Android 后回读仍待收集。
+
+## 第十七轮照片与锁等待证据
+
+照片 SHA-256 `55ce88ba8956d657742a7e54be0dd805dcada17ee53642ae58b9e07f03f06118`，已保存原图和放大栈裁切。正常定时返回，REASON／CODE 均为 0；phase 7／errno 0 表示 PID1 报告已到 exec 尝试阶段。存储读取 15,514 次、失败 0，仍无实际桌面。返回 Android 后 30 份 GPT 元数据与 14 个受检引导分区哈希一致。
+
+照片的共享缓存 slide 为 `0x1ca0000`。约 113.428 秒采到 SpringBoard 第一个线程 `0xd1`，未带 running 标记。全部 16 个地址已对照原缓存 text 和 local symbols，记录在 `log/host/display-v18/run17-stacks.json`。主要调用链由外向内为控制中心 `CCSModuleRepository` 查询模块关联应用 → `LSApplicationRecord` → `LaunchServices::Database::Context::_get` → `_LSContextInitCommon` → `_os_unfair_lock_lock_slow` → `__ulock_wait`。
+
+原版指令在 `0x181c7e7b4` 调用 lock stub，传入未滑动地址 `0x1e1b176b8`；该地址精确匹配原缓存局部符号 `gSessionLock`。stub 跳转到 `0x1d0324634`。源码字节、指令和局部符号记录在 `log/host/display-v18/ls-context-lock.*`。Windows REA 当前 provider 明示其原生分析范围不含此 ARM64 Mach-O／ELF，故沿用已有 WSL LLVM18 对原缓存字节进行离线核对；没有声称取得 REA 反编译结果。
+
+这次样本证明该线程当时等待 LaunchServices 会话锁，没有证明持锁线程身份、等待时长、死锁或 lsd 服务本身失败。尚不能据此修改系统数据库或绕过锁。
+
+## 第十八轮候选
+
+继续使用原内核、原 bootstrap.apfs 和 backboardd 刷新设置。将 `ustacks_threads` 从 1 改为 12，仍在约 90 秒触发一次、120 秒定时返回，以查看同一 SpringBoard 任务的更多线程。线程枚举限于前 12 个可采样线程；若锁持有者未被覆盖或某线程正在运行，仍需进一步证据。
+
+报告另修正 launchd 的 `boot-args = ...` 行误归入服务日志的问题；多线程模式优先保留至多 12 条不同线程行及共享缓存头，避免只显示首尾三行而漏掉中间线程。超限和长行使用明确截断提示。14 个机器码仿真场景和 12 个实际 binder 的 ASan／UBSan 场景全部通过；12 条无名线程的 16 个地址均逐像素核对。每条最多显示两行，超长名称导致末尾截断时以 `>` 标记。
+
+新报告 blob 为 6992 bytes、SHA-256 `836ddc5a26d39717d9ffa15e37ee262afa7b3de995b06fae20b58cc80146d292`；DarwinBoot.efi 为 36864 bytes、SHA-256 `84e0b84ee212287e8a8cd9a3796b86ba26562a87f8b595cd2f337074dbba297c`。最终 EFI 内嵌回调与测试 blob 完全相同，ABI／handoff 检查通过。下一轮仍仅临时启动，设备结果待收集。

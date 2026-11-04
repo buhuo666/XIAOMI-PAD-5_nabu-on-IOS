@@ -77,3 +77,5 @@ macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`�
 第十六轮于 2026-11-04 16:15:23（Asia/Shanghai）执行临时启动，发送与 Booting 成功，等待屏幕观察。运行目录 `log/device/nabu-boot-20261104-16/`；尚未确认强制刷新路径或实际桌面生效。
 
 第十六轮照片已显示 selector72 刷新通知注册，以及两个 backboardd 渲染线程的 Mach／CFRunLoop 等待栈。原版地址已还原，未取得首帧证据；Android 回收和分区核验完成。第十七轮沿用本 RAM 包与内核，转而采样 SpringBoard 第一个线程，详见 [主线程采样](../../docs/SPRINGBOARD-MAIN-THREAD.md)。
+
+第十七轮照片显示 SpringBoard 第一个线程等待 LaunchServices 的 `gSessionLock`，持锁线程尚未确认。Android 回读一致。第十八轮继续使用本 RAM 包，采集前 12 个线程并扩展报告显示；详见 [锁等待证据](../../docs/SPRINGBOARD-MAIN-THREAD.md)。

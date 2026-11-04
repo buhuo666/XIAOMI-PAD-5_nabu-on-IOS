@@ -55,6 +55,27 @@ static uint64_t find_marker(const volatile unsigned char *log, uint64_t length,
 
 struct selected_lines { uint64_t at[3]; unsigned count; };
 
+struct stack_lines {
+  uint64_t at[12], bytes[12];
+  unsigned count, omitted;
+};
+
+/* The same message can appear in both the plain log and the appended kernel
+ * message buffer. Compare the payload after the timestamp, not its prefix. */
+static void select_stack(struct stack_lines *lines,
+    const volatile unsigned char *log, uint64_t at, uint64_t bytes)
+{
+  for (unsigned i = 0; i < lines->count; ++i) {
+    if (lines->bytes[i] != bytes) continue;
+    uint64_t j = 0;
+    while (j < bytes && log[lines->at[i] + j] == log[at + j]) ++j;
+    if (j == bytes) return;
+  }
+  if (lines->count == 12) { lines->omitted = 1; return; }
+  lines->at[lines->count] = at;
+  lines->bytes[lines->count++] = bytes;
+}
+
 static void select_line(struct selected_lines *lines, uint64_t at)
 {
   if (lines->count < 3) lines->at[lines->count] = at;
@@ -83,6 +104,26 @@ static unsigned draw_log_line(const volatile unsigned char *log, uint64_t length
   return used;
 }
 
+static unsigned draw_stacks(const volatile unsigned char *log, uint64_t length,
+    const struct stack_lines *stacks, uint64_t header,
+    uint64_t y, unsigned rows, unsigned columns)
+{
+  unsigned used = 0, shown = 0;
+  if (!rows) return 0;
+  draw("THREAD STACK SAMPLES: FIRST 12 DISTINCT LINES", y, 12, 2, 0xffffff00);
+  ++used;
+  if (header < length && used + 1 < rows)
+    used += draw_log_line(log, length, header, y + used * 28, rows - used - 1, columns);
+  /* Keep a row for an explicit notice if capacity or the screen clips lines. */
+  while (shown < stacks->count && used + 1 < rows) {
+    used += draw_log_line(log, length, stacks->at[shown++],
+        y + used * 28, rows - used - 1, columns);
+  }
+  if ((stacks->omitted || shown < stacks->count) && used < rows)
+    draw("MORE THREAD STACK LINES OMITTED", y + used++ * 28, 12, 2, 0xffff8000);
+  return used;
+}
+
 /* The log tail can be dominated by unrelated repeated messages. Retain each
  * selected service's first and last two lines across the entire validated log.
  * These are log matches, not a process inventory or a readiness claim. */
@@ -91,12 +132,12 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 {
   struct selected_lines groups[5];
   for (unsigned g = 0; g < 5; ++g) groups[g].count = 0;
-  struct selected_lines stacks;
-  stacks.count = 0;
-  const char *labels[5] = {"SPRINGBOARD: FIRST / LAST LOG LINES",
-    "BACKBOARDD: FIRST / LAST LOG LINES", "RUNNINGBOARDD: FIRST / LAST LOG LINES",
-    "DISPLAY / SURFACES: FIRST / LAST LOG LINES", "DYLD / EXIT: FIRST / LAST LOG LINES"};
-  uint64_t status = length, reads = length;
+  struct stack_lines stacks;
+  stacks.count = stacks.omitted = 0;
+  const char *labels[5] = {"SPRINGBOARD: SELECTED LOG LINES",
+    "BACKBOARDD: SELECTED LOG LINES", "RUNNINGBOARDD: SELECTED LOG LINES",
+    "DISPLAY / SURFACES: SELECTED LOG LINES", "DYLD / EXIT: SELECTED LOG LINES"};
+  uint64_t status = length, reads = length, stack_header = length;
   for (uint64_t start = 0; start < length;) {
     uint64_t end = start;
     while (end < length && log[end] != '\n') ++end;
@@ -104,8 +145,17 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 #define HAS(s) (find_marker(log + start, n, (s)) < n)
     if (HAS("NABU USERLAND:")) status = start;
     if (HAS("IO reads=")) reads = start;
-    if (HAS("nabu_diag ")) { /* Boot arguments can contain service names. */ }
-    else if (HAS("ustacks:")) select_line(&stacks, start);
+    if (HAS("nabu_diag ") || HAS("boot-args =")) {
+      /* Both the kernel diagnostic and launchd print service names in args. */
+    }
+    else if (HAS("ustacks:")) {
+      uint64_t at = start + find_marker(log + start, n, "ustacks:");
+      uint64_t payload = at + 8;
+      while (payload < end && log[payload] == ' ') ++payload;
+      if (end - payload >= 7 && find_marker(log + payload, end - payload, "thread ") == 0)
+        select_stack(&stacks, log, at, end - at);
+      else if (HAS("shared cache slide")) stack_header = at;
+    }
     else {
       if (HAS("SpringBoard")) select_line(&groups[0], start);
       if (HAS("backboardd")) select_line(&groups[1], start);
@@ -120,18 +170,28 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
   if (status < length) used += draw_log_line(log, length, status, y, rows, columns);
   if (reads < length && used < rows)
     used += draw_log_line(log, length, reads, y + used * 28, rows - used, columns);
+  unsigned expanded = stacks.count > 2 || stacks.omitted;
+  if (expanded && used < rows)
+    used += draw_stacks(log, length, &stacks, stack_header, y + used * 28, rows - used, columns);
   for (unsigned g = 0; g < 5 && used < rows; ++g) {
+    if (expanded && g == 2) continue;
     const struct selected_lines *selected = &groups[g];
     const char *label = labels[g];
-    if (g == 2 && stacks.count) {
-      selected = &stacks;
+    struct selected_lines compact;
+    if (!expanded && g == 2 && (stacks.count || stack_header < length)) {
+      compact.count = 0;
+      if (stack_header < length) compact.at[compact.count++] = stack_header;
+      for (unsigned i = 0; i < stacks.count; ++i) compact.at[compact.count++] = stacks.at[i];
+      selected = &compact;
       label = "THREAD STACK SAMPLES: FIRST / LAST LOG LINES";
     }
     draw(label, y + used++ * 28, 12, 2, 0xffffff00);
     unsigned count = selected->count < 3 ? selected->count : 3;
+    /* With many stacks, use only the latest line in each service group. */
+    unsigned first = expanded && count ? count - 1 : 0;
     if (!count && used < rows)
       draw("NO MATCH IN CAPTURED LOG", y + used++ * 28, 12, 2, 0xffffffff);
-    for (unsigned i = 0; i < count && used < rows; ++i)
+    for (unsigned i = first; i < count && used < rows; ++i)
       used += draw_log_line(log, length, selected->at[i], y + used * 28, rows - used, columns);
   }
 }
