@@ -1,0 +1,339 @@
+--- a/Platforms/AndromedaPkg/Driver/RamPartitionDxe/RamPartitionDxe.c
++++ b/Platforms/AndromedaPkg/Driver/RamPartitionDxe/RamPartitionDxe.c
+@@ -182,24 +182,23 @@
+     IN EFI_PHYSICAL_ADDRESS Base, IN UINT64 Length, IN UINT64 ArmAttributes,
+     IN EFI_MEMORY_TYPE EfiMemoryType)
+ {
+-  EFI_STATUS Status = EFI_SUCCESS;
+-
+-  if (Length > SIZE_2GB) {
+-    for (UINT16 parts = Length / SIZE_2GB; parts > 0; parts--) {
+-      Status = AddRamPartition(Base, SIZE_2GB, ArmAttributes, EfiMemoryType);
+-      Base   = Base + SIZE_2GB;
+-    }
+-    Status =
+-        AddRamPartition(Base, Length % SIZE_2GB, ArmAttributes, EfiMemoryType);
+-    goto exit;
+-  }
+-
+-  if (Length <= SIZE_2GB) {
+-    Status = AddRamPartition(Base, Length, ArmAttributes, EfiMemoryType);
+-  }
+-
+-exit:
+-  return Status;
++  EFI_STATUS Status;
++  UINT64 Chunk;
++
++  if ((Length == 0) || (Base > MAX_UINT64 - Length) ||
++      ((Base | Length) & (EFI_PAGE_SIZE - 1)) != 0) {
++    return EFI_INVALID_PARAMETER;
++  }
++  while (Length != 0) {
++    Chunk = MIN (Length, (UINT64)SIZE_2GB);
++    Status = AddRamPartition (Base, Chunk, ArmAttributes, EfiMemoryType);
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++    Base += Chunk;
++    Length -= Chunk;
++  }
++  return EFI_SUCCESS;
+ }
+ 
+ //
+@@ -210,86 +209,44 @@
+ RamPartitionDxeInitialize(
+     IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+ {
+-  EFI_STATUS                       Status = EFI_SUCCESS;
+-  UINT32                           i, NumPartitionEntries = 0;
+-  PARM_MEMORY_REGION_DESCRIPTOR_EX MemoryDescriptorEx =
+-      gExtendedMemoryDescriptorEx;
+-  UINTN Index = 1;
+-
+-  // Get RAM Partition Info
+-  NumPartitionEntries = 0;
+-  Status = GetRamPartitions(&RamPartitionEntries, &NumPartitionEntries);
+-  if (EFI_ERROR(Status)) {
+-    DEBUG(
+-        (EFI_D_ERROR, "Failed to initialize RamPartitionDxe! Status: %r\n",
+-         Status));
+-    return Status;
+-  }
+-
+-  // Update Extended Memory Map, although it's meaningless.
+-  DEBUG((EFI_D_INFO, "RAM Partitions\n"));
+-  for (i = 0; i < NumPartitionEntries; i++) {
+-    DEBUG(
+-        (EFI_D_INFO, "RAM Entry %d: Base:  0x%016lx ", i,
+-         RamPartitionEntries[i].Base));
+-    DEBUG(
+-        (EFI_D_INFO, "AvailableLength: 0x%016lx \n",
+-         RamPartitionEntries[i].AvailableLength));
+-
+-    // Update the first low DDR region.
+-    if (RamPartitionEntries[i].Base == GENERIC_RAM_BASE) {
+-      MemoryDescriptorEx[0].Length =
+-          RamPartitionEntries[i].AvailableLength + GENERIC_RAM_BASE - MemoryDescriptorEx[0].Address;
+-      SpiltAndAddRamPartitions(
+-          MemoryDescriptorEx[0].Address, MemoryDescriptorEx[0].Length,
+-          MemoryDescriptorEx[0].ArmAttributes,
+-          MemoryDescriptorEx[0].MemoryType);
+-      continue;
+-    }
+-
+-    // Perhaps some platforms allocated an area for RAM before 0x80000000.
+-    // Here we only consider the size of the area as 0x40000000.
+-    // Memory range: 0x40000000-0x80000000
+-    if (RamPartitionEntries[i].Base == 0x40000000) {
+-      MemoryDescriptorEx[Index].Address = 0x40000000;
+-      MemoryDescriptorEx[Index].Length  = 0x40000000;
+-      Index++;
+-      continue;
+-    }
+-
+-    // Update RAM Partitions.
+-    // You should have mapped 4GB RAM in PEI stage.
+-    // End Address of 4GB: 0x180000000
+-    if ((RamPartitionEntries[i].Base < 0x180000000) &&
+-        ((RamPartitionEntries[i].Base +
+-          RamPartitionEntries[i].AvailableLength) > 0x180000000)) {
+-      MemoryDescriptorEx[Index].Address = 0x180000000;
+-      MemoryDescriptorEx[Index].Length =
+-          RamPartitionEntries[i].Base + RamPartitionEntries[i].AvailableLength -
+-          0x180000000;
+-      Index++;
+-      continue;
+-    }
+-    else if (
+-        (RamPartitionEntries[i].Base < 0x180000000) &&
+-        ((RamPartitionEntries[i].Base +
+-          RamPartitionEntries[i].AvailableLength) <= 0x180000000))
+-      continue;
+-
+-    MemoryDescriptorEx[Index].Address = RamPartitionEntries[i].Base;
+-    MemoryDescriptorEx[Index].Length  = RamPartitionEntries[i].AvailableLength;
+-    Index++;
+-  }
+-
+-  Index = 1;
+-  while (MemoryDescriptorEx[Index].Length != 0) {
+-    ASSERT(Index < MAX_ARM_MEMORY_REGION_DESCRIPTOR_COUNT);
+-    SpiltAndAddRamPartitions(
+-        MemoryDescriptorEx[Index].Address, MemoryDescriptorEx[Index].Length,
+-        MemoryDescriptorEx[Index].ArmAttributes,
+-        MemoryDescriptorEx[Index].MemoryType);
+-    Index++;
+-  }
+-  FreePool(RamPartitionEntries);
++  EFI_STATUS Status;
++  UINT32 Index, Count = 0;
++  UINT64 Base, End, Start;
++  ARM_MEMORY_REGION_DESCRIPTOR_EX *Template = &gExtendedMemoryDescriptorEx[0];
++
++  Status = GetRamPartitions (&RamPartitionEntries, &Count);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++  for (Index = 0; Index < Count; ++Index) {
++    Base = RamPartitionEntries[Index].Base;
++    if (Base > MAX_UINT64 - RamPartitionEntries[Index].AvailableLength) {
++      Status = EFI_COMPROMISED_DATA;
++      break;
++    }
++    End = Base + RamPartitionEntries[Index].AvailableLength;
++    DEBUG ((DEBUG_INFO, "NABU RAM input: %lx..%lx\n", Base, End));
++    if (Base == GENERIC_RAM_BASE) {
++      // Low extension only; the platform map owns all fixed reserved holes.
++      Start = Template->Address;
++      if (End <= Start) {
++        continue;
++      }
++    } else {
++      // PEI already described RAM below 6 GiB, including MPSS_EFS/PStore.
++      Start = MAX (Base, 0x180000000ULL);
++      if (End <= Start) {
++        continue;
++      }
++    }
++    Status = SpiltAndAddRamPartitions (Start, End - Start,
++               Template->ArmAttributes, Template->MemoryType);
++    if (EFI_ERROR (Status)) {
++      DEBUG ((DEBUG_ERROR, "NABU RAM mapping failed: %r\n", Status));
++      break;
++    }
++  }
++  FreePool (RamPartitionEntries);
++  RamPartitionEntries = NULL;
+   return Status;
+ }
+--- a/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.c
++++ b/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.c
+@@ -12,6 +12,7 @@
+ 
+ #include <Guid/EventGroup.h>
+ #include <Guid/GlobalVariable.h>
++#include <Protocol/SimpleFileSystem.h>
+ #include <Guid/MsBootMenuGuid.h>
+ #include <Guid/DfciPacketHeader.h>
+ 
+@@ -771,7 +772,7 @@
+   BDS_CONSOLE_CONNECT_ENTRY  **PlatformConsoles
+   )
+ {
+-  MsBootOptionsLibRegisterDefaultBootOptions ();
++  // No persistent/default boot options for this temporary image.
+   *PlatformConsoles = GetPlatformConsoleList ();
+ 
+   return GetPlatformPreferredConsole (DevicePath);
+@@ -913,52 +914,47 @@
+   EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption
+   )
+ {
+-  BOOLEAN     FrontPageBoot;
+-  BOOLEAN     BootloaderMenuBoot;
+-  BOOLEAN     UFPBoot;
+-  BOOLEAN     AltDeviceBoot;
+-  EFI_STATUS  Status;
+-
+-  FrontPageBoot = MsBootPolicyLibIsSettingsBoot ();
+-  BootloaderMenuBoot = SdBootPolicyLibIsBootloaderMenuBoot ();
+-  UFPBoot = SdBootPolicyLibIsUFPBoot ();
+-  AltDeviceBoot = MsBootPolicyLibIsAltBoot ();
+-  MsBootPolicyLibClearBootRequests ();
+-
+-  // There are six cases:
+-  //   1. Nothing pressed.             return EFI_NOT_FOUND
+-  //   2. FrontPageBoot                load FrontPage
+-  //   3. BootloaderMenuBoot           load Bootloader menu
+-  //   4. UFPBoot                      load UFP
+-  //   5. AltDeviceBoot                load alternate boot order
+-  //   6. Both indicators are present  Load NetworkUnlock
+-
+-  if (BootloaderMenuBoot) {
+-    // Bootloader Menu Option
+-    DEBUG ((DEBUG_INFO, "[Bds] enter Bootloader Menu\n"));
+-    Status = SdBootOptionsLibGetBootloaderMenu (BootOption, "VOL+");
+-  } else if (UFPBoot) {
+-    // UFP Boot Option
+-    DEBUG ((DEBUG_INFO, "[Bds] enter UFP\n"));
+-    Status = SdBootOptionsLibGetUFPMenu (BootOption, "VOL-");
+-  } else if (AltDeviceBoot) {
+-    // Alternate boot or Network Unlock option
+-    if (FrontPageBoot) {
+-      DEBUG ((DEBUG_INFO, "[Bds] both detected. NetworkUnlock\n"));
+-      Status = MsBootOptionsLibGetDefaultBootApp (BootOption, "NS");
+-    } else {
+-      DEBUG ((DEBUG_INFO, "[Bds] alternate boot\n"));
+-      Status = MsBootOptionsLibGetDefaultBootApp (BootOption, "MA");
+-    }
+-  } else if (FrontPageBoot) {
+-    // Front Page Boot Option
+-    DEBUG ((DEBUG_INFO, "[Bds] enter Front Page\n"));
+-    Status = MsBootOptionsLibGetBootManagerMenu (BootOption, "VOL+");
+-    SetRebootReason (OEM_REBOOT_TO_SETUP_KEY);
+-  } else {
+-    Status = EFI_NOT_FOUND;
+-  }
+-
++  EFI_STATUS Status;
++  EFI_HANDLE *Handles;
++  UINTN Count, Index;
++  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
++  EFI_FILE_PROTOCOL *Root, *File;
++  EFI_DEVICE_PATH_PROTOCOL *Path;
++
++  // Temporary boot never creates Boot####/BootNext or selects an Android slot.
++  EfiBootManagerConnectAll ();
++  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleFileSystemProtocolGuid,
++                                   NULL, &Count, &Handles);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++  Status = EFI_NOT_FOUND;
++  for (Index = 0; Index < Count; ++Index) {
++    if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid,
++                                       (VOID **)&Fs))) {
++      continue;
++    }
++    if (EFI_ERROR (Fs->OpenVolume (Fs, &Root))) {
++      continue;
++    }
++    Status = Root->Open (Root, &File, L"\\EFI\\Nabu16\\UniXNU.efi", EFI_FILE_MODE_READ, 0);
++    Root->Close (Root);
++    if (EFI_ERROR (Status)) {
++      continue;
++    }
++    File->Close (File);
++    Path = FileDevicePath (Handles[Index], L"\\EFI\\Nabu16\\UniXNU.efi");
++    if (Path == NULL) {
++      Status = EFI_OUT_OF_RESOURCES;
++      break;
++    }
++    Status = EfiBootManagerInitializeLoadOption (BootOption, LoadOptionNumberUnassigned,
++                 LoadOptionTypeBoot, LOAD_OPTION_ACTIVE, L"Nabu XNU 8796 temporary boot",
++                 Path, NULL, 0);
++    FreePool (Path);
++    break;
++  }
++  FreePool (Handles);
+   return Status;
+ }
+ 
+--- a/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.inf
++++ b/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.inf
+@@ -66,6 +66,7 @@
+   gDfciSettingsManagerVarNamespace
+ 
+ [Protocols]
++  gEfiSimpleFileSystemProtocolGuid ## CONSUMES
+   gMsOSKProtocolGuid                ## CONSUMES
+   gMsSWMProtocolGuid                ## CONSUMES
+   gTpmPpProtocolGuid                ## CONSUMES
+--- a/Platforms/SurfaceDuo1Pkg/SurfaceDuo1.fdf
++++ b/Platforms/SurfaceDuo1Pkg/SurfaceDuo1.fdf
+@@ -82,7 +82,7 @@
+   !include SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/DXE.inc
+ 
+   # Secure Boot Key Enroll
+-  INF AndromedaPkg/Driver/SecureBootProvisioningDxe/SecureBootProvisioningDxe.inf
++  # Omitted from the temporary XNU boot image: INF AndromedaPkg/Driver/SecureBootProvisioningDxe/SecureBootProvisioningDxe.inf
+ 
+   INF AndromedaPkg/Driver/GpioButtons/GpioButtons.inf
+ #  INF EmbeddedPkg/Drivers/VirtualKeyboardDxe/VirtualKeyboardDxe.inf
+@@ -185,9 +185,9 @@
+   # INF NetworkPkg/UefiPxeBcDxe/UefiPxeBcDxe.inf
+   # INF NetworkPkg/VlanConfigDxe/VlanConfigDxe.inf
+ 
+-  INF AndromedaPkg/UFP/ufpdevicefw.inf
+-
+-  INF QcomModulePkg/Application/LinuxLoader/LinuxLoader.inf
++  # Omitted from the temporary XNU boot image: INF AndromedaPkg/UFP/ufpdevicefw.inf
++
++  # Omitted from the temporary XNU boot image: INF QcomModulePkg/Application/LinuxLoader/LinuxLoader.inf
+ 
+ [FV.FVMAIN_COMPACT]
+ FvAlignment        = 8
+--- a/Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/DXE.inc
++++ b/Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/DXE.inc
+@@ -112,7 +112,7 @@
+ FILE DRIVER = f09ad92e-4e91-490f-ab99-e69939b840b2 {
+     SECTION UI = "LimitsDxe"
+     SECTION RAW = Epsilon/BOOT.XF.3.0-00527-SM8150LZB-1/QcomPkg/Drivers/LimitsDxe/LimitsDxe.raw
+-    SECTION PE32 = SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/LimitsDxe/LimitsDxe.inf
++    SECTION PE32 = SurfaceDuo1Pkg/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/LimitsDxe/LimitsDxe.efi
+ }
+ 
+ FILE DRIVER = 3adf8dda-1850-44c5-8c63-bb991849bc6f {
+--- a/Platforms/SurfaceDuo1Pkg/SurfaceDuo1NoSb.dsc
++++ b/Platforms/SurfaceDuo1Pkg/SurfaceDuo1NoSb.dsc
+@@ -35,7 +35,7 @@
+   USE_SCREEN_FOR_SERIAL_OUTPUT    = 0
+   USE_UART_GENI_FOR_SERIAL_OUTPUT = 0
+   USE_UART_DM_FOR_SERIAL_OUTPUT   = 0
+-  USE_MEMORY_FOR_SERIAL_OUTPUT    = 0
++  USE_MEMORY_FOR_SERIAL_OUTPUT    = 1
+ 
+   USE_SIMPLEFBDXE                = 1
+ 

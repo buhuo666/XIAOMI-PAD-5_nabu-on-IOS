@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/Project-Aloha/mu_aloha_platforms.git",
+  "commit": "d8aab0e2c272caeef5329716ff554c08cfebd6bd",
+  "submodules": {
+    "Binaries": {
+      "repository": "https://github.com/Project-Aloha/SurfaceDuoBinaries-fork",
+      "commit": "ce59dcf54753e112d7b847dd997d3ae934094e0d"
+    },
+    "Common/MU": {
+      "repository": "https://github.com/microsoft/mu_plus.git",
+      "commit": "49625b8f6cabe7e4d9797d192c354b14af0490d1"
+    },
+    "Common/MU_OEM_SAMPLE": {
+      "repository": "https://github.com/microsoft/mu_oem_sample.git",
+      "commit": "15c43745132537ef047d0fac6403ed78e520f3f8"
+    },
+    "Features/CONFIG": {
+      "repository": "https://github.com/microsoft/mu_feature_config.git",
+      "commit": "6789841f35d417fafbe6a9ff9427360b52ca37d9"
+    },
+    "Features/DFCI": {
+      "repository": "https://github.com/microsoft/mu_feature_dfci",
+      "commit": "cd33bec609f4d55dc753eb7b485ea251a5fb6be6"
+    },
+    "MU_BASECORE": {
+      "repository": "https://github.com/microsoft/mu_basecore.git",
+      "commit": "9067996aec2fb186c30fdd747b719f0d42d819b9"
+    },
+    "Platforms/CranePkg": {
+      "repository": "https://github.com/Project-Aloha/CrDK",
+      "commit": "2d9ab7412377aa6401174edc2cd6227a171aa6b7"
+    },
+    "Platforms/MbedTlsPkg/Library/MbedTlsLib/mbedtls": {
+      "repository": "https://github.com/ARMmbed/mbedtls",
+      "commit": "e185d7fd85499c8ce5ca2a54f5cf8fe7dbe3f8df"
+    },
+    "Platforms/OpensslPkg/Library/OpensslLib/openssl": {
+      "repository": "https://github.com/openssl/openssl",
+      "commit": "aea7aaf2abb04789f5868cbabec406ea43aa84bf"
+    },
+    "Platforms/SurfaceDuoACPI": {
+      "repository": "https://github.com/Project-Aloha/acpi_oem_third_party_common",
+      "commit": "3e11538eecd549f6b10664eb798895e07ab91a45"
+    }
+  },
+  "target_device": "xiaomi-nabu",
+  "platform": "SurfaceDuo1Pkg",
+  "firmware": "SM8150_EFI.fd",
+  "uefi_base": "0x9fc00000",
+  "uefi_size": "0x300000",
+  "header_version": 0,
+  "page_size": 4096,
+  "toolchain": "CLANGPDB",
+  "target": "DEBUG",
+  "llvm_major": 18,
+  "download_policy": "Fixed Git commits; HTTPS GitHub sources; verify gitlinks before nested fetch; record binary SHA-256; no downloaded prebuilt boot image."
+}

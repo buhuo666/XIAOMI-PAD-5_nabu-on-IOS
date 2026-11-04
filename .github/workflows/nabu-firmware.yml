@@ -1,0 +1,42 @@
+name: nabu16 - temporary board firmware
+
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/nabu-firmware.yml'
+      - 'tools/build_nabu_firmware.sh'
+      - 'tools/fetch_nabu_firmware.py'
+      - 'tools/prepare_nabu_firmware.py'
+      - 'tools/verify_nabu_boot_image.py'
+      - 'patches/firmware/**'
+      - 'configs/nabu-firmware-inputs.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  temporary-firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Ubuntu build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y build-essential clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu uuid-dev nasm acpica-tools python3-venv mono-devel nuget
+      - name: Build nabu temporary boot image
+        run: bash tools/build_nabu_firmware.sh
+      - name: Preserve image and build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nabu-firmware-${{ github.run_number }}
+          path: |
+            log/ci/nabu-firmware/
+            artifacts/nabu-firmware/
+            build/nabu-firmware/tree/Build/BUILDLOG_*.txt
+          retention-days: 14
