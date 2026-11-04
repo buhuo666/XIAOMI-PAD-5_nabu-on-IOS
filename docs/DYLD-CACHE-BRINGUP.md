@@ -29,3 +29,9 @@ macOS Actions `41787286981`（源码 `853dfd98710bd476611e006ea583792cec4c01b7`�
 第十四轮沿用第十三轮的确切内核（Actions `41784700433`，SHA-256 `ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529`）、EFI 和 boot.img；此次修改没有涉及内核源码。新 RAM 包准备就绪，实际缓存映射和用户态进度待设备验证。
 
 公开源码引用已解析至 Apple `dyld-1066.8` 标签对应提交 `ce1cc2088ef390df1c48a1648075bbd51c5bbc6a`，两份原始源码已独立下载和核对 SHA-256，收据为 `log/host/dyld-v14/public-source.json`。LLVM 反汇编的两个原版函数共 391 条指令已逐条与 dyld 文件字节匹配，结果为 `assembly-check.json`。
+
+## 第十四轮启动收据
+
+2026-11-04 14:50:29 完成六个 ESP 文件部署与哈希回读，收据为 `log/device/nabu-chain-20261104-145029/deployment.json`。14:51:47 执行第十四轮临时启动，`fastboot boot` 的发送和 Booting 均为 OKAY（Asia/Shanghai）。源提交 `e3a10618c78fe6d13de73351f6be3e0920c51e66`；启动前 30 份 GPT 元数据和 14 个受检引导分区完成核验。344 份冻结输入／源码／检查证据与 boot.img、run.json 位于 `log/device/nabu-boot-20261104-14/`。
+
+本轮等待约两分钟后的完整屏幕。phase 7 本身仍只是 exec 尝试，需要后续 dyld／launchd 输出或实际桌面证明推进；如果返回，保留 `NABU USERLAND`、`NABU INIT FAILURE` 及日志尾部。拍照后恢复 Android，再用同一运行目录执行 `--collect`。缓存实际映射、launchd 服务、桌面和持久化均尚未通过本轮验收。
