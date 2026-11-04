@@ -11,8 +11,8 @@ import subprocess
 from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL = ROOT/'artifacts/ci/41765915458-attempt-1/xnu8796-reference-17/artifacts/8796-reference/mach.development.bcm2837'
-KERNEL_SHA = '1a252b0f5506123f228cea5e009abb68d710e35a75ca60bf4025f9bc36f6a3b5'
+KERNEL = ROOT/'artifacts/ci/41772094078-attempt-1/xnu8796-reference-18/artifacts/8796-reference/mach.development.bcm2837'
+KERNEL_SHA = 'fc3151a3b255f2e4942e88f649e03199765c125cfc722f396724dc02fce8b2be'
 
 
 def sha(path):
@@ -73,7 +73,8 @@ def main():
         manifest.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
     receipt = {'files': manifest, 'status': 'prepared', 'kernel_execution_validated': False,
                'checkpoint': a.checkpoint,
-               'root_storage_integrated': False, 'deployment_scope': 'nabu_esp files only'}
+               'root_storage_integrated': True, 'root_mount_validated': False,
+               'storage_writes_enabled': False, 'deployment_scope': 'nabu_esp files only'}
     (a.output/'chain-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n')
     if not a.apply:
         print(json.dumps(receipt, indent=2))

@@ -2,6 +2,8 @@
 
 更新：2026-11-04。当前目标是让已运行的 8796 内核读取 `nabu_system`，挂载 OS，并读取完整 `/sbin/launchd`。这一步还不执行 launchd，不代表进入桌面。
 
+用户态目标补充：按用户要求跳过首次设置／激活引导，直接进入 SpringBoard。后续 Data 种子与启动项策略见 [`userland/nabu/README.md`](../userland/nabu/README.md)，该配置当前尚未部署。
+
 ## 路线与范围
 
 当前 HakiOS `ufs_shared_pa` 存储入口依赖另一个核心上的驻留 UEFI 服务，与当前八核、ExitBootServices 启动方式不相容。本次复用固定 ShengUfs 提交 `af785c1777161a62931425c2faaa536ce0bebd5b` 的命令、队列、SMMU 与 GPT/SHNGROOT 解析代码，并应用 nabu 固定板级补丁。参考源码保持不变，在生成树中提取原生只读传输层。
@@ -27,4 +29,15 @@
 
 `tools/check_nabu_storage.py` 对实际生成的队列、命令、SMMU、GPT/manifest 和字节范围策略执行 ASan/UBSan 检查，覆盖错误 DMA 响应、超时隔离、写方向拒绝、LUN 容量限界及 2048 个元数据变异输入。MMIO/DMA 由主机测试替代，不是硬件证据。macOS Actions 完整编译后，再由原生 LLDB 对关键入口解码并记录指令哈希。
 
-当前状态：代码已装配，本地传输队列与 SMMU 测试已通过；完整主机检查和实际内核编译交给 macOS Actions 验证。尚未部署或进行存储实机测试。后续成功／失败均应绑定确切内核哈希和运行收据。
+macOS Actions `41772094078`（提交 `9b7b0b5f888642a57ed8e61ffbc7245533500928`）已全部成功：完整内核构建退出 0，5 组存储主机检查、导出合同、原生接口、SMP／页表及原生存储检查通过。主机测试覆盖了上述 2048 个变异输入，实际板上行为仍待验证。
+
+| 内核 | bytes | SHA-256 |
+|---|---:|---|
+| `mach.development.bcm2837` | 17,125,696 | `fc3151a3b255f2e4942e88f649e03199765c125cfc722f396724dc02fce8b2be` |
+| `mach.development.bcm2837.unstripped` | 22,928,016 | `a0a1aca234ee85c0ca8d1658e85463415b7aa0881a379eaddeb14c560c3c3fbc` |
+
+下载后核对内核、项目补丁和存储合同哈希，并将 5 个存储入口范围的 1,548 条 LLDB 指令与实际 stripped 启动内核逐字节对照；另有 6 个返回路径范围的 1,500 条指令一致。验收记录为 `log/host/nabu-storage/ci-verification.json`。
+
+Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确认设备仍为同一台 nabu、目标仍为 60 GiB 的 `sda36`，已安装 SHNGROOT 元数据哈希和两个 APFS 首块哈希均与配置一致。这属于 ADB 读取证据，不算 XNU 原生存储测试。
+
+第十轮候选沿用 v8 EFI 与原临时 boot.img，启用 `nabu-storage=1 nabu-root-probe=1`。检查点仍为 0，未启用主动 panic 或定时返回。成功或明确失败时直接显示存储报告；挂载成功后探针会有意停止，尚不执行用户态。
