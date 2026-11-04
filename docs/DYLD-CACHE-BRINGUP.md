@@ -22,4 +22,10 @@ Apple 官方 `dyld-1066.8` 的 `dyld/DyldProcessConfig.cpp` 与该控制流一�
 
 官方 `SharedCacheRuntime.cpp` 的默认路径先尝试复用已有缓存，再建立 system-wide 映射。同 root、CPU 类型和其他共享区域属性相同的后续进程可望复用 PID 1 的映射，无须依赖 launchd 转发该变量；不同根目录、DriverKit 等不同共享区域不在此判断范围内，实际加载仍须实机确认。
 
-主机测试执行生成程序中真实的环境数组和 exec 前分支，验证 PID1 launchd 获得完整目录、终止 NULL 保留、其他程序及 PID2 不注入；既有目录绑定回归和首错处理测试也通过 ASan／UBSan。完整生成程序通过 arm64 语法检查，下一步为 macOS 构建、RAM 包回读和第十四轮设备验证。
+主机测试执行生成程序中真实的环境数组和 exec 前分支，验证 PID1 launchd 获得完整目录、终止 NULL 保留、其他程序及 PID2 不注入；既有目录绑定回归和首错处理测试也通过 ASan／UBSan。完整生成程序通过 arm64 语法检查。
+
+macOS Actions `41787286981`（源码 `853dfd98710bd476611e006ea583792cec4c01b7`）完整构建与全部检查成功。新 init 为 51,880 bytes，SHA-256 `a996bea1d3c36e00a955c115980905ba824bbb9d812be74150748acea13d50de`；stage0 与第十三轮相同。`artifacts/nabu-bootstrap-v3/bootstrap.apfs` 为 8 MiB，SHA-256 `ce6b1e4f8f01f190a36cc5efaab1632f5afa99c86ec5ccfa16e855a59a3eaeff`，两个容器的 APFS 检查通过，包内程序与偏好文件独立回读一致。
+
+第十四轮沿用第十三轮的确切内核（Actions `41784700433`，SHA-256 `ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529`）、EFI 和 boot.img；此次修改没有涉及内核源码。新 RAM 包准备就绪，实际缓存映射和用户态进度待设备验证。
+
+公开源码引用已解析至 Apple `dyld-1066.8` 标签对应提交 `ce1cc2088ef390df1c48a1648075bbd51c5bbc6a`，两份原始源码已独立下载和核对 SHA-256，收据为 `log/host/dyld-v14/public-source.json`。LLVM 反汇编的两个原版函数共 391 条指令已逐条与 dyld 文件字节匹配，结果为 `assembly-check.json`。
