@@ -43,3 +43,19 @@ Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确�
 第十轮候选沿用 v8 EFI 与原临时 boot.img，启用 `nabu-storage=1 nabu-root-probe=1`。检查点仍为 0，未启用主动 panic 或定时返回。成功或明确失败时直接显示存储报告；挂载成功后探针会有意停止，尚不执行用户态。
 
 2026-11-04 12:24:32（Asia/Shanghai）完成 ESP 五个文件部署与哈希回读，收据 `log/device/nabu-chain-20261104-122432/deployment.json`。12:25:43 执行第十次临时启动，发送与 Booting 均为 OKAY，源提交 `5852715f1b0f26c273447a2b4ea64dcced5a189a`。运行目录 `log/device/nabu-boot-20261104-10/` 已冻结启动链、macOS 检查、生成存储源码、合同和 Android 只读预检。当前仅确认命令成功；原生读取、挂载及 launchd 校验结果等待屏幕证据，恢复 Android 后还需回读分区哈希。
+
+## 第十轮结果与 SMMU 接管调整
+
+用户照片已确认到达 BSD `setconf` 和原生存储初始化。控制器 CAP=`0x1587031f`、VER=`0x300`、HCS=`0x10f`、HCE=1，DMA=`0x183524000`、连续长度 `0x22000`。在 `SMMU planning` 阶段返回 `0xe00002d8`：已有 slot 2 的 SMR=`0x80000300`、S2CR=`0x1`，即精确 UFS stream 被固件路由到 context bank 1。原策略仅复用自己选择的高位 bypass bank，因此拒绝该现有路由。命令计数为 0，尚未发出 NOP／SCSI／GPT 读取，不能称作文件系统错误。
+
+照片及 `screen-observation.json` 保存在第十轮运行目录，照片 SHA-256 `c531cd9eba52a86f0b81c94a800844681161f827658c4839d50e0745def33099`。未走到采样点的字段保留默认值，不能把它们解释成真实寄存器读数。恢复 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。
+
+`smmu-firmware-route.patch` 增加显式、默认关闭的固件路由接管选项，只有本机原生 UFS 在证明队列停止后启用。只接受唯一、无 mask、属性已知的精确 stream；选择未被其他 stream 引用且未启用翻译的 context bank，完整检查最多 128 个硬件 stream 槽，超过可完整检查范围则拒绝。配置前再次检查旧路由、目标 bank 与其他 stream 的归属是否变化。先设置并回读新 context，最后只改该 UFS slot 的 S2CR；不改旧 context-bank 寄存器、不改其他 stream，也不重写已有 SMR。
+
+新主机测试使用照片中的 IDR1／IDR2、SID、slot 与 S2CR，IDR0 是明确标注的合成值。验证旧 bank 被其他设备共享时仍保持原状，目标被占用时改选空 bank，并覆盖重叠／mask、未知属性、过期计划和写入被硬件拒绝的情况。原有严格模式测试保持通过。以上是实际生成策略的模拟检查，接管效果仍需实机验证。
+
+## 日志回收边界
+
+ESP 的 `handoff-*.txt` 由 loader 在 ExitBootServices 之前写入，恢复 Android 后可以自动取回。屏幕上的 XNU 日志目前保存在内核 RAM，返回报告器只绘屏，没有写入存储；重启后不能保证保留。因此 ESP 交接日志不能替代运行期日志或照片。
+
+回收工具现会额外保存 Android 暴露的 pstore 普通文件，每个最多 8 MiB，并记录原始字节、大小和哈希；文件的出现不自动归因于 XNU。第十轮取回了 719,040 bytes 的 `console-ramoops-0`，原始字节未匹配 `NABU STORAGE`、`loader_return`、`XNU CALLBACK`，未取得可替代照片的 XNU 运行日志。完整内核日志持久化仍待存储通道稳定后设计，不应宣称已实现。

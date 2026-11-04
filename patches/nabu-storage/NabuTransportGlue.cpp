@@ -6,6 +6,7 @@ RootLayout gNabuLayout;
 IOLock *gNabuReadLock;
 bool gNabuAttempted, gNabuPublished;
 char gNabuResult[256] = "not selected";
+char gNabuCause[192];
 char gNabuReport[2300];
 
 bool nabuContract(const char **why)
@@ -52,7 +53,8 @@ extern "C" int nabu_storage_prepare(void)
   gNabuAttempted=true; gRootDiagnosticEnabled=true;
   const char *why="initializing";
   if (!hostBringUp(&why) || !nabuContract(&why)) {
-    strlcpy(gNabuResult,why,sizeof(gNabuResult)); return EIO;
+    strlcpy(gNabuResult,why,sizeof(gNabuResult));
+    strlcpy(gNabuCause,why,sizeof(gNabuCause)); return EIO;
   }
   strlcpy(gNabuResult,"OS/SystemOS validated; both windows read-only",sizeof(gNabuResult));
   return 0;
@@ -89,6 +91,10 @@ extern "C" void nabu_storage_append_report(void)
   if (!gNabuAttempted) return;
   formatUfsRootDiagnostics(gNabuReport,sizeof(gNabuReport),gRootDiagnostic,gNabuResult,"NABU STORAGE REPORT");
   loader_log_line(gNabuReport);
+  if (gNabuCause[0]) {
+    char line[224]; snprintf(line,sizeof(line),"NABU STORAGE CAUSE: %s\n",gNabuCause);
+    loader_log_line(line);
+  }
 }
 
 extern "C" void nabu_storage_finish(const char *result)

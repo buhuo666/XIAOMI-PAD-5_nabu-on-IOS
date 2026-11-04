@@ -9,6 +9,7 @@ on:
       - 'configs/**'
       - 'patches/8796/**'
       - 'patches/darwinboot/**'
+      - 'patches/nabu-storage/**'
   workflow_dispatch:
 
 permissions:

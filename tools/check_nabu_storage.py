@@ -89,7 +89,8 @@ int main() {
 }
 '''.replace('#include <cstdint>','#include <cstdint>\n#include <initializer_list>')
     (a.output/'Policy.cpp').write_text(policy)
-    for name in ('TransferPoll','SmmuTakeover','RootLayout','RootCommands','Policy'):
+    shutil.copy2(ROOT/'patches/nabu-storage/SmmuFirmwareRouteTest.cpp',a.output/'SmmuFirmwareRoute.cpp')
+    for name in ('TransferPoll','SmmuTakeover','SmmuFirmwareRoute','RootLayout','RootCommands','Policy'):
         src=a.output/(name+'.cpp');exe=a.output/name
         command=['clang++','-std=c++17','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-g',host_path(src),'-o',host_path(exe)]
         if name=='RootLayout' and sys.platform!='darwin':command+=['-lcrypto']

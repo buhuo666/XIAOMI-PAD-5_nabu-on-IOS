@@ -95,6 +95,25 @@ def main():
         finally:
             shell(f'umount {mount}')
         (a.output/'pstore-list.txt').write_bytes(shell('ls -l /sys/fs/pstore'))
+        # These records can survive an Android reboot, but their presence does
+        # not establish that XNU produced them. Keep raw bytes and provenance.
+        pstore = []
+        for path in shell('find /sys/fs/pstore -maxdepth 1 -type f').decode().splitlines():
+            if not re.fullmatch(r'/sys/fs/pstore/[A-Za-z0-9_.-]+', path):
+                continue
+            size = int(shell(f'stat -c %s {path}'))
+            if size > 8 * 1024 * 1024:
+                pstore.append({'file': Path(path).name, 'bytes': size, 'skipped': 'size limit'})
+                continue
+            data = shell(f'cat {path}')
+            assert len(data) == size
+            target = a.output/'pstore'/Path(path).name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            pstore.append({'file': target.name, 'bytes': size,
+                           'sha256': hashlib.sha256(data).hexdigest(),
+                           'source': 'Android-exposed pstore; producer not attributed'})
+        report['pstore_files'] = pstore
         report['esp_logs'] = captured
         report['status'] = 'returned-to-android-evidence-collected'
         report_path.write_text(json.dumps(report, indent=2)+'\n')

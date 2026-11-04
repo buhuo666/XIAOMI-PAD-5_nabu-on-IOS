@@ -63,6 +63,8 @@ def main():
     subprocess.run(['git','init','-q',str(a.work)],check=True)
     patch=ROOT/'src/nabu/patches/nabu-nativeufs-board.patch'
     for args in (['--check'],[]):subprocess.run(['git','-C',str(a.work),'apply',*args,str(patch)],check=True)
+    route_patch=ROOT/'patches/nabu-storage/smmu-firmware-route.patch'
+    for args in (['--check'],[]):subprocess.run(['git','-C',str(a.work),'apply',*args,str(route_patch)],check=True)
     original=(a.work/'NativeUfs.cpp').read_text()
     start=original.index('namespace {\n#include "RootTransportLayout.h"')
     end=original.index('\n}\n\nnamespace {\nstatic uint32_t be32w',start)+2
@@ -87,6 +89,11 @@ def main():
     smmu=c_function(original,'smmuBypassStream')
     smmu=replace_once(smmu,'static void smmuBypassStream','static bool smmuBypassStream')
     smmu=replace_once(smmu,'uint64_t dma, uint64_t bytes)','uint64_t dma, uint64_t bytes, const char **why)')
+    # This helper is called only after hostStopQueue proved both UFS doorbells
+    # idle and the transfer list stopped. Retarget an exact firmware SID, never
+    # alter its old context bank or a masked/shared stream-match entry.
+    smmu=replace_once(smmu,'static_cast<unsigned> (nabu_ufs::kBoard.smmuBytes));',
+        'static_cast<unsigned> (nabu_ufs::kBoard.smmuBytes), true);')
     smmu=replace_once(smmu,'    panic ("NATIVE_UFS smmu: map failed");','    *why="SMMU map"; return false;')
     smmu=replace_once(smmu,'    rootDiagnosticFailure (plan.error);\n    panic ("NATIVE_UFS smmu: %s slot=%u smr=%x s2cr=%x", plan.error, plan.slot, plan.smr, plan.s2cr);',
         '    *why=plan.error; return false;')
@@ -156,6 +163,7 @@ static bool gRootDiagnosticEnabled;
     text=replace_once(text,'\tloader_jump(0, 0);','\textern void nabu_storage_append_report(void);\n\tnabu_storage_append_report();\n\tloader_jump(0, 0);')
     loader.write_text(text)
     report={'sources':receipts,'board_patch_sha256':hashlib.sha256(patch.read_bytes()).hexdigest(),
+            'firmware_route_patch_sha256':hashlib.sha256(route_patch.read_bytes()).hexdigest(),
             'generated':[{'path':str(p.relative_to(a.tree)),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(dest.iterdir())],
             'storage_contract_sha256':hashlib.sha256((ROOT/'configs/nabu-storage-probe.json').read_bytes()).hexdigest(),
             'scope':'Read-only native UFS, fixed OS/SystemOS windows, explicit root/launchd read probe; no Data writes or userland claim'}
