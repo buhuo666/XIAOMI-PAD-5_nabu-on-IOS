@@ -130,3 +130,26 @@
 候选位于 `artifacts/nabu-chain-desktop-v21`，逐字节比较和 TOML 结构比较已通过。现有 timer 使用 EARLY_BOOT 初始化后的相对秒数，实际画面时间可能有额外初始化／调度开销；定时返回仍依赖内核调度，不是硬件看门狗。原生加载和报告代码完全沿用已通过验证的第二十轮输入，因此不为配置变化重复重建。部署与启动回执待记录。
 
 第二十一轮于 `2026-11-04T20:00:47.530360+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `0e2a913e7c97f0ee331b9c39899cc727db2a549b`，部署回执 `log/device/nabu-chain-20261104-195847/deployment.json`。六个启动文件回读一致，启动前核对 30 份 GPT 元数据并记录 14 个引导分区哈希；57 份输入与检查证据、确切 boot.img 位于 `log/device/nabu-boot-20261104-21/`。当前仅确认启动命令成功，等待约五分钟运行窗口后的完整报告或期间实际桌面照片，随后恢复 Android 并执行本轮 `--collect`。
+
+## 第二十一轮结果：五分钟窗口内已进入图形初始化，是否仍需等待未定
+
+本轮原图、裁切及手工观察在 `log/device/nabu-boot-20261104-21/`。REASON／CODE 为 0，TIMER MARKER 为 YES，读取 33,721 次、失败 0，日志长度 `0x1608b5`；照片没有显示桌面。恢复 Android 后执行 `--collect`，30 份 GPT 元数据和 14 个受检引导分区均与启动前一致。
+
+约 263.305 秒采到 SpringBoard[5] 前十二个符合条件的线程，共享缓存 slide `0x35278000`。93 个非零有效代码地址均经原 cache 的可执行 section、LC_FUNCTION_STARTS 及返回地址前一条调用指令核对；缓存与符号文件重新验证 SHA-256。照片尾部的 `0x1` 为采样器未验证的 frame[1]，不作为代码地址。报告在 `log/host/display-v22/run21-stacks.json`。两处易混淆转录在放大原图及检查原指令后确认：pthread 帧为 `0x20562cbd0`，动画管理器帧为 `0x1be3ac9cc`，不是初读的 `0x20562bcd0`／`0x1be3ae9cc`。
+
+- 主线程 `0xd1` 带 running 标记。保存 PC `0x1bd555928`、LR `0x1bd555910` 分别对应 QuartzCore `CA::Render::Path::new_path(CGPath const*, bool)` 的 `+0xf4`／`+0xdc`。原函数边界为 `[0x1882dd834, 0x1882ddaa4)`；LR 前调用 malloc_zone_malloc，PC 是为所得对象写初始化字段的 `str w12, [x19, #8]`。这支持主线程已执行到图形路径创建；不能把单次 saved PC 当作持续停留、崩溃或存储指令反复异常的证据。
+- `0x4e3` 带 running 标记，链为 libdispatch workloop／serial drain 的优先级与 voucher 设置，经 pthread 到 bsdthread_ctl；没有取得该队列正在处理的上层任务身份。
+- UIKit eventfetch、CoreMotion、SpringBoard Wi-Fi 管理器与 Wi-Fi 状态监视等线程显示 RunLoop／Mach 消息等待，四个线程为 workqueue 等待。动画管理器线程位于 `UIViewInProcessAnimationManager startAdvancingAnimationManager:` 的块内等待 semaphore；仅据此不能判定异常阻塞。
+- 当前选中样本未见早先 LaunchServices 数据库等待链，但未采集所有线程，也未直接检查 lsd 的 seeding 完成状态。上一轮 lsd 返回数据库对象并不证明全部 seeding 已完成。用户提出“时间太短、数据库尚未建完”仍是可验证假设。
+
+QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原 cache 字节比对，见 `code-verification.json`。REA 当前 Windows provider 不支持 Mach-O／共享缓存，采用本地解析与独立指令核对，未声称取得 REA 反编译结果。
+
+采样器在 task lock 下拷贝 saved registers，但不暂停目标线程，解锁后才读取 frame-pointer 链。running PC 可能是最近一次入核时保存的位置；寄存器和后读栈链不是原子快照。主线程仅打印 PC、LR、一个无效 `frame[1]`，终止条件未记录，不能据此认定栈破坏。“12 threads” 是所选数量，不是整个进程线程总数。屏幕 `DISPLAY / SURFACES: NO MATCH` 只表示选中的捕获日志未匹配，不证明本轮没有图形活动。
+
+## 第二十二轮候选：十分钟与三次间隔采样
+
+保留第二十一轮确切的内核、EFI、bootstrap、设备树（包括同一随机种子和 Wi-Fi 地址）与 boot.img，仅改变四个诊断参数：`loader_return_after=600`，新增 `ustacks_ms=120000`，`ustacks_count=3`，`ustacks_threads=4`。采样目标仍为 SpringBoard，起点仍为 240 秒；名义上在 240／360／480 秒采前四个线程，共十二条，适配现有屏幕容量并按组显示时间头。延长时间验证等待是否有用，间隔样本观察路径是否变化；即使重复同一 saved PC，也不能单独证明死锁。
+
+时间由 EARLY_BOOT 初始化后计算，后续间隔从每次采样完成后计算，实际时间还受初始化／调度开销影响。定时返回依赖内核调度，不是硬件看门狗。loader 日志保留最早 256 KiB、随后最新 1 MiB，再追加 message buffer；较早样本可能被覆盖，丢失时间头会明确显示 HEADER NOT CAPTURED。当前仍为 RAM Data，重启不会保留此轮临时数据库，不能把多轮运行时间相加当成同一次建库；本轮不改变 Data 策略。
+
+候选 `artifacts/nabu-chain-desktop-v22` 已通过 TOML 结构对照、五个载荷逐字节比较与 boot.img 一致性检查。现有内核／EFI 与上一轮一致，沿用已有原生验证和覆盖多次采样／十二条容量的报告检查，配置调整不重复重建。部署与临时启动回执待记录。
