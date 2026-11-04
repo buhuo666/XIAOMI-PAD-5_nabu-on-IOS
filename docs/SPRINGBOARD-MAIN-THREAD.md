@@ -165,3 +165,8 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 用户要求日志不覆盖并直接保存，因此取消仅将采样挪到退出前的配置方案，恢复原 240／360／480 秒采样设置。新实现使用 `nabu_system` 尾部已规划的 1 GiB 预留区，每轮使用新的 64 MiB 日志槽，旧槽不复用；不开放 OS／SystemOS／Data 写入。56 MiB RAM capture 只追加，并实时保留原 msgbuf 字符，普通内核回调定期写入带 CRC／SHA-256 的追加记录；正常定时返回在停止 CPU／UFS 前封存并完成同步。异常中止恢复有效连续前缀，容量／写入失败明确标为不完整。屏幕摘要环形缓冲不代表持久日志覆盖。详细格式、边界与使用方式见 [日志落盘格式](NABU-PERSISTENT-LOG-FORMAT.md)。
 
 现阶段真实源码 host ASan／UBSan 的 capture、writer、runtime、原存储及返回路径检查和 Python 18 组恢复检查通过。C++ writer 生成槽已由 Python 独立读回，65,541 字节逐字一致。尚待 macOS 完整构建、原生链接检查和真机日志落盘／Android 回读；没有把主机模拟等同于设备成功。
+
+
+第二十三轮日志候选已由 macOS Actions `41839045982` 完整编译和验证，stripped 内核 SHA-256 `7df502f2a4ef936fe6b990d74cbf49227585710f19ddfa232d1fd025b9b32c74`。两份内核及项目补丁哈希、七组验收报告、十四个原生指令范围均已核对；capture/runtime 的源哈希与 CI 一致。第一轮 Actions `41838242673` 因测试辅助代码重定义 macOS `__unused` 失败，修正仅为宏定义保护，后续全部通过。
+
+`artifacts/nabu-chain-desktop-v23` 只更换上述内核并添加 `nabu-log-slot=1`；十分钟返回、240／360／480 秒采样保持，EFI、bootstrap、设备树及随机种子、boot.img 均与第二十二轮一致。Android 已为槽 1 准备新清单并回读整个 64 MiB，旧非零槽 0 保留。分区内唯一写入是日志清单的 4096 bytes，30 份 GPT 元数据前后相同；XNU 日志保存本身仍待本轮运行及 Android 回收验证。

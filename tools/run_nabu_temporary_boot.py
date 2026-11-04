@@ -117,6 +117,8 @@ def main():
         report['esp_logs'] = captured
         prepared=report.get('runtime_log_preparation')
         if prepared:
+            report['status']='returned-to-android-runtime-log-collection-pending'
+            report_path.write_text(json.dumps(report,indent=2)+'\n')
             saved=a.output/'runtime-log-preparation.json'
             if saved.exists():
                 assert json.loads(saved.read_text()) == prepared
@@ -127,10 +129,16 @@ def main():
             if runtime_output.exists() and any(runtime_output.iterdir()):
                 stamp=datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
                 runtime_output=a.output/('runtime-log-'+stamp)
-            subprocess.run([sys.executable,str(ROOT/'tools/nabu_runtime_logs.py'),'--collect',
-                            '--receipt',str(saved),'--gpt-backup',str(a.gpt_backup),
-                            '--adb',a.adb,'--output',str(runtime_output)],check=True)
-            decoded=json.loads((runtime_output/'report.json').read_text())
+            try:
+                subprocess.run([sys.executable,str(ROOT/'tools/nabu_runtime_logs.py'),'--collect',
+                                '--receipt',str(saved),'--gpt-backup',str(a.gpt_backup),
+                                '--adb',a.adb,'--output',str(runtime_output)],check=True)
+                decoded=json.loads((runtime_output/'report.json').read_text())
+            except (OSError,ValueError,subprocess.SubprocessError) as error:
+                report['status']='returned-to-android-runtime-log-collection-failed'
+                report['runtime_log_error']=str(error)
+                report_path.write_text(json.dumps(report,indent=2)+'\n')
+                raise
             report['runtime_log']={'directory':str(runtime_output), 'complete':decoded['complete'],
                                    'data_bytes':decoded.get('data_bytes'), 'data_sha256':decoded.get('data_sha256')}
         report['status'] = 'returned-to-android-evidence-collected'

@@ -14,8 +14,8 @@ from nabu_log_format import parse_manifest, slot_offset, BLOCK_BYTES, SLOT_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL = ROOT/'artifacts/ci/41784700433-attempt-1/xnu8796-reference-23/artifacts/8796-reference/mach.development.bcm2837'
-KERNEL_SHA = 'ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529'
+KERNEL = ROOT/'artifacts/ci/41839045982-attempt-1/xnu8796-reference-27/artifacts/8796-reference/mach.development.bcm2837'
+KERNEL_SHA = '7df502f2a4ef936fe6b990d74cbf49227585710f19ddfa232d1fd025b9b32c74'
 
 
 def sha(path):

@@ -14,6 +14,7 @@ from nabu_log_format import (BEGIN, DATA, END, BLOCK_BYTES, SLOT_BYTES, SLOT_COU
                              LogFormatError, inspect_slot, make_manifest,
                              make_record_header, parse_manifest, seal_block, slot_offset)
 from nabu_runtime_logs import choose_slot, new_output, zero_suffix_sha256
+from stage_nabu_boot_chain import verify_prepared_log
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN_UUID = bytes(range(1, 17))
@@ -312,6 +313,65 @@ class FormatChecks(unittest.TestCase):
             with self.assertRaises(LogFormatError):
                 new_output(path)
             self.assertEqual((path / 'old.log').read_bytes(), b'keep')
+
+    def test_deployment_preflight_binds_fresh_slot(self):
+        manifest = make_manifest(1, RUN_UUID, KERNEL_SHA, 1234)
+        prepared = {'slot': 1, 'run_uuid': RUN_UUID.hex(),
+                    'kernel_sha256': KERNEL_SHA.hex(),
+                    'manifest_sha256': hashlib.sha256(manifest).hexdigest(),
+                    'device_serial_sha256': '11' * 32}
+        offset = slot_offset(1)
+        calls = []
+        def shell(command):
+            calls.append(command)
+            self.assertNotIn('of=', command)
+            if command == 'readlink -f /dev/block/by-name/nabu_system':
+                return b'/dev/block/sda36\n'
+            if command == 'blockdev --getsize64 /dev/block/sda36':
+                return str(PARTITION_BYTES).encode() + b'\n'
+            if command == f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset // BLOCK_BYTES} count=1 status=none':
+                return manifest
+            if command == (f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset // BLOCK_BYTES} '
+                           f'count={SLOT_BYTES // BLOCK_BYTES} status=none | sha256sum'):
+                return zero_suffix_sha256(manifest, SLOT_BYTES).encode() + b'  -\n'
+            self.fail('unexpected preflight command: ' + command)
+        result = verify_prepared_log(shell, prepared, KERNEL_SHA.hex(), '11' * 32)
+        self.assertEqual(result['slot'], 1)
+        self.assertEqual(result['run_uuid'], RUN_UUID.hex())
+        self.assertEqual(len(calls), 4)
+
+    def test_deployment_preflight_rejects_changed_or_used_slot(self):
+        manifest = make_manifest(1, RUN_UUID, KERNEL_SHA, 1234)
+        baseline = {'slot': 1, 'run_uuid': RUN_UUID.hex(),
+                    'kernel_sha256': KERNEL_SHA.hex(),
+                    'manifest_sha256': hashlib.sha256(manifest).hexdigest(),
+                    'device_serial_sha256': '11' * 32}
+        scenarios = ('used-slot', 'wrong-device', 'wrong-kernel', 'wrong-uuid',
+                     'wrong-manifest', 'wrong-slot', 'wrong-link', 'wrong-size', 'short-header')
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                prepared = dict(baseline)
+                if scenario == 'wrong-device': prepared['device_serial_sha256'] = '22' * 32
+                if scenario == 'wrong-kernel': prepared['kernel_sha256'] = '22' * 32
+                if scenario == 'wrong-uuid': prepared['run_uuid'] = '22' * 16
+                if scenario == 'wrong-manifest': prepared['manifest_sha256'] = '22' * 32
+                if scenario == 'wrong-slot': prepared['slot'] = 2
+                calls = []
+                def shell(command):
+                    calls.append(command)
+                    self.assertNotIn('of=', command)
+                    if command.startswith('readlink '):
+                        return b'/dev/block/sda35\n' if scenario == 'wrong-link' else b'/dev/block/sda36\n'
+                    if command.startswith('blockdev '):
+                        return b'4096\n' if scenario == 'wrong-size' else str(PARTITION_BYTES).encode()
+                    if '| sha256sum' in command:
+                        return (('ff' * 32 if scenario == 'used-slot' else
+                                 zero_suffix_sha256(manifest, SLOT_BYTES)) + '  -\n').encode()
+                    return manifest[:100] if scenario == 'short-header' else manifest
+                with self.assertRaises((AssertionError, LogFormatError)):
+                    verify_prepared_log(shell, prepared, KERNEL_SHA.hex(), '11' * 32)
+                if scenario in ('wrong-device', 'wrong-kernel'):
+                    self.assertFalse(calls)
 
 
 def main():

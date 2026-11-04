@@ -259,7 +259,10 @@ def prepare(args, output):
         write_json(receipt_path, report)
         remote_dir = '/data/local/tmp/nabu16-log-' + run_uuid.hex()
         remote = remote_dir + '/manifest.bin'
-        device.shell(f'set -e; test ! -e {remote_dir}; test ! -L {remote_dir}; mkdir -m 0700 {remote_dir}')
+        device.shell(f'set -e; test ! -e {remote_dir}; test ! -L {remote_dir}')
+        # adb push runs as the adbd shell identity, not the later su process.
+        # Create its private staging directory with that same identity.
+        device.command(device.adb + ['shell', 'mkdir', '-m', '0700', remote_dir])
         device.command(device.adb + ['push', str(local), remote])
         device.shell(f'set -e; test ! -L {remote}; test "$(stat -c %s {remote})" = {BLOCK_BYTES}; '
                      f'nabu_manifest_hash=$(sha256sum {remote}); '

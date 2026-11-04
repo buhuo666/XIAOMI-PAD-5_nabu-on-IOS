@@ -1,6 +1,6 @@
 # Nabu append-only runtime log format v1
 
-Implemented with host checks, 2026-11-04. Native compilation and device write/readback qualification are pending.
+Implemented and natively compiled, 2026-11-04. XNU device write/readback qualification is pending.
 
 The existing `nabu_system` partition is 64424509440 bytes with 4096-byte logical
 blocks. Its reserved log area begins at partition-relative byte 63350767616 and
@@ -95,3 +95,20 @@ Native integration must validate the existing GPT and installed layout before
 opening the log window. Any write rechecks ready/poisoned/queue/fatal state while
 holding the transport lock, before changing DMA memory. No disk I/O is allowed
 while holding the log producer lock or from interrupt/panic contexts.
+
+
+macOS Actions `41839045982` (source `8c64be0d7ad2b8277c66cb08973047ba670f35bf`)
+passed the complete kernel build, capture/writer/runtime/format checks, existing
+storage and return checks, export contract, and native LLDB/capacity checks.
+The stripped kernel SHA-256 is
+`7df502f2a4ef936fe6b990d74cbf49227585710f19ddfa232d1fd025b9b32c74`.
+Fourteen linked storage/return instruction ranges match the exact boot kernel.
+Host verification receipts are in `log/host/nabu-log-candidate/`.
+
+Android preparation preserved nonzero slot 0 and verified all of slot 1 was zero.
+It wrote only slot 1's 4096-byte immutable manifest, read it back, verified the
+remaining slot bytes stayed zero, and rechecked 30 GPT records. The receipt is
+`log/device/nabu-log-slot-20261104-23b/preparation.json`. An earlier staging
+attempt failed before any partition write because adbd could not write a
+root-owned directory; staging now uses the adbd identity. This preparation
+establishes neither XNU disk writes nor successful runtime log capture.
