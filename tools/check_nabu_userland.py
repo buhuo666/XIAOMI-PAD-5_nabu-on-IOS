@@ -30,6 +30,12 @@ def main():
     old_start=original.index('\tcheck(bind_dir(in_image("/LaunchDaemons")')
     old_end=original.index('\tcheck(bind_dir(in_image("/hal")',old_start)
     old_block=original[old_start:old_end]
+    env_start=init.index('\tchar *envp[]',init.index('run_command(char *line)'))
+    env_end=init.index(';',env_start)+1
+    environment=init[env_start:env_end]
+    handoff_start=init.index('\t\tif (flash_root_mode && strcmp(argv[1]')
+    handoff_end=init.index('\t\texecve(argv[1], argv + 1, envp);',handoff_start)
+    handoff=init[handoff_start:handoff_end]
     user=r'''
 #include <assert.h>
 #include <stdint.h>
@@ -41,6 +47,8 @@ def main():
 #define MNT_RDONLY 1
 static unsigned mounted, failures, reported, status;
 static int stat_error, mount_error, non_directory;
+static int flash_root_mode, test_pid=1;
+#define getpid() test_pid
 static char message[192];
 static int mock_sysctl(const char *name,void *old,size_t *len,const void *value,size_t size) {
   (void)old;(void)len;
@@ -87,6 +95,20 @@ int main(void) {
   non_directory=0;mount_error=5;assert(!nabu_bind_optional("/empty","/bad")&&errno==5);
   char long_name[2048];memset(long_name,'x',sizeof(long_name)-1);long_name[2047]=0;
   nabu_failure(long_name,0xffffffffU);assert(strlen(message)<192&&strstr(message,"4294967295"));
+'''+environment+r'''
+  char *argv[]={"exec","/sbin/launchd.darwin",NULL};
+  flash_root_mode=1;
+'''+handoff+r'''
+  assert(!strcmp(argv[1],"/sbin/launchd")&&envp[4]==NULL);
+  assert(!strcmp(envp[3],"DYLD_SHARED_CACHE_DIR=/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld"));
+  assert(status==(7U<<16));
+  envp[3]=NULL;argv[1]="/bin/other";
+'''+handoff+r'''
+  assert(envp[3]==NULL);
+  argv[1]="/sbin/launchd";test_pid=2;
+'''+handoff+r'''
+  assert(envp[3]==NULL);
+  puts("PASS: PID1 launchd receives the real cache directory; other execs keep the base environment");
   puts("PASS: previous short-circuit reproduced; fixed optional-directory binding, subsequent mounts, access/type/mount failures, errno preservation, bounded report");
 }
 '''

@@ -63,3 +63,5 @@ macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`�
 `artifacts/nabu-bootstrap-v2/bootstrap.apfs` 为 8 MiB，SHA-256 `15b08f2febf2f12f24fe27acf3a9b5c7af4e5ae0462e262c8d597611dee5c212`。两个 APFS 容器检查通过，独立读取其中的 stage0、init 和初始设置偏好通过。该包先使用前一轮已编译的程序组装，现已逐字节确认与完整成功构建的两个程序相同。第十三轮准备沿用 120 秒窗口，设备执行结果待收集。
 
 2026-11-04 14:26:40 完成六个 ESP 文件部署和哈希回读（`log/device/nabu-chain-20261104-142640/deployment.json`），14:27:35 执行第十三轮临时启动（Asia/Shanghai）。发送与 Booting 均返回 OKAY；启动源提交 `4c4ced37ccc416fe5afac19e3580d3aacc956761`，启动前 30 份 GPT 元数据和 14 个受检引导分区均完成核验。343 份冻结输入／检查文件及 boot.img、run.json 保存在 `log/device/nabu-boot-20261104-13/`。当前等待约两分钟后的完整屏幕，重点为 `NABU USERLAND`、`NABU INIT FAILURE` 及 launchd／dyld 日志；此轮运行和桌面尚未验证。拍照后恢复 Android，再对同一运行目录执行 `--collect`。
+
+第十三轮后续照片已确认 phase 7，并出现原版 launchd/dyld 的依赖解析错误：找不到 `libSystem.B.dylib`、`no dyld cache`，PID 1 退出。第十二轮的初始化检查阻塞已被越过；尚未进入 launchd 服务或桌面。恢复 Android 回收已完成，GPT／受检引导分区一致。第十四轮只调整 PID1 launchd 的 `DYLD_SHARED_CACHE_DIR`，使用已有 SystemOS 缓存的真实路径；具体原版反汇编、源码条件和验证边界见 [缓存定位记录](../../docs/DYLD-CACHE-BRINGUP.md)。

@@ -65,8 +65,14 @@ def generate_sources(src):
         '\tnabu_stage(2,0);\n\tprintf("\\n=== init: process %d, started as %s ===\\n",')
     init=once(init,'\tconfigure_inject();','\tnabu_stage(6,0);\n\tconfigure_inject();')
     init=once(init,'\t\texecve(argv[1], argv + 1, envp);',
+        '\t\tif (getpid()==1 && flash_root_mode && strcmp(argv[1], "/sbin/launchd")==0) {\n'
+        '\t\t\tenvp[3] = NABU_DYLD_CACHE_ENV;\n'
+        '\t\t\tprintf("NABU INIT: launchd cache directory %s\\n", NABU_DYLD_CACHE_DIRECTORY);\n'
+        '\t\t}\n'
         '\t\tif (getpid()==1) nabu_stage(7,0);\n\t\texecve(argv[1], argv + 1, envp);\n'
         '\t\tint exec_error=errno;\n\t\tif (getpid()==1) nabu_stage(8,(unsigned)exec_error);\n\t\terrno=exec_error;')
+    init=once(init,'"HOME=/var/mobile", "TERM=dumb", NULL };',
+        '"HOME=/var/mobile", "TERM=dumb", NULL, NULL };')
     old='\tcheck(bind_dir(in_image("/LaunchDaemons"), "/flash/System/Library/LaunchDaemons") &&\n\t    bind_dir(in_image("/empty"), "/flash/System/Library/NanoLaunchDaemons") &&\n\t    bind_dir(in_image("/empty"), "/flash/System/Library/LaunchAngels") &&\n\t    bind_dir(in_image("/xpc"), "/flash/System/Library/xpc"), "our launchd jobs, not Darwin\'s");'
     new='\tcheck(bind_dir(in_image("/LaunchDaemons"), "/flash/System/Library/LaunchDaemons"), "bind launchd jobs");\n'
     for name in ('NanoLaunchDaemons','NanoLaunchDaemonsAltAccount'):

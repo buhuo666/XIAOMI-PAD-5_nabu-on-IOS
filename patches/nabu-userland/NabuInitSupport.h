@@ -1,4 +1,7 @@
 // Diagnostics for the source-built PID1 bootstrap; no persistent writes.
+#define NABU_DYLD_CACHE_DIRECTORY "/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld"
+#define NABU_DYLD_CACHE_ENV "DYLD_SHARED_CACHE_DIR=" NABU_DYLD_CACHE_DIRECTORY
+
 static unsigned nabu_phase;
 
 static void nabu_stage(unsigned phase, unsigned error)
