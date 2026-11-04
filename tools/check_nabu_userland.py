@@ -98,7 +98,9 @@ int main(void) {
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 #define SYSCTL_PROC(...)
 #define os_atomic_load(p,o) __atomic_load_n(p,__ATOMIC_ACQUIRE)
 #define os_atomic_store(p,v,o) __atomic_store_n(p,v,__ATOMIC_RELEASE)
