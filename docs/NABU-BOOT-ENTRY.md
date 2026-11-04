@@ -64,6 +64,8 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 复现：`NABU_EFI_WORK=/home/buhuo/nabu16-efi-v4 NABU_EFI_EDK=/home/buhuo/nabu16-efi-v2/edk2 bash tools/build_nabu_efi_wsl.sh`。补丁或头文件改变时须使用新生成目录，不能把旧 loader 树的再次编译当成新修改已进入产物。
 
+2026-11-04 09:44:46 完成新诊断链的 ESP 部署与逐文件 SHA-256 回读，收据为 `log/device/nabu-chain-20261104-094446/deployment.json`。09:45:17 的第二次启动记录绑定提交 `dbc2aaf3f4af6e0b6c98295b7948edb697b6570e`；启动前核对 30 份 GPT 元数据和 14 个实际存在的引导分区哈希。实际命令仍为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-02\boot.img`，Booting 返回 OKAY。`log/device/nabu-boot-20261104-02/` 保存确切 EFI／内核／ADT／配置、源与构建收据、汇编反汇编及 run.json；屏幕标记观察和返回 Android 后回收尚待完成，不能将本次命令成功升级为内核执行证据。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。
