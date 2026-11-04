@@ -12,7 +12,7 @@ enum NabuLogError : uint32_t {
 };
 static struct NabuLogWriterState {
   bool attempted, open, ended;
-  uint32_t error, slot, nextBlock, finalStatus;
+  uint32_t error, slot, span, extentBlocks, nextBlock, finalStatus;
   uint64_t first, sequence, committed, finalLost;
   uint8_t uuid[16];
   SHA256_CTX stream;
@@ -73,12 +73,15 @@ static bool nabuLogCommitHeader(uint64_t lba)
   return true;
 }
 
-static bool nabuLogStart(unsigned slot)
+static bool nabuLogStart(unsigned slot, unsigned span = 1)
 {
   if (gNabuLogWriter.attempted) return false;
   gNabuLogWriter.attempted = true;
   gNabuLogWriter.slot = slot;
-  if (slot >= kNabuLogSlots) return nabuLogFail(kNabuLogInvalid);
+  gNabuLogWriter.span = span;
+  if (!nabuLogExtentValid(slot, span)) return nabuLogFail(kNabuLogInvalid);
+  const uint32_t extentBlocks = span * kNabuLogSlotBlocks;
+  gNabuLogWriter.extentBlocks = extentBlocks;
   if (!gNabuPublished || gNabuLayout.userdataLast < gNabuLayout.userdataFirst ||
       gNabuLayout.userdataLast >= gHost.blocks ||
       gNabuLayout.userdataLast - gNabuLayout.userdataFirst + 1 != kNabuLogPartitionBytes / kNabuLogBlock)
@@ -87,18 +90,18 @@ static bool nabuLogStart(unsigned slot)
   uint64_t first = gNabuLayout.userdataFirst + kNabuLogReservedOffset / kNabuLogBlock +
       uint64_t(slot) * kNabuLogSlotBlocks;
   if (first <= gNabuLayout.userdataFirst || first > gNabuLayout.userdataLast ||
-      kNabuLogSlotBlocks - 1 > gNabuLayout.userdataLast - first ||
-      first > UINT32_MAX || kNabuLogSlotBlocks - 1 > UINT32_MAX - first)
+      extentBlocks - 1 > gNabuLayout.userdataLast - first ||
+      first > UINT32_MAX || extentBlocks - 1 > UINT32_MAX - first)
     return nabuLogFail(kNabuLogLayout);
   if (hostRead4k(0, first, 1, gNabuLogHeader) != kIOReturnSuccess)
     return nabuLogFail(kNabuLogRead);
-  if (!nabuLogManifestValid(gNabuLogHeader, slot)) return nabuLogFail(kNabuLogManifest);
+  if (!nabuLogManifestValid(gNabuLogHeader, slot, span)) return nabuLogFail(kNabuLogManifest);
   memcpy(gNabuLogWriter.uuid, gNabuLogHeader + 56, 16);
   gNabuLogWriter.first = first;
   // The host checked this before preparation. Recheck now before claiming it,
   // including records left by a torn earlier boot whose BEGIN is still zero.
-  if (!nabuLogTargetZero(first + 1, kNabuLogSlotBlocks - 1)) return false;
-  if (!nabuLogWriteWindowOpen(first)) return nabuLogFail(kNabuLogLayout);
+  if (!nabuLogTargetZero(first + 1, extentBlocks - 1)) return false;
+  if (!nabuLogWriteWindowOpen(first, extentBlocks)) return nabuLogFail(kNabuLogLayout);
   SHA256_Init(&gNabuLogWriter.stream);
   SHA256_CTX empty = gNabuLogWriter.stream;
   uint8_t digest[32];
@@ -118,8 +121,8 @@ static bool nabuLogAppend(const void *data, uint32_t bytes)
     return nabuLogFail(kNabuLogInvalid, false);
   uint32_t payloadBlocks = (bytes + kNabuLogBlock - 1) / kNabuLogBlock;
   uint32_t recordBlocks = 1 + payloadBlocks;
-  if (gNabuLogWriter.nextBlock >= kNabuLogSlotBlocks ||
-      recordBlocks >= kNabuLogSlotBlocks - gNabuLogWriter.nextBlock)
+  if (gNabuLogWriter.nextBlock >= gNabuLogWriter.extentBlocks ||
+      recordBlocks >= gNabuLogWriter.extentBlocks - gNabuLogWriter.nextBlock)
     return nabuLogFail(kNabuLogFull, false); // Keep the final block for END.
   if (bytes > UINT64_MAX - gNabuLogWriter.committed || gNabuLogWriter.sequence == UINT64_MAX)
     return nabuLogFail(kNabuLogInvalid, false);
@@ -144,7 +147,7 @@ static bool nabuLogAppend(const void *data, uint32_t bytes)
 static bool nabuLogEnd(uint64_t lost, uint32_t status)
 {
   if (!gNabuLogWriter.open) return false;
-  if (gNabuLogWriter.nextBlock >= kNabuLogSlotBlocks || gNabuLogWriter.sequence == UINT64_MAX)
+  if (gNabuLogWriter.nextBlock >= gNabuLogWriter.extentBlocks || gNabuLogWriter.sequence == UINT64_MAX)
     return nabuLogFail(kNabuLogState);
   uint64_t lba = gNabuLogWriter.first + gNabuLogWriter.nextBlock;
   if (!nabuLogTargetZero(lba, 1)) return false;

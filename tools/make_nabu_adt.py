@@ -53,9 +53,12 @@ def validate_wifi_mac(value):
     return value
 
 
-def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None):
+def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
+              userland_model=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
+    if userland_model not in (None, 'iPad7,11'):
+        raise ValueError('Only the selected 20F66 iPad7,11 userland model is supported')
     cpus = []
     for i in range(8):
         props = {'device_type': STR('cpu'), 'state': STR('running' if i == 0 else 'waiting'),
@@ -82,7 +85,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         # matching. This supplies board identity; it does not publish a NIC.
         chosen.props['mac-address-wifi0'] = validate_wifi_mac(wifi_mac)
     return Node('device-tree', {
-        'model': STR('Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
+        # hw.product feeds MobileGestalt's device-class selection. Keep board
+        # routing and the displayed hardware name separate from this opt-in
+        # compatibility model for the supplied iPadOS userland.
+        'model': STR(userland_model or 'Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
         'platform-name': STR('nabu'), '#address-cells': U32(2), '#size-cells': U32(2),
     }, [chosen, Node('cpus', children=cpus),
         Node('arm-io', {'device_type': STR('qcom,sm8150'), '#address-cells': U32(2),
@@ -134,9 +140,12 @@ def main():
     parser.add_argument('--bootstrap', action='store_true')
     parser.add_argument('--wifi-mac-file', type=Path,
                         help='Local file containing the six binary octets read from this device')
+    parser.add_argument('--userland-model', choices=['iPad7,11'],
+                        help='Use the supplied iPadOS model for hw.product/device-class compatibility')
     args = parser.parse_args()
     wifi_mac = validate_wifi_mac(args.wifi_mac_file.read_bytes()) if args.wifi_mac_file else None
-    blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap, wifi_mac).encode()
+    blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap, wifi_mac,
+                     args.userland_model).encode()
     root, children = parse(blob)
     nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
     assert len(nodes['cpus'][1]) == 8
@@ -148,6 +157,7 @@ def main():
               'checkpoint': args.checkpoint,
               'bootstrap_ramdisk_required': args.bootstrap,
               'wifi_mac_supplied': wifi_mac is not None,
+              'userland_model': args.userland_model,
               'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
               'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
               'device_boot_validated': False, 'root_storage_driver_integrated': False}

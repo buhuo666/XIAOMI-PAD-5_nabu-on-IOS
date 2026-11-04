@@ -17,7 +17,7 @@
 using thread_call_param_t=void *;
 struct Call { void (*callback)(void *,void *); };
 using thread_call_t=Call *;
-constexpr unsigned NSEC_PER_SEC=1000000000;
+constexpr unsigned NSEC_PER_MSEC=1000000;
 enum thread_call_priority_t { THREAD_CALL_PRIORITY_HIGH=0, THREAD_CALL_PRIORITY_KERNEL=1 };
 constexpr unsigned kNabuLogFull=8;
 static void *gNabuReadLock=reinterpret_cast<void *>(1);
@@ -28,7 +28,7 @@ static unsigned appendFailure,appendError,writerError,finalStatus;
 static uint64_t captureLost,finalLost,writerRecords;
 static int sealResult;
 static uint32_t published;
-static std::array<char,3*1024*1024> capture;
+static std::array<char,16*1024*1024> capture;
 static std::vector<char> saved;
 static std::vector<std::string> events;
 static std::string arguments,reports;
@@ -50,7 +50,7 @@ static thread_call_t thread_call_allocate_with_priority(void (*callback)(void *,
 static void clock_interval_to_deadline(uint32_t n,unsigned scale,uint64_t *out)
 { *out=uint64_t(n)*scale; }
 static void thread_call_enter_delayed(thread_call_t c,uint64_t deadline)
-{ assert(c==&call && deadline==2ULL*NSEC_PER_SEC && !lockDepth);++schedules;events.push_back("schedule"); }
+{ assert(c==&call && deadline==250ULL*NSEC_PER_MSEC && !lockDepth);++schedules;events.push_back("schedule"); }
 static void publish(const char *p,size_t n)
 {
   if(captureSealed)return;
@@ -58,7 +58,7 @@ static void publish(const char *p,size_t n)
 }
 static void loader_log_line(const char *line)
 { reports+=line;publish(line,strlen(line));events.push_back("console"); }
-static bool nabuLogStart(unsigned);
+static bool nabuLogStart(unsigned,unsigned);
 static bool nabuLogAppend(const void *,uint32_t);
 static bool nabuLogEnd(uint64_t,uint32_t);
 static bool nabuLogIsOpen(void) { return writerOpen; }
@@ -69,9 +69,9 @@ static uint64_t nabuLogFinalLost(void) { return finalLost; }
 static uint64_t nabuLogCommittedRecords(void) { return writerRecords; }
 #include "NabuLogRuntime.inc"
 
-static bool nabuLogStart(unsigned slot)
+static bool nabuLogStart(unsigned slot,unsigned span)
 {
-  assert(lockDepth==1 && slot<16);++starts;events.push_back("BEGIN");
+  assert(lockDepth==1 && slot<16 && span && span<=16-slot);++starts;events.push_back("BEGIN");
   writerOpen=startOk;if(startOk)writerRecords=1;return startOk;
 }
 static bool nabuLogAppend(const void *p,uint32_t n)
@@ -114,7 +114,7 @@ extern "C" void nabu_storage_append_report(void)
 static void reset(const std::string &args="nabu-log-slot=0",unsigned initialBytes=0)
 {
   gNabuLogCall=nullptr;gNabuLogSelected=gNabuLogFinishing=gNabuLogFinalized=false;
-  gNabuLogSlot=gNabuLogFlushed=0;gNabuLogRuntimeError=0;
+  gNabuLogSlot=gNabuLogSpan=gNabuLogFlushed=0;gNabuLogRuntimeError=0;
   gNabuReadLock=reinterpret_cast<void *>(1);
   allocateOk=startOk=endOk=true;writerOpen=writerEnded=captureSealed=false;
   allocations=starts=appends=ends=schedules=reportCalls=sealCalls=lockDepth=0;
@@ -143,6 +143,16 @@ static void testArguments()
     reset("-v\tnabu-log-slot="+std::to_string(slot)+" cpus=8");
     assert(nabuLogBeginConfigured()==0 && starts==1 && gNabuLogSlot==slot && schedules==1);
   }
+  for(const char *s:{"nabu-log-span=10", "nabu-log-slot=2 nabu-log-span",
+                    "nabu-log-slot=2 nabu-log-span=", "nabu-log-slot=2 nabu-log-span=0",
+                    "nabu-log-slot=2 nabu-log-span=1", "nabu-log-slot=2 nabu-log-span=15",
+                    "nabu-log-slot=2 nabu-log-span=10 nabu-log-span=10",
+                    "nabu-log-slot=2 nabu-log-span=4294967296",
+                    "nabu-log-slot=2 nabu-log-span=-1", "nabu-log-slot=2 nabu-log-span=0xa"}) {
+    reset(s);assert(nabuLogBeginConfigured()==EINVAL && !starts && !allocations);
+  }
+  reset("nabu-log-slot=2 nabu-log-span=10");
+  assert(nabuLogBeginConfigured()==0 && gNabuLogSlot==2 && gNabuLogSpan==10 && starts==1);
   reset();allocateOk=false;assert(nabuLogBeginConfigured()==ENOMEM && !starts && !schedules);
   nabu_log_finish();assert(!appends && !ends);
   reset();startOk=false;assert(nabuLogBeginConfigured()==EIO && starts==1 && !schedules);
@@ -151,18 +161,18 @@ static void testArguments()
 }
 static void testPumps()
 {
-  reset("nabu-log-slot=0",24*65536);assert(nabuLogBeginConfigured()==0);
-  nabuLogPump(nullptr,nullptr);assert(appends==16 && saved.size()==16*65536 && schedules==2);assertSavedPrefix();
-  nabuLogPump(nullptr,nullptr);assert(appends<=32 && saved.size()==published && schedules==3);assertSavedPrefix();
+  reset("nabu-log-slot=0",144*65536);assert(nabuLogBeginConfigured()==0);
+  nabuLogPump(nullptr,nullptr);assert(appends==128 && saved.size()==128*65536 && schedules==2);assertSavedPrefix();
+  nabuLogPump(nullptr,nullptr);assert(appends<=256 && saved.size()==published && schedules==3);assertSavedPrefix();
   reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
   auto before=published;growOnAppend=true;nabuLogPump(nullptr,nullptr);
-  assert(saved.size()==before && published==before+5);assertSavedPrefix();
+  assert(saved.size()==before+5 && published==before+5);assertSavedPrefix();
   nabuLogPump(nullptr,nullptr);assert(saved.size()==published);assertSavedPrefix();
   reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
   appendFailure=1;appendError=6;nabuLogPump(nullptr,nullptr);
   assert(gNabuLogRuntimeError==EIO && !gNabuLogFlushed && schedules==1 && !writerOpen);
   nabu_log_finish();assert(!ends && !gNabuLogFinalized && reports.find("complete=1")==std::string::npos);
-  puts("PASS pump at most 16 DATA records, immutable published-prefix snapshots, advance only after commit, write failure stops scheduling");
+  puts("PASS pump at most 128 DATA records, lock released between records, immutable published-prefix snapshots, advance only after commit, write failure stops scheduling");
 }
 static void testFinish()
 {
@@ -206,8 +216,8 @@ static void testCapacityAndLateQueue()
   // Even this late queued callback must perform no post-END disk writes.
   reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
   afterUnlock=[] {nabu_log_finish();};nabuLogPump(nullptr,nullptr);
-  assert(writerEnded && schedules==2);auto oldAppends=appends,oldEnds=ends;
-  nabuLogPump(nullptr,nullptr);assert(appends==oldAppends && ends==oldEnds && schedules==2);
+  assert(writerEnded && schedules==1);auto oldAppends=appends,oldEnds=ends;
+  nabuLogPump(nullptr,nullptr);assert(appends==oldAppends && ends==oldEnds && schedules==1);
   puts("PASS capacity failure still commits incomplete END; late requeue after finalization performs no I/O");
 }
 int main()

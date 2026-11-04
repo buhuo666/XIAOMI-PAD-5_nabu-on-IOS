@@ -178,7 +178,7 @@ static bool gRootDiagnosticEnabled;
             'storage_contract_sha256':hashlib.sha256((ROOT/'configs/nabu-storage-probe.json').read_bytes()).hexdigest(),
             'log_capture_header_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogCapture.h').read_bytes()).hexdigest(),
             'log_runtime_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogRuntime.inc').read_bytes()).hexdigest(),
-            'scope':'OS/SystemOS/Data stay read-only; explicit nabu-log-slot admits one newly prepared 64 MiB slot in the existing 1 GiB reserved area'}
+            'scope':'OS/SystemOS/Data stay read-only; explicit nabu-log-slot/span admits one newly prepared bounded v1/v2 extent in the existing 1 GiB reserved area'}
     a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
 

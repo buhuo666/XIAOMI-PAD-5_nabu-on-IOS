@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tomllib
 from make_nabu_adt import make_tree, parse, validate_wifi_mac, CHECKPOINTS, DEFAULT_CHECKPOINT
-from nabu_log_format import parse_manifest, slot_offset, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
+from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,20 +41,25 @@ def check_gpt(shell, baseline):
 
 
 def verify_prepared_log(shell, prepared, kernel_sha, serial_sha):
-    """Read-only bind of one untouched prepared slot to this device and kernel."""
+    """Read-only bind of one untouched prepared extent to this device and kernel."""
     assert prepared['device_serial_sha256'] == serial_sha
     assert prepared['kernel_sha256'] == kernel_sha
     assert shell('readlink -f /dev/block/by-name/nabu_system').strip() == b'/dev/block/sda36'
     assert int(shell('blockdev --getsize64 /dev/block/sda36')) == PARTITION_BYTES
     offset = slot_offset(prepared['slot'])
+    span = prepared.get('span', 1)
+    size = extent_bytes(prepared['slot'], span)
+    assert prepared.get('slot_bytes', size) == size
     raw = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} count=1 status=none')
     parse_manifest(raw, expected_slot=prepared['slot'], expected_run_uuid=prepared['run_uuid'],
-                   expected_kernel_sha256=kernel_sha, expected_manifest_sha256=prepared['manifest_sha256'])
-    expected = zero_suffix_sha256(raw, SLOT_BYTES)
+                   expected_kernel_sha256=kernel_sha, expected_manifest_sha256=prepared['manifest_sha256'],
+                   expected_span=span)
+    expected = zero_suffix_sha256(raw, size)
     actual = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} '
-                   f'count={SLOT_BYTES//BLOCK_BYTES} status=none | sha256sum').decode().split()[0]
+                   f'count={size//BLOCK_BYTES} status=none | sha256sum').decode().split()[0]
     assert actual == expected, 'Prepared runtime log slot was already used or changed; preserve it and select a fresh slot'
-    return {'slot': prepared['slot'], 'run_uuid': prepared['run_uuid'], 'prepared_slot_sha256': actual}
+    return {'slot': prepared['slot'], 'span': span, 'slot_bytes': size,
+            'run_uuid': prepared['run_uuid'], 'prepared_slot_sha256': actual}
 
 
 def main():
@@ -67,6 +72,8 @@ def main():
     ap.add_argument('--bootstrap', type=Path, help='Verified local bootstrap.apfs; report must be beside it')
     ap.add_argument('--wifi-mac-file', type=Path,
                     help='Six binary octets from this device; rechecked against Android before deployment')
+    ap.add_argument('--userland-model', choices=['iPad7,11'],
+                    help='Explicit model compatibility for the selected iPadOS userland')
     ap.add_argument('--log-preparation', type=Path, help='Verified fresh runtime-log slot preparation receipt')
     a = ap.parse_args()
     wifi_mac = validate_wifi_mac(a.wifi_mac_file.read_bytes()) if a.wifi_mac_file else None
@@ -78,10 +85,14 @@ def main():
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
     bootstrap_mode='initrd' in entry
-    log_args=[x for x in entry['args'].split() if x.startswith('nabu-log-slot')]
+    log_args=[x for x in entry['args'].split() if x.startswith(('nabu-log-slot','nabu-log-span'))]
     log_prepared=checked_receipt(a.log_preparation) if a.log_preparation else None
     if log_args or log_prepared:
-        assert log_prepared and log_args == [f"nabu-log-slot={log_prepared['slot']}"]
+        assert log_prepared
+        expected_log_args=[f"nabu-log-slot={log_prepared['slot']}"]
+        if log_prepared.get('span',1)>1:
+            expected_log_args.append(f"nabu-log-span={log_prepared['span']}")
+        assert log_args == expected_log_args
         assert log_prepared['kernel_sha256'] == KERNEL_SHA
     if bootstrap_mode:
         assert a.bootstrap is not None and entry['initrd']==r'\EFI\Nabu16\Payloads\bootstrap.apfs'
@@ -105,10 +116,12 @@ def main():
         blob = adt_path.read_bytes()
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
-        assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+        assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
+                                 a.userland_model).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
-        blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac).encode()
+        blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
+                         a.userland_model).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -123,6 +136,7 @@ def main():
                'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
     receipt['wifi_mac_supplied'] = wifi_mac is not None
+    receipt['userland_model'] = a.userland_model
     if wifi_mac is not None:
         receipt['wifi_mac_source_sha256'] = hashlib.sha256(wifi_mac).hexdigest()
     (a.output/'chain-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n')

@@ -18,14 +18,16 @@ static bool nabuLogWriteRange(uint64_t lba, uint32_t blocks)
       lba < gHost.blocks && blocks <= gHost.blocks - lba;
 }
 
-static bool nabuLogWriteWindowOpen(uint64_t slotFirst)
+static bool nabuLogWriteWindowOpen(uint64_t slotFirst, uint32_t extentBlocks = kNabuLogSlotBlocks)
 {
   if (gNabuLogWriteOpen || !slotFirst || slotFirst > UINT32_MAX ||
-      slotFirst >= gHost.blocks || kNabuLogSlotBlocks > gHost.blocks - slotFirst ||
-      kNabuLogSlotBlocks - 1 > UINT32_MAX - slotFirst) return false;
+      !extentBlocks || extentBlocks % kNabuLogSlotBlocks ||
+      extentBlocks > kNabuLogSlots * kNabuLogSlotBlocks ||
+      slotFirst >= gHost.blocks || extentBlocks > gHost.blocks - slotFirst ||
+      extentBlocks - 1 > UINT32_MAX - slotFirst) return false;
   // Block zero is an immutable host-created manifest.
   gNabuLogWriteFirst = slotFirst + 1;
-  gNabuLogWriteBlocks = kNabuLogSlotBlocks - 1;
+  gNabuLogWriteBlocks = extentBlocks - 1;
   gNabuLogWriteOpen = true;
   return true;
 }

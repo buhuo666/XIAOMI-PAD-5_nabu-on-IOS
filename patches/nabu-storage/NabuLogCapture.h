@@ -8,7 +8,7 @@
  * immutable for the entire boot. No allocator, device operation or printf is
  * permitted on these producer paths. Kernel callers serialize PutLocked and
  * SealLocked with loader_log_lock. Failed-lock producers may only call Lost. */
-#define NABU_LOG_CAPTURE_BYTES (56U * 1024U * 1024U)
+#define NABU_LOG_CAPTURE_BYTES (512U * 1024U * 1024U)
 #define NABU_LOG_CAPTURE_SEALED (UINT64_C(1) << 63)
 #define NABU_LOG_CAPTURE_LOST_MASK (NABU_LOG_CAPTURE_SEALED - 1)
 

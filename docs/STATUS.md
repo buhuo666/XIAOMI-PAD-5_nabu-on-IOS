@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第二十二轮十分钟仍未见桌面，正常定时返回且读取 32,768 次无失败；采样区缺失，完整参数已从 EFI 交接日志核对，原因不能仅据照片确定。恢复 Android 后 30 份 GPT 元数据／14 个受检引导分区一致。按用户要求，正接入完整、不覆盖的持久日志：每轮使用预留区新槽，内核追加写入、恢复 Android 后校验导出；完整原生构建与检查已通过，新日志槽已准备并回读，第二十三轮临时启动命令成功；等待十分钟后的报告及 Android 自动回收验收。详见 [线程等待调查](SPRINGBOARD-MAIN-THREAD.md) 与 [日志落盘格式](NABU-PERSISTENT-LOG-FORMAT.md)。
+最新主线结果：第二十三轮正常定时返回，Android 回收确认 30 份 GPT 元数据与 14 个引导分区一致。已真实读回 56 MiB 持久日志并通过记录／全流哈希，但 capture 容量在约 193 秒耗尽，END 明确报告另有 349,179,156 bytes 丢失，完整日志验收未通过。约 87% 已保存字节来自 sleepd 连接重试；原版 iPad 镜像没有该服务，原 cache 代码确认当前不识别的型号会归为 iPod。正准备显式 iPad7,11 用户态兼容型号与扩大日志容量的候选，桌面效果待实测。详见 [设备类别调查](DEVICE-CLASS-COMPATIBILITY.md) 与 [日志落盘格式](NABU-PERSISTENT-LOG-FORMAT.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

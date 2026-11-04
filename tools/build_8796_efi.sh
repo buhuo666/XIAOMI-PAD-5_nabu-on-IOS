@@ -14,6 +14,7 @@ done
 python3 tools/fetch_sources.py --only UniXNU-nabu-reference-core DarwinBoot xnu-8796 --report log/ci/efi8796/source-checkouts.json
 python3 tools/prepare_8796_loader.py --output build/efi8796/loader
 python3 tools/check_darwinboot_8796.py --tree build/efi8796/loader --output log/ci/efi8796/abi
+python3 tools/check_darwinboot_kernel_window.py --tree build/efi8796/loader --output log/ci/efi8796/kernel-window
 cp log/ci/darwinboot8796/source.json log/ci/efi8796/loader-source.json
 python3 - <<'PY'
 import json, os, pathlib, re, subprocess, tomllib

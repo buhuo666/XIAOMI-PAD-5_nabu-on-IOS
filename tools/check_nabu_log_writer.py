@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from check_darwinboot_8796 import host_command, host_path
+from nabu_log_format import inspect_slot
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -76,10 +77,23 @@ def main():
     if sys.platform != 'darwin':
         command += ['-l:libcrypto.so.3']
     subprocess.run(host_command(command), check=True)
-    result = subprocess.run(host_command([host_path(exe), host_path(out / 'valid-slot.bin')]),
+    result = subprocess.run(host_command([host_path(exe), host_path(out / 'valid-slot.bin'),
+                                                host_path(out / 'valid-extent.bin')]),
                             capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
     (out / 'test.log').write_text(result.stdout + result.stderr, encoding='utf-8')
+    large = out / 'valid-extent.bin'
+    with large.open('rb') as stream:
+        decoded = inspect_slot(stream, expected_slot=2, expected_span=10)
+    expected = hashlib.sha256()
+    payload = bytes((i * 29) % 256 for i in range(65536))
+    for _ in range(8192):
+        expected.update(payload)
+    assert decoded['complete'] and decoded['data_bytes'] == 512 * 1024 * 1024
+    assert decoded['data_sha256'] == expected.hexdigest() and len(decoded['records']) == 8194
     report = {'passed': True, 'actual_generated_tree': bool(a.tree), 'inputs': identities,
+              'large_fixture': {'slot': 2, 'span': 10, 'snapshot_bytes': large.stat().st_size,
+                                'data_bytes': decoded['data_bytes'], 'data_sha256': decoded['data_sha256'],
+                                'complete': decoded['complete'], 'independent_reader_verified': True},
               'test_output': result.stdout.strip(),
               'scope': 'Actual writer/format/command logic under ASan/UBSan with simulated MMIO, DMA and medium; no device claim'}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

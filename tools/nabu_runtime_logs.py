@@ -18,8 +18,8 @@ import uuid
 from install_ipados_windows import root_header, validate_layout
 from nabu_log_format import (BLOCK_BYTES, SLOT_BYTES, SLOT_COUNT, PARTITION_BYTES,
                              RESERVED_OFFSET, RESERVED_BYTES, MAX_PAYLOAD,
-                             inspect_slot, make_manifest, parse_manifest,
-                             require, slot_offset)
+                             inspect_slot, make_manifest, parse_manifest, MANIFEST_MAGIC,
+                             require, slot_offset, extent_bytes)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = '/dev/block/sda36'
@@ -73,7 +73,11 @@ def checked_receipt(path):
     require(re.fullmatch(r'[0-9a-f]{64}', receipt.get('kernel_sha256', '')) is not None, 'receipt kernel hash invalid')
     require(re.fullmatch(r'[0-9a-f]{64}', receipt.get('manifest_sha256', '')) is not None, 'receipt manifest hash invalid')
     require(receipt.get('slot_offset') == slot_offset(receipt['slot']) and
-            receipt.get('slot_bytes') == SLOT_BYTES, 'receipt geometry differs')
+            receipt.get('slot_bytes') == extent_bytes(receipt['slot'], receipt.get('span', 1)),
+            'receipt geometry differs')
+    span = receipt.get('span', 1)
+    require(receipt.get('format_version', 1 if span == 1 else 2) == (1 if span == 1 else 2),
+            'receipt version/span differs')
     return receipt
 
 
@@ -200,31 +204,46 @@ class Device:
         return token
 
 
-def choose_slot(read_range, requested=None):
-    """Find a whole zero slot; a zero manifest alone never permits writes."""
-    if requested is not None:
-        slot_offset(requested)
+def choose_slot(read_range, requested=None, span=1):
+    """Find an entirely zero extent; v2 reservations also own their zero tail."""
+    extent_bytes(0 if requested is None else requested, span)
+    headers = [read_range(slot_offset(slot), BLOCK_BYTES) for slot in range(SLOT_COUNT)]
+    reserved = []
+    for slot, header in enumerate(headers):
+        require(len(header) == BLOCK_BYTES, 'short allocation-unit header read')
+        if any(first <= slot < end for first, end in reserved):
+            continue  # Internal unit boundaries hold payload, not new manifests.
+        if header[:8] == MANIFEST_MAGIC:
+            # Unknown/corrupt declarations must not make their still-zero tail
+            # look available to a later preparation. Legacy foreign slot zero
+            # is simply occupied and never grants write permission.
+            manifest = parse_manifest(header, expected_slot=slot)
+            reserved.append((slot, slot + manifest['span']))
     scanned = []
-    for slot in range(SLOT_COUNT) if requested is None else (requested,):
-        offset = slot_offset(slot)
-        if read_range(offset, BLOCK_BYTES) != bytes(BLOCK_BYTES):
+    choices = range(SLOT_COUNT - span + 1) if requested is None else (requested,)
+    for slot in choices:
+        offset, size = slot_offset(slot), extent_bytes(slot, span)
+        if headers[slot] != bytes(BLOCK_BYTES):
             scanned.append({'slot': slot, 'state': 'occupied-manifest'})
+            continue
+        if any(slot < end and first < slot + span for first, end in reserved):
+            scanned.append({'slot': slot, 'state': 'reserved-extent-overlap'})
             continue
         h = hashlib.sha256()
         empty = True
-        for relative in range(0, SLOT_BYTES, READ_CHUNK):
-            size = min(READ_CHUNK, SLOT_BYTES - relative)
-            raw = read_range(offset + relative, size)
-            require(len(raw) == size, 'short slot scan')
+        for relative in range(0, size, READ_CHUNK):
+            take = min(READ_CHUNK, size - relative)
+            raw = read_range(offset + relative, take)
+            require(len(raw) == take, 'short extent scan')
             h.update(raw)
-            if raw != bytes(size):
+            if raw != bytes(take):
                 empty = False
                 break
-        scanned.append({'slot': slot, 'state': 'zero' if empty else 'occupied-payload',
-                        'checked_bytes': relative + size})
+        scanned.append({'slot': slot, 'span': span, 'state': 'zero' if empty else 'occupied-payload',
+                        'checked_bytes': relative + take})
         if empty:
             return slot, h.hexdigest(), scanned
-    raise RuntimeError('no selected all-zero log slot is available; existing slots were preserved')
+    raise RuntimeError('no selected all-zero log extent is available; existing extents were preserved')
 
 
 def prepare(args, output):
@@ -243,19 +262,22 @@ def prepare(args, output):
                       partition=device.partition, gpt_before_verified=device.gpt_before,
                       root_header_sha256=device.root_header_sha256,
                       system_superblocks=device.superblocks)
-        slot, empty_digest, scanned = choose_slot(device.read_range, args.slot)
+        span = 1 if args.span is None else args.span
+        slot, empty_digest, scanned = choose_slot(device.read_range, args.slot, span)
+        size = extent_bytes(slot, span)
         run_uuid = uuid.uuid4().bytes
         kernel_hash = file_sha256(args.kernel)
-        manifest = make_manifest(slot, run_uuid, kernel_hash, int(time.time()))
+        manifest = make_manifest(slot, run_uuid, kernel_hash, int(time.time()), span)
         local = output / 'manifest.bin'
         local.write_bytes(manifest)
         manifest_hash = hashlib.sha256(manifest).hexdigest()
         offset = slot_offset(slot)
         report.update(status='zero-slot-verified', slot=slot, run_uuid=run_uuid.hex(),
                       kernel_sha256=kernel_hash, kernel_path=str(args.kernel.resolve()),
-                      manifest_sha256=manifest_hash, slot_offset=offset, slot_bytes=SLOT_BYTES,
+                      manifest_sha256=manifest_hash, slot_offset=offset, slot_bytes=size, span=span,
+                      format_version=1 if span == 1 else 2,
                       zero_slot_sha256=empty_digest, scanned_slots=scanned,
-                      boot_arg=f'nabu-log-slot={slot}')
+                      boot_arg=f'nabu-log-slot={slot}' + (f' nabu-log-span={span}' if span > 1 else ''))
         write_json(receipt_path, report)
         remote_dir = '/data/local/tmp/nabu16-log-' + run_uuid.hex()
         remote = remote_dir + '/manifest.bin'
@@ -267,16 +289,16 @@ def prepare(args, output):
         device.shell(f'set -e; test ! -L {remote}; test "$(stat -c %s {remote})" = {BLOCK_BYTES}; '
                      f'nabu_manifest_hash=$(sha256sum {remote}); '
                      f'test "${{nabu_manifest_hash%% *}}" = {manifest_hash}')
-        # Recheck all 64 MiB under the same guarded shell immediately before
+        # Recheck the entire extent under the same guarded shell immediately before
         # the one-block write. The previously collected scan is not reused as
         # authority after an intervening upload or process interruption.
-        zero_digest = zero_suffix_sha256(b'', SLOT_BYTES)
+        zero_digest = zero_suffix_sha256(b'', size)
         require(empty_digest == zero_digest, 'zero-slot scan digest differs')
         report['status'] = 'manifest-write-about-to-start'
         write_json(receipt_path, report)
         device.shell(device.guard +
             f'nabu_slot_hash=$(dd if={TARGET} bs={BLOCK_BYTES} skip={offset // BLOCK_BYTES} '
-            f'count={SLOT_BYTES // BLOCK_BYTES} status=none | sha256sum); '
+            f'count={size // BLOCK_BYTES} status=none | sha256sum); '
             f'test "${{nabu_slot_hash%% *}}" = {zero_digest}; '
             f'test ! -L {remote}; test "$(stat -c %s {remote})" = {BLOCK_BYTES}; '
             f'nabu_manifest_hash=$(sha256sum {remote}); '
@@ -287,8 +309,8 @@ def prepare(args, output):
                                      'bytes': BLOCK_BYTES, 'sha256': manifest_hash})
         write_json(receipt_path, report)
         require(device.read_range(offset, BLOCK_BYTES) == manifest, 'manifest readback differs')
-        whole_slot_digest = device.range_sha256(offset, SLOT_BYTES)
-        require(whole_slot_digest == zero_suffix_sha256(manifest, SLOT_BYTES),
+        whole_slot_digest = device.range_sha256(offset, size)
+        require(whole_slot_digest == zero_suffix_sha256(manifest, size),
                 'prepared slot contains unexpected bytes beyond its manifest')
         report.update(prepared_slot_sha256=whole_slot_digest,
                       gpt_after_verified=device.verify_gpt(), status='prepared-and-readback-verified')
@@ -298,17 +320,18 @@ def prepare(args, output):
         report.update(status='failed', error=str(error))
         write_json(receipt_path, report)
         raise
-    return {'status': report['status'], 'slot': slot, 'run_uuid': run_uuid.hex(),
+    return {'status': report['status'], 'slot': slot, 'span': span, 'run_uuid': run_uuid.hex(),
             'boot_arg': report['boot_arg'], 'receipt': str(receipt_path)}
 
 
-def recover(raw_path, output, slot=None, receipt=None):
-    expected = {'expected_slot': slot}
+def recover(raw_path, output, slot=None, receipt=None, span=None):
+    expected = {'expected_slot': slot, 'expected_span': span}
     if receipt is not None:
         require(slot is None or slot == receipt['slot'], 'selected slot differs from receipt')
+        require(span is None or span == receipt.get('span', 1), 'selected span differs from receipt')
         expected.update(expected_slot=receipt['slot'], expected_run_uuid=receipt['run_uuid'],
                         expected_kernel_sha256=receipt['kernel_sha256'],
-                        expected_manifest_sha256=receipt['manifest_sha256'])
+                        expected_manifest_sha256=receipt['manifest_sha256'], expected_span=receipt.get('span', 1))
     with raw_path.open('rb') as stream, (output / 'runtime.log').open('wb') as recovered:
         result = inspect_slot(stream, recovered, **expected)
     result.update(raw_snapshot_path=str(raw_path.resolve()),
@@ -325,23 +348,33 @@ def collect(args, output, receipt):
     device = Device(args)
     if receipt is not None:
         require(receipt.get('device_serial_sha256') == device.serial_hash, 'receipt device differs')
+    if receipt is not None:
+        span = receipt.get('span', 1)
+        require(args.span is None or args.span == span, 'selected span differs from receipt')
+    elif args.span is not None:
+        span = args.span
+    else:
+        span = parse_manifest(device.read_range(offset, BLOCK_BYTES), expected_slot=slot)['span']
+    # A receipt or explicit extent keeps even a damaged manifest recoverable as
+    # a raw bounded snapshot. With no geometry supplied, a valid header is needed.
+    size = extent_bytes(slot, span)
     raw = output / f'slot-{slot:02d}.bin'
     capture = {'timestamp': now(), 'mode': 'collect', 'status': 'reading', 'slot': slot,
                'device_serial_sha256': device.serial_hash, 'partition': device.partition,
-               'slot_offset': offset, 'slot_bytes': SLOT_BYTES,
+               'slot_offset': offset, 'slot_bytes': size, 'span': span,
                'gpt_before_verified': device.gpt_before, 'device_writes': False,
                'bytes_read': 0}
     capture_path = output / 'collection.json'
     write_json(capture_path, capture)
     try:
         with raw.open('wb') as destination:
-            for relative in range(0, SLOT_BYTES, READ_CHUNK):
-                chunk = device.read_range(offset + relative, min(READ_CHUNK, SLOT_BYTES - relative))
+            for relative in range(0, size, READ_CHUNK):
+                chunk = device.read_range(offset + relative, min(READ_CHUNK, size - relative))
                 destination.write(chunk)
                 capture['bytes_read'] += len(chunk)
         capture.update(status='snapshot-collected', gpt_after_verified=device.verify_gpt())
         write_json(capture_path, capture)
-        report = recover(raw, output, slot, receipt)
+        report = recover(raw, output, slot, receipt, span)
         report.update(device_serial_sha256=device.serial_hash, collection_receipt=str(capture_path))
         write_json(output / 'report.json', report)
         return {'state': report['state'], 'complete': report['complete'], 'slot': slot,
@@ -361,6 +394,7 @@ def main():
     action.add_argument('--inspect', type=Path, metavar='RAW_SLOT')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--slot', type=int)
+    parser.add_argument('--span', type=int, help='Explicit count of adjacent 64 MiB allocation units')
     parser.add_argument('--kernel', type=Path)
     parser.add_argument('--receipt', type=Path)
     parser.add_argument('--gpt-backup', type=Path)
@@ -372,6 +406,8 @@ def main():
     args = parser.parse_args()
     if args.slot is not None:
         slot_offset(args.slot)
+    if args.span is not None:
+        extent_bytes(0 if args.slot is None else args.slot, args.span)
     require(args.inspect is not None or args.gpt_backup is not None,
             'device prepare/collect requires --gpt-backup')
     require(not args.prepare or args.receipt is None, '--receipt binds recovery, not new preparation')
@@ -383,7 +419,7 @@ def main():
         result = collect(args, output, receipt)
     else:
         require(args.inspect.is_file(), 'raw snapshot is not a file')
-        result = recover(args.inspect, output, args.slot, receipt)
+        result = recover(args.inspect, output, args.slot, receipt, args.span)
         write_json(output / 'report.json', result)
         result = {key: result[key] for key in ('state', 'complete', 'data_bytes', 'reason')}
         result['report'] = str(output / 'report.json')

@@ -36,12 +36,15 @@ static inline uint32_t nabuLogCrc(const uint8_t *p, size_t n)
   }
   return ~crc;
 }
-static inline bool nabuLogManifestValid(const uint8_t *p, unsigned slot)
+static inline bool nabuLogExtentValid(unsigned slot, unsigned span)
+{ return slot < kNabuLogSlots && span && span <= kNabuLogSlots - slot; }
+
+static inline bool nabuLogManifestValid(const uint8_t *p, unsigned slot, unsigned span = 1)
 {
   static const uint8_t magic[8] = {'N','A','B','U','L','G','0','1'};
-  return slot < kNabuLogSlots && nabuLogEqual(p, magic, 8) &&
-      nabuLogLe32(p + 8) == 1 && nabuLogLe32(p + 12) == slot &&
-      nabuLogLe64(p + 16) == kNabuLogSlotBytes &&
+  return nabuLogExtentValid(slot, span) && nabuLogEqual(p, magic, 8) &&
+      nabuLogLe32(p + 8) == (span == 1 ? 1U : 2U) && nabuLogLe32(p + 12) == slot &&
+      nabuLogLe64(p + 16) == uint64_t(span) * kNabuLogSlotBytes &&
       nabuLogLe64(p + 24) == kNabuLogPartitionBytes &&
       nabuLogLe64(p + 32) == kNabuLogReservedOffset &&
       nabuLogLe64(p + 40) == kNabuLogReservedBytes &&

@@ -12,7 +12,7 @@ import unittest
 from nabu_log_format import (BEGIN, DATA, END, BLOCK_BYTES, SLOT_BYTES, SLOT_COUNT,
                              RESERVED_OFFSET, PARTITION_BYTES, MAX_PAYLOAD,
                              LogFormatError, inspect_slot, make_manifest,
-                             make_record_header, parse_manifest, seal_block, slot_offset)
+                             make_record_header, parse_manifest, seal_block, slot_offset, extent_bytes)
 from nabu_runtime_logs import choose_slot, new_output, zero_suffix_sha256
 from stage_nabu_boot_chain import verify_prepared_log
 
@@ -64,9 +64,9 @@ class SparseSlot:
         return self.read(BLOCK_BYTES)
 
 
-def fixture(payloads=(b'first complete line\n', b'next line\n' * 600)):
-    raw = SparseSlot()
-    raw.put(0, make_manifest(0, RUN_UUID, KERNEL_SHA, 1234))
+def fixture(payloads=(b'first complete line\n', b'next line\n' * 600), slot=0, span=1):
+    raw = SparseSlot(extent_bytes(slot, span))
+    raw.put(0, make_manifest(slot, RUN_UUID, KERNEL_SHA, 1234, span))
     raw.put(BLOCK_BYTES, make_record_header(BEGIN, 0, 0, RUN_UUID))
     position, sequence, stream_offset = 2 * BLOCK_BYTES, 1, 0
     starts = []
@@ -372,6 +372,92 @@ class FormatChecks(unittest.TestCase):
                     verify_prepared_log(shell, prepared, KERNEL_SHA.hex(), '11' * 32)
                 if scenario in ('wrong-device', 'wrong-kernel'):
                     self.assertFalse(calls)
+
+    def test_v2_extent_roundtrip_and_receipt_span(self):
+        raw, _, _, stream = fixture(slot=2, span=10)
+        report, saved = self.decode(raw, expected_slot=2, expected_span=10)
+        self.assertTrue(report['complete'])
+        self.assertEqual(saved, stream)
+        self.assertEqual(report['manifest']['version'], 2)
+        self.assertEqual(report['manifest']['slot_bytes'], 640 * 1024 * 1024)
+        report, saved = self.decode(raw, expected_slot=2, expected_span=9)
+        self.assertEqual(report['state'], 'invalid-manifest')
+        self.assertFalse(saved)
+        self.assertEqual(slot_offset(2), RESERVED_OFFSET + 2 * SLOT_BYTES)
+        self.assertEqual(extent_bytes(2, 10), 10 * SLOT_BYTES)
+
+    def test_v2_bounds_and_version_size_mismatch(self):
+        for slot, span in ((2, 0), (2, 15), (7, 10), (0, 17), (2, True)):
+            with self.assertRaises(LogFormatError):
+                make_manifest(slot, RUN_UUID, KERNEL_SHA, 1, span)
+        for size in (0, SLOT_BYTES + BLOCK_BYTES, 15 * SLOT_BYTES):
+            raw, _, _, _ = fixture(slot=2, span=10)
+            mutate_header(raw, 0, 16, size, '<Q')
+            report, _ = self.decode(raw)
+            self.assertEqual(report['state'], 'invalid-manifest')
+        raw, _, _, _ = fixture(slot=2, span=10)
+        mutate_header(raw, 0, 8, 1)
+        report, _ = self.decode(raw)
+        self.assertEqual(report['state'], 'invalid-manifest')
+        for slot, span, actual_size in ((2, 10, SLOT_BYTES), (1, 1, 10 * SLOT_BYTES)):
+            raw = SparseSlot(actual_size)
+            raw.put(0, make_manifest(slot, RUN_UUID, KERNEL_SHA, 1, span))
+            report, _ = self.decode(raw)
+            self.assertEqual(report['state'], 'invalid-snapshot-size')
+
+    def test_extent_selection_checks_full_tail_and_reserves_zero_units(self):
+        disk = SparseSlot(16 * SLOT_BYTES)
+        disk.put(0, b'legacy slot zero')
+        disk.put(SLOT_BYTES, make_manifest(1, RUN_UUID, KERNEL_SHA, 1))
+        def read(offset, size):
+            self.assertGreaterEqual(offset, RESERVED_OFFSET)
+            self.assertLessEqual(offset + size, PARTITION_BYTES)
+            self.assertLessEqual(size, 8 * 1024 * 1024)
+            disk.seek(offset - RESERVED_OFFSET)
+            return disk.read(size)
+        disk.put(12 * SLOT_BYTES - 1, b'!')
+        with self.assertRaises(RuntimeError):
+            choose_slot(read, 2, 10)
+        disk.put(12 * SLOT_BYTES - 1, b'\0')
+        slot, digest, scanned = choose_slot(read, 2, 10)
+        self.assertEqual(slot, 2)
+        self.assertEqual(scanned[-1]['checked_bytes'], 10 * SLOT_BYTES)
+        self.assertEqual(digest, zero_suffix_sha256(b'', 10 * SLOT_BYTES))
+        disk.put(2 * SLOT_BYTES, make_manifest(2, RUN_UUID, KERNEL_SHA, 1, 10))
+        for slot, span in ((3, 1), (11, 1), (1, 2), (0, 4)):
+            with self.assertRaises(RuntimeError):
+                choose_slot(read, slot, span)
+        slot, _, _ = choose_slot(read)
+        self.assertEqual(slot, 12)
+        corrupt = bytearray(make_manifest(2, RUN_UUID, KERNEL_SHA, 1, 10))
+        corrupt[-1] ^= 1
+        disk.put(2 * SLOT_BYTES, corrupt)
+        with self.assertRaises(LogFormatError):
+            choose_slot(read, 12)
+
+    def test_v2_preflight_checks_entire_manifest_extent(self):
+        manifest = make_manifest(2, RUN_UUID, KERNEL_SHA, 1234, 10)
+        prepared = {'slot': 2, 'span': 10, 'slot_bytes': 10 * SLOT_BYTES,
+                    'run_uuid': RUN_UUID.hex(), 'kernel_sha256': KERNEL_SHA.hex(),
+                    'manifest_sha256': hashlib.sha256(manifest).hexdigest(),
+                    'device_serial_sha256': '11' * 32}
+        calls = []
+        def shell(command):
+            calls.append(command)
+            self.assertNotIn('of=', command)
+            if command.startswith('readlink '): return b'/dev/block/sda36\n'
+            if command.startswith('blockdev '): return str(PARTITION_BYTES).encode()
+            if '| sha256sum' in command:
+                self.assertIn('count=163840 ', command)
+                return zero_suffix_sha256(manifest, 10 * SLOT_BYTES).encode() + b'  -\n'
+            self.assertIn('count=1 ', command)
+            return manifest
+        result = verify_prepared_log(shell, prepared, KERNEL_SHA.hex(), '11' * 32)
+        self.assertEqual(result['span'], 10)
+        self.assertEqual(len(calls), 4)
+        prepared['span'] = 9
+        with self.assertRaises(AssertionError):
+            verify_prepared_log(shell, prepared, KERNEL_SHA.hex(), '11' * 32)
 
 
 def main():

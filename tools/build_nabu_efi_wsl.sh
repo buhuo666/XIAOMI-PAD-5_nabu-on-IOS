@@ -30,6 +30,7 @@ python3.12 tools/restore_git_exec.py "$NABU_EFI_EDK"
 python3.12 tools/build_nabu_kernel_report.py --output "$NABU_EFI_WORK/loader/DarwinBootPkg/Driver/NabuKernelReportBlob.h" --work "$NABU_EFI_WORK/kernel-report"
 python3.12 tools/check_darwinboot_8796.py --tree "$NABU_EFI_WORK/loader" --output log/host/nabu-efi/abi
 python3.12 tools/check_nabu_handoff.py --tree "$NABU_EFI_WORK/loader" --output log/host/nabu-efi/handoff
+python3.12 tools/check_darwinboot_kernel_window.py --tree "$NABU_EFI_WORK/loader" --output log/host/nabu-efi/kernel-window
 export UNIXNU_EDK2="$NABU_EFI_EDK"
 export UNIXNU_BUILD_DIR="$NABU_EFI_WORK/workspace"
 bash src/unixnu/package/build.sh -b DEBUG -t CLANGPDB 2>&1 | tee log/host/nabu-efi/unixnu-build.log

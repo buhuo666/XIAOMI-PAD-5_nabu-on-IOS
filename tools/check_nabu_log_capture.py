@@ -189,7 +189,7 @@ static void message_buffer_tests(void) {
 }
 static void capacity_tests(void) {
   reset();
-  assert(NABU_LOG_CAPTURE_BYTES==56U*1024U*1024U);
+  assert(NABU_LOG_CAPTURE_BYTES==512U*1024U*1024U);
   for(uint32_t i=0;i<NABU_LOG_CAPTURE_BYTES;i++) nabuLogCapturePutLocked(&nabu_capture,pattern(i));
   assert(nabu_log_capture_length()==NABU_LOG_CAPTURE_BYTES && nabu_log_capture_lost()==0);
   /* Exact production capacity is exercised, including history far beyond the
@@ -239,7 +239,7 @@ static void loss_atomic_test(void) {
 }
 int main(void) {
   producer_tests();message_buffer_tests();capacity_tests();publication_test();loss_atomic_test();
-  puts("5 production capture suites passed: producers, msgbuf, 56 MiB boundary, immutable-prefix publication, atomic loss/seal");
+  puts("5 production capture suites passed: producers, msgbuf, 512 MiB boundary, immutable-prefix publication, atomic loss/seal");
 }
 '''
     c = args.output / 'capture.c'
@@ -250,7 +250,7 @@ int main(void) {
     run(compiler)
     result = run(host_command([host_path(exe)])).strip()
     report = {
-        'passed': True, 'host_result': result, 'capture_bytes': 56 * 1024 * 1024,
+        'passed': True, 'host_result': result, 'capture_bytes': 512 * 1024 * 1024,
         'source_files': [{'path': str(p.resolve()), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
                          for p in (loader_path, msgbuf_path, core, ROOT / 'patches/8796/nabu-log-capture.patch')],
         'normal_return_finish_before_shutdown': True,

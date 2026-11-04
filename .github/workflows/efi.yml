@@ -8,6 +8,7 @@ on:
       - 'tools/build_8796_efi.sh'
       - 'tools/prepare_8796_loader.py'
       - 'tools/check_darwinboot_8796.py'
+      - 'tools/check_darwinboot_kernel_window.py'
       - 'configs/efi-build-inputs.json'
       - 'configs/sources.lock.json'
       - 'patches/darwinboot/**'

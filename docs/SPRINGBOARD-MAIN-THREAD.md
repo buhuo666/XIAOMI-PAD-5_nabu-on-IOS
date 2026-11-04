@@ -172,3 +172,12 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 `artifacts/nabu-chain-desktop-v23` 只更换上述内核并添加 `nabu-log-slot=1`；十分钟返回、240／360／480 秒采样保持，EFI、bootstrap、设备树及随机种子、boot.img 均与第二十二轮一致。Android 已为槽 1 准备新清单并回读整个 64 MiB，旧非零槽 0 保留。分区内唯一写入是日志清单的 4096 bytes，30 份 GPT 元数据前后相同；XNU 日志保存本身仍待本轮运行及 Android 回收验证。
 
 第二十三轮于 `2026-11-04T21:49:27.207227+08:00` 执行 `fastboot boot`，发送及 Booting 均成功。源提交 `8c952ed3330f2e1dc3f718cf1fd17bdc4918db82`，六个启动文件回读一致，启动前再次核对槽 1 仍只有本轮清单和全零后缀、30 份 GPT 元数据一致并记录 14 个引导分区哈希。217 份输入／验收证据及确切 boot.img 冻结在 `log/device/nabu-boot-20261104-23/`。当前仅确认临时启动命令成功；等待十分钟后的定时报告并恢复 Android，本轮 `--collect` 将自动回收原始日志槽、校验连续记录和 END／全流 SHA-256，只有 `runtime-log/report.json` 中 complete=true 才确认本轮完整落盘回读成功。
+
+
+## 第二十三轮回收：持久写入有效，容量不足与设备类别错误已定位
+
+照片已保存至 `log/device/nabu-boot-20261104-23/screen-halted-600s.jpg`，REASON／CODE=0、TIMER MARKER=YES，读取 32,711 次、失败 0。恢复 Android 后 30 份 GPT 元数据和 14 个引导分区一致。磁盘槽 1 的 935 条连续记录及 END 全流 SHA-256 全部通过，真实恢复 58,720,256 bytes；但 END 表示 capture sealed、lost=349,179,156、status=28，`complete=false`。不能将有效前缀落盘说成完整日志成功。
+
+约 193 秒时 56 MiB RAM capture 已满，早于首次 240 秒采样。保存下来的 220,349 行／51,257,056 bytes 属于 sleepd.sleepserver 查询失败或 HKSP 连接失效，约占恢复字节 87%。因此有了日志容量不足的直接证据；此前照片仍不足以把所有桌面问题归因于 sleepd。
+
+原版20F66 OS清单与全部提取的 LaunchDaemons／LaunchAngels 均无 sleepd 或 sleepserver 服务。当前 ADT 根 model 为 Xiaomi Pad 5；原缓存 MobileGestalt 的 hw.product 前缀分类将其归为 iPod（2），日志也实际报告 class 2。原版 Sleep 对 iPod 开启功能、对 iPad 则检查 sleepOnIpad flag。八个完整原函数经 LLVM 独立指令核对，十个模型／Sleep 机器码仿真场景通过；并未测得真机 feature flag 值。候选将显式设置用户态 model=iPad7,11，其他硬件属性保持；完整证据、边界与后续验收见 [设备类别调查](DEVICE-CLASS-COMPATIBILITY.md)。日志另需扩容，不能依赖重试消失来保证完整记录。

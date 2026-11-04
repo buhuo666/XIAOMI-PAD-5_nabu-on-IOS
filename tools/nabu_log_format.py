@@ -37,6 +37,12 @@ def slot_offset(slot):
     return RESERVED_OFFSET + slot * SLOT_BYTES
 
 
+def extent_bytes(slot, span=1):
+    slot_offset(slot)
+    require(type(span) is int and 1 <= span <= SLOT_COUNT - slot, 'extent span out of bounds')
+    return span * SLOT_BYTES
+
+
 def _fixed_bytes(value, size, name):
     if isinstance(value, str):
         try:
@@ -58,23 +64,23 @@ def seal_block(block):
     return bytes(out)
 
 
-def _check_block(block, magic, reserved_at):
+def _check_block(block, magic, reserved_at, versions=(1,)):
     require(len(block) == BLOCK_BYTES, 'short metadata block')
     require(block[:8] == magic, 'metadata magic mismatch')
-    require(struct.unpack_from('<I', block, 8)[0] == 1, 'unsupported version')
+    require(struct.unpack_from('<I', block, 8)[0] in versions, 'unsupported version')
     require(struct.unpack_from('<I', block, BLOCK_BYTES - 4)[0] == _crc(block),
             'metadata CRC32 mismatch')
     require(block[reserved_at:BLOCK_BYTES - 4] == bytes(BLOCK_BYTES - 4 - reserved_at),
             'nonzero reserved metadata bytes')
 
 
-def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds):
-    slot_offset(slot)
+def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds, span=1):
+    size = extent_bytes(slot, span)
     require(type(created_unix_seconds) is int and 0 <= created_unix_seconds < 2**64,
             'invalid preparation timestamp')
     block = bytearray(BLOCK_BYTES)
     block[:8] = MANIFEST_MAGIC
-    struct.pack_into('<IIQQQQII', block, 8, 1, slot, SLOT_BYTES, PARTITION_BYTES,
+    struct.pack_into('<IIQQQQII', block, 8, 1 if span == 1 else 2, slot, size, PARTITION_BYTES,
                      RESERVED_OFFSET, RESERVED_BYTES, BLOCK_BYTES, MAX_PAYLOAD)
     block[56:72] = _fixed_bytes(run_uuid, 16, 'run UUID')
     struct.pack_into('<Q', block, 72, created_unix_seconds)
@@ -83,16 +89,23 @@ def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds):
 
 
 def parse_manifest(block, expected_slot=None, expected_run_uuid=None,
-                   expected_kernel_sha256=None, expected_manifest_sha256=None):
-    _check_block(block, MANIFEST_MAGIC, 112)
+                   expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None):
+    _check_block(block, MANIFEST_MAGIC, 112, (1, 2))
     version, slot, size, partition, reserved, reserve_size, block_size, payload = \
         struct.unpack_from('<IIQQQQII', block, 8)
     slot_offset(slot)
-    require((size, partition, reserved, reserve_size, block_size, payload) ==
-            (SLOT_BYTES, PARTITION_BYTES, RESERVED_OFFSET, RESERVED_BYTES,
+    require(size % SLOT_BYTES == 0, 'extent size is not a whole allocation unit')
+    span = size // SLOT_BYTES
+    require(size == extent_bytes(slot, span), 'extent size mismatch')
+    require((version == 1 and span == 1) or (version == 2 and span > 1),
+            'manifest version/span mismatch')
+    require((partition, reserved, reserve_size, block_size, payload) ==
+            (PARTITION_BYTES, RESERVED_OFFSET, RESERVED_BYTES,
              BLOCK_BYTES, MAX_PAYLOAD), 'manifest geometry mismatch')
     if expected_slot is not None:
         require(slot == expected_slot, 'manifest slot differs from selected slot')
+    if expected_span is not None:
+        require(span == expected_span, 'manifest span differs from receipt')
     if expected_run_uuid is not None:
         require(block[56:72] == _fixed_bytes(expected_run_uuid, 16, 'expected run UUID'),
                 'manifest run UUID differs from receipt')
@@ -103,7 +116,7 @@ def parse_manifest(block, expected_slot=None, expected_run_uuid=None,
         require(hashlib.sha256(block).digest() ==
                 _fixed_bytes(expected_manifest_sha256, 32, 'expected manifest SHA-256'),
                 'manifest bytes differ from preparation receipt')
-    return {'version': version, 'slot': slot, 'slot_bytes': size,
+    return {'version': version, 'slot': slot, 'span': span, 'slot_bytes': size,
             'partition_bytes': partition, 'reserved_offset': reserved,
             'reserved_bytes': reserve_size, 'block_bytes': block_size,
             'maximum_payload_bytes': payload, 'run_uuid': block[56:72].hex(),
@@ -162,8 +175,8 @@ def parse_record_header(block):
 
 
 def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None,
-                 expected_kernel_sha256=None, expected_manifest_sha256=None):
-    """Recover the strict valid prefix from one exact 64 MiB seekable snapshot.
+                 expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None):
+    """Recover the strict valid prefix from one exact manifest-bounded snapshot.
 
     Metadata and payload are read in bounded chunks. Any bad record stops
     recovery; later records are never scanned for a way around corruption.
@@ -180,9 +193,9 @@ def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None
               'data_sha256': EMPTY_SHA256.hex(), 'accepted_slot_bytes': 0,
               'lost_bytes': None, 'end_status': None, 'capture_sealed': False,
               'scope': 'Validated contiguous captured stream only; return-stub messages after sealing are outside it'}
-    if snapshot_bytes != SLOT_BYTES:
+    if not SLOT_BYTES <= snapshot_bytes <= RESERVED_BYTES or snapshot_bytes % SLOT_BYTES:
         result['state'] = 'invalid-snapshot-size'
-        result['reason'] = f'expected {SLOT_BYTES} bytes, got {snapshot_bytes}'
+        result['reason'] = f'expected whole 64 MiB units within reserved area, got {snapshot_bytes}'
         return result
     block = source.read(BLOCK_BYTES)
     if block == ZERO_BLOCK:
@@ -192,16 +205,21 @@ def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None
         return result
     try:
         manifest = parse_manifest(block, expected_slot, expected_run_uuid,
-                                  expected_kernel_sha256, expected_manifest_sha256)
+                                  expected_kernel_sha256, expected_manifest_sha256, expected_span)
     except LogFormatError as error:
         result['reason'] = str(error)
         return result
     result['manifest'] = manifest
+    if snapshot_bytes != manifest['slot_bytes']:
+        result.update(state='invalid-snapshot-size', reason='snapshot size differs from manifest extent')
+        return result
+    slot_bytes = manifest['slot_bytes']
+    result['format'] = 'nabu-append-log-v' + str(manifest['version'])
     result['accepted_slot_bytes'] = BLOCK_BYTES
     position, next_sequence, stream_bytes = BLOCK_BYTES, 0, 0
     stream_hash = hashlib.sha256()
     begun = False
-    while position + BLOCK_BYTES <= SLOT_BYTES:
+    while position + BLOCK_BYTES <= slot_bytes:
         source.seek(position)
         block = source.read(BLOCK_BYTES)
         if block == ZERO_BLOCK:
@@ -216,9 +234,9 @@ def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None
             kind = record['kind']
             require(kind == BEGIN if not begun else kind != BEGIN, 'BEGIN must occur exactly once at the start')
             record_bytes = record['record_blocks'] * BLOCK_BYTES
-            require(record_bytes <= SLOT_BYTES - position, 'record exceeds slot boundary')
+            require(record_bytes <= slot_bytes - position, 'record exceeds slot boundary')
             if kind == DATA:
-                require(record_bytes + BLOCK_BYTES <= SLOT_BYTES - position,
+                require(record_bytes + BLOCK_BYTES <= slot_bytes - position,
                         'DATA record leaves no space for END')
                 padded = source.read(record_bytes - BLOCK_BYTES)
                 require(len(padded) == record_bytes - BLOCK_BYTES, 'short payload read')
@@ -247,8 +265,8 @@ def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None
                           capture_sealed=bool(record['flags'] & 1), state='incomplete',
                           reason='END reports capture loss, error, or missing seal')
             tail_is_zero = True
-            while position < SLOT_BYTES:
-                size = min(MAX_PAYLOAD, SLOT_BYTES - position)
+            while position < slot_bytes:
+                size = min(MAX_PAYLOAD, slot_bytes - position)
                 if source.read(size) != bytes(size):
                     tail_is_zero = False
                     break

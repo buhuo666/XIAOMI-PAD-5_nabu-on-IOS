@@ -117,11 +117,11 @@ static struct { uint64_t userdataFirst, userdataLast; } gNabuLayout;
 static bool gNabuPublished;
 #include "headers/NabuLogWriter.h"
 
-static void manifest(unsigned slot=0)
+static void manifest(unsigned slot=0,unsigned span=1)
 {
   uint8_t *p=medium.data();memset(p,0,4096);memcpy(p,"NABULG01",8);
-  nabuLogPut32(p+8,1);nabuLogPut32(p+12,slot);
-  nabuLogPut64(p+16,kNabuLogSlotBytes);nabuLogPut64(p+24,kNabuLogPartitionBytes);
+  nabuLogPut32(p+8,span==1?1:2);nabuLogPut32(p+12,slot);
+  nabuLogPut64(p+16,kNabuLogSlotBytes*span);nabuLogPut64(p+24,kNabuLogPartitionBytes);
   nabuLogPut64(p+32,kNabuLogReservedOffset);nabuLogPut64(p+40,kNabuLogReservedBytes);
   nabuLogPut32(p+48,4096);nabuLogPut32(p+52,65536);
   for(unsigned i=0;i<16;++i)p[56+i]=uint8_t(i+1);
@@ -129,10 +129,10 @@ static void manifest(unsigned slot=0)
   for(unsigned i=0;i<32;++i)p[80+i]=uint8_t(0x40+i);
   nabuLogPut32(p+4092,nabuLogCrc(p,4092));
 }
-static void reset(bool clearDisk=true, unsigned slot=0)
+static void reset(bool clearDisk=true, unsigned slot=0,unsigned span=1)
 {
   activeSlotFirst=slotFirst+uint64_t(slot)*16384;
-  if(clearDisk) {std::fill(medium.begin(),medium.end(),0);manifest(slot);}
+  if(clearDisk) {medium.assign(kNabuLogSlotBytes*span,0);manifest(slot,span);}
   memset(memory,0xa5,sizeof(memory));device.fill(0);registers.fill(0);
   registers[0x30/4]=15;registers[0x34/4]=1;registers[0x60/4]=1;
   gHost={memory,0x8cb5e9000,true,false,0,reinterpret_cast<void *>(1),124380950};
@@ -148,11 +148,11 @@ struct Recovery { uint64_t sequence=0, bytes=0;bool ended=false; };
 static Recovery recover()
 {
   Recovery r;uint64_t block=1;SHA256_CTX stream;SHA256_Init(&stream);
-  while(block<kNabuLogSlotBlocks) {
+  while(block<medium.size()/4096) {
     const uint8_t *h=medium.data()+block*4096;
     if(!nabuLogRecordValid(h,medium.data()+56,r.sequence,r.bytes)) break;
     uint32_t kind=nabuLogLe32(h+12),n=nabuLogLe32(h+32),count=nabuLogLe32(h+36);
-    if(count>kNabuLogSlotBlocks-block) break;
+    if(count>medium.size()/4096-block) break;
     if(kind==kNabuLogData) {
       auto payload=h+4096;auto hash=digest(payload,n);
       if(!nabuLogEqual(hash.data(),h+56,32) || !nabuLogZero(payload+n,(count-1)*4096-n))break;
@@ -293,9 +293,40 @@ static void testFailures()
   assert(!nabuLogAppend(bytes,sizeof(bytes)) && nabuLogLastError()==kNabuLogRead);
   puts("PASS failures: partial payload/header, both sync stages, torn claim, target reuse, post-read failure, no retry/overwrite");
 }
+static void testExtent(const char *dump)
+{
+  reset(true,2,10);
+  auto original=std::array<uint8_t,4096>{};memcpy(original.data(),medium.data(),4096);
+  assert(nabuLogManifestValid(medium.data(),2,10));
+  assert(!nabuLogManifestValid(medium.data(),2,1));
+  assert(!nabuLogManifestValid(medium.data(),2,9));
+  assert(!nabuLogManifestValid(medium.data(),7,10));
+  medium.back()=1;assert(!nabuLogStart(2,10) && !diskWrites);
+  medium.back()=0;reset(false,2);
+  assert(!nabuLogStart(7,10) && !diskWrites);
+  reset(false,2);assert(!nabuLogStart(2,0) && !diskWrites);
+  reset(false,2);assert(!nabuLogStart(2,15) && !diskWrites);
+  reset(false,2);assert(nabuLogStart(2,10));
+  std::array<uint8_t,65536> payload;
+  for(unsigned i=0;i<payload.size();++i)payload[i]=uint8_t(i*29);
+  const auto first=activeSlotFirst,last=first+10*kNabuLogSlotBlocks;
+  assert(!nabuLogWriteRange(first,1) && !nabuLogWriteRange(first-1,1));
+  assert(!nabuLogWriteRange(slotFirst,1) && !nabuLogWriteRange(last,1));
+  assert(nabuLogWriteRange(first+1,1) && nabuLogWriteRange(last-1,1));
+  assert(!nabuLogWriteRange(last-1,2));
+  for(unsigned record=0;record<8192;++record)assert(nabuLogAppend(payload.data(),payload.size()));
+  assert(nabuLogCommittedBytes()==512ULL*1024*1024);
+  assert(nabuLogEnd(0,0) && !nabuLogFinalStatus() && !nabuLogFinalLost());
+  assert(!memcmp(original.data(),medium.data(),4096));
+  auto r=recover();assert(r.ended && r.bytes==512ULL*1024*1024 && r.sequence==8194);
+  if(dump) {std::ofstream out(dump,std::ios::binary);out.write(reinterpret_cast<const char *>(medium.data()),medium.size());assert(out.good());}
+  auto writes=diskWrites;assert(!nabuLogStart(2,10) && diskWrites==writes);
+  puts("PASS v2 640 MiB extent, exact slot/span binding, far-tail freshness, prior/next extent exclusion, immutable manifest and 512 MiB continuous committed stream");
+}
 int main(int argc,char **argv)
 {
   (void)hostNop;(void)hostQueryRead; // Retained read-only production helpers.
   testCommands();testWriter(argc>1?argv[1]:nullptr);testFailures();
+  testExtent(argc>2?argv[2]:nullptr);
   puts("PASS all actual writer/command scenarios; hardware and medium effects simulated");
 }

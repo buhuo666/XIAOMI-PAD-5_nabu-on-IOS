@@ -1,0 +1,39 @@
+--- a/DarwinBootPkg/Driver/WindowSize.h
++++ b/DarwinBootPkg/Driver/WindowSize.h
+@@ -1,9 +1,10 @@
+ // SPDX-License-Identifier: BSD-2-Clause-Patent
+ #ifndef DARWINBOOT_WINDOW_SIZE_H
+ #define DARWINBOOT_WINDOW_SIZE_H
++#define DARWIN_WINDOW_MAX 0x300000000ULL
+ // Allocation still requires one real conventional-memory run. This is a
+ // parser bound, never a declaration of available RAM or an allocation fallback.
+ static inline int DarwinWindowSizeValid(unsigned long long size) {
+-  return size >= 0x10000000ULL && size <= 0x300000000ULL && !(size & 0x1fffffULL);
++  return size >= 0x10000000ULL && size <= DARWIN_WINDOW_MAX && !(size & 0x1fffffULL);
+ }
+ #endif
+--- a/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -149,7 +149,7 @@
+         Segment->FileOffset = U64 (Data + Offset + 40);
+         Segment->FileSize = U64 (Data + Offset + 48);
+         Segment->Protection = U32 (Data + Offset + 60);
+-        if ((Segment->Size > WINDOW_SIZE) || (Segment->Address > MAX_UINT64 - Segment->Size) ||
++        if ((Segment->Size > DARWIN_WINDOW_MAX) || (Segment->Address > MAX_UINT64 - Segment->Size) ||
+             (Segment->FileSize > Segment->Size) || (Segment->FileOffset > Size) ||
+             (Segment->FileSize > Size - Segment->FileOffset)) { return EFI_LOAD_ERROR; }
+       }
+@@ -175,9 +175,11 @@
+           (Kernel->Segments[Other].Address < Segment->Address + Segment->Size)) { return EFI_LOAD_ERROR; }
+     }
+   }
++  // The ADT is read later. Bound parsing by the supported maximum; the final
++  // payload layout must still fit the window actually reserved by AllocateWindow.
+   if (!Executable || (Kernel->Entry & 3) || (Kernel->Base & EFI_PAGE_MASK) ||
+-      (Kernel->Base > MAX_UINT64 - WINDOW_SIZE) ||
+-      (Kernel->End - Kernel->Base > WINDOW_SIZE - SIZE_2MB)) { return EFI_LOAD_ERROR; }
++      (Kernel->Base > MAX_UINT64 - DARWIN_WINDOW_MAX) ||
++      (Kernel->End - Kernel->Base > DARWIN_WINDOW_MAX - SIZE_2MB)) { return EFI_LOAD_ERROR; }
+   return EFI_SUCCESS;
+ }
+ 
