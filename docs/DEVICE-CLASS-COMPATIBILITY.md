@@ -111,3 +111,21 @@ rejection. WSL LLVM18 built the candidate DarwinBoot successfully, SHA-256
 The 7888-byte report callback is identical in the old and new EFI; the frozen
 run-23 UniXNU launcher is reused. Actual linked kernel layout qualification
 and the device run are pending.
+
+
+Native Actions `41847611792` for source `653d1eb9bb34ee9cac26bb3be83f4a32e69bec23`
+completed successfully. Both kernel hashes, project/capture/writer/runtime source
+hashes, eight check suites and 18 linked instruction ranges match
+the selected stripped kernel. Its SHA-256 is
+`122517a210e398b6ac3b905ae122d361d8a9a0a4970c195c0b05d98d9aa235cf`.
+The linked VM span is 558383104 bytes (532.515625 MiB); `_nabu_capture`
+has exactly 536870928 bytes before the next symbol, including 512 MiB payload
+and state. The actual loader parser accepts this exact kernel; its payload
+layout uses 566820864 bytes and retains the final actual-allocation check.
+Host checks do not establish successful device allocation or execution.
+
+EFI Actions `41847611821` also passed. Its source receipt matches the local
+EFI build; their binaries differ and are not represented as byte-identical.
+The selected local EFI's 1723 Boot instructions are independently checked
+against its PE bytes, including all enlarged limits and the final window guard.
+Receipts are under `log/host/display-v24/kernel/` and `efi/`.

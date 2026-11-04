@@ -181,3 +181,8 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 约 193 秒时 56 MiB RAM capture 已满，早于首次 240 秒采样。保存下来的 220,349 行／51,257,056 bytes 属于 sleepd.sleepserver 查询失败或 HKSP 连接失效，约占恢复字节 87%。因此有了日志容量不足的直接证据；此前照片仍不足以把所有桌面问题归因于 sleepd。
 
 原版20F66 OS清单与全部提取的 LaunchDaemons／LaunchAngels 均无 sleepd 或 sleepserver 服务。当前 ADT 根 model 为 Xiaomi Pad 5；原缓存 MobileGestalt 的 hw.product 前缀分类将其归为 iPod（2），日志也实际报告 class 2。原版 Sleep 对 iPod 开启功能、对 iPad 则检查 sleepOnIpad flag。八个完整原函数经 LLVM 独立指令核对，十个模型／Sleep 机器码仿真场景通过；并未测得真机 feature flag 值。候选将显式设置用户态 model=iPad7,11，其他硬件属性保持；完整证据、边界与后续验收见 [设备类别调查](DEVICE-CLASS-COMPATIBILITY.md)。日志另需扩容，不能依赖重试消失来保证完整记录。
+
+
+第二十四轮候选：Actions `41847611792` 与 EFI Actions `41847611821` 均通过；选定内核 SHA-256 `122517a210e398b6ac3b905ae122d361d8a9a0a4970c195c0b05d98d9aa235cf`，本地 DarwinBoot SHA-256 `ab39085cc03833478cf7496fb205e82df767091947bfd8c93caf8356f0dd6c0b`。缓冲区扩大至 512 MiB，新的 v2 日志区域从槽 2 开始跨 10 个分配单位，共 640 MiB；Android 已验证整段为空，仅写入 4096 字节清单后回读，30 份 GPT 元数据前后一致。旧槽 0、1 不属于本轮写入区域。
+
+实际链接内核跨度 558,383,104 bytes，已确认 512 MiB 捕获数组位于零填充段；18 个链接指令范围与启动内核匹配。加载器修正了提前限制 256 MiB 的解析检查，实际内核通过新 parser／最终布局 ASan／UBSan 验证，分配后仍必须满足真实窗口。新 ADT 仅将根 model 改为显式 iPad7,11，保持 nabu 硬件路由与旧 seed／Wi-Fi；600 秒返回与 240／360／480 秒采样不变。UniXNU、bootstrap 和 boot.img 复用第二十三轮确切字节。此时只有候选和日志区域准备完成，尚未确认本轮 XNU 运行、完整日志或桌面。

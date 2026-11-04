@@ -167,3 +167,9 @@ establishes neither XNU disk writes nor successful runtime log capture.
 
 Receipts are in `log/host/nabu-log-v2-*`. These are host/simulated-medium checks;
 they do not establish v2 XNU execution, real UFS throughput or device completion.
+
+Native Actions `41847611792` passes the v2 kernel build, all logging checks,
+linked storage/return/capacity analysis and export contracts. The exact kernel
+contains the 512 MiB buffer and passes the updated loader parser/layout guard.
+See `DEVICE-CLASS-COMPATIBILITY.md` for hashes and memory-fit evidence.
+Device v2 write/readback qualification remains pending.
