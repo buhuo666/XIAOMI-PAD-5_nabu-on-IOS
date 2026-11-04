@@ -128,3 +128,5 @@
 保留第二十轮的确切内核、EFI、bootstrap、设备树（含 Wi-Fi 地址和相同随机种子）以及 boot.img，只把诊断参数改为 `loader_return_after=300 ustacks=SpringBoard ustacks_at=240`；一次采样、最多十二个线程不变。目的为在更晚时间观察 SpringBoard 初始化／等待，并给较晚出现的图形活动更多运行时间，不能预先判定延长时间会显示桌面。
 
 候选位于 `artifacts/nabu-chain-desktop-v21`，逐字节比较和 TOML 结构比较已通过。现有 timer 使用 EARLY_BOOT 初始化后的相对秒数，实际画面时间可能有额外初始化／调度开销；定时返回仍依赖内核调度，不是硬件看门狗。原生加载和报告代码完全沿用已通过验证的第二十轮输入，因此不为配置变化重复重建。部署与启动回执待记录。
+
+第二十一轮于 `2026-11-04T20:00:47.530360+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `0e2a913e7c97f0ee331b9c39899cc727db2a549b`，部署回执 `log/device/nabu-chain-20261104-195847/deployment.json`。六个启动文件回读一致，启动前核对 30 份 GPT 元数据并记录 14 个引导分区哈希；57 份输入与检查证据、确切 boot.img 位于 `log/device/nabu-boot-20261104-21/`。当前仅确认启动命令成功，等待约五分钟运行窗口后的完整报告或期间实际桌面照片，随后恢复 Android 并执行本轮 `--collect`。
