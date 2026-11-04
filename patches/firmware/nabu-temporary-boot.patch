@@ -42,7 +42,7 @@
  }
  
  //
-@@ -210,86 +209,44 @@
+@@ -210,86 +209,37 @@
  RamPartitionDxeInitialize(
      IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
  {
@@ -80,8 +80,29 @@
 -          MemoryDescriptorEx[0].Address, MemoryDescriptorEx[0].Length,
 -          MemoryDescriptorEx[0].ArmAttributes,
 -          MemoryDescriptorEx[0].MemoryType);
--      continue;
--    }
++  EFI_STATUS Status;
++  UINT32 Index, Count = 0;
++  UINT64 Base, End, Start;
++  ARM_MEMORY_REGION_DESCRIPTOR_EX *Template = &gExtendedMemoryDescriptorEx[1];
++
++  Status = GetRamPartitions (&RamPartitionEntries, &Count);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++  for (Index = 0; Index < Count; ++Index) {
++    Base = RamPartitionEntries[Index].Base;
++    if (Base > MAX_UINT64 - RamPartitionEntries[Index].AvailableLength) {
++      Status = EFI_COMPROMISED_DATA;
++      break;
++    }
++    End = Base + RamPartitionEntries[Index].AvailableLength;
++    DEBUG ((DEBUG_INFO, "NABU RAM input: %lx..%lx\n", Base, End));
++    // The nabu PEI map already owns low DDR and all reserved holes below
++    // 0x180000000. Re-adding its MLVM range overlaps existing GCD entries.
++    Start = MAX (Base, 0x180000000ULL);
++    if (End <= Start) {
+       continue;
+     }
 -
 -    // Perhaps some platforms allocated an area for RAM before 0x80000000.
 -    // Here we only consider the size of the area as 0x40000000.
@@ -127,36 +148,6 @@
 -    Index++;
 -  }
 -  FreePool(RamPartitionEntries);
-+  EFI_STATUS Status;
-+  UINT32 Index, Count = 0;
-+  UINT64 Base, End, Start;
-+  ARM_MEMORY_REGION_DESCRIPTOR_EX *Template = &gExtendedMemoryDescriptorEx[0];
-+
-+  Status = GetRamPartitions (&RamPartitionEntries, &Count);
-+  if (EFI_ERROR (Status)) {
-+    return Status;
-+  }
-+  for (Index = 0; Index < Count; ++Index) {
-+    Base = RamPartitionEntries[Index].Base;
-+    if (Base > MAX_UINT64 - RamPartitionEntries[Index].AvailableLength) {
-+      Status = EFI_COMPROMISED_DATA;
-+      break;
-+    }
-+    End = Base + RamPartitionEntries[Index].AvailableLength;
-+    DEBUG ((DEBUG_INFO, "NABU RAM input: %lx..%lx\n", Base, End));
-+    if (Base == GENERIC_RAM_BASE) {
-+      // Low extension only; the platform map owns all fixed reserved holes.
-+      Start = Template->Address;
-+      if (End <= Start) {
-+        continue;
-+      }
-+    } else {
-+      // PEI already described RAM below 6 GiB, including MPSS_EFS/PStore.
-+      Start = MAX (Base, 0x180000000ULL);
-+      if (End <= Start) {
-+        continue;
-+      }
-+    }
 +    Status = SpiltAndAddRamPartitions (Start, End - Start,
 +               Template->ArmAttributes, Template->MemoryType);
 +    if (EFI_ERROR (Status)) {
@@ -168,6 +159,26 @@
 +  RamPartitionEntries = NULL;
    return Status;
  }
+--- a/Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/Library/PlatformMemoryMapLib/PlatformMemoryMapLib.c
++++ b/Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/Library/PlatformMemoryMapLib/PlatformMemoryMapLib.c
+@@ -9,7 +9,7 @@
+     {"DBI Dump",          0x82A00000, 0x00D22000, NoHob,  MMAP_IO, INITIALIZED, Reserv,   UNCACHED_UNBUFFERED_XN},
+     {"HLOS 1",            0x83722000, 0x01FDE000, AddMem, SYS_MEM, SYS_MEM_CAP, BsData, WRITE_BACK_XN},
+     {"Hypervisor",        0x85700000, 0x00600000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, NS_DEVICE}, /* Added */
+-    {"RAM Partition",     0x85D00000, 0x00200000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},
++    {"XBL Dump/AOP",      0x85D00000, 0x00200000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+     {"AOP",               0x85F00000, 0x00020000, AddMem, MEM_RES, WRITE_COMBINEABLE, Reserv, UNCACHED_UNBUFFERED_XN}, /* Added */
+     {"AOP CMD DB",        0x85F20000, 0x00020000, AddMem, MEM_RES, WRITE_COMBINEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+     {"GPU PRR",           0x85F40000, 0x00010000, AddMem, MEM_RES, WRITE_COMBINEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+@@ -38,7 +38,7 @@
+     {"RSRV2",             0x9FFE3000, 0x00014000, AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN},
+     {"Log Buffer",        0x9FFF7000, 0x00008000, AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN},
+     {"Info Blk",          0x9FFFF000, 0x00001000, AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN},
+-    {"RAM Partition",     0xA0000000, 0x19900000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
++    {"MLVM Reserved",     0xA0000000, 0x19900000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+     /**************************************************
+     *                                                 *
+     *  RamPartitionDXE will add MLVM regions Later.   *
 --- a/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.c
 +++ b/Platforms/AndromedaPkg/Library/DeviceBootManagerLib/DeviceBootManagerLib.c
 @@ -12,6 +12,7 @@

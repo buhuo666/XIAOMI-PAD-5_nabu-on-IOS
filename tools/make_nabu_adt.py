@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Generate the eight-core ADT consumed by the project's patched XNU 8796."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import secrets
+import struct
+import zlib
+
+U32 = lambda x: struct.pack('<I', x)
+U64 = lambda x: struct.pack('<Q', x)
+STR = lambda x: x.encode('ascii') + b'\0'
+
+
+class Node:
+    def __init__(self, name, props=None, children=()):
+        self.props = {'name': STR(name), **(props or {})}
+        self.children = list(children)
+
+    def encode(self):
+        data = U32(len(self.props)) + U32(len(self.children))
+        for key, value in self.props.items():
+            key = key.encode('ascii')
+            assert 0 < len(key) < 32
+            data += key.ljust(32, b'\0') + U32(len(value)) + value
+            data += bytes(-len(value) % 4)
+        return data + b''.join(c.encode() for c in self.children)
+
+
+def nvram():
+    bank = bytearray(8192)
+    def header(offset, sig, length, name):
+        data = bytearray(struct.pack('<BBH12s', sig, 0, length // 16, name.encode()))
+        checksum = sum(data)
+        while checksum > 255:
+            checksum = (checksum & 255) + (checksum >> 8)
+        data[1] = checksum
+        bank[offset:offset + 16] = data
+    header(0, 0x5a, 32, 'nvram')
+    header(32, 0x70, len(bank) - 32, 'common')
+    struct.pack_into('<I', bank, 20, 1)
+    struct.pack_into('<I', bank, 16, zlib.adler32(bank[20:]))
+    return bytes(bank)
+
+
+def make_tree(seed):
+    cpus = []
+    for i in range(8):
+        props = {'device_type': STR('cpu'), 'state': STR('running' if i == 0 else 'waiting'),
+                 'reg': U32(i << 8), 'cpu-id': U32(i),
+                 'compatible': STR('arm,cortex-a55' if i < 4 else 'arm,cortex-a76'),
+                 'timebase-frequency': U64(19200000), 'fixed-frequency': U64(19200000),
+                 'clock-frequency': U64(1785600000 if i < 4 else 2419200000 if i < 7 else 2956800000)}
+        if i < 4:
+            props['small-core'] = U32(1)
+        cpus.append(Node('cpu' + str(i), props))
+    chosen = Node('chosen', {
+        'random-seed': seed, 'nabu-handoff-version': U32(1),
+        'darwinboot-memory-size': U64(12 << 30), 'darwinboot-auto-memory': U32(1),
+        'dram-base': U64(0), 'dram-size': U64(0),
+        'debug-enabled': U32(1), 'psci-method': STR('smc'),
+        'osenvironment': STR('main'), 'display-scale': U32(2),
+        'display-rotation': U32(0), 'nvram-bank-size': U32(8192),
+        'nvram-bank-count': U32(1), 'nvram-current-bank': U32(0),
+        'nvram-proxy-data': nvram(),
+    }, [Node('memory-map')])
+    return Node('device-tree', {
+        'model': STR('Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
+        'platform-name': STR('nabu'), '#address-cells': U32(2), '#size-cells': U32(2),
+    }, [chosen, Node('cpus', children=cpus),
+        Node('arm-io', {'device_type': STR('qcom,sm8150'), '#address-cells': U32(2),
+                       '#size-cells': U32(2), 'ranges': struct.pack('<3Q', 0, 0x17000000, 0x08000000)},
+             [Node('gic', {'device_type': STR('interrupt-controller'), 'compatible': STR('arm,gic-v3'),
+                           'reg': struct.pack('<4Q', 0xa00000, 0x10000, 0xa60000, 0x100000),
+                           'virtual-timer-intid': U32(19)})]),
+        Node('psci', {'compatible': STR('arm,psci-1.0'), 'method': STR('smc')}),
+        Node('defaults', {'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
+        Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5')})])
+
+
+def parse(data):
+    """Independent bounded decoder used to check the produced blob."""
+    def node(offset, depth):
+        if depth > 32 or offset + 8 > len(data):
+            raise ValueError('Invalid ADT node')
+        count, children = struct.unpack_from('<2I', data, offset)
+        offset += 8
+        props = {}
+        for _ in range(count):
+            if offset + 36 > len(data):
+                raise ValueError('Truncated property header')
+            name = data[offset:offset + 32]
+            if b'\0' not in name:
+                raise ValueError('Unterminated property name')
+            name = name.split(b'\0', 1)[0].decode('ascii')
+            length, = struct.unpack_from('<I', data, offset + 32)
+            offset += 36
+            if name in props or offset + length > len(data):
+                raise ValueError('Duplicate/truncated property')
+            props[name] = data[offset:offset + length]
+            offset += (length + 3) & -4
+        items = []
+        for _ in range(children):
+            child, offset = node(offset, depth + 1)
+            items.append(child)
+        return (props, items), offset
+    tree, offset = node(0, 0)
+    if offset != len(data):
+        raise ValueError('ADT trailing bytes')
+    return tree
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    blob = make_tree(secrets.token_bytes(64)).encode()
+    root, children = parse(blob)
+    nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
+    assert len(nodes['cpus'][1]) == 8
+    assert [struct.unpack('<I', p['reg'])[0] for p, _ in nodes['cpus'][1]] == list(range(0, 0x800, 0x100))
+    assert nodes['chosen'][0]['psci-method'] == b'smc\0'
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_bytes(blob)
+    report = {'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest(), 'cpu_count': 8,
+              'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
+              'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
+              'device_boot_validated': False, 'root_storage_driver_integrated': False}
+    args.output.with_suffix(args.output.suffix + '.json').write_text(json.dumps(report, indent=2) + '\n')
+    print(json.dumps(report))
+
+
+if __name__ == '__main__':
+    main()

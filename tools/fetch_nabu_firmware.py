@@ -4,17 +4,23 @@ import argparse
 import configparser
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {'Project-Aloha', 'microsoft', 'tianocore', 'openssl', 'ARMmbed',
-           'Mbed-TLS', 'google', 'akheron', 'ucb-bar', 'dtc', 'abseil'}
+           'Mbed-TLS', 'google', 'akheron', 'ucb-bar', 'dtc', 'abseil', 'kkos',
+           'devicetree-org', 'MIPI-Alliance', 'DMTF', 'zeux', 'pyca', 'WOA-Project'}
 
 
 def git(path, *args):
-    return subprocess.check_output(['git', '-c', 'core.autocrlf=false', '-C', str(path), *args], text=True).strip()
+    proxy = os.environ.get('NABU_PROXY', 'http://127.0.0.1:19999' if os.name == 'nt' else '')
+    command = ['git', '-c', 'core.autocrlf=false', '-c', 'core.longpaths=true']
+    if proxy:
+        command += ['-c', 'http.proxy=' + proxy]
+    return subprocess.check_output([*command, '-C', str(path), *args], text=True).strip()
 
 
 def fetch(path, url, commit, records, nested=True):
@@ -33,12 +39,17 @@ def fetch(path, url, commit, records, nested=True):
                     'tree': git(path, 'rev-parse', 'HEAD^{tree}')})
     print(f'Verified {url} {commit}', flush=True)
     modules = path / '.gitmodules'
-    if not nested or not modules.exists():
+    # OpenSSL's gitlinks are its external interoperability test suites, not
+    # library build inputs. The UEFI build does not execute those suites.
+    if not nested or not modules.exists() or url.rstrip('/').removesuffix('.git') == 'https://github.com/openssl/openssl':
         return
     cfg = configparser.ConfigParser()
     cfg.read(modules)
     for section in cfg.sections():
         rel, child_url = cfg[section]['path'], cfg[section]['url']
+        # SPDM's unit-test cmocka copy is unused by the board firmware build.
+        if child_url == 'https://gitlab.com/cmocka/cmocka.git':
+            continue
         child = (path / rel).resolve()
         if not child.is_relative_to(path.resolve()):
             raise ValueError('Submodule escapes checkout')
@@ -65,11 +76,24 @@ def main():
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(records, indent=2) + '\n')
     binary_records = []
-    for path in args.output.rglob('*'):
-        if path.is_file() and path.suffix.lower() in ('.efi', '.dtb', '.aml') and '.git' not in path.parts:
+    # Only Git-tracked input blobs; build outputs and imported extdeps are not
+    # source inputs and have their own build/archive receipts.
+    for checkout in records:
+        base = Path(checkout['path'])
+        index = subprocess.check_output(['git', '-C', str(base), 'ls-files', '--stage', '-z'])
+        for item in index.split(b'\0'):
+            if not item:
+                continue
+            metadata, name = item.split(b'\t', 1)
+            mode, blob, stage = metadata.split()
+            path = base/name.decode('utf-8')
+            if mode not in (b'100644', b'100755') or path.suffix.lower() not in ('.efi', '.dtb', '.aml'):
+                continue
+            data = path.read_bytes()
+            assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest() == blob.decode(), 'Input binary differs from pinned Git blob'
             binary_records.append({'path': path.relative_to(args.output).as_posix(),
-                                   'bytes': path.stat().st_size,
-                                   'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                                   'bytes': len(data), 'git_blob': blob.decode(),
+                                   'sha256': hashlib.sha256(data).hexdigest()})
     (report.parent / 'input-binaries.json').write_text(json.dumps(binary_records, indent=2) + '\n')
 
 

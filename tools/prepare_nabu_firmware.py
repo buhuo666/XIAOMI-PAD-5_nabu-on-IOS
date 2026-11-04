@@ -18,8 +18,11 @@ def main():
     if actual != cfg['commit']:
         raise ValueError('Firmware source identity mismatch')
     patch = ROOT / 'patches/firmware/nabu-temporary-boot.patch'
-    for flags in (['--check'], []):
-        subprocess.run(['git', '-C', str(args.tree), 'apply', *flags, str(patch)], check=True)
+    applied = subprocess.run(['git', '-C', str(args.tree), 'apply', '--reverse', '--check', str(patch)],
+                             capture_output=True).returncode == 0
+    if not applied:
+        for flags in (['--check'], []):
+            subprocess.run(['git', '-C', str(args.tree), 'apply', *flags, str(patch)], check=True)
     report = {'source_commit': actual, 'patch_sha256': hashlib.sha256(patch.read_bytes()).hexdigest(),
               'entry': '\\EFI\\Nabu16\\UniXNU.efi', 'variable_store': 'emulated RAM only',
               'device_boot_validated': False}

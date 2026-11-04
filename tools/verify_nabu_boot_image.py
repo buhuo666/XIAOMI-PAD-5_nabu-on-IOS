@@ -8,7 +8,7 @@ import struct
 import zlib
 
 
-def verify(image, shim, firmware, dtb):
+def verify(image, shim, firmware, dtb, ramdisk):
     data = image.read_bytes()
     assert data[:8] == b'ANDROID!', 'Android magic'
     fields = struct.unpack_from('<10I', data, 8)
@@ -19,6 +19,7 @@ def verify(image, shim, firmware, dtb):
     rd_offset = (end + page - 1) & -page
     expected_end = rd_offset + ((ramdisk_size + page - 1) & -page)
     assert len(data) == expected_end, 'Trailing/unaccounted image bytes'
+    assert data[rd_offset:rd_offset + ramdisk_size] == ramdisk.read_bytes(), 'Ramdisk placeholder differs from pinned input'
     payload = data[page:end]
     dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
     unpacked = dec.decompress(payload) + dec.flush()
@@ -38,20 +39,21 @@ def verify(image, shim, firmware, dtb):
     assert data[576:596] == sha.digest(), 'Android component SHA-1 id mismatch'
     return {'format': 'Android boot image v0', 'page_size': page,
             'kernel_payload_bytes': kernel_size, 'ramdisk_bytes': ramdisk_size,
+            'ramdisk_role': 'upstream placeholder; unused by the BootShim/UEFI payload',
             'uefi_base': '0x9fc00000', 'firmware_bytes': len(expected_fw),
             'payload': 'gzip(BootShim + SM8150_EFI.fd) + fixed android-nabu.dtb',
             'device_boot_validated': False,
             'files': [{'name': p.name, 'bytes': p.stat().st_size,
                        'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-                      for p in (image, shim, firmware, dtb)]}
+                      for p in (image, shim, firmware, dtb, ramdisk)]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for key in ('image', 'shim', 'firmware', 'dtb', 'output'):
+    for key in ('image', 'shim', 'firmware', 'dtb', 'ramdisk', 'output'):
         parser.add_argument('--' + key, type=Path, required=True)
     args = parser.parse_args()
-    report = verify(args.image, args.shim, args.firmware, args.dtb)
+    report = verify(args.image, args.shim, args.firmware, args.dtb, args.ramdisk)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

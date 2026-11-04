@@ -27,7 +27,14 @@ def main():
     patch = ROOT/'patches/darwinboot/8796-boot-args-and-capacity.patch'
     for command in [['--check'], []]:
         subprocess.run(['git', '-C', str(args.output), 'apply', *command, str(patch)], check=True)
+    nabu_patch = ROOT/'patches/darwinboot/nabu-handoff.patch'
+    for command in [['--check'], []]:
+        subprocess.run(['git', '-C', str(args.output), 'apply', *command, str(nabu_patch)], check=True)
+    nabu_header = ROOT/'patches/darwinboot/NabuHandoff.h'
+    shutil.copy2(nabu_header, args.output/'DarwinBootPkg/Driver/NabuHandoff.h')
     report = {'source_commit': actual, 'patch_sha256': hashlib.sha256(patch.read_bytes()).hexdigest(),
+              'nabu_patch_sha256': hashlib.sha256(nabu_patch.read_bytes()).hexdigest(),
+              'nabu_header_sha256': hashlib.sha256(nabu_header.read_bytes()).hexdigest(),
               'abi': 'XNU 8796.121.2 arm64', 'device_boot_validated': False,
               'window_policy': '256 MiB to 12 GiB, 2 MiB aligned; one allocated conventional-memory run'}
     receipt = ROOT/'log/ci/darwinboot8796/source.json'

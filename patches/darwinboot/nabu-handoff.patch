@@ -1,0 +1,121 @@
+--- a/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -396,9 +396,11 @@
+   }
+ }
+ 
++#include "NabuHandoff.h"
++
+ STATIC
+ EFI_STATUS
+-AllocateWindow (KERNEL *Kernel, UINT64 WindowSize, EFI_PHYSICAL_ADDRESS *Address)
++AllocateWindow (KERNEL *Kernel, UINT64 *RequestedSize, BOOLEAN AutoSize, EFI_PHYSICAL_ADDRESS *Address)
+ {
+   EFI_MEMORY_DESCRIPTOR *Map;
+   EFI_MEMORY_DESCRIPTOR *Descriptor;
+@@ -413,6 +415,9 @@
+   UINT64                BestStart;
+   UINT64                BestBytes;
+   UINT64                RunBytes;
++  UINT64                WindowSize = *RequestedSize;
++  UINT64                Selected = 0;
++  UINT64                SelectedSize = 0;
+ 
+   *Address = 0;
+   Map = NULL;
+@@ -430,9 +435,25 @@
+     RunBytes = End - Descriptor->PhysicalStart;
+     if (RunBytes > BestBytes) { BestBytes = RunBytes; BestStart = Descriptor->PhysicalStart; }
+     Candidate = ALIGN_VALUE (Descriptor->PhysicalStart, BLOCK_SIZE) + (Kernel->Base & (BLOCK_SIZE - 1));
+-    if ((Candidate < Descriptor->PhysicalStart) || (End < Candidate) || (End - Candidate < WindowSize)) { continue; }
+-    Status = gBS->AllocatePages (AllocateAddress, EfiLoaderCode, EFI_SIZE_TO_PAGES (WindowSize), &Candidate);
+-    if (!EFI_ERROR (Status)) { *Address = Candidate; break; }
++    if ((Candidate < Descriptor->PhysicalStart) || (End < Candidate)) { continue; }
++    if (AutoSize) {
++      RunBytes = MIN (WindowSize, End - Candidate) & ~(BLOCK_SIZE - 1ULL);
++      if (DarwinWindowSizeValid (RunBytes) && RunBytes > SelectedSize) {
++        Selected = Candidate;
++        SelectedSize = RunBytes;
++      }
++    } else {
++      if (End - Candidate < WindowSize) { continue; }
++      Status = gBS->AllocatePages (AllocateAddress, EfiLoaderCode, EFI_SIZE_TO_PAGES (WindowSize), &Candidate);
++      if (!EFI_ERROR (Status)) { *Address = Candidate; break; }
++    }
++  }
++  if (AutoSize && SelectedSize != 0) {
++    Status = gBS->AllocatePages (AllocateAddress, EfiLoaderCode, EFI_SIZE_TO_PAGES (SelectedSize), &Selected);
++    if (!EFI_ERROR (Status)) {
++      *Address = Selected;
++      *RequestedSize = SelectedSize;
++    }
+   }
+   if (EFI_ERROR (Status)) {
+     CHAR16 Line[96];
+@@ -501,6 +522,7 @@
+   UINTN                           Attempt;
+   CHAR8                           CommandLine[sizeof (((DARWIN_BOOT_ARGS *)0)->CommandLine)];
+   UINT64                          Video[6];
++  NABU_HANDOFF                    Nabu = {0};
+ 
+   (VOID)This;
+   if ((Request == NULL) || (Request->Volume == NULL) || (Request->KernelPath == NULL)) { return EFI_INVALID_PARAMETER; }
+@@ -555,6 +577,16 @@
+   WindowSize = 0;
+   KeepPacked = FALSE;
+   if (!AdtNode (Tree, TreeSize, &Offset, 0, 3, &RamdiskOffset, &TrustCacheOffset, &AddonOffset, &WindowSize, &KeepPacked) || (Offset != TreeSize)) { Status = EFI_COMPROMISED_DATA; goto Fail; }
++  Offset = 0;
++  if (!NabuFindChosen (Tree, TreeSize, &Offset, 0, &Nabu) || Offset != TreeSize) {
++    Status = EFI_COMPROMISED_DATA;
++    goto Fail;
++  }
++  if (Nabu.Enabled && (((READ_SYSREG (mpidr_el1) & 0xff00ffffffULL) != 0) || READ_SYSREG (cntfrq_el0) != 19200000)) {
++    Print (L"NABU: boot CPU or counter frequency differs from the eight-core ADT\n");
++    Status = EFI_UNSUPPORTED;
++    goto Fail;
++  }
+   if (KeepPacked && (!RamdiskPacked || (RamdiskOffset == MAX_UINTN))) { Status = EFI_COMPROMISED_DATA; goto Fail; }
+   if (WindowSize == 0) { WindowSize = WINDOW_SIZE; }
+   if (Kernel.Base > MAX_UINT64 - WindowSize) { Status = EFI_LOAD_ERROR; goto Fail; }
+@@ -599,7 +631,7 @@
+   }
+   Status = ReadBootVideo (Video);
+   if (EFI_ERROR (Status)) { goto Fail; }
+-  Status = AllocateWindow (&Kernel, WindowSize, &Address);
++  Status = AllocateWindow (&Kernel, &WindowSize, Nabu.AutoMemory, &Address);
+   if (EFI_ERROR (Status)) { goto Fail; }
+   ArgsAddress = ALIGN_VALUE (Address + Kernel.End - Kernel.Base, SIZE_16KB);
+   TreeAddress = ArgsAddress + EFI_PAGE_SIZE;
+@@ -631,6 +663,10 @@
+   Args->DeviceTreeLength = (UINT32)TreeSize;
+   CopyMem (Args->CommandLine, CommandLine, sizeof (CommandLine));
+   CopyMem ((VOID *)(UINTN)TreeAddress, Tree, TreeSize);
++  if (Nabu.Enabled) {
++    WriteUnaligned64 ((UINT64 *)(UINTN)(TreeAddress + Nabu.DramBase), Address);
++    WriteUnaligned64 ((UINT64 *)(UINTN)(TreeAddress + Nabu.DramSize), WindowSize);
++  }
+   if (Request->Ramdisk != NULL) {
+     if (KeepPacked) { CopyMem ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize); }
+     else { CopyRamdisk ((VOID *)(UINTN)RamdiskAddress, Request->Ramdisk, Request->RamdiskSize, RamdiskPacked); }
+@@ -652,6 +688,12 @@
+   FreePool (Image); Image = NULL;
+   FreePool (Tree); Tree = NULL;
+   FreePool (TreePath); TreePath = NULL;
++  if (Nabu.Enabled) {
++    Status = GetMap (&Map, &Capacity, &MapSize, &Key, &Stride);
++    if (EFI_ERROR (Status)) { goto Fail; }
++    Status = NabuWriteHandoff (Root, &Kernel, Address, WindowSize, ArgsAddress, Video, Map, MapSize, Stride, CommandLine);
++    if (EFI_ERROR (Status)) { goto Fail; }
++  }
+   Root->Close (Root); Root = NULL;
+   Status = GetMap (&Map, &Capacity, &MapSize, &Key, &Stride);
+   if (EFI_ERROR (Status)) { goto Fail; }
+@@ -680,7 +722,7 @@
+   DEBUG ((DEBUG_ERROR, "ID_AA64MMFR0_EL1 0x%lx  (PARange %lu, 4 KiB granule %a)\n", READ_SYSREG (id_aa64mmfr0_el1),
+           READ_SYSREG (id_aa64mmfr0_el1) & 0xF, (((READ_SYSREG (id_aa64mmfr0_el1) >> 28) & 0xF) == 0xF) ? "NOT supported" : "supported"));
+   DEBUG ((DEBUG_ERROR, "ID_AA64PFR0_EL1  0x%lx\n", READ_SYSREG (id_aa64pfr0_el1)));
+-  DEBUG ((DEBUG_ERROR, "\nExiting boot services. A green bar across the top\nmeans the kernel entry code ran.\n"));
++  DEBUG ((DEBUG_ERROR, "\nExiting boot services. A green bar across the top\nmeans the loader transition stub ran.\n"));
+   for (Attempt = 0; Attempt < 3; Attempt++) {
+     MapSize = Capacity;
+     Status = gBS->GetMemoryMap (&MapSize, Map, &Key, &Stride, &Version);

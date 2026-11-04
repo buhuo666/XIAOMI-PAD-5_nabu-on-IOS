@@ -6,6 +6,8 @@
 
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
+2026-11-04 本地启动链更新：WSL Ubuntu 22.04、LLVM 18.1.8、Python 3.12.16 已成功构建 nabu DEBUG／NoSb 固件和两个 EFI 程序。临时 `boot.img` 为 3,616,768 bytes，SHA-256 `bca20de2c74522394c1b0005ca82ae5b03daeefb22a2f1cb7b221a40eecf1adc`，独立解包校验通过。5 个启动文件已写入现有 ESP，SHA-256 回读通过；六个 LUN 的 GPT 元数据与原备份一致，槽位仍为 A。当前仍待真机运行证据，不能据此声称 XNU 或 iPadOS 已启动。详见 [启动入口](NABU-BOOT-ENTRY.md)。
+
 2026-11-04 接手验收：提交 `f77e851c0e7d153cd9bf23b39f04fcccabbc78f4` 的内核 Actions `41671552454` 和 EFI Actions `41671552536` 均成功。已下载并逐个核对两个内核、UniXNU.efi 和 DarwinBoot.efi 的大小、SHA-256 与架构；完整内核 `build_exit_code=0`，构建日志没有缺失导出或编译错误。当前是源码编译检查通过，尚无 nabu 临时 boot.img 的实机启动结果。
 
 用户进一步明确：允许在已有 64 GiB 区域重新初始化并写入 iPadOS，要求系统状态持久保存；启动仍只使用 `fastboot boot`。系统材料已经全部传入设备并核验哈希。磁盘布局与写入验收以 [设备安装记录](DEVICE-INSTALLATION-20F66.md) 为准；不能将传输、APFS 初始化或编译成功当成持久化功能已通过。
@@ -62,4 +64,4 @@
 4. 在已通过主机／编译检查的 32 页早期页表、8796 loader ABI 和最大 12 GiB 解析能力之上，取得最终 UEFI 所有权后再选择实际窗口。补齐 nabu ADT、CPU／UFS 和内存交接，实现实际板级构建。
 5. 将已选择的 OS／SystemOS／磁盘 Data 窗口接入 20F66 存储 ABI、nabu UFS 有界写入及 `/private/var` 挂载。参考 nabu 补丁当前禁用 UFS 写入，不能直接使用其 RAM Data 路径实现用户要求的状态保存。
 
-当前 Actions 产物用于验证 8796 的源码编译和静态接口；尚未形成 nabu 专用可启动内核、ADT 或临时 boot.img。设备写入仅限另文记录的已授权 `nabu_system` 内部；本轮未重启，未修改 GPT、Android 引导分区或活动槽。
+当前参考内核与 nabu 八核 ADT、EFI 和临时 boot.img 已组成可测试的启动链。它尚未整合原生 UFS、原版组件预链接和 Data 挂载；不能将其称为可用 iPadOS 系统。设备写入包括另文记录的 `nabu_system` 安装和本次 ESP 文件部署，启动只允许 `fastboot boot`，不得修改 GPT、Android 引导分区或活动槽。

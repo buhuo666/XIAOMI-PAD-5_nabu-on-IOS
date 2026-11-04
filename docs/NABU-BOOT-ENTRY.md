@@ -2,15 +2,45 @@
 
 更新：2026-11-04，Asia/Shanghai。本文区分当前设备、固定源码和待验证候选。
 
-接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功，下载后的四个产物已核验大小、SHA-256 与架构。下文提到的首次 EFI 提交前检查已由实际成功构建补足；板级临时 boot.img、nabu ADT、UFS／Data 写入和实机测试仍未完成。设备系统区安装与启动入口是不同工作，见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
+接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。系统区安装已完成；内核 UFS／Data 挂载与真机启动仍待验证，见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
 
-用户要求启动只能临时进行。因此唯一计划中的设备启动命令是核对设备与镜像后执行 `fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。本轮工具没有 ADB、fastboot 或分区写入操作。
+用户要求启动只能临时进行。核对设备与镜像后执行 `adb reboot bootloader`、`fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。设备操作已获本会话授权。
+
+## 本地构建与部署结果
+
+工具链：WSL Ubuntu 22.04，LLVM／Clang／LLD 18.1.8，Python 3.12.16。Mu 固件固定上游提交 `d8aab0e2c272caeef5329716ff554c08cfebd6bd`；应用补丁 `patches/firmware/nabu-temporary-boot.patch`。直接依赖通过固定 Git gitlink 或上游 descriptor 中的版本、SHA-256 校验，离线导入的 Stuart 依赖收据在 `log/ci/nabu-firmware/local-cache-import.json`。
+
+| 产物 | bytes | SHA-256 |
+|---|---:|---|
+| boot.img | 3,616,768 | `bca20de2c74522394c1b0005ca82ae5b03daeefb22a2f1cb7b221a40eecf1adc` |
+| SM8150_EFI.fd | 3,145,728 | `7b621be1272b1f88c0331b5e467cb95d932238f4eed24ebde154f7d94cd2808e` |
+| UniXNU.efi | 95,232 | `3913c4f62bed440e3e1408e255d08e2e9149c3cebbb50db89814f0676f52797a` |
+| DarwinBoot.efi | 28,160 | `949c648544ecb1df2d2121c6bbd84088ba49d3637afb7141741f42b08e25b2a5` |
+
+`boot.img` 使用 Android v0、4096 字节页，payload 为 `gzip(BootShim + FD) + Android DTB`。7 字节 ramdisk 是固定上游的占位文件，BootShim 不使用它；不是可启动 Android ramdisk。`tools/verify_nabu_boot_image.py` 检查组件长度、逐字节内容、gzip 边界、FD 大小、DTB 和 Android SHA-1 id，输出 `artifacts/nabu-firmware/boot-image-report.json`。
+
+固件仅补充 `0x180000000` 以上经 RAM protocol 声明的内存，使用 ConventionalMemory 属性；避免重复登记 PEI 已拥有的低地址段。低地址 XBL／AOP 和 MLVM 段保留，防止覆盖当前设备 FDT 标为 no-map 的协处理器范围。`[0x17fe00000,0x180000000)` 保留为 PStore。实际 split loop 和初始化函数通过 16 项 ASan／UBSan 检查。
+
+DarwinBoot 从实际 UEFI map 选择最大连续可分配窗口，2 MiB 对齐，上限 12 GiB；成功 AllocatePages 后回填 ADT。PStore 会分开高低两段，本机不应预先宣称获得完整 12 GiB。ADT 包含 8 个 affinity `0x000..0x700`、PSCI SMC、19.2 MHz counter、GICv3 和虚拟 timer INTID 19。ABI 与 ADT／分配器检查均通过，包括 13,604 个截断输入。
+
+2026-11-04 09:26（Asia/Shanghai）部署：`tools/stage_nabu_boot_chain.py --apply --gpt-backup backup/gpt/20261104-082923` 成功。5 个文件写入现有 4 GiB FAT32 ESP，替换前保存原文件，部署后逐项回读 SHA-256。部署前后 6 个 LUN 的 30 份 GPT 元数据与既有备份一致；活动槽为 A。收据：`log/device/nabu-chain-20261104-092615/deployment.json`。本次未初始化或改写现有 Data。
+
+ESP 路径为 `EFI/Nabu16/{UniXNU.efi,DarwinBoot.efi,Payloads/kernel.macho,Payloads/kernel.macho.adt}`；UniXNU 配置固定放在 `EFI/UniXNU/unixnu.toml`。5 秒后自动选择八核内核条目，另有返回 Android 的 reset 条目。DarwinBoot 在退出 Boot Services 前写入 `EFI/Nabu16/handoff-*.txt`。这个文件或绿色条只能证明 loader 到达相应阶段，不能证明内核入口执行。
+
+复现本地构建：
+
+```powershell
+wsl -d Ubuntu-22.04 -- env NABU_FW_TREE=/home/buhuo/nabu16-fw-v2/tree NABU_PYTHON=python3.12 NABU_FW_DEPS_READY=1 bash /mnt/d/github-IOS/XIAOMI_PAD5-NABU/tools/build_nabu_firmware.sh
+wsl -d Ubuntu-22.04 -- env NABU_EFI_WORK=/home/buhuo/nabu16-efi-v2 bash /mnt/d/github-IOS/XIAOMI_PAD5-NABU/tools/build_nabu_efi_wsl.sh
+```
+
+以下章节保留前期入口调查背景，不能作为部署后的当前 ESP 清单。
 
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。
 
-当前 ESP 没有 rEFInd、UniXNU.efi 或 DarwinBoot.efi；Android A/B 的首块都是 Android boot 头。这些观察不能证明本机已经存在能够执行外部 EFI 应用的菜单。
+该次检查的 ESP 没有 rEFInd、UniXNU.efi 或 DarwinBoot.efi；Android A/B 的首块都是 Android boot 头。此历史观察已由上面的 ESP 文件部署更新。
 
 固定参考 `src/nabu` 的 `board.toml` 和 `README.md` 声称原厂 Xiaomi UEFI → rEFInd → UniXNU → DarwinBoot，但 `[firmware] dsc` 和 `fd` 均为空。该仓库不生成板级固件或可供 `fastboot boot` 使用的 Android 启动镜像。其已有设备记录属于参考项目，不能转换成本机已经启动过的证据。
 
@@ -34,7 +64,7 @@
 
 该快照包含 `Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/`，其产品 PCD 是 nabu／SM8150-AC。`build_cfg/sm8150.json` 规定 UEFI 基址 `0x9fc00000`、大小 `0x300000`、Android header v0、4096 字节页和压缩 payload。`PythonLibs/PostBuild.py` 实际将 BootShim 与固件卷拼接、gzip 压缩、追加 Android DTB，再用 mkbootimg 打包。参考构建入口为 `build_uefi.py -d xiaomi-nabu -t DEBUG`，README 指定输出 `Build/SurfaceDuo1Pkg/xiaomi-nabu.img`。
 
-这提供了一条可调查的板级镜像构建路径，尚未闭合以下项目：完整固定嵌套依赖、厂商二进制身份与来源、实际构建、打包结果逐段检查、本机启动与日志回读。上游 `--init`／Stuart 更新流程仍需审查后再用于项目的可重复构建；不直接运行未经审查的上游设备安装脚本。
+上述调查已推进到本地构建与逐段检查成功，具体输入收据见本地构建章节。仍待本机启动与日志回读。
 
 ## 12 GiB 相关的固件约束
 
@@ -42,8 +72,8 @@
 
 其固件内存表还保留了 `[0xc0000000,0xc0300000)` 的 MPSS_EFS。启用 `USE_MEMORY_FOR_SERIAL_OUTPUT=1` 时，又将 `[0x17fe00000,0x180000000)` 划作 PStore。因此 Android 下无固定洞的 11 GiB 高段不能直接被当作这个固件下连续可分配窗口。最终窗口必须来自所用固件的真实 descriptors 与整段分配成功记录。
 
-另外，调查快照的 `SpiltAndAddRamPartitions()` 会覆盖前面 `AddRamPartition()` 的错误状态；对于整 2 GiB 倍数还会尝试零长度尾段，调用者也未传播其返回值。这是需要进一步修复和测试的源码问题，不能因初始化函数返回成功就认定所有高内存都已映射。
+另外，调查快照的 `SpiltAndAddRamPartitions()` 会覆盖前面 `AddRamPartition()` 的错误状态；对于整 2 GiB 倍数还会尝试零长度尾段，调用者也未传播其返回值。本次补丁已修复并通过主机边界测试，实际映射结果仍须从真机交接日志确认。
 
 ## 真机测试的剩余前提
 
-完整内核 `make` 成功、独立 EFI 构建成功、板级临时 boot.img 验证成功是不同检查。还需本机八核 ADT、服务归属与预链接闭合、实际 UEFI 窗口、启动参数和可回收日志。满足这些条件后临时启动；失败时读取可用日志并返回原有 Android，不以刷写引导分区作为排障捷径。
+完整内核 `make` 成功、EFI 构建成功、板级 boot.img 校验成功是不同检查。当前链可测试固件到 loader／内核交接，但原生 UFS、原版组件预链接和 Data 挂载尚未接通。真机结果必须单独记录。`tools/run_nabu_temporary_boot.py` 在启动前核对镜像、源提交、设备、GPT 和引导分区哈希，返回 Android 后再次比较并回收 ESP 日志。

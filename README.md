@@ -2,7 +2,7 @@
 
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
-当前编译进展：Actions `41659076371` 已产生两个普通 arm64 参考内核；IIG 空 reply 分支、共享 pmap 配置和 11 个受限查询入口通过静态核验，缺失导出累计从 131 降至 24。完整构建仍未通过，尚无 nabu 启动镜像。实测结果见 [原生分析与最新构建](docs/NATIVE-ANALYSIS-20F66.md)。
+当前进展：Actions `41671552454` 的完整 8796 参考内核构建成功。本地 WSL 已生成 nabu 临时 `boot.img`、UniXNU.efi、DarwinBoot.efi 和八核 ADT；启动文件已部署到现有 ESP 并完成回读校验，等待真机启动结果。系统区已有 OS／SystemOS／Data，内核存储驱动与持久化挂载尚未接通。见 [启动入口记录](docs/NABU-BOOT-ENTRY.md) 与 [项目进展](docs/STATUS.md)。
 
 用户提供的弃用内核已解包，并从可核对的旧补丁链恢复 85 个硬件参考文件；仅作为调查线索，不用于当前构建，也不作为硬件正确性证据。见 [历史硬件参考](docs/ABANDONED-KERNEL-REFERENCE.md)。
 

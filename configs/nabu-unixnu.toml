@@ -1,0 +1,29 @@
+version = 1
+
+[boot]
+timeout = 5
+fallback_timeout = 5
+connect_all = true
+default = "nabu8796"
+
+[ui]
+title = "Nabu XNU 8796"
+layout = "portrait"
+console = "auto"
+
+[[driver]]
+path = '\EFI\Nabu16\DarwinBoot.efi'
+connect = true
+
+[[entry]]
+id = "nabu8796"
+title = "XNU 8796 - 8 CPU bring-up"
+type = "xnu"
+path = '\EFI\Nabu16\Payloads\kernel.macho'
+args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0"
+
+[[entry]]
+id = "reset"
+title = "Return to Android"
+type = "action"
+action = "reset"
