@@ -91,6 +91,11 @@ extern "C" void nabu_storage_append_report(void)
   if (!gNabuAttempted) return;
   formatUfsRootDiagnostics(gNabuReport,sizeof(gNabuReport),gRootDiagnostic,gNabuResult,"NABU STORAGE REPORT");
   loader_log_line(gNabuReport);
+  uint32_t status=nabu_userland_status();
+  char userland[128];
+  snprintf(userland,sizeof(userland),"NABU USERLAND: phase=%u errno=%u (PID1 reported; phase 7 is exec attempt)\n",
+      status>>16,status&0xffff);
+  loader_log_line(userland);
   if (gNabuCause[0]) {
     char line[224]; snprintf(line,sizeof(line),"NABU STORAGE CAUSE: %s\n",gNabuCause);
     loader_log_line(line);

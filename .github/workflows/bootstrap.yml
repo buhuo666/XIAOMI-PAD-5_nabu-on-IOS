@@ -61,6 +61,7 @@ jobs:
           path: |
             log/ci/
             artifacts/8796-reference/
+            artifacts/nabu-userland/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14

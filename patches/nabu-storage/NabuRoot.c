@@ -11,6 +11,8 @@
 #include <sys/uio.h>
 #include <sys/vnode.h>
 #include <sys/vnode_if.h>
+#include <sys/sysctl.h>
+#include <os/atomic_private.h>
 #include <miscfs/devfs/devfs.h>
 #include <pexpert/pexpert.h>
 #include <libkern/crypto/sha2.h>
@@ -23,6 +25,25 @@ static int nabu_major = -1;
 static uint32_t nabu_block_size[2] = {4096,4096};
 static char nabu_probe_result[192];
 static uint8_t nabu_probe_buffer[16384];
+static uint32_t nabu_user_status;
+
+static int nabu_user_status_sysctl(struct sysctl_oid *oid, void *arg1 __unused,
+                                 int arg2 __unused, struct sysctl_req *req)
+{
+  int value=(int)os_atomic_load(&nabu_user_status,acquire);
+  if (req->newptr && proc_selfpid()!=1) return EPERM;
+  int error=sysctl_io_number(req,value,sizeof(value),&value,NULL);
+  (void)oid;
+  if (error || !req->newptr) return error;
+  if (value<0 || ((unsigned)value>>16)>8 || ((unsigned)value&0xffff)>4095) return EINVAL;
+  os_atomic_store(&nabu_user_status,(uint32_t)value,release);
+  return 0;
+}
+SYSCTL_PROC(_kern,OID_AUTO,nabu_userland_stage,CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_LOCKED,
+    NULL,0,nabu_user_status_sysctl,"I","PID1 bootstrap phase and errno");
+
+uint32_t nabu_userland_status(void)
+{ return os_atomic_load(&nabu_user_status,acquire); }
 
 static int nabu_open(dev_t dev, int flags, int type __unused, proc_t p __unused)
 {
@@ -89,6 +110,11 @@ int nabu_root_device(char *name, unsigned name_bytes, int *device, uint32_t *fla
       if (!devfs_make_node(makedev(nabu_major,i),DEVFS_BLOCK,UID_ROOT,GID_OPERATOR,0440,
           "nabu_%s",i ? "systemos":"os")) nabu_storage_finish("devfs publication failed");
     }
+  }
+  uint32_t bootstrap=0;
+  if (PE_parse_boot_argn("nabu-bootstrap",&bootstrap,sizeof(bootstrap)) && bootstrap==1) {
+    loader_log_line("NABU STORAGE: published windows; bootstrap RAM disk selects initial root\n");
+    return 0;
   }
   strlcpy(name,"nabu_os",name_bytes);
   *device=makedev(nabu_major,0); *flags=0;

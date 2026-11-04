@@ -4,6 +4,8 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
+最新主线结果：第十一轮已实际挂载 OS，完整读取 525,088 bytes 的 launchd 并核对 SHA-256 一致（errno=0），两个系统窗口发布、41 次读取无失败。回到 Android 后 GPT 和受检引导分区哈希一致。下一步准备静态 RAM bootstrap、SystemOS 挂载及原版用户态执行；首轮 Data 暂用 RAM，保留磁盘 Data，持久化仍待完成。详见 [用户态初始化](../userland/nabu/README.md)。
+
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 
 桌面主线进展：原生只读 UFS、固定 OS／SystemOS 窗口、BSD 根选择及挂载后读取 launchd 的候选已由 macOS Actions `41772094078` 全部验收。设备端元数据只读复核一致；准备第十轮实机测试，尚未确认 XNU 挂载成功。用户要求跳过首次设置／激活引导，偏好种子已准备但尚未部署。详见 [存储接入](NABU-STORAGE-BRINGUP.md) 与 [用户态初始化策略](../userland/nabu/README.md)。

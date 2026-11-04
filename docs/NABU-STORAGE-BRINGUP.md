@@ -58,6 +58,8 @@ Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确�
 
 2026-11-04 12:45:38（Asia/Shanghai）完成第十一轮 ESP 文件部署及 SHA-256 回读，收据 `log/device/nabu-chain-20261104-124538/deployment.json`。12:46:22 执行临时 `fastboot boot`，发送及 Booting 成功，源提交 `3ccda8f1dd1ee49618339a9711722410d93dfc51`。确切启动链、生成策略、macOS 检查和 boot.img 已冻结到 `log/device/nabu-boot-20261104-11/`；是否越过 SMMU、读取 GPT／系统卷及完成挂载仍待屏幕证据，恢复 Android 后回读也待完成。
 
+第十一轮后续照片确认 `NABU ROOT PROBE: mounted OS, launchd bytes=525088 sha256=MATCH errno=0`。两个系统窗口已发布，读取计数 41、失败计数 0、命令计数 50；UFS stream 的 S2CR=`0x37`，新 context 的 CBAR=`0x10000`、SCTLR=0、CBA2R=1。照片 SHA-256 `32b6af4c6768b2fc386b280fe375bd5921ab3a032f5e5828ec51355a9087a7db`，记录保存在该轮 `screen-observation.json`。OS 实际挂载与完整 launchd 读取已通过，SystemOS 挂载、launchd 执行、可写 Data 和桌面仍未验证。返回 Android 后 30 份 GPT 元数据及 14 个受检引导分区哈希一致。
+
 ## 日志回收边界
 
 ESP 的 `handoff-*.txt` 由 loader 在 ExitBootServices 之前写入，恢复 Android 后可以自动取回。屏幕上的 XNU 日志目前保存在内核 RAM，返回报告器只绘屏，没有写入存储；重启后不能保证保留。因此 ESP 交接日志不能替代运行期日志或照片。

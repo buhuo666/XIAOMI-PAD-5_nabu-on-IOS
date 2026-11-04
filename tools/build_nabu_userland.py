@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Build source-only static ARM64 bootstrap programs with the macOS/Xcode linker."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import struct
+import subprocess
+import sys
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+def once(text,old,new):
+    if text.count(old)!=1:raise ValueError('Expected one bootstrap anchor: '+old[:90])
+    return text.replace(old,new,1)
+
+
+def verify(path):
+    b=path.read_bytes();magic,cpu,subtype,kind,ncmd,size=struct.unpack_from('<6I',b)
+    assert (magic,cpu,subtype,kind)==(0xfeedfacf,0x100000c,0,2)
+    at=32;entry=None;segments=[]
+    for _ in range(ncmd):
+        cmd,n=struct.unpack_from('<II',b,at);assert n>=8 and at+n<=32+size
+        assert cmd not in (0xc,0x18,0x80000018,0x8000001f,0x20,0x80000023,0xe), 'Static bootstrap must not require dyld/libraries'
+        if cmd==0x19:
+            va,vs,off,fs,maxp,initp=struct.unpack_from('<4Q2I',b,at+24)
+            assert off+fs<=len(b);segments.append((va,vs,off,fs,initp))
+        if cmd==5:
+            assert struct.unpack_from('<II',b,at+8)==(6,68)
+            entry=struct.unpack_from('<Q',b,at+16+32*8)[0]
+        at+=n
+    assert entry is not None and any(va<=entry<va+fs and prot&4 for va,vs,off,fs,prot in segments)
+    return {'name':path.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'entry':hex(entry),'static_arm64_verified':True}
+
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--output',type=Path,required=True)
+    ap.add_argument('--work',type=Path,required=True)
+    a=ap.parse_args();assert sys.platform=='darwin','Native userland build runs in macOS Actions'
+    assert not a.work.exists();a.work.mkdir(parents=True);a.output.mkdir(parents=True,exist_ok=True)
+    src=ROOT/'src/hakios-8796'
+    expected=next(x['commit'] for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources'] if x['name']=='hakios-8796-reference')
+    assert subprocess.check_output(['git','-C',str(src),'rev-parse','HEAD'],text=True).strip()==expected
+    stage=(src/'userland/src/stage0.c').read_text()
+    stage=once(stage,'(void *)"/dev/md1"','(void *)"/dev/md0,c=1"')
+    stage=stage.replace('cannot mount /dev/md1 on /hakios','cannot mount bootstrap container 1 on /redwood')
+    init=(src/'userland/src/init.c').read_text()
+    init=once(init,'\tmount_cryptex("OS", ",c=1", devpath);\n\tmount_cryptex("App", ",c=2", devpath);',
+        '\tif (mount("apfs", "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
+        '\t\tprintf("NABU INIT: SystemOS mount failed: %s\\n", strerror(errno));\n'
+        '\t\treboot(RB_HALT); return;\n\t}\n'
+        '\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");\n')
+    init=once(init,'\tshow_system();\n\tmount_writable();',
+        '\tif (!flash_root_mode) { printf("NABU INIT: root switch did not complete\\n"); reboot(RB_HALT); return 1; }\n'
+        '\tshow_system();\n\tmount_writable();')
+    init=once(init,'\ttest_files();\n\ttest_writable();\n\ttest_memory();\n\ttest_processes();\n\ttest_dynamic();\n\ttest_devices();\n\ttest_time();',
+        '\tstruct stat cache;\n'
+        '\tcheck(stat("/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", &cache) == 0, "SystemOS dyld cache visible");\n'
+        '\tprintf("NABU INIT: Data is temporary RAM; disk Data has not been modified\\n");\n'
+        '\tif (failures) { printf("NABU INIT: required setup failed; launchd not started\\n"); reboot(RB_HALT); return 1; }')
+    sources={'stage0.c':stage,'init.c':init}
+    helper='''
+static void nabu_stage(unsigned phase,unsigned error)
+{
+    unsigned value=(phase<<16)|(error&0xffff);
+    (void)sysctlbyname("kern.nabu_userland_stage",NULL,NULL,&value,sizeof(value));
+}
+'''
+    stage=once(stage,'#include "mini.h"','#include "mini.h"\n'+helper)
+    stage=once(stage,'\t(void)argc, (void)argv;','\t(void)argc, (void)argv;\n\tnabu_stage(1,0);')
+    init=once(init,'#define PATTERN_SIZE',helper+'\n#define PATTERN_SIZE')
+    init=once(init,'\tcheck(synthetic_dir("/flash/redwood"),','\tnabu_stage(3,0);\n\tcheck(synthetic_dir("/flash/redwood"),')
+    init=once(init,'\tchdir("/");','\tnabu_stage(4,0);\n\tchdir("/");')
+    init=once(init,'\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");',
+        '\tnabu_stage(5,0);\n\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");')
+    init=once(init,'\tprintf("\\n=== init: process %d, started as %s ===\\n",',
+        '\tnabu_stage(2,0);\n\tprintf("\\n=== init: process %d, started as %s ===\\n",')
+    init=once(init,'\tconfigure_inject();','\tnabu_stage(6,0);\n\tconfigure_inject();')
+    init=once(init,'\t\texecve(argv[1], argv + 1, envp);',
+        '\t\tif (getpid()==1) nabu_stage(7,0);\n\t\texecve(argv[1], argv + 1, envp);\n'
+        '\t\tint exec_error=errno;\n\t\tif (getpid()==1) nabu_stage(8,(unsigned)exec_error);\n\t\terrno=exec_error;')
+    sources={'stage0.c':stage,'init.c':init}
+    for name,text in sources.items():(a.work/name).write_text(text)
+    clang=subprocess.check_output(['xcrun','--find','clang'],text=True).strip()
+    flags=[clang,'-target','arm64-apple-ios16.5','-Os','-ffreestanding','-fno-stack-protector','-fno-builtin',
+           '-Wall','-Wextra','-Wno-unused-function','-I'+str(src/'userland/libmini')]
+    objects=[]
+    for name in ('mini.c','start.S'):
+        obj=a.work/(name+'.o')
+        subprocess.run(flags+['-c',str(src/'userland/libmini'/name),'-o',str(obj)],check=True)
+        objects.append(str(obj))
+    binaries=[]
+    for name in ('stage0','init'):
+        out=a.output/name
+        subprocess.run(flags+['-static','-nostdlib','-Wl,-e,_start','-Wl,-pagezero_size,0x100000000',
+                             str(a.work/(name+'.c')),*objects,'-o',str(out)],check=True)
+        binaries.append(verify(out))
+    report={'source_commit':expected,'compiler':subprocess.check_output([clang,'--version'],text=True).splitlines()[0],
+            'binaries':binaries,'generated_sources':[{'name':n,'sha256':hashlib.sha256((a.work/n).read_bytes()).hexdigest()} for n in sources],
+            'scope':'Static source-built bootstrap only; no Apple payload included, no device execution or desktop claim'}
+    (a.output/'build-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
+
+
+if __name__=='__main__':main()

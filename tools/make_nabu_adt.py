@@ -46,7 +46,7 @@ def nvram():
     return bytes(bank)
 
 
-def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT):
+def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     cpus = []
@@ -69,7 +69,7 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT):
         'display-rotation': U32(0), 'nvram-bank-size': U32(8192),
         'nvram-bank-count': U32(1), 'nvram-current-bank': U32(0),
         'nvram-proxy-data': nvram(),
-    }, [Node('memory-map')])
+    }, [Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
     return Node('device-tree', {
         'model': STR('Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
         'platform-name': STR('nabu'), '#address-cells': U32(2), '#size-cells': U32(2),
@@ -120,8 +120,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
+    parser.add_argument('--bootstrap', action='store_true')
     args = parser.parse_args()
-    blob = make_tree(secrets.token_bytes(64), args.checkpoint).encode()
+    blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap).encode()
     root, children = parse(blob)
     nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
     assert len(nodes['cpus'][1]) == 8
@@ -131,6 +132,7 @@ def main():
     args.output.write_bytes(blob)
     report = {'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest(), 'cpu_count': 8,
               'checkpoint': args.checkpoint,
+              'bootstrap_ramdisk_required': args.bootstrap,
               'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
               'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
               'device_boot_validated': False, 'root_storage_driver_integrated': False}
