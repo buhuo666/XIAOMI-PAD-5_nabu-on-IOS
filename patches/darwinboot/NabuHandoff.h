@@ -101,14 +101,17 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
 // Bind only the kernel's explicit, unique and previously unset callback slot.
 // The report is copied into owned RAM and never tries to re-enter UEFI.
 STATIC EFI_STATUS
-NabuInstallKernelReport (KERNEL *Kernel, UINT64 Address, UINT64 ReportAddress,
+NabuInstallKernelReport (KERNEL *Kernel, UINT64 Address, UINT64 WindowSize, UINT64 ReportAddress,
                          UINT32 Checkpoint, UINT64 Video[6])
 {
   UINTN Index, Offset, Matches = 0;
   UINT8 *Data;
   UINT64 *Slot = NULL;
   UINT64 *Config;
-  if (!NABU_CHECKPOINT_VALID (Checkpoint) || (ReportAddress & (SIZE_16KB - 1)) != 0) {
+  if ((Checkpoint != 0 && !NABU_CHECKPOINT_VALID (Checkpoint)) ||
+      (ReportAddress & (SIZE_16KB - 1)) != 0 || Address == 0 ||
+      WindowSize < NABU_KERNEL_REPORT_RESERVE || Address > MAX_UINT64 - WindowSize ||
+      ReportAddress < Address || ReportAddress - Address > WindowSize - NABU_KERNEL_REPORT_RESERVE) {
     return EFI_INVALID_PARAMETER;
   }
   for (Index = 0; Index < Kernel->Count; ++Index) {
@@ -126,6 +129,8 @@ NabuInstallKernelReport (KERNEL *Kernel, UINT64 Address, UINT64 ReportAddress,
   Config = (UINT64 *)(UINTN)(ReportAddress + NABU_KERNEL_REPORT_CONFIG);
   CopyMem (Config + 8, Video, 6 * sizeof (UINT64));
   CopyMem (Config + 14, mDiagFont, 95 * sizeof (UINT64));
+  Config[109] = Address;
+  Config[110] = WindowSize;
   Slot[1] = ReportAddress;
   Slot[2] = Checkpoint;
   Slot[3] = Address - Kernel->Base;
@@ -152,7 +157,7 @@ NabuWriteHandoff (EFI_FILE_PROTOCOL *Root, KERNEL *Kernel, UINT64 Address,
     "MPIDR=%lx CNTFRQ=%lu EL=%lu MMFR0=%lx PFR0=%lx\n"
     "kernel_va=%lx allocated_pa=%lx allocated_bytes=%lx args_pa=%lx entry_pa=%lx\n"
     "video_pa=%lx width=%lu height=%lu row=%lu depth=%lu\nargs=%a\n"
-    "kernel_checkpoint=%u callback_pa=%lx (diagnostic stop, not a full boot)\n",
+    "kernel_checkpoint=%u callback_pa=%lx (0=return capture without forced checkpoint)\n",
     READ_SYSREG (mpidr_el1), READ_SYSREG (cntfrq_el0), DarwinCurrentEl () >> 2,
     READ_SYSREG (id_aa64mmfr0_el1), READ_SYSREG (id_aa64pfr0_el1),
     Kernel->Base, Address, WindowSize, ArgsAddress, Address + Kernel->Entry - Kernel->Base,

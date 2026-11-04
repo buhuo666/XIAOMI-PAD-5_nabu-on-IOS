@@ -4,7 +4,7 @@
    TrustCacheAddress = RamdiskAddress + RamdiskBytes;
    AddonAddress = ALIGN_VALUE (TrustCacheAddress + TrustCacheSize, SIZE_16KB);
    Used = ALIGN_VALUE (AddonAddress + AddonSize, SIZE_16KB) - Address;
-+  if (Nabu.Enabled && Nabu.Checkpoint != 0) {
++  if (Nabu.Enabled) {
 +    Nabu.ReportAddress = Address + Used;
 +    Used += NABU_KERNEL_REPORT_RESERVE;
 +  }
@@ -17,7 +17,7 @@
               (UINT8 *)Image + Kernel.Segments[Index].FileOffset, (UINTN)Kernel.Segments[Index].FileSize);
 +  }
 +  if (Nabu.ReportAddress != 0) {
-+    Status = NabuInstallKernelReport (&Kernel, Address, Nabu.ReportAddress, Nabu.Checkpoint, Video);
++    Status = NabuInstallKernelReport (&Kernel, Address, WindowSize, Nabu.ReportAddress, Nabu.Checkpoint, Video);
 +    if (EFI_ERROR (Status)) { goto Fail; }
    }
    Args = (DARWIN_BOOT_ARGS *)(UINTN)ArgsAddress;

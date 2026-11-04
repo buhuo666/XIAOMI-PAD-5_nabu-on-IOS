@@ -57,7 +57,7 @@ SECTIONS {
     assert symbols['kernel_report_start'] == 0
     subprocess.run(['llvm-objcopy', '-O', 'binary', str(elf), str(blob)], check=True)
     data = blob.read_bytes()
-    assert symbols['kernel_report_config'] + 109 * 8 <= len(data) <= symbols['kernel_report_stack_bottom']
+    assert symbols['kernel_report_config'] + 111 * 8 <= len(data) <= symbols['kernel_report_stack_bottom']
     assert symbols['kernel_report_stack_top'] <= 16384
     lines = [', '.join(f'0x{x:02x}' for x in data[i:i+16]) for i in range(0, len(data), 16)]
     a.output.parent.mkdir(parents=True, exist_ok=True)

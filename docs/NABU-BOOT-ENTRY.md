@@ -98,7 +98,17 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 2026-11-04 10:26:41 部署检查点 17 链，收据 `log/device/nabu-chain-20261104-102641/deployment.json`。10:27:27 的第五次临时启动绑定源码提交 `86bbb07a2c469f483f7c042dc11e6a718a1cee97`，实际命令为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-05\boot.img`。用户确认屏幕 REASON=2、CODE=`0000000000000011`，记录为用户文字证据。返回 Android 后回收 `handoff-19D57E84.txt`（7299 bytes，SHA-256 `53ba8b2398db50a9c8cf4ca6449efe3ddd26d943c7b45cbfa9ccb635894dbb21`）；30 份 GPT 元数据和 14 个受检引导分区哈希一致。运行收据与证据说明保存在该 run 目录。
 
-下一轮停止点选择 21。实际机器码 `0xfffffff00743f90c` 设置 w0=21，`0xfffffff00743f910` 调用 `_loader_checkpoint`，随后才调用 `machine_startup`。它覆盖控制台创建、PE_init_platform(TRUE)、启动 CPU 的时基／平台初始化和 ADT dram-base／dram-size 读取，但尚未进入 kernel_bootstrap 或副核调度。复用 v6 EFI，仅通过 ADT 改变停止点；成功报告应为 REASON=2、CODE=`0x15`。
+第六轮停止点选择 21。实际机器码 `0xfffffff00743f90c` 设置 w0=21，`0xfffffff00743f910` 调用 `_loader_checkpoint`，随后才调用 `machine_startup`。它覆盖控制台创建、PE_init_platform(TRUE)、启动 CPU 的时基／平台初始化和 ADT dram-base／dram-size 读取，但尚未进入 kernel_bootstrap 或副核调度。复用 v6 EFI，仅通过 ADT 改变停止点。
+
+2026-11-04 10:31:35 部署检查点 21 链，收据 `log/device/nabu-chain-20261104-103135/deployment.json`，运行记录为 `log/device/nabu-boot-20261104-06/`。用户文字确认 `XNU CALLBACK REACHED`、REASON=2、CODE=`0000000000000015`，已记入 `screen-observation.json` 和 `run.json`。返回 Android 后回收 `handoff-1A99B993.txt`（7299 bytes，SHA-256 `3a8433e8eb5e26e450b02b4e99ea0605c188d167468f1bd7b7462c134353e34b`）；30 份 GPT 元数据和 14 个受检引导分区哈希一致。
+
+### 第七轮：取消检查点停止并显示返回日志
+
+v7 EFI 在 checkpoint=0 时仍安装回调，只取消检查点主动停止。回调仅读取 loader 已分配窗口内、长度不超过 1536 KiB 的日志，扫描最后 64 KiB，并显示最多 40 行末尾文本。保留 REASON、CODE／ESR；REASON=1 显示异常寄存器，REASON=0 是一般内核返回，是否由 panic 或诊断定时器触发需要结合日志判断。
+
+`cpus=8` 与 `small_cores_after=0` 保留，加入 `loader_return_after=30`。该参数在内核 EARLY_BOOT 阶段建立定时任务；只有初始化和定时任务能够运行才可能返回屏幕报告，不能当作硬件看门狗或自动恢复 Android。原生 UFS 与 Data 挂载仍未接通。
+
+本地 `/home/buhuo/nabu16-efi-v7` 构建成功。UniXNU.efi 为 95,232 bytes，SHA-256 `abd0c4763a6535b450be7a88f6447ad07e98086130a0feb902b479f05f6452f0`；DarwinBoot.efi 为 32,768 bytes，SHA-256 `c70f661b30f0a261f0b2ce05bb07330e8e385f3768a5e23ca4bf917576aff80d`。回调 blob 为 3016 bytes，SHA-256 `b297dea327f520bc32fcac86f0bbaf9dbdad93aa53e56ad8cd8c37e84084820b`，8 个 Unicorn 场景和 12 个 binder ASan／UBSan 场景通过。原有 8796 ABI、13,644 个截断 ADT、5 个分配场景及 46 个检查点用例也通过。接手时已核对构建输入与当前源码、EFI 内嵌 blob 与测试记录一致；这些检查均不替代第七轮实机观察。
 
 ## 当前设备入口
 

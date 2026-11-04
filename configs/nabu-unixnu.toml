@@ -20,7 +20,7 @@ id = "nabu8796"
 title = "XNU 8796 - 8 CPU bring-up"
 type = "xnu"
 path = '\EFI\Nabu16\Payloads\kernel.macho'
-args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0"
+args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0 -enable_kprintf_spam loader_return_after=30"
 
 [[entry]]
 id = "reset"

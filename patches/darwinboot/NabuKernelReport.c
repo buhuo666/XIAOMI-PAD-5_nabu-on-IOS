@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Freestanding, position-independent screen report. No UEFI calls or log reads.
+// Freestanding screen report. Log reads are limited to the owned RAM window.
 #include <stdint.h>
 
 struct report_config {
   uint64_t incoming[8];
   uint64_t video[6];
   uint64_t font[95];
+  uint64_t owned_base, owned_bytes;
 };
-_Static_assert(sizeof(struct report_config) == 109 * 8, "report config ABI");
+_Static_assert(sizeof(struct report_config) == 111 * 8, "report config ABI");
 __attribute__((section(".data.config"), used))
 volatile struct report_config kernel_report_config = {0};
 
-static void text(const char *s, unsigned row, unsigned column, uint32_t color)
+static void draw(const char *s, uint64_t y, unsigned column, unsigned scale, uint32_t color)
 {
   uint64_t stride = kernel_report_config.video[2] / 4;
-  uint64_t y = kernel_report_config.video[4] / 4 + row * 56;
   volatile uint32_t *fb = (volatile uint32_t *)kernel_report_config.video[0];
-  for (; *s && column + 24 <= kernel_report_config.video[3]; ++s, column += 24) {
+  if (y + 12 * scale > kernel_report_config.video[4]) return;
+  for (; *s && column + 6 * scale <= kernel_report_config.video[3]; ++s, column += 6 * scale) {
     unsigned c = (unsigned char)*s;
     if (c < 32 || c > 126) c = '?';
     uint64_t glyph = kernel_report_config.font[c - 32];
@@ -25,12 +26,65 @@ static void text(const char *s, unsigned row, unsigned column, uint32_t color)
                                   : (glyph & 0xffffffffULL) >> ((gy - 6) * 5);
       for (unsigned gx = 0; gx < 5; ++gx) {
         if ((bits >> gx) & 1) {
-          for (unsigned dy = 0; dy < 4; ++dy)
-            for (unsigned dx = 0; dx < 4; ++dx)
-              fb[(y + gy * 4 + dy) * stride + column + gx * 4 + dx] = color;
+          for (unsigned dy = 0; dy < scale; ++dy)
+            for (unsigned dx = 0; dx < scale; ++dx)
+              fb[(y + gy * scale + dy) * stride + column + gx * scale + dx] = color;
         }
       }
     }
+  }
+}
+
+static void text(const char *s, unsigned row, unsigned column, uint32_t color)
+{
+  draw(s, kernel_report_config.video[4] / 4 + row * 56, column, 4, color);
+}
+
+static void log_tail(void)
+{
+  uint64_t address = kernel_report_config.incoming[0];
+  uint64_t length = kernel_report_config.incoming[1];
+  uint64_t owned = kernel_report_config.owned_base;
+  uint64_t bytes = kernel_report_config.owned_bytes;
+  uint64_t y = kernel_report_config.video[4] / 4 + 12 * 56;
+  unsigned rows = (kernel_report_config.video[4] - y) / 28;
+  unsigned columns = (kernel_report_config.video[3] - 24) / 12;
+  if (rows > 40) rows = 40;
+  if (columns > 128) columns = 128;
+  if (length == 0) { text("NO KERNEL LOG BYTES", 11, 24, 0xffffffff); return; }
+  if (!owned || !bytes || owned > UINT64_MAX - bytes || address < owned ||
+      address - owned >= bytes || length > bytes - (address - owned) ||
+      length > 1536 * 1024) {
+    text("KERNEL LOG RANGE REJECTED", 11, 24, 0xffff8000); return;
+  }
+  text("KERNEL LOG TAIL - HALTED", 11, 24, 0xffffffff);
+  if (!rows || !columns) return;
+  const volatile unsigned char *log = (const volatile unsigned char *)address;
+  uint64_t start = length > 65536 ? length - 65536 : 0;
+  uint64_t starts[40], count = 1;
+  unsigned col = 0;
+  starts[0] = start;
+  for (uint64_t i = start; i < length; ++i) {
+    unsigned c = log[i];
+    if (c == '\r') continue;
+    if (c == '\n' || ++col == columns) {
+      starts[count++ % 40] = i + 1;
+      col = 0;
+    }
+  }
+  unsigned shown = count < rows ? (unsigned)count : rows;
+  for (unsigned row = 0; row < shown; ++row) {
+    uint64_t at = starts[(count - shown + row) % 40];
+    char line[129];
+    unsigned n = 0;
+    while (at < length && n < columns) {
+      unsigned c = log[at++];
+      if (c == '\n') break;
+      if (c == '\r') continue;
+      line[n++] = c >= 32 && c <= 126 ? c : '?';
+    }
+    line[n] = 0;
+    draw(line, y + row * 28, 12, 2, 0xffffffff);
   }
 }
 
@@ -61,7 +115,7 @@ void kernel_report_main(void)
   // A fourth, magenta band means the kernel invoked this report stub.
   for (uint64_t y = height * 3 / 16; y < height / 4; ++y)
     for (uint64_t x = 0; x < width; ++x) fb[y * stride + x] = 0xffff00ff;
-  for (uint64_t y = height / 4; y < height / 4 + 12 * 56; ++y)
+  for (uint64_t y = height / 4; y < height; ++y)
     for (uint64_t x = 0; x < width; ++x) fb[y * stride + x] = 0xff000000;
   text("XNU CALLBACK REACHED", 0, 24, 0xff00ff00);
   if (kernel_report_config.incoming[2] == 2)
@@ -80,6 +134,6 @@ void kernel_report_main(void)
   number(exception ? "SP" : "X7", kernel_report_config.incoming[7], 7);
   number("LOG PA", kernel_report_config.incoming[0], 8);
   number("LOG BYTES", kernel_report_config.incoming[1], 9);
-  text("HALTED FOR DIAGNOSIS", 11, 24, 0xffffffff);
+  log_tail();
   __asm__ volatile ("dsb sy" ::: "memory");
 }

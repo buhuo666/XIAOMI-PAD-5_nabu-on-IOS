@@ -43,9 +43,13 @@ def main():
     fb, width, height, stride = 0x9c000000, 1600, 2560, 6400
     frame_size = stride * height
     results = []
-    for i, (base, reason, code, valid_video) in enumerate([
-            (0x181448000, 2, 12, True), (0x204000, 1, 0x96000004, True),
-            (0x281448000, 2, 5, False)]):
+    for i, (base, reason, code, valid_video, log_case) in enumerate([
+            (0x181448000, 2, 12, True, 'empty'), (0x204000, 1, 0x96000004, True, 'valid'),
+            (0x281448000, 2, 5, False, 'empty'), (0x181448000, 0, 0, True, 'long'),
+            (0x181448000, 0, 0, True, 'below-window'),
+            (0x181448000, 0, 0, True, 'past-window'),
+            (0x181448000, 0, 0, True, 'oversize'),
+            (0x181448000, 0, 0, True, 'overflow')]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
         uc.mem_write(base-4096, b'G'*4096)
@@ -57,13 +61,31 @@ def main():
         config = base + metadata['symbols']['kernel_report_config']
         video = [fb, 1, stride, width, height, 32 if valid_video else 16]
         uc.mem_write(config+64, struct.pack('<6Q95Q', *video, *font))
-        incoming = [0x180bc0000, 0, reason, code, 0x180448518, 0xdead0000, 0x18044ffff, 0xfffffff008001000]
+        owned, owned_bytes, log_address, log_length = 0x180000000, 0x2000000, 0x180bc0000, 0
+        log_data = b''
+        if log_case in ('valid', 'long'):
+            prefix = b'line\r\n' * (12000 if log_case == 'long' else 80)
+            log_data = prefix + b'wrapped: ' + b'x' * 400 + b'\x01\r\nPANIC: root device not available\n'
+            log_length = len(log_data)
+            uc.mem_map(log_address, (log_length+4095) & ~4095)
+            uc.mem_write(log_address, log_data)
+        elif log_case == 'below-window': log_address,log_length = owned-1,1
+        elif log_case == 'past-window': log_address,log_length = owned+owned_bytes-8,9
+        elif log_case == 'oversize': log_length = 1536*1024+1
+        elif log_case == 'overflow': owned,owned_bytes,log_length = (1<<64)-0x1000,0x2000,16
+        uc.mem_write(config+109*8, struct.pack('<2Q',owned,owned_bytes))
+        incoming = [log_address, log_length, reason, code, 0x180448518, 0xdead0000, 0x18044ffff, 0xfffffff008001000]
+        reads = []
+        if log_data:
+            def log_read(_uc, _access, address, size, _value, _data):
+                reads.append((address,size))
+            uc.hook_add(unicorn.UC_HOOK_MEM_READ, log_read, begin=log_address, end=log_address+len(log_data)-1)
         for n, value in enumerate(incoming):
             uc.reg_write(getattr(arm, f'UC_ARM64_REG_X{n}'), value)
         uc.reg_write(arm.UC_ARM64_REG_PSTATE, 0x3c5)
         # An inaccessible old virtual stack catches accidental pre-switch use.
         uc.reg_write(arm.UC_ARM64_REG_SP, 0xfffffff008001000)
-        uc.emu_start(base, base+metadata['symbols']['kernel_report_halt'], timeout=30000000, count=100000000)
+        uc.emu_start(base, base+metadata['symbols']['kernel_report_halt'], timeout=30000000, count=150000000)
         assert uc.reg_read(arm.UC_ARM64_REG_PC) == base+metadata['symbols']['kernel_report_halt']
         assert bytes(uc.mem_read(config, 64)) == struct.pack('<8Q', *incoming)
         assert bytes(uc.mem_read(base-4096,4096)) == bytes(uc.mem_read(base+16384,4096)) == b'G'*4096
@@ -72,14 +94,19 @@ def main():
         if valid_video:
             assert struct.unpack_from('<I',frame, (height*3//16)*stride)[0] == 0xffff00ff
             assert struct.unpack_from('<I',frame, (height//4)*stride)[0] == 0xff000000
-            y0, rows = height//4, 672
+            if log_data:
+                assert reads and min(p for p,n in reads) >= log_address + max(0,log_length-65536)
+                assert max(p+n for p,n in reads) <= log_address+log_length
+                log_y = height//4 + 12*56
+                assert b'\xff\xff\xff\xff' in frame[log_y*stride:]
+            y0, rows = height//4, height-height//4
             crop=frame[y0*stride:(y0+rows)*stride]
             rgb=bytearray(width*rows*3)
             rgb[0::3]=crop[2::4]; rgb[1::3]=crop[1::4]; rgb[2::3]=crop[0::4]
             png(a.output/f'callback-{i}.png',bytes(rgb),width,rows)
         else:
             assert frame == bytes(frame_size)
-        results.append({'base':hex(base),'reason':reason,'code':hex(code),'video_valid':valid_video,'passed':True})
+        results.append({'base':hex(base),'reason':reason,'code':hex(code),'video_valid':valid_video,'log_case':log_case,'passed':True})
     # Compile the exact production binder, with bounded host-owned stand-ins.
     prelude = r'''
 #include <stdint.h>
@@ -93,6 +120,7 @@ typedef size_t UINTN; typedef int EFI_STATUS;
 #define CONST const
 #define VOID void
 #define SIZE_16KB 16384
+#define MAX_UINT64 UINT64_MAX
 #define EFI_SUCCESS 0
 #define EFI_INVALID_PARAMETER 2
 #define EFI_COMPROMISED_DATA 33
@@ -112,24 +140,29 @@ int main(void){
  UINT64 pa=(UINT64)(uintptr_t)ram, dst=pa+16384, video[6]={1,2,3,4,5,6};
  KERNEL k={.Base=0xfffffff007004000ULL,.Count=1,.Segments={{0xfffffff007004000ULL,4096}}};
  UINT64 *slot=(UINT64 *)(ram+4096-32);
- assert(NabuInstallKernelReport(&k,pa,dst,5,video)==33);
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,5,video)==33);
  memcpy(slot,"XNULDRST",8);
- assert(NabuInstallKernelReport(&k,pa,dst,0,video)==2);
- assert(NabuInstallKernelReport(&k,pa,dst,6,video)==2);
- assert(NabuInstallKernelReport(&k,pa,dst+8,5,video)==2);
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,0,video)==0&&slot[2]==0&&slot[1]==dst);
+ slot[1]=slot[2]=slot[3]=0;
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,6,video)==2);
+ assert(NabuInstallKernelReport(&k,pa,65536,dst+8,5,video)==2);
  memcpy(ram,"XNULDRST",8);
- assert(NabuInstallKernelReport(&k,pa,dst,5,video)==33);memset(ram,0,8);
- slot[1]=1;assert(NabuInstallKernelReport(&k,pa,dst,5,video)==33);slot[1]=0;
- assert(NabuInstallKernelReport(&k,pa,dst,5,video)==0);
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,5,video)==33);memset(ram,0,8);
+ slot[1]=1;assert(NabuInstallKernelReport(&k,pa,65536,dst,5,video)==33);slot[1]=0;
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,5,video)==0);
  assert(slot[1]==dst&&slot[2]==5&&slot[3]==pa-k.Base);
  UINT64 *cfg=(UINT64 *)(uintptr_t)(dst+NABU_KERNEL_REPORT_CONFIG);
  assert(memcmp(cfg+8,video,sizeof(video))==0&&cfg[14]==42);
+ assert(cfg[109]==pa&&cfg[110]==65536);
  assert(memcmp((void *)(uintptr_t)dst,mNabuKernelReport,NABU_KERNEL_REPORT_CONFIG)==0);
  slot[1]=slot[2]=slot[3]=0;
- assert(NabuInstallKernelReport(&k,pa,dst,12,video)==0&&slot[2]==12);
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,12,video)==0&&slot[2]==12);
  slot[1]=slot[2]=slot[3]=0;
- assert(NabuInstallKernelReport(&k,pa,dst,45,video)==2);
- free(ram);puts("9 slot binding cases passed");return 0;
+ assert(NabuInstallKernelReport(&k,pa,65536,dst,45,video)==2);
+ assert(NabuInstallKernelReport(&k,pa,0,dst,12,video)==2);
+ assert(NabuInstallKernelReport(&k,pa,65536,pa+65536,12,video)==2);
+ assert(NabuInstallKernelReport(&k,UINT64_MAX-16384,65536,dst,12,video)==2);
+ free(ram);puts("12 slot binding cases passed");return 0;
 }
 '''
     src, exe = a.output/'binder.c', a.output/'binder'
