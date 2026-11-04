@@ -6,7 +6,9 @@
 
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
-最新实机结果：第四轮用户确认 `XNU CALLBACK REACHED`、`REASON=2`、`CODE=0xC`，证实启动 CPU 已进入早期 C 初始化，并从 CPU 拓扑解析返回。第三轮照片另已证明启用 MMU 后的检查点 5。八核参数保留，但副核与调度尚无运行证据。两轮返回 Android 后 GPT 和 14 个受检引导分区哈希一致。下一轮选择 `arm_vm_init()` 返回后的检查点 17，仍使用现有已验证内核与 EFI。
+最新实机结果：第五轮用户确认 `XNU CALLBACK REACHED`、`REASON=2`、`CODE=0x11`，证实启动 CPU 从 `arm_vm_init()` 返回；检查点 5、12 已分别确认启用 MMU 和早期 C 平台／CPU 拓扑初始化。八核参数保留，副核与调度尚无运行证据。返回 Android 后 GPT 和 14 个受检引导分区哈希一致。下一轮选择早期初始化末尾的检查点 21，仍使用现有已验证内核与 EFI。
+
+用户再次确认设备物理配置为 12 GB 扩容 RAM。当前约 7.89 GiB 是 loader 在现有固件内存图中整段分配并交给 XNU 的连续窗口，不能当作整机容量；后续目标仍是核对并利用所有可安全管理的 RAM，区分物理容量、固定与固件动态预留、loader 所有权和 XNU 实际管理量。
 
 2026-11-04 本地启动链更新：WSL Ubuntu 22.04、LLVM 18.1.8、Python 3.12.16 已成功构建 nabu DEBUG／NoSb 固件和两个 EFI 程序。临时 `boot.img` 为 3,616,768 bytes，SHA-256 `bca20de2c74522394c1b0005ca82ae5b03daeefb22a2f1cb7b221a40eecf1adc`，独立解包校验通过。5 个启动文件已写入现有 ESP，SHA-256 回读通过。首次实机启动到达 DarwinBoot 的退出 Boot Services 前交接阶段，EL1、19.2 MHz counter、1600×2560 framebuffer，成功分配 7.88671875 GiB 连续内存。返回 Android 后六个 LUN 的 GPT 元数据及所检查的引导分区 SHA-256 均与启动前一致，槽位仍为 A。首次记录本身未证明内核执行；后续通过三色条与内核回调继续定位，最新结果见上文及 [启动入口](NABU-BOOT-ENTRY.md)。
 
