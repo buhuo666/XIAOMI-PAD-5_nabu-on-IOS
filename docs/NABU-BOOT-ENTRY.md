@@ -2,7 +2,7 @@
 
 更新：2026-11-04，Asia/Shanghai。本文区分当前设备、固定源码和待验证候选。
 
-接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。第三次临时启动的照片已证明 XNU 执行至启用 MMU 后的检查点 5；C 初始化、副核启动与 UFS／Data 挂载仍待验证。系统区安装见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
+接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。第三轮照片证明 XNU 执行至启用 MMU 后的检查点 5，第四轮用户确认 CPU 拓扑解析后的检查点 12；副核启动、内存初始化与 UFS／Data 挂载仍待验证。系统区安装见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
 
 用户要求启动只能临时进行。核对设备与镜像后执行 `adb reboot bootloader`、`fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。设备操作已获本会话授权。
 
@@ -90,7 +90,11 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 `stage_nabu_boot_chain.py --checkpoint N` 将选定值写入 ADT 并记录在部署收据中，重复输出目录必须匹配原 ADT，防止意外改变已冻结的候选。WSL v6 构建通过；ADT 的 46 个检查点接受／拒绝用例、13,644 个截断输入、5 个分配场景、9 个实际 binder 场景和 3 个报告 blob 仿真场景均通过。报告 blob 与第三轮相同；UniXNU.efi SHA-256 为 `bb23ca127907b8b90359c479b25c84f6c5e67ba724c6cf49547bf21bac1f8c06`（95,232 bytes），DarwinBoot.efi 为 `25727a0474692c527b0ac6115a66cfacd5683996ea5281acdba06f1b04c0b214`（32,256 bytes）。
 
-2026-11-04 10:22:05 部署检查点 12 链，收据 `log/device/nabu-chain-20261104-102205/deployment.json`。10:22:42 的第四次临时启动绑定源码提交 `db9c8ea9df2bb025c83383656b59740dc0da6eba`，实际执行 `adb reboot bootloader`、`fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-04\boot.img`，发送与 Booting 均为 OKAY。冻结产物、主机报告和反汇编在 `log/device/nabu-boot-20261104-04/`；该轮屏幕结果与返回 Android 后核验仍待完成。
+2026-11-04 10:22:05 部署检查点 12 链，收据 `log/device/nabu-chain-20261104-102205/deployment.json`。10:22:42 的第四次临时启动绑定源码提交 `db9c8ea9df2bb025c83383656b59740dc0da6eba`，实际执行 `adb reboot bootloader`、`fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-04\boot.img`，发送与 Booting 均为 OKAY。冻结产物、主机报告和反汇编在 `log/device/nabu-boot-20261104-04/`。
+
+用户确认第四轮出现 `XNU CALLBACK REACHED`、REASON=2、CODE=`000000000000000C`，即检查点 12。此轮证据为用户文字确认，未收到新照片；确认早期 C 平台初始化与 CPU 拓扑解析完成，不证明副核启动或解析出的核心数量。返回 Android 后回收 `handoff-19E81857.txt`（7299 bytes，SHA-256 `277293c2012bc87a9524a172d3313a9ce1f2ff729356cd4d739e2284ad29e81d`），GPT 30 份元数据和 14 个受检引导分区哈希一致。`screen-observation.json` 与 `run.json` 已记录该证据及范围。
+
+下一候选通过 `stage_nabu_boot_chain.py --checkpoint 17` 选择 `arm_vm_init()` 之后的停止点，复用 v6 EFI 与原内核。实际机器码在 `0xfffffff00743f438` 调用 `_arm_vm_init`，`0xfffffff00743f43c` 将 17 放入 w0，`0xfffffff00743f440` 调用 `_loader_checkpoint`。成功报告应为 REASON=2、CODE=`0x11`；到达它表示该初始化例程返回，仍不能单独证明整段 RAM 已完成读写测试、八核已启动或 Data 已挂载。
 
 ## 当前设备入口
 
