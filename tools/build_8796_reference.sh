@@ -48,12 +48,13 @@ cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 : > "$PROJECT_ROOT/log/ci/project-patches.sha256"
-for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch nabu-export-contract.patch; do
+for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch loader-return-diagnostics.patch nabu-export-contract.patch; do
   git -C "$XNU_SRC" apply --check "$PROJECT_ROOT/patches/8796/$patch"
   git -C "$XNU_SRC" apply "$PROJECT_ROOT/patches/8796/$patch"
   shasum -a 256 "$PROJECT_ROOT/patches/8796/$patch" >> "$PROJECT_ROOT/log/ci/project-patches.sha256"
 done
 cd "$PROJECT_ROOT"
+python3 tools/check_return_diagnostics.py --tree "$XNU_SRC" --output log/ci/return-diagnostics-host
 python3 tools/check_nabu_export_contract.py --tree "$XNU_SRC" --output log/ci/nabu-export-contract.json
 export NABU_EXPORT_CONTRACT=20F66-37-v1
 export NABU_EXPORT_CONTRACT_ROOT="$PROJECT_ROOT"
@@ -76,7 +77,7 @@ report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device ima
         'project_patches':[{'path':'patches/8796/'+name,
           'sha256':hashlib.sha256((root/'patches/8796'/name).read_bytes()).hexdigest()}
           for name in ('pmap-nonmonitor-queries.patch','bcm2837-apple-iommu-query-returns.patch',
-                       'bcm2837-bootstrap-capacity.patch','generic-smp-diagnostics.patch',
+                       'bcm2837-bootstrap-capacity.patch','generic-smp-diagnostics.patch','loader-return-diagnostics.patch',
                        'nabu-export-contract.patch')],
         'export_contract':json.loads((root/'log/ci/nabu-export-contract.json').read_text())}
 generated=[]

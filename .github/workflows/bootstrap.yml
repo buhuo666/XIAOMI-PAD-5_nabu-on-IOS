@@ -46,6 +46,9 @@ jobs:
       - name: Verify compiled SMP and bootstrap capacity
         if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
         run: python3 tools/check_capacity_kernel.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/capacity-native
+      - name: Verify return diagnostics with native LLDB
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_return_diagnostics.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/return-diagnostics-native
       - name: Retain build logs and source-built kernel
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

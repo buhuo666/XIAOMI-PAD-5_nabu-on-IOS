@@ -1,0 +1,143 @@
+--- a/osfmk/arm64/loader_return.c
++++ b/osfmk/arm64/loader_return.c
+@@ -358,6 +358,53 @@
+ 			}
+ 		}
+ 	}
++}
++
++/* Diagnostics for the existing timed return; never changes its routing policy. */
++static bool loader_diag_enabled;
++static char loader_diag_initial[768], loader_diag_expired[768];
++static char loader_diag_route[160], loader_diag_callback[160];
++#if defined(GENERIC_GIC_V3_IRQ)
++extern uint64_t gic_timer_count[MAX_CPUS], gic_signal_count[MAX_CPUS];
++extern uint64_t gic_cpu_mpidr[MAX_CPUS];
++extern uint32_t gic_last_intid[MAX_CPUS];
++static uint64_t loader_diag_initial_timer[MAX_CPUS], loader_diag_initial_signal[MAX_CPUS];
++#endif
++
++static void
++loader_diag_args(char *line, size_t size, const char *stage,
++    uint32_t cpu, boolean_t cpu_found, uint32_t as_panic, boolean_t panic_found)
++{
++	snprintf(line, size,
++	    "nabu_diag %s on cpu %d: return_cpu found=%u value=%u return_panic found=%u value=%u args=%.607s\n",
++	    stage, cpu_number(), (unsigned)cpu_found, cpu, (unsigned)panic_found, as_panic, PE_boot_args());
++}
++
++static void
++loader_diag_append(void)
++{
++	if (!loader_diag_enabled) {
++		return;
++	}
++	loader_log_line("\n--- nabu return diagnostic ---\n");
++	loader_log_line(loader_diag_initial);
++	loader_log_line(loader_diag_expired);
++	loader_log_line(loader_diag_route);
++	loader_log_line(loader_diag_callback);
++#if defined(GENERIC_GIC_V3_IRQ)
++	for (unsigned cpu = 0; cpu < MAX_CPUS; ++cpu) {
++		char line[192];
++		snprintf(line, sizeof(line),
++		    "nabu_diag cpu %u mpidr=0x%llx timer=%llu->%llu sgi=%llu->%llu last=%u\n",
++		    cpu, (unsigned long long)os_atomic_load(&gic_cpu_mpidr[cpu], relaxed),
++		    (unsigned long long)loader_diag_initial_timer[cpu],
++		    (unsigned long long)os_atomic_load(&gic_timer_count[cpu], relaxed),
++		    (unsigned long long)loader_diag_initial_signal[cpu],
++		    (unsigned long long)os_atomic_load(&gic_signal_count[cpu], relaxed),
++		    os_atomic_load(&gic_last_intid[cpu], relaxed));
++		loader_log_line(line);
++	}
++#endif
+ }
+ 
+ void
+@@ -397,6 +444,7 @@
+ 			loader_log_putc(*c);
+ 		}
+ 	}
++	loader_diag_append();
+ 	loader_jump(0, 0);
+ }
+ 
+@@ -422,6 +470,12 @@
+ static void
+ loader_return_test(void *as_panic)
+ {
++	if (loader_diag_enabled) {
++		snprintf(loader_diag_callback, sizeof(loader_diag_callback),
++		    "nabu_diag callback on cpu %d mode=%s\n", cpu_number(),
++		    as_panic != (void *)1 ? "requested-panic" : "normal-return");
++		loader_log_line(loader_diag_callback);
++	}
+ 	if (as_panic != (void *)1) {
+ 		panic("return_panic: the panic that was asked for, on cpu %d", cpu_number());
+ 	}
+@@ -433,11 +487,12 @@
+ {
+ 	static const char banner[] = "\n--- loader_return_after expired ---\n";
+ 	uint32_t cpu = 0, as_panic = 0;
++	boolean_t cpu_found, panic_found;
+ 
+ 	for (const char *c = banner; *c; c++) {
+ 		loader_log_putc(*c);
+ 	}
+-	PE_parse_boot_argn("return_panic", &as_panic, sizeof(as_panic));
++	panic_found = PE_parse_boot_argn("return_panic", &as_panic, sizeof(as_panic));
+ 	if (!as_panic) {
+ 		hakios_var_save_on_return();   /* the data volume kept, while the system is still whole */
+ 		hakios_adreno_stop();          /* a GPU kept for the system is given back while there is a thread to wait in */
+@@ -445,12 +500,25 @@
+ 		hakios_adsp_stop();            /* and the audio DSP */
+ 		hakios_mpss_stop();            /* and the modem */
+ 	}
+-	if (PE_parse_boot_argn("return_cpu", &cpu, sizeof(cpu)) && cpu <= (uint32_t)ml_get_max_cpu_number() &&
+-	    cpu_xcall((int)cpu, loader_return_test, (void *)(uintptr_t)(as_panic ? 2 : 1)) == KERN_SUCCESS) {
+-		for (;;) {
+-			delay_for_interval(1000, NSEC_PER_MSEC);        /* that processor ends it */
+-		}
+-	}
++	cpu_found = PE_parse_boot_argn("return_cpu", &cpu, sizeof(cpu));
++	loader_diag_args(loader_diag_expired, sizeof(loader_diag_expired), "expired",
++	    cpu, cpu_found, as_panic, panic_found);
++	loader_log_line(loader_diag_expired);
++	if (cpu_found && cpu <= (uint32_t)ml_get_max_cpu_number()) {
++		snprintf(loader_diag_route, sizeof(loader_diag_route),
++		    "nabu_diag xcall requested target=%u from cpu=%d\n", cpu, cpu_number());
++		loader_log_line(loader_diag_route);
++		kern_return_t result = cpu_xcall((int)cpu, loader_return_test, (void *)(uintptr_t)(as_panic ? 2 : 1));
++		snprintf(loader_diag_route, sizeof(loader_diag_route),
++		    "nabu_diag xcall target=%u result=0x%x\n", cpu, result);
++		loader_log_line(loader_diag_route);
++		if (result == KERN_SUCCESS) {
++			for (;;) {
++				delay_for_interval(1000, NSEC_PER_MSEC);        /* that processor ends it */
++			}
++		}
++	}
++	loader_log_line("nabu_diag local fallback\n");
+ 	loader_return_test((void *)(uintptr_t)(as_panic ? 2 : 1));
+ }
+ 
+@@ -464,6 +532,19 @@
+ 	if (!PE_parse_boot_argn("loader_return_after", &seconds, sizeof(seconds)) || seconds == 0) {
+ 		return;
+ 	}
++	uint32_t cpu = 0, as_panic = 0;
++	boolean_t cpu_found = PE_parse_boot_argn("return_cpu", &cpu, sizeof(cpu));
++	boolean_t panic_found = PE_parse_boot_argn("return_panic", &as_panic, sizeof(as_panic));
++	loader_diag_enabled = true;
++	loader_diag_args(loader_diag_initial, sizeof(loader_diag_initial), "init",
++	    cpu, cpu_found, as_panic, panic_found);
++	loader_log_line(loader_diag_initial);
++#if defined(GENERIC_GIC_V3_IRQ)
++	for (unsigned i = 0; i < MAX_CPUS; ++i) {
++		loader_diag_initial_timer[i] = os_atomic_load(&gic_timer_count[i], relaxed);
++		loader_diag_initial_signal[i] = os_atomic_load(&gic_signal_count[i], relaxed);
++	}
++#endif
+ 	thread_call_t call = thread_call_allocate(loader_return_timer, NULL);
+ 	clock_interval_to_deadline(seconds, NSEC_PER_SEC, &deadline);
+ 	thread_call_enter_delayed(call, deadline);
