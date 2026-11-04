@@ -4,6 +4,8 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
+当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
+
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
 最新实机结果：第七轮照片显示 `GenericARMPE: 8 of 8 processors are running`，CPU 3–7 逐个 online／initCPU，以及 MiniIOMobileFramebuffer 初始化。返回报告 REASON=0、CODE=0，日志长度 `0x4B86`（19,334 bytes）。这已提供副核执行和八核计数的板上证据，但尚无各核 SGI／timer 增长、跨核调度或 TLB 验收结果。照片末尾没有可见的定时器到期／panic 标记，返回原因仍未单独确认。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。

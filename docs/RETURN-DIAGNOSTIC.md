@@ -1,5 +1,7 @@
 # 定时返回与 CPU 7 诊断
 
+**当前状态：2026-11-04，用户要求暂缓此问题，优先进入桌面。** 第九轮的新证据、剩余线索及恢复步骤已单独保存到 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。下文保留调查过程，不再作为当前待执行任务。
+
 2026-11-04，第八次临时启动照片确认 `TIMER MARKER: YES`，但 `PANIC BUFFER: NOT SEEN`，也未找到预期的 `return_panic ... on cpu 7`。仍显示八核在线与 framebuffer 初始化。REASON=0、CODE=0、LOG BYTES=`0x4B86`。这证明提供给报告器的日志包含定时器到期标记，不能据此认定 CPU 7 主动 panic 成功。
 
 照片保存在 `log/device/nabu-boot-20261104-08/screen-timer-no-panic.jpg`，SHA-256 `bcfa90e120044a1d1ad33fcab52cce9615a107f595b5b713b3154ea865a2bcef`。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。新增交接日志 `handoff-19EBB78D.txt`（7424 bytes，SHA-256 `e66f9e4e23f8ea28670a3ae1c6035ed130e8dc4bc9a29779515ab9f429df1da4`）包含完整的 `loader_return_after=30 return_cpu=7 return_panic=1`。这确认 loader 的交接输入，尚不证明定时到期时内核仍读取相同内容。
