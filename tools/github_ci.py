@@ -32,7 +32,7 @@ def main():
     api_opener = urllib.request.build_opener(proxy, NoRedirect())
     download_opener = urllib.request.build_opener(proxy)
     headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
-               'User-Agent': 'nabu16-bootstrap'}
+               'User-Agent': 'nabu16-bootstrap', 'Cache-Control': 'no-cache'}
 
     def api(path):
         request = urllib.request.Request('https://api.github.com/repos/' + REPOSITORY + '/' + path, headers=headers)
@@ -60,8 +60,17 @@ def main():
     else:
         run = api('actions/runs?branch=nabu16-bootstrap&per_page=1')['workflow_runs'][0]
     run_id, attempt = run['id'], run['run_attempt']
+    # The aggregate run endpoint can retain "queued" after a runner-acquisition
+    # failure. Read the named attempt and individual jobs before reporting it.
+    aggregate_status = {key: run[key] for key in ['status', 'conclusion']}
+    run = api(f'actions/runs/{run_id}/attempts/{attempt}')
+    assert (run['id'], run['run_attempt']) == (run_id, attempt)
     jobs = api(f'actions/runs/{run_id}/attempts/{attempt}/jobs')['jobs']
+    jobs = [api(f'actions/jobs/{job["id"]}') for job in jobs]
+    assert all(job['run_id'] == run_id and job['run_attempt'] == attempt for job in jobs)
     summary = {key: run[key] for key in ['id', 'run_attempt', 'status', 'conclusion', 'head_sha', 'html_url']}
+    if aggregate_status != {key: run[key] for key in aggregate_status}:
+        summary['stale_aggregate_status'] = aggregate_status
     summary['jobs'] = [{'id': job['id'], 'status': job['status'], 'conclusion': job['conclusion'],
                         'steps': [{'name': step['name'], 'status': step['status'], 'conclusion': step['conclusion']}
                                   for step in job['steps']]} for job in jobs]
