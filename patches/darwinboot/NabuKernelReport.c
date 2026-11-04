@@ -91,6 +91,8 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 {
   struct selected_lines groups[5];
   for (unsigned g = 0; g < 5; ++g) groups[g].count = 0;
+  struct selected_lines stacks;
+  stacks.count = 0;
   const char *labels[5] = {"SPRINGBOARD: FIRST / LAST LOG LINES",
     "BACKBOARDD: FIRST / LAST LOG LINES", "RUNNINGBOARDD: FIRST / LAST LOG LINES",
     "DISPLAY / SURFACES: FIRST / LAST LOG LINES", "DYLD / EXIT: FIRST / LAST LOG LINES"};
@@ -102,11 +104,14 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 #define HAS(s) (find_marker(log + start, n, (s)) < n)
     if (HAS("NABU USERLAND:")) status = start;
     if (HAS("IO reads=")) reads = start;
-    if (HAS("SpringBoard")) select_line(&groups[0], start);
-    if (HAS("backboardd")) select_line(&groups[1], start);
-    if (HAS("runningboardd")) select_line(&groups[2], start);
-    if (HAS("MiniIOMobileFramebuffer") || HAS("MiniIOSurface")) select_line(&groups[3], start);
-    if (HAS("Library not loaded") || HAS("exit reason") || HAS("dyld:")) select_line(&groups[4], start);
+    if (HAS("ustacks:")) select_line(&stacks, start);
+    else {
+      if (HAS("SpringBoard")) select_line(&groups[0], start);
+      if (HAS("backboardd")) select_line(&groups[1], start);
+      if (HAS("runningboardd")) select_line(&groups[2], start);
+      if (HAS("MiniIOMobileFramebuffer") || HAS("MiniIOSurface")) select_line(&groups[3], start);
+      if (HAS("Library not loaded") || HAS("exit reason") || HAS("dyld:")) select_line(&groups[4], start);
+    }
 #undef HAS
     start = end < length ? end + 1 : length;
   }
@@ -115,12 +120,18 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
   if (reads < length && used < rows)
     used += draw_log_line(log, length, reads, y + used * 28, rows - used, columns);
   for (unsigned g = 0; g < 5 && used < rows; ++g) {
-    draw(labels[g], y + used++ * 28, 12, 2, 0xffffff00);
-    unsigned count = groups[g].count < 3 ? groups[g].count : 3;
+    const struct selected_lines *selected = &groups[g];
+    const char *label = labels[g];
+    if (g == 2 && stacks.count) {
+      selected = &stacks;
+      label = "RENDER THREAD STACKS: FIRST / LAST LOG LINES";
+    }
+    draw(label, y + used++ * 28, 12, 2, 0xffffff00);
+    unsigned count = selected->count < 3 ? selected->count : 3;
     if (!count && used < rows)
       draw("NO MATCH IN CAPTURED LOG", y + used++ * 28, 12, 2, 0xffffffff);
     for (unsigned i = 0; i < count && used < rows; ++i)
-      used += draw_log_line(log, length, groups[g].at[i], y + used * 28, rows - used, columns);
+      used += draw_log_line(log, length, selected->at[i], y + used * 28, rows - used, columns);
   }
 }
 

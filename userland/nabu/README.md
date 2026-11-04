@@ -71,3 +71,5 @@ macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`�
 第十四轮后续照片确认运行到 lsd PID22，15,502 次存储读取无失败，正常定时返回；缓存目录修改已使用户态越过原先的立即退出，但尚无桌面证据。Android 回收及分区核验完成。三个桌面核心任务的实际 plist 保留启动条件，下一轮保持本 RAM 包和内核，仅增强 EFI 返回报告，以便看到早期桌面服务日志。详见 [桌面服务观测](../../docs/DESKTOP-SERVICES-BRINGUP.md)。
 
 第十五轮已于 2026-11-04 15:28:47（Asia/Shanghai）执行，`fastboot boot` 的发送和 Booting 成功。此次仅更换 DarwinBoot 的返回报告，内核与本 RAM 包逐字节保持第十四轮版本，等待新的桌面服务日志摘要照片；尚未确认桌面。证据目录 `log/device/nabu-boot-20261104-15/`。
+
+第十五轮照片现已确认三个桌面核心进程运行，但没有首帧证据。第十六轮 RAM 包为 `nabu-bootstrap-v4`，只给 backboardd 增加 `CA_FORCE_TIMER=1`，保留原启动条件和其他全部内容；原版 QuartzCore 已验证支持此开关。内核不变，额外打开一次现有渲染线程栈采样。具体输入哈希、原版 selector 语义与测试边界见 [显示刷新路径](../../docs/DISPLAY-CLOCK-BRINGUP.md)。

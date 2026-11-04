@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十四轮用户态已持续运行到 `lsd[22]`，读取 15,502 次无失败，八核 timer／SGI 计数均增长，并由设定的定时回调正常返回。尚无 SpringBoard／backboardd 就绪或实际桌面证据，lsd 的 CPU-monitor 权限提示不能单独解释阻塞。返回 Android 后 30 份 GPT 元数据及 14 个受检引导分区一致。实际 APFS 启动项已复核，未发现三个桌面核心服务被禁用。第十五轮仅更新返回画面，单列完整日志里的桌面服务首尾消息；本地 EFI 构建、11 个仿真场景和 12 个 binder 检查通过。2026-11-04 15:28:47（Asia/Shanghai）临时启动的发送和 Booting 成功，357 份冻结证据位于 `log/device/nabu-boot-20261104-15/`，当前等待屏幕结果。详见 [桌面服务观测](DESKTOP-SERVICES-BRINGUP.md)。
+最新主线结果：第十五轮已确认 SpringBoard PID5、backboardd PID8、runningboardd PID4 实际运行，backboardd 已调用显示用户客户端；读取 15,533 次无失败，正常定时返回，尚无首帧／桌面证据。原版符号确认 selector 50／84 分别是亮度校正／对比度设置，当前驱动虽忽略但返回成功，不能直接当成阻塞原因。SpringBoard 的非 fatal wakeups 警告也不直接终止任务。第十六轮候选通过 backboardd 的 `CA_FORCE_TIMER=1` 验证刷新通知路径，并用现有内核在90秒采集一次渲染线程栈；包内单项环境修改、APFS回读、原版分支仿真和新EFI检查均通过，待实机验证。详见 [显示刷新路径](DISPLAY-CLOCK-BRINGUP.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

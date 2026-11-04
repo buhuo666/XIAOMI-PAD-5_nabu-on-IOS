@@ -23,5 +23,8 @@
     "com.apple.SpringBoard"
   ],
   "additional_deny": ["purplebuddy", "mobileactivation"],
+  "environment_overrides": {
+    "com.apple.backboardd": {"CA_FORCE_TIMER": "1"}
+  },
   "scope": "Candidate selection from the actual 20F66 plists; desktop execution not yet verified"
 }

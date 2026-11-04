@@ -56,6 +56,14 @@ def main():
     for p in (root/'LaunchDaemons').glob('*.plist'):
         assert not any(x in p.name for x in jobs['additional_deny'])
         plistlib.loads(p.read_bytes())
+    for label,overrides in jobs.get('environment_overrides',{}).items():
+        assert label in jobs['run_at_boot'] and isinstance(overrides,dict)
+        assert all(isinstance(k,str) and isinstance(v,str) and k and '=' not in k and
+                   '\0' not in k+v for k,v in overrides.items())
+        path=root/'LaunchDaemons'/(label+'.plist')
+        job=plistlib.loads(path.read_bytes())
+        job.setdefault('EnvironmentVariables',{}).update(overrides)
+        path.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -98,7 +106,10 @@ def main():
     assert target.stat().st_size<=256*1024*1024
     report={'bytes':target.stat().st_size,'sha256':digest(target),'containers':[{'name':p.name,'bytes':p.stat().st_size,'sha256':digest(p)} for p in images],
             'source_programs':build,'input_metadata_sha256':digest(a.inputs/'inputs.json'),
-            'jobs':len(list((root/'LaunchDaemons').glob('*.plist'))),'temporary_data':True,'setup_assistant_skipped_in_seed':True,
+            'jobs':len(list((root/'LaunchDaemons').glob('*.plist'))),
+            'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
+            'environment_overrides':jobs.get('environment_overrides',{}),
+            'temporary_data':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':False,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}

@@ -52,7 +52,8 @@ def main():
             (0x181448000, 0, 0, True, 'overflow'),
             (0x181448000, 0, 0, True, 'desktop'),
             (0x181448000, 0, 0, True, 'desktop-empty'),
-            (0x181448000, 0, 0, True, 'desktop-wrap')]):
+            (0x181448000, 0, 0, True, 'desktop-wrap'),
+            (0x181448000, 0, 0, True, 'desktop-stacks')]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
         uc.mem_write(base-4096, b'G'*4096)
@@ -91,6 +92,10 @@ def main():
                 if log_case=='desktop-wrap':log_data+=b'SpringBoard: '+b'x'*400+b'\x01\r\n'
                 log_data+=(b'SpringBoard: last event\nbackboardd: last event\nrunningboardd: last event\n'
                            b'MiniIOSurface: last display\n')
+            if log_case=='desktop-stacks':
+                log_data+=(b'ustacks: backboardd[8] 2 threads, shared cache slide 0x10000\n'
+                           b'ustacks: thread render-server: 0x111 0x222\n'
+                           b'ustacks: thread sync: 0x333 0x444\n')
             log_data+=b'NABU USERLAND: phase=7 errno=0\nIO reads=15502 failures=0\nSpringBoar'
             log_length=len(log_data)
             uc.mem_map(log_address,(log_length+4095)&~4095)
@@ -154,10 +159,15 @@ def main():
                     else:
                         # This first event is over 64 KiB before the tail.
                         glyphs_match('SpringBoard: first event',12,log_y+112,2,0xffffffff)
-                        if log_case=='desktop':
+                        if log_case in ('desktop','desktop-stacks'):
                             glyphs_match('SpringBoard: last event',12,log_y+140,2,0xffffffff)
                             glyphs_match('backboardd: first event',12,log_y+196,2,0xffffffff)
-                            glyphs_match('dyld: cache is available',12,log_y+448,2,0xffffffff)
+                            if log_case=='desktop':
+                                glyphs_match('dyld: cache is available',12,log_y+448,2,0xffffffff)
+                            else:
+                                glyphs_match('RENDER THREAD STACKS: FIRST / LAST LOG LINES',12,log_y+252,2,0xffffff00)
+                                glyphs_match('ustacks: backboardd[8] 2 threads, shared cache slide 0x10000',12,log_y+280,2,0xffffffff)
+                                glyphs_match('ustacks: thread sync: 0x333 0x444',12,log_y+336,2,0xffffffff)
                         else:
                             glyphs_match('>',12+127*12,log_y+168,2,0xffffffff)
                             glyphs_match('SpringBoard: last event',12,log_y+196,2,0xffffffff)
