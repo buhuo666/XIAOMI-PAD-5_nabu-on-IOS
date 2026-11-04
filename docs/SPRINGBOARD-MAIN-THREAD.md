@@ -75,3 +75,5 @@
 下一轮保持内核、bootstrap.apfs 和 120 秒返回窗口，将采样目标改为 `lsd`。现有内核可枚举至多八个同名进程、每个取前十二个可采样线程。由于 mobile 和 system 服务可能同名，报告现将每条线程绑定到它之前的进程 PID／slide／uptime 头，并在去重时保留该归属；环形日志缺口和追加 msgbuf 开始处会清空当前头，孤立线程标记 `THREAD SAMPLE HEADER NOT CAPTURED`。紧凑和展开模式均保留归属；全屏至多十二条线程，容量不足时显示遗漏提示。
 
 最终回调为 7,888 bytes，SHA-256 `d2009328cc80a89643320b6398653627eb332fbce12aa7622a57a10f9e47f2c9`，已通过 20 个机器码仿真场景和 12 个实际 binder 的 ASan／UBSan 场景。覆盖不同 PID／slide、同 PID 不同时间、两种日志片段边界、重复消息、长行和容量上限，并逐像素核对预期文本。最终 DarwinBoot.efi 为 37,888 bytes，SHA-256 `6cdebde7bfae67fc64798d7961b4a1a7b3be90812c951763f2e6ce90d147dbf1`，内嵌回调与测试版本一致，ABI／handoff 检查通过。UniXNU、内核、bootstrap 和 boot.img 沿用第十八轮字节。部署和实机结果待后续回执。
+
+第十九轮已于 `2026-11-04T18:43:05.646233+08:00` 执行临时 `fastboot boot`，发送和 Booting 均成功。部署收据为 `log/device/nabu-chain-20261104-184208/deployment.json`，六个文件回读一致；启动前核对 30 份 GPT 元数据并记录 14 个引导分区哈希。73 份输入／验证文件和确切 boot.img 已冻结于 `log/device/nabu-boot-20261104-19/`，源提交 `8997d02ff2c2fa222fbd0a669f45360ad6015548`。目前只确认启动命令成功，等待约两分钟后的完整线程报告照片，随后恢复 Android 并执行该轮 `--collect`。
