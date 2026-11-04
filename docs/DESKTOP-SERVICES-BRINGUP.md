@@ -26,3 +26,5 @@ SpringBoard 保留 diagnostics 排除条件和 Clarity 模式排除条件；冻�
 5848 字节报告 blob（SHA-256 `1ca8232dc2a0c124d2a02a71627e4868024d43cbe8a79395fb3aee2b633753dc`）通过 11 个真实机器码仿真场景：旧异常／范围检查、超过 64 KiB 的早期服务消息、无匹配、不完整标记和长行截断；验证了日志读边界、framebuffer 保护区及预期文字像素。12 个实际 binder 的 ASan／UBSan 场景也通过。
 
 本地 WSL／LLVM 18 已完整构建新 DarwinBoot.efi，为 35,840 bytes，SHA-256 `8e4ce35618a784b0853e31ceadcb4e43f1c03aa68442c7eeedbf8a08f49f8601`，内嵌 blob 与仿真版本逐字节一致。ABI 和 ADT／handoff 检查通过。UniXNU.efi 使用第十四轮的确切字节；内核、RAM 包、boot.img 和启动参数也保持第十四轮版本。实际报告和桌面状态待第十五轮照片确认。
+
+2026-11-04 15:27:10 完成六个 ESP 文件部署与哈希回读，收据 `log/device/nabu-chain-20261104-152710/deployment.json`。15:28:47 执行第十五轮临时启动，发送和 Booting 均为 OKAY（Asia/Shanghai），源提交 `535b5f6786a9903807e7710c7f50d4099ae2cef7`。357 份冻结输入／检查文件及 boot.img、run.json 保存于 `log/device/nabu-boot-20261104-15/`。下一输入为约两分钟后的完整屏幕，重点为各黄色服务标题下的日志；拍照后恢复 Android，再对同目录执行 `--collect`。当前尚未取得本轮报告或桌面执行证据。
