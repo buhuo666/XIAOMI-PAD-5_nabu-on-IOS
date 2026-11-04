@@ -11,7 +11,9 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 using thread_call_param_t=void *;
 struct Call { void (*callback)(void *,void *); };
 using thread_call_t=Call *;
