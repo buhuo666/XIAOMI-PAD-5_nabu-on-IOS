@@ -67,3 +67,5 @@ macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`�
 第十三轮后续照片已确认 phase 7，并出现原版 launchd/dyld 的依赖解析错误：找不到 `libSystem.B.dylib`、`no dyld cache`，PID 1 退出。第十二轮的初始化检查阻塞已被越过；尚未进入 launchd 服务或桌面。恢复 Android 回收已完成，GPT／受检引导分区一致。第十四轮只调整 PID1 launchd 的 `DYLD_SHARED_CACHE_DIR`，使用已有 SystemOS 缓存的真实路径；具体原版反汇编、源码条件和验证边界见 [缓存定位记录](../../docs/DYLD-CACHE-BRINGUP.md)。
 
 第十四轮已于 2026-11-04 14:51:47（Asia/Shanghai）执行临时启动，发送与 Booting 成功。新 init 来自全部通过的 Actions `41787286981`，RAM 包为 `artifacts/nabu-bootstrap-v3/bootstrap.apfs`，内核保持第十三轮的确切字节。完整冻结证据位于 `log/device/nabu-boot-20261104-14/`，当前等待屏幕观察后再回收；不能由 fastboot 成功认定缓存或桌面已经运行。
+
+第十四轮后续照片确认运行到 lsd PID22，15,502 次存储读取无失败，正常定时返回；缓存目录修改已使用户态越过原先的立即退出，但尚无桌面证据。Android 回收及分区核验完成。三个桌面核心任务的实际 plist 保留启动条件，下一轮保持本 RAM 包和内核，仅增强 EFI 返回报告，以便看到早期桌面服务日志。详见 [桌面服务观测](../../docs/DESKTOP-SERVICES-BRINGUP.md)。

@@ -53,6 +53,77 @@ static uint64_t find_marker(const volatile unsigned char *log, uint64_t length,
   return length;
 }
 
+struct selected_lines { uint64_t at[3]; unsigned count; };
+
+static void select_line(struct selected_lines *lines, uint64_t at)
+{
+  if (lines->count < 3) lines->at[lines->count] = at;
+  else { lines->at[1] = lines->at[2]; lines->at[2] = at; }
+  ++lines->count;
+}
+
+static unsigned draw_log_line(const volatile unsigned char *log, uint64_t length,
+    uint64_t at, uint64_t y, unsigned rows, unsigned columns)
+{
+  unsigned used = 0;
+  while (used < rows && used < 2 && at < length) {
+    char line[129]; unsigned n = 0, ended = 0;
+    while (at < length && n < columns) {
+      unsigned c = log[at++];
+      if (c == '\n') { ended = 1; break; }
+      if (c != '\r') line[n++] = c >= 32 && c <= 126 ? c : '?';
+    }
+    if (!ended && at < length && log[at] != '\n' &&
+        (used + 1 == 2 || used + 1 == rows) && n) line[n - 1] = '>';
+    line[n] = 0;
+    draw(line, y + used * 28, 12, 2, 0xffffffff);
+    ++used;
+    if (ended) break;
+  }
+  return used;
+}
+
+/* The log tail can be dominated by unrelated repeated messages. Retain each
+ * selected service's first and last two lines across the entire validated log.
+ * These are log matches, not a process inventory or a readiness claim. */
+static void desktop_log(const volatile unsigned char *log, uint64_t length,
+    uint64_t y, unsigned rows, unsigned columns)
+{
+  struct selected_lines groups[5];
+  for (unsigned g = 0; g < 5; ++g) groups[g].count = 0;
+  const char *labels[5] = {"SPRINGBOARD: FIRST / LAST LOG LINES",
+    "BACKBOARDD: FIRST / LAST LOG LINES", "RUNNINGBOARDD: FIRST / LAST LOG LINES",
+    "DISPLAY / SURFACES: FIRST / LAST LOG LINES", "DYLD / EXIT: FIRST / LAST LOG LINES"};
+  uint64_t status = length, reads = length;
+  for (uint64_t start = 0; start < length;) {
+    uint64_t end = start;
+    while (end < length && log[end] != '\n') ++end;
+    uint64_t n = end - start;
+#define HAS(s) (find_marker(log + start, n, (s)) < n)
+    if (HAS("NABU USERLAND:")) status = start;
+    if (HAS("IO reads=")) reads = start;
+    if (HAS("SpringBoard")) select_line(&groups[0], start);
+    if (HAS("backboardd")) select_line(&groups[1], start);
+    if (HAS("runningboardd")) select_line(&groups[2], start);
+    if (HAS("MiniIOMobileFramebuffer") || HAS("MiniIOSurface")) select_line(&groups[3], start);
+    if (HAS("Library not loaded") || HAS("exit reason") || HAS("dyld:")) select_line(&groups[4], start);
+#undef HAS
+    start = end < length ? end + 1 : length;
+  }
+  unsigned used = 0;
+  if (status < length) used += draw_log_line(log, length, status, y, rows, columns);
+  if (reads < length && used < rows)
+    used += draw_log_line(log, length, reads, y + used * 28, rows - used, columns);
+  for (unsigned g = 0; g < 5 && used < rows; ++g) {
+    draw(labels[g], y + used++ * 28, 12, 2, 0xffffff00);
+    unsigned count = groups[g].count < 3 ? groups[g].count : 3;
+    if (!count && used < rows)
+      draw("NO MATCH IN CAPTURED LOG", y + used++ * 28, 12, 2, 0xffffffff);
+    for (unsigned i = 0; i < count && used < rows; ++i)
+      used += draw_log_line(log, length, groups[g].at[i], y + used * 28, rows - used, columns);
+  }
+}
+
 static void log_tail(void)
 {
   uint64_t address = kernel_report_config.incoming[0];
@@ -71,7 +142,6 @@ static void log_tail(void)
       length > 1536 * 1024) {
     text("KERNEL LOG RANGE REJECTED", 11, 24, 0xffff8000); return;
   }
-  text("KERNEL LOG TAIL - HALTED", 11, 24, 0xffffffff);
   if (!rows || !columns) return;
   const volatile unsigned char *log = (const volatile unsigned char *)address;
   uint64_t timer = find_marker(log, length, "--- loader_return_after expired ---");
@@ -79,6 +149,14 @@ static void log_tail(void)
   text(timer < length ? "TIMER MARKER: YES" : "TIMER MARKER: NOT SEEN", 10, 24, 0xffffffff);
   text(panic < length ? "PANIC BUFFER: YES" : "PANIC BUFFER: NOT SEEN", 10, 800, 0xffffffff);
   uint64_t requested = find_marker(log, length, "return_panic: the panic that was asked for, on cpu ");
+  if (kernel_report_config.incoming[2] == 0 && panic == length && requested == length &&
+      find_marker(log, length, "NABU USERLAND: phase=7") < length) {
+    text("DESKTOP LOG SUMMARY - HALTED", 11, 24, 0xffffffff);
+    draw("SELECTED LOG EVIDENCE; NO MATCH DOES NOT MEAN NOT RUNNING", summary_y, 12, 2, 0xffffffff);
+    desktop_log(log, length, y, rows, columns);
+    return;
+  }
+  text("KERNEL LOG TAIL - HALTED", 11, 24, 0xffffffff);
   if (requested < length) {
     char line[129];
     unsigned n = 0;

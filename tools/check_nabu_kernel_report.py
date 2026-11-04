@@ -49,7 +49,10 @@ def main():
             (0x181448000, 0, 0, True, 'below-window'),
             (0x181448000, 0, 0, True, 'past-window'),
             (0x181448000, 0, 0, True, 'oversize'),
-            (0x181448000, 0, 0, True, 'overflow')]):
+            (0x181448000, 0, 0, True, 'overflow'),
+            (0x181448000, 0, 0, True, 'desktop'),
+            (0x181448000, 0, 0, True, 'desktop-empty'),
+            (0x181448000, 0, 0, True, 'desktop-wrap')]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
         uc.mem_write(base-4096, b'G'*4096)
@@ -79,12 +82,27 @@ def main():
         elif log_case == 'past-window': log_address,log_length = owned+owned_bytes-8,9
         elif log_case == 'oversize': log_length = 1536*1024+1
         elif log_case == 'overflow': owned,owned_bytes,log_length = (1<<64)-0x1000,0x2000,16
+        elif log_case.startswith('desktop'):
+            log_data=b'--- loader_return_after expired ---\n'
+            if log_case != 'desktop-empty':
+                log_data+=(b'SpringBoard: first event\nbackboardd: first event\nrunningboardd: first event\n'
+                           b'MiniIOMobileFramebuffer: first display\ndyld: cache is available\n')
+                log_data+=b'process lsd denied CPU monitor request\n'*2000
+                if log_case=='desktop-wrap':log_data+=b'SpringBoard: '+b'x'*400+b'\x01\r\n'
+                log_data+=(b'SpringBoard: last event\nbackboardd: last event\nrunningboardd: last event\n'
+                           b'MiniIOSurface: last display\n')
+            log_data+=b'NABU USERLAND: phase=7 errno=0\nIO reads=15502 failures=0\nSpringBoar'
+            log_length=len(log_data)
+            uc.mem_map(log_address,(log_length+4095)&~4095)
+            uc.mem_write(log_address,log_data)
         uc.mem_write(config+109*8, struct.pack('<2Q',owned,owned_bytes))
         incoming = [log_address, log_length, reason, code, 0x180448518, 0xdead0000, 0x18044ffff, 0xfffffff008001000]
-        reads = []
+        reads = {'count':0,'min':1<<64,'max':0}
         if log_data:
             def log_read(_uc, _access, address, size, _value, _data):
-                reads.append((address,size))
+                reads['count']+=1
+                reads['min']=min(reads['min'],address)
+                reads['max']=max(reads['max'],address+size)
             # Include mapped padding so a read just past the declared log is
             # caught even when it remains inside the last mapped page.
             uc.hook_add(unicorn.UC_HOOK_MEM_READ, log_read, begin=log_address,
@@ -104,8 +122,8 @@ def main():
             assert struct.unpack_from('<I',frame, (height*3//16)*stride)[0] == 0xffff00ff
             assert struct.unpack_from('<I',frame, (height//4)*stride)[0] == 0xff000000
             if log_data:
-                assert reads and min(p for p,n in reads) >= log_address
-                assert max(p+n for p,n in reads) <= log_address+log_length
+                assert reads['count'] and reads['min'] >= log_address
+                assert reads['max'] <= log_address+log_length
                 log_y = height//4 + 12*56
                 assert b'\xff\xff\xff\xff' in frame[(log_y+28)*stride:]
                 def glyphs_match(label, x, y, scale, color):
@@ -121,11 +139,28 @@ def main():
                                     for dx in range(scale):
                                         at = (y+gy*scale+dy)*stride + (x+i*6*scale+gx*scale+dx)*4
                                         assert struct.unpack_from('<I',frame,at)[0] == expected
-                suffix = 'YES' if log_case == 'long' else 'NOT SEEN'
+                suffix = 'YES' if log_case == 'long' or log_case.startswith('desktop') else 'NOT SEEN'
                 glyphs_match('TIMER MARKER: '+suffix,24,height//4+10*56,4,0xffffffff)
-                glyphs_match('PANIC BUFFER: '+suffix,800,height//4+10*56,4,0xffffffff)
+                glyphs_match('PANIC BUFFER: '+('YES' if log_case=='long' else 'NOT SEEN'),800,height//4+10*56,4,0xffffffff)
                 if log_case == 'long':
                     glyphs_match('return_panic: the panic that was asked for, on cpu 7',12,log_y,2,0xffffff00)
+                elif log_case.startswith('desktop'):
+                    glyphs_match('DESKTOP LOG SUMMARY - HALTED',24,height//4+11*56,4,0xffffffff)
+                    glyphs_match('NABU USERLAND: phase=7 errno=0',12,log_y+28,2,0xffffffff)
+                    glyphs_match('IO reads=15502 failures=0',12,log_y+56,2,0xffffffff)
+                    glyphs_match('SPRINGBOARD: FIRST / LAST LOG LINES',12,log_y+84,2,0xffffff00)
+                    if log_case=='desktop-empty':
+                        glyphs_match('NO MATCH IN CAPTURED LOG',12,log_y+112,2,0xffffffff)
+                    else:
+                        # This first event is over 64 KiB before the tail.
+                        glyphs_match('SpringBoard: first event',12,log_y+112,2,0xffffffff)
+                        if log_case=='desktop':
+                            glyphs_match('SpringBoard: last event',12,log_y+140,2,0xffffffff)
+                            glyphs_match('backboardd: first event',12,log_y+196,2,0xffffffff)
+                            glyphs_match('dyld: cache is available',12,log_y+448,2,0xffffffff)
+                        else:
+                            glyphs_match('>',12+127*12,log_y+168,2,0xffffffff)
+                            glyphs_match('SpringBoard: last event',12,log_y+196,2,0xffffffff)
                 else:
                     glyphs_match('REQUESTED PANIC LINE NOT SEEN',12,log_y,2,0xffffffff)
             y0, rows = height//4, height-height//4

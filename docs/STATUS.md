@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十三轮已越过初始化检查，进入 PID1 原版 launchd/dyld 的动态链接阶段。共享区域仍为空，随后报 `libSystem.B.dylib` 未加载、`no dyld cache` 并退出；尚未启动 launchd 服务或桌面。存储读取 161 次、失败 0 次，返回 Android 后 30 份 GPT 元数据及 14 个受检引导分区一致。第十四轮仅给 PID1 launchd 传入已挂载 SystemOS 的真实缓存目录，沿用第十三轮确切内核；macOS Actions `41787286981` 全部通过，新 RAM 包的 APFS 检查和回读一致。2026-11-04 14:51:47（Asia/Shanghai）执行第十四轮 `fastboot boot`，发送与 Booting 均成功，344 份冻结证据保存在 `log/device/nabu-boot-20261104-14/`，设备结果等待屏幕照片。详见 [缓存定位](DYLD-CACHE-BRINGUP.md) 与 [用户态初始化](../userland/nabu/README.md)。
+最新主线结果：第十四轮用户态已持续运行到 `lsd[22]`，读取 15,502 次无失败，八核 timer／SGI 计数均增长，并由设定的定时回调正常返回。尚无 SpringBoard／backboardd 就绪或实际桌面证据，lsd 的 CPU-monitor 权限提示不能单独解释阻塞。返回 Android 后 30 份 GPT 元数据及 14 个受检引导分区一致。实际 APFS 启动项已复核，未发现三个桌面核心服务被禁用。第十五轮候选仅更新返回画面，单列完整日志里的桌面服务首尾消息；本地 EFI 构建、11 个仿真场景和 12 个 binder 检查通过，准备设备验证。详见 [桌面服务观测](DESKTOP-SERVICES-BRINGUP.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 
