@@ -54,8 +54,12 @@ Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确�
 
 新主机测试使用照片中的 IDR1／IDR2、SID、slot 与 S2CR，IDR0 是明确标注的合成值。验证旧 bank 被其他设备共享时仍保持原状，目标被占用时改选空 bank，并覆盖重叠／mask、未知属性、过期计划和写入被硬件拒绝的情况。原有严格模式测试保持通过。以上是实际生成策略的模拟检查，接管效果仍需实机验证。
 
+修正候选已由 macOS Actions `41774440467`、提交 `721e8250395294bceec245cdc63d674e3bc7d383` 完整编译并通过全部检查，包括新旧 SMMU 测试。下载后的 generated headers／transport 与本地规范化源码哈希一致，5 个存储入口范围的 1,555 条原生指令及 6 个返回范围的 1,500 条指令与 stripped 内核一致。启动内核为 17,125,752 bytes，SHA-256 `d3a382e33c44f43836170c5a8278ab501ef55d619ea472bb81dd6a4d53a8e2fc`；未剥离内核为 22,928,120 bytes，SHA-256 `2661c39336efdd456c087c1c36785d7588f43ce4237e79df9523c119ad43bbe8`。收据为 `log/host/nabu-storage/ci-verification-retarget.json`，第十一轮拟使用此候选继续同一只读挂载探针。
+
 ## 日志回收边界
 
 ESP 的 `handoff-*.txt` 由 loader 在 ExitBootServices 之前写入，恢复 Android 后可以自动取回。屏幕上的 XNU 日志目前保存在内核 RAM，返回报告器只绘屏，没有写入存储；重启后不能保证保留。因此 ESP 交接日志不能替代运行期日志或照片。
 
 回收工具现会额外保存 Android 暴露的 pstore 普通文件，每个最多 8 MiB，并记录原始字节、大小和哈希；文件的出现不自动归因于 XNU。第十轮取回了 719,040 bytes 的 `console-ramoops-0`，原始字节未匹配 `NABU STORAGE`、`loader_return`、`XNU CALLBACK`，未取得可替代照片的 XNU 运行日志。完整内核日志持久化仍待存储通道稳定后设计，不应宣称已实现。
+
+第十轮恢复后的 Android 同时未暴露 `/dev/mem` 和 `/proc/kcore`，检查记录保存在该轮 `ram-log-access.txt`。本次没有可用的这些接口去读取旧 XNU 物理地址；不能把屏幕上的 LOG PA 当作重启后可直接读取的文件地址。

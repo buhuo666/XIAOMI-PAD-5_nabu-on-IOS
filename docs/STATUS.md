@@ -12,6 +12,8 @@
 
 第十轮后续证据：已执行到 BSD 根选择和 UFS 初始化，在 SMMU 规划阶段发现固件已有 stream `0x300` → bank 1 映射而拒绝接管，命令计数为 0；尚未读取系统卷。恢复 Android 后 GPT／14 个受检引导分区回读一致。下一候选增加仅针对精确 UFS stream、保留原 bank 和其他 stream 的有界路由接管，主机模拟已通过，等待 macOS 构建与后续实机验证。详见存储接入记录。
 
+第十一轮候选：SMMU 固件路由接管修正已由 macOS Actions `41774440467` 全部通过，产物及生成源码哈希已核对，准备继续只读系统盘探针。日志回收工具已增加 pstore 文件保存；当前 XNU 运行期日志仍未持久化，不能以 ESP 交接日志替代。首轮存储挂载和 launchd 校验仍待实机确认。
+
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
 最新实机结果：第七轮照片显示 `GenericARMPE: 8 of 8 processors are running`，CPU 3–7 逐个 online／initCPU，以及 MiniIOMobileFramebuffer 初始化。返回报告 REASON=0、CODE=0，日志长度 `0x4B86`（19,334 bytes）。这已提供副核执行和八核计数的板上证据，但尚无各核 SGI／timer 增长、跨核调度或 TLB 验收结果。照片末尾没有可见的定时器到期／panic 标记，返回原因仍未单独确认。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。
