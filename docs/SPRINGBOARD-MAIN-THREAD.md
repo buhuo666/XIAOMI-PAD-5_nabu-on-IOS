@@ -107,3 +107,24 @@
 候选 `artifacts/nabu-chain-desktop-v20` 与第十九轮使用同一随机种子，独立递归比较确认只有上述属性变化。其余五个启动文件及 boot.img 均逐字节一致；保留 `ustacks=lsd`、90 秒一次采样及 120 秒返回。7 个非法地址输入被拒绝，旧参数生成结果与冻结 ADT 一致，复用候选但遗漏身份参数会在写文件前拒绝。实际候选 ADT 通过 loader 原生 ASan／UBSan 解析，既有 46 个 checkpoint、5 个分配和 bootstrap 边界检查通过。设备结果待临时启动与照片验证。
 
 第二十轮于 `2026-11-04T19:46:02.639810+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `fa1e121de4825c84e81a89a49f3dd19fe057b198`，部署收据 `log/device/nabu-chain-20261104-194445/deployment.json`。六个文件已 SHA-256 回读，部署前 Wi-Fi 地址再核对一致；启动前 30 份 GPT 元数据通过、14 个引导分区哈希已记录。84 份输入／验证文件及 boot.img 冻结在 `log/device/nabu-boot-20261104-20/`。当前仅确认命令成功，实际桌面／lsd 等待变化需要约两分钟后的照片；恢复 Android 后仍需本轮 `--collect`。
+
+## 第二十轮结果：已越过原先的服务启动等待
+
+本轮照片原图与裁切保存在 `log/device/nabu-boot-20261104-20/`。REASON／CODE 为 0，TIMER MARKER 为 YES；读取 31,392 次、失败 0，日志长度 `0x16089a`。回到 Android 后，30 份 GPT 元数据和 14 个受检引导分区与启动前一致。照片没有显示桌面。
+
+约 111.757 秒采到 `lsd[22]` 十二个线程、70 个非零栈地址，共享缓存 slide `0x3d77c000`。原缓存与符号文件哈希匹配，全部地址落在可执行 section 内，并核对 LC_FUNCTION_STARTS。结果保存在 `log/host/display-v21/run20-stacks.json` 和 `run20-frame-validation.json`。
+
+- 主线程 `0x13c` 已从第十九轮的 journal recovery 队列等待转到 `__LSServerMain` → `runServerMainRunLoop` → CFRunLoop／Mach 消息循环。
+- `0x491` 带 running 标记，保存的栈包含 `getServerStoreNonBlockingWithCompletionHandler:` → 服务端回复块 → NSXPC 编码 → `_CSStore encodeWithCoder:`。这是数据库对象回复路径的进展证据，不证明所有 seeding 完成或客户端已收到数据；原代码还允许有本地数据库但未完全 seeded 时安排后续工作并返回 store。
+- `0x2b6` 带 running 标记，保存链经设备标识查询、`LSHRNSupport deviceConfiguredForHRN`、`copyActivationRecord` 和 XPC endpoint 查找。running 样本不是精确停住的线程，不能仅据此声称它长期阻塞或需要修改激活流程。
+- 其余九个线程显示 workqueue 等待。本次样本未显示上一轮的 MobileGestalt Wi-Fi 地址回退、数据库 blocking-fetch 或 journal recovery 等待。单次样本不证明这些路径以后绝不出现。
+
+与唯一改动为 Wi-Fi 地址属性的对照关系一致，本轮结果支持该修正解除原先的重复硬件查询等待。服务主循环与回复路径的关键原代码另用 LLVM18 核对，记录在 `server-progress-code.json`／`server-progress-llvm.json`。
+
+照片还在 118.487342 秒显示 `MiniIOSurface: SpringBoard[5] created surface 3: 68x96 'LA08', 160 bytes per row, 0 planes, 16384 bytes`。该日志在 MiniIOSurface 的 addRef／returnSurface 之前，只证明内核创建并登记 surface，不能证明映射返回成功、绘制或最终上屏。展开线程报告每服务分组只保留选中末行，没有 swap 行也不证明没有 swap。backboardd 于 114.906259 秒的 selector 72 日志同样只代表刷新注册相关调用。
+
+## 第二十一轮候选：延长运行并采样 SpringBoard
+
+保留第二十轮的确切内核、EFI、bootstrap、设备树（含 Wi-Fi 地址和相同随机种子）以及 boot.img，只把诊断参数改为 `loader_return_after=300 ustacks=SpringBoard ustacks_at=240`；一次采样、最多十二个线程不变。目的为在更晚时间观察 SpringBoard 初始化／等待，并给较晚出现的图形活动更多运行时间，不能预先判定延长时间会显示桌面。
+
+候选位于 `artifacts/nabu-chain-desktop-v21`，逐字节比较和 TOML 结构比较已通过。现有 timer 使用 EARLY_BOOT 初始化后的相对秒数，实际画面时间可能有额外初始化／调度开销；定时返回仍依赖内核调度，不是硬件看门狗。原生加载和报告代码完全沿用已通过验证的第二十轮输入，因此不为配置变化重复重建。部署与启动回执待记录。
