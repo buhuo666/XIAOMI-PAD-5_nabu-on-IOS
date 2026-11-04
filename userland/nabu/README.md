@@ -75,3 +75,5 @@ macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`�
 第十五轮照片现已确认三个桌面核心进程运行，但没有首帧证据。第十六轮 RAM 包为 `nabu-bootstrap-v4`，只给 backboardd 增加 `CA_FORCE_TIMER=1`，保留原启动条件和其他全部内容；原版 QuartzCore 已验证支持此开关。内核不变，额外打开一次现有渲染线程栈采样。具体输入哈希、原版 selector 语义与测试边界见 [显示刷新路径](../../docs/DISPLAY-CLOCK-BRINGUP.md)。
 
 第十六轮于 2026-11-04 16:15:23（Asia/Shanghai）执行临时启动，发送与 Booting 成功，等待屏幕观察。运行目录 `log/device/nabu-boot-20261104-16/`；尚未确认强制刷新路径或实际桌面生效。
+
+第十六轮照片已显示 selector72 刷新通知注册，以及两个 backboardd 渲染线程的 Mach／CFRunLoop 等待栈。原版地址已还原，未取得首帧证据；Android 回收和分区核验完成。第十七轮沿用本 RAM 包与内核，转而采样 SpringBoard 第一个线程，详见 [主线程采样](../../docs/SPRINGBOARD-MAIN-THREAD.md)。

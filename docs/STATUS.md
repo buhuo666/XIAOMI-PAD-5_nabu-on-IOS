@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十五轮已确认 SpringBoard PID5、backboardd PID8、runningboardd PID4 实际运行，backboardd 已调用显示用户客户端；读取 15,533 次无失败，正常定时返回，尚无首帧／桌面证据。原版符号确认 selector 50／84 分别是亮度校正／对比度设置，当前驱动虽忽略但返回成功，不能直接当成阻塞原因。SpringBoard 的非 fatal wakeups 警告也不直接终止任务。第十六轮通过 backboardd 的 `CA_FORCE_TIMER=1` 验证刷新通知路径，并用现有内核在90秒采集一次渲染线程栈；包内单项环境修改、APFS回读、原版分支仿真和新EFI检查均通过。2026-11-04 16:15:23（Asia/Shanghai）临时启动发送和 Booting 成功，374份冻结证据位于 `log/device/nabu-boot-20261104-16/`，设备结果等待照片。详见 [显示刷新路径](DISPLAY-CLOCK-BRINGUP.md)。
+最新主线结果：第十六轮已注册 framebuffer selector72/type5，并取得 backboardd 两个渲染相关线程样本：render-server 位于 mach_msg／server_thread，display.primary 位于 CFRunLoop／IOMFBServer。共享缓存slide为0x39484000，20个地址已对照原缓存符号；本次样本不证明长期死锁或刷新未送达。读取15,524次无失败，返回Android后GPT／14个受检引导分区一致，仍无桌面。第十七轮保持内核和RAM包，只转向SpringBoard第一个线程采样，并修正报告误收启动参数行的问题；本地EFI与回归检查通过，准备实机验证。详见 [主线程采样](SPRINGBOARD-MAIN-THREAD.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

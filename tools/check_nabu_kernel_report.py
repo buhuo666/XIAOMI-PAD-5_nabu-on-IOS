@@ -85,6 +85,8 @@ def main():
         elif log_case == 'overflow': owned,owned_bytes,log_length = (1<<64)-0x1000,0x2000,16
         elif log_case.startswith('desktop'):
             log_data=b'--- loader_return_after expired ---\n'
+            if log_case=='desktop-stacks':
+                log_data+=b'nabu_diag init args=ustacks=SpringBoard backboardd\n'
             if log_case != 'desktop-empty':
                 log_data+=(b'SpringBoard: first event\nbackboardd: first event\nrunningboardd: first event\n'
                            b'MiniIOMobileFramebuffer: first display\ndyld: cache is available\n')
@@ -95,7 +97,8 @@ def main():
             if log_case=='desktop-stacks':
                 log_data+=(b'ustacks: backboardd[8] 2 threads, shared cache slide 0x10000\n'
                            b'ustacks: thread render-server: 0x111 0x222\n'
-                           b'ustacks: thread sync: 0x333 0x444\n')
+                           b'ustacks: thread sync: 0x333 0x444\n'
+                           b'nabu_diag expired args=ustacks=SpringBoard backboardd\n')
             log_data+=b'NABU USERLAND: phase=7 errno=0\nIO reads=15502 failures=0\nSpringBoar'
             log_length=len(log_data)
             uc.mem_map(log_address,(log_length+4095)&~4095)
@@ -165,7 +168,7 @@ def main():
                             if log_case=='desktop':
                                 glyphs_match('dyld: cache is available',12,log_y+448,2,0xffffffff)
                             else:
-                                glyphs_match('RENDER THREAD STACKS: FIRST / LAST LOG LINES',12,log_y+252,2,0xffffff00)
+                                glyphs_match('THREAD STACK SAMPLES: FIRST / LAST LOG LINES',12,log_y+252,2,0xffffff00)
                                 glyphs_match('ustacks: backboardd[8] 2 threads, shared cache slide 0x10000',12,log_y+280,2,0xffffffff)
                                 glyphs_match('ustacks: thread sync: 0x333 0x444',12,log_y+336,2,0xffffffff)
                         else:

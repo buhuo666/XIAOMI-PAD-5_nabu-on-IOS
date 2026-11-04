@@ -104,7 +104,8 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
 #define HAS(s) (find_marker(log + start, n, (s)) < n)
     if (HAS("NABU USERLAND:")) status = start;
     if (HAS("IO reads=")) reads = start;
-    if (HAS("ustacks:")) select_line(&stacks, start);
+    if (HAS("nabu_diag ")) { /* Boot arguments can contain service names. */ }
+    else if (HAS("ustacks:")) select_line(&stacks, start);
     else {
       if (HAS("SpringBoard")) select_line(&groups[0], start);
       if (HAS("backboardd")) select_line(&groups[1], start);
@@ -124,7 +125,7 @@ static void desktop_log(const volatile unsigned char *log, uint64_t length,
     const char *label = labels[g];
     if (g == 2 && stacks.count) {
       selected = &stacks;
-      label = "RENDER THREAD STACKS: FIRST / LAST LOG LINES";
+      label = "THREAD STACK SAMPLES: FIRST / LAST LOG LINES";
     }
     draw(label, y + used++ * 28, 12, 2, 0xffffff00);
     unsigned count = selected->count < 3 ? selected->count : 3;

@@ -21,7 +21,7 @@ title = "XNU 8796 - userland bootstrap"
 type = "xnu"
 path = '\EFI\Nabu16\Payloads\kernel.macho'
 initrd = '\EFI\Nabu16\Payloads\bootstrap.apfs'
-args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0 -enable_kprintf_spam nabu-storage=1 nabu-bootstrap=1 rd=md0 root_apfs=nabu_os loader_return_after=120 ustacks=backboardd ustacks_at=90 ustacks_count=1 ustacks_threads=4 ustacks_tname=coreanimation"
+args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0 -enable_kprintf_spam nabu-storage=1 nabu-bootstrap=1 rd=md0 root_apfs=nabu_os loader_return_after=120 ustacks=SpringBoard ustacks_at=90 ustacks_count=1 ustacks_threads=1 ustacks_tname=*"
 
 [[entry]]
 id = "reset"
