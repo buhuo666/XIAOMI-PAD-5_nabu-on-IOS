@@ -76,6 +76,9 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         'dram-base': U64(0), 'dram-size': U64(0),
         'debug-enabled': U32(1), 'psci-method': STR('smc'),
         'osenvironment': STR('main'), 'display-scale': U32(2),
+        # Android HWC: 275.712 x 275.642 physical DPI; both K82 panel FDT
+        # variants agree on 147.4 x 235.9 mm. This is not Android's 360 UI DPI.
+        'nabu-panel-size-um': struct.pack('<2I', 147400, 235900),
         'display-rotation': U32(0), 'nvram-bank-size': U32(8192),
         'nvram-bank-count': U32(1), 'nvram-current-bank': U32(0),
         'nvram-proxy-data': nvram(),
@@ -98,7 +101,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
                            'virtual-timer-intid': U32(19)})]),
         Node('psci', {'compatible': STR('arm,psci-1.0'), 'method': STR('smc')}),
         Node('defaults', {'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
-        Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5')})])
+        Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5'),
+                                        'artwork-scale-factor': U32(2)})])
 
 
 def parse(data):

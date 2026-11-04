@@ -1,0 +1,155 @@
+--- a/iokit/Kernel/MiniIOMobileFramebuffer.cpp
++++ b/iokit/Kernel/MiniIOMobileFramebuffer.cpp
+@@ -296,6 +296,7 @@
+ 	uint8_t *       fBase;                  /* the boot framebuffer: the panel */
+ 	uint32_t        fPanelWidth, fPanelHeight, fRowBytes;
+ 	uint32_t        fWidth, fHeight;        /* the display as user space sees it */
++	uint32_t        fDotsPerInch;
+ 	MiniIOSurface * fDefaultSurface;
+ 	uint32_t        fSwapID;
+ 	uint32_t        fSwapsShown;
+@@ -362,6 +363,7 @@
+ 	uint32_t        fRecCosted;             /* ... of how many frames: a line every 120 */
+ 
+ 	virtual bool start(IOService * provider) APPLE_KEXT_OVERRIDE;
++	bool configureDisplay(void);
+ 	void publishModes(void);
+ 	void publishRefresh(void);
+ 	MiniIOSurface * defaultSurface(void);
+@@ -436,7 +438,7 @@
+ 	setNumber(refresh, "displayRefreshStepMachTime", ticks);
+ 	setProperty("IOMFBDisplayRefresh", refresh);
+ 	refresh->release();
+-	IOLog("MiniIOMobileFramebuffer: IOMFBDisplayRefresh: %u Hz (the panel: %u), an interval of %llu (2^-32 s), %llu ticks\n",
++	IOLog("MiniIOMobileFramebuffer: IOMFBDisplayRefresh: %u Hz (software pacing: %u; no hardware vblank), an interval of %llu (2^-32 s), %llu ticks\n",
+ 	    told, refreshHz(), interval, ticks);
+ }
+ 
+@@ -493,6 +495,79 @@
+ }
+ 
+ bool
++IOMobileFramebuffer::configureDisplay(void)
++{
++	/* Board geometry is independent of the model string used by MobileGestalt.
++	 * The nabu ADT carries physical dimensions in micrometres, little endian.
++	 * Presence opts into native scanout geometry; malformed data must not fall
++	 * back to the inherited phone profile. UI scale does not change pixels. */
++	IORegistryEntry * chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
++	OSObject * property = chosen ? chosen->getProperty("nabu-panel-size-um") : NULL;
++	bool nativeDisplay = property != NULL;
++	uint32_t physical[2] = { 0, 0 };
++	if (nativeDisplay) {
++		OSData * size = OSDynamicCast(OSData, property);
++		if (size == NULL || size->getLength() != sizeof(physical)) {
++			chosen->release();
++			IOLog("MiniIOMobileFramebuffer: invalid native panel size property\n");
++			return false;
++		}
++		memcpy(physical, size->getBytesNoCopy(), sizeof(physical));
++	}
++	if (chosen != NULL) {
++		chosen->release();
++	}
++	fBase = (uint8_t *) vinfo.v_baseaddr;
++	fPanelWidth = vinfo.v_width;
++	fPanelHeight = vinfo.v_height;
++	fRowBytes = vinfo.v_rowbytes;
++	if (nativeDisplay) {
++		/* Bound multiplication, stride and the integer DPI interface before
++		 * creating any presenter threads or allocating display surfaces. */
++		if (fPanelWidth == 0 || fPanelWidth > 16384 ||
++		    fPanelHeight == 0 || fPanelHeight > 16384 ||
++		    fRowBytes < (uint64_t) fPanelWidth * 4 ||
++		    physical[0] < 10000 || physical[0] > 2000000 ||
++		    physical[1] < 10000 || physical[1] > 2000000) {
++			IOLog("MiniIOMobileFramebuffer: invalid native panel geometry\n");
++			return false;
++		}
++		fWidth = fPanelWidth;
++		fHeight = fPanelHeight;
++		/* GetDotPitch returns one integer PPI; use the horizontal density,
++		 * rounded to the nearest whole pixel/inch. Keep both axes in the log. */
++		fDotsPerInch = ((uint64_t) fWidth * 25400 + physical[0] / 2) / physical[0];
++		uint32_t yDpi = ((uint64_t) fHeight * 25400 + physical[1] / 2) / physical[1];
++		if (fDotsPerInch < 1 || fDotsPerInch > 2000 || yDpi < 1 || yDpi > 2000) {
++			return false;
++		}
++		IOLog("MiniIOMobileFramebuffer: native panel %ux%u um, density %ux%u dpi; firmware pixels, no model scaling\n",
++		    physical[0], physical[1], fDotsPerInch, yDpi);
++		return true;
++	}
++	fWidth = gFBWidth ? gFBWidth : fPanelWidth;
++	fHeight = gFBHeight ? gFBHeight : fPanelHeight;
++	if (gFBScale != 0 && gFBScale != kFBDefaultScale) {
++		static const char * const places[][2] = { { "/chosen", "display-scale" }, { "/product", "artwork-scale-factor" } };
++		uint32_t scale = gFBScale;
++
++		fWidth = kFBPointsWide * scale;
++		fHeight = kFBPointsHigh * scale;
++		/* what the loader's device tree says about the scale is where MobileGestalt has it from */
++		for (unsigned i = 0; i < sizeof(places) / sizeof(places[0]); i++) {
++			IORegistryEntry * node = IORegistryEntry::fromPath(places[i][0], gIODTPlane);
++
++			if (node != NULL) {
++				node->setProperty(places[i][1], &scale, sizeof(scale));
++				node->release();
++			}
++		}
++	}
++	fDotsPerInch = (uint64_t) kFBDotsPerInch * fWidth / kFBDefaultWidth;
++	return true;
++}
++
++bool
+ IOMobileFramebuffer::start(IOService * provider)
+ {
+ 	thread_t thread;
+@@ -503,6 +578,9 @@
+ 	if (vinfo.v_baseaddr == 0 || vinfo.v_width == 0 || vinfo.v_height == 0 || vinfo.v_depth != 32) {
+ 		IOLog("MiniIOMobileFramebuffer: no usable boot framebuffer (%ux%u, depth %u)\n", vinfo.v_width, vinfo.v_height,
+ 		    vinfo.v_depth);
++		return false;
++	}
++	if (!configureDisplay()) {
+ 		return false;
+ 	}
+ 	if (gMeasure && kernel_thread_start(measurePanel, NULL, &thread) == KERN_SUCCESS) {
+@@ -525,28 +603,6 @@
+ 		}
+ 		thread_set_thread_name(thread, "frames to the panel: a helper");
+ 		thread_deallocate(thread);
+-	}
+-	fBase = (uint8_t *) vinfo.v_baseaddr;
+-	fPanelWidth = vinfo.v_width;
+-	fPanelHeight = vinfo.v_height;
+-	fRowBytes = vinfo.v_rowbytes;
+-	fWidth = gFBWidth ? gFBWidth : fPanelWidth;
+-	fHeight = gFBHeight ? gFBHeight : fPanelHeight;
+-	if (gFBScale != 0 && gFBScale != kFBDefaultScale) {
+-		static const char * const places[][2] = { { "/chosen", "display-scale" }, { "/product", "artwork-scale-factor" } };
+-		uint32_t scale = gFBScale;
+-
+-		fWidth = kFBPointsWide * scale;
+-		fHeight = kFBPointsHigh * scale;
+-		/* what the loader's device tree says about the scale is where MobileGestalt has it from */
+-		for (unsigned i = 0; i < sizeof(places) / sizeof(places[0]); i++) {
+-			IORegistryEntry * node = IORegistryEntry::fromPath(places[i][0], gIODTPlane);
+-
+-			if (node != NULL) {
+-				node->setProperty(places[i][1], &scale, sizeof(scale));
+-				node->release();
+-			}
+-		}
+ 	}
+ 	fColumn = IONewZero(uint32_t, fPanelWidth);
+ 	fColumnWeight = IONewZero(uint16_t, fPanelWidth);
+@@ -1548,7 +1604,7 @@
+ 		if (args->scalarOutputCount < 1) {
+ 			return kIOReturnBadArgument;
+ 		}
+-		out[0] = kFBDotsPerInch * fOwner->fWidth / kFBDefaultWidth;
++		out[0] = fOwner->fDotsPerInch;
+ 		args->scalarOutputCount = 1;
+ 		return kIOReturnSuccess;
+ 
