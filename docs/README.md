@@ -7,6 +7,8 @@
 | 文档 | 用途 |
 |---|---|
 | [项目进展](STATUS.md) | 当前完成项、实际构建结果与下一步 |
+| [设备安装记录](DEVICE-INSTALLATION-20F66.md) | 原 64 GiB 区域、系统镜像回读、49 GiB Data 与持久化剩余工作 |
+| [临时启动入口](NABU-BOOT-ENTRY.md) | EFI 成功构建、板级 boot.img 和 fastboot 临时启动边界 |
 | [开工与构建命令](BOOTSTRAP.md) | 固定源码、固件提取、Actions 操作 |
 | [源码基线](SOURCE-BASELINE.md) | 23 个仓库、gitlink 和图形依赖记录 |
 | [本机内存](DEVICE-MEMORY.md) | 扩容内存和固定保留区的实测核对 |

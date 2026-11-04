@@ -2,6 +2,8 @@
 
 更新：2026-11-04，Asia/Shanghai。本文区分当前设备、固定源码和待验证候选。
 
+接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功，下载后的四个产物已核验大小、SHA-256 与架构。下文提到的首次 EFI 提交前检查已由实际成功构建补足；板级临时 boot.img、nabu ADT、UFS／Data 写入和实机测试仍未完成。设备系统区安装与启动入口是不同工作，见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
+
 用户要求启动只能临时进行。因此唯一计划中的设备启动命令是核对设备与镜像后执行 `fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。本轮工具没有 ADB、fastboot 或分区写入操作。
 
 ## 当前设备入口

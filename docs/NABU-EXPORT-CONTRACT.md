@@ -1,5 +1,7 @@
 # nabu 8796 非 Apple 导出合同
 
+2026-11-04 验收：Actions `41671552454`，提交 `f77e851c0e7d153cd9bf23b39f04fcccabbc78f4`，完整内核构建返回 0。原生两遍导出检查、链接后合同检查、原生接口分析和 SMP／容量检查全部成功。未剥离内核 SHA-256 为 `b0903a2ddf55a7958186e48e6547efda1e5211a66518a9cded1b5c36434ff5fe`；下载后已复核。本合同没有增加这 24 个接口的实现，也没有证明 nabu 启动或私有 ABI 兼容。
+
 `20F66-37-v1` 将当前 BCM2837 参考构建的导出范围缩小 **24 项**：17 个
 `IOUnifiedAddressTranslator` 类导出、7 个 `pmap_iommu_*` 导出。它不提供替代实现，
 也不改变 Apple 平台或未显式启用合同的构建。原有 `check_all_exports` 的两遍检查保留。

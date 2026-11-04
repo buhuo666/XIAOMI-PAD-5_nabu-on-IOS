@@ -1,17 +1,21 @@
 # 项目进展
 
-更新：2026-11-03，Asia/Shanghai。
+更新：2026-11-04，Asia/Shanghai。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
+
+2026-11-04 接手验收：提交 `f77e851c0e7d153cd9bf23b39f04fcccabbc78f4` 的内核 Actions `41671552454` 和 EFI Actions `41671552536` 均成功。已下载并逐个核对两个内核、UniXNU.efi 和 DarwinBoot.efi 的大小、SHA-256 与架构；完整内核 `build_exit_code=0`，构建日志没有缺失导出或编译错误。当前是源码编译检查通过，尚无 nabu 临时 boot.img 的实机启动结果。
+
+用户进一步明确：允许在已有 64 GiB 区域重新初始化并写入 iPadOS，要求系统状态持久保存；启动仍只使用 `fastboot boot`。系统材料已经全部传入设备并核验哈希。磁盘布局与写入验收以 [设备安装记录](DEVICE-INSTALLATION-20F66.md) 为准；不能将传输、APFS 初始化或编译成功当成持久化功能已通过。
 
 ## 已完成
 
 - 建立独立工作目录和 Git 工程，下载 23 个固定提交的源码仓库；清单在 `configs/sources.lock.json`。另记录 21 条 UniXNU gitlink 与 19 个图形补丁的哈希，见 `docs/SOURCE-BASELINE.md`。
 - 经已授权 root ADB 读取设备信息。设备报告 nabu／SM8150，当前 Android 15，活动槽位 A，bootloader unlocked。
 - 保存六个 UFS LUN 的主备 GPT，校验头部和分区数组 CRC，并确认主备一致。原始备份保存在本地 `backup/gpt`。
-- 确认旧项目区域为 `nabu_esp` 4 GiB + `nabu_system` 60 GiB，共 64 GiB；用户已授权回收，当前登记了准确边界，尚未格式化。
+- 确认旧项目区域为 `nabu_esp` 4 GiB + `nabu_system` 60 GiB，共 64 GiB；用户已授权回收。2026-11-04 保留 GPT 边界，在系统区写入 20F66 OS／SystemOS 和空 49 GiB APFS Data，完整回读哈希通过，详见设备安装记录。
 - 从 Apple CDN 的 20F66 IPSW 提取 KernelCache、DeviceTree、StaticTrustCache，记录 ZIP CRC 和文件 SHA-256。
 - 编译 Apple LZFSE 解码器，取得原版 arm64 内核与 229 条 prelink 组件记录。
 - HakiOS 8796 补丁在固定 Apple 8796.121.2 源码上通过 `git apply --check`。
@@ -52,9 +56,10 @@
 
 ## 正在推进
 
-1. 分析剩余 17 个 UAT 类符号与 7 个 IOMMU 操作的对象、页表及分派契约；保留导出检查的真实失败状态。
+1. 当前选定组件合同已将 17 个 UAT 类符号与 7 个 IOMMU 操作从非 Apple 构建清单排除，两遍原生导出检查均成功。扩大组件闭包之前仍需补齐这些操作的真实契约，不能将排除导出理解为实现了接口。
 2. 扩展 IIG 回调、类布局、生命周期、原版组件重定位和初始化入口的证据。已有消息常量与有限分支检查不能替代这些工作。
 3. 按服务归属建立 nabu 八核配置，使用已核实的 affinity、PSCI SMC、虚拟定时器 INTID 19；逐核核验启动、SGI、timer 和调度。旧项目仅提供待查方向。
 4. 在已通过主机／编译检查的 32 页早期页表、8796 loader ABI 和最大 12 GiB 解析能力之上，取得最终 UEFI 所有权后再选择实际窗口。补齐 nabu ADT、CPU／UFS 和内存交接，实现实际板级构建。
+5. 将已选择的 OS／SystemOS／磁盘 Data 窗口接入 20F66 存储 ABI、nabu UFS 有界写入及 `/private/var` 挂载。参考 nabu 补丁当前禁用 UFS 写入，不能直接使用其 RAM Data 路径实现用户要求的状态保存。
 
-当前 Actions 产物用于验证 8796 的源码编译和静态接口；尚未形成 nabu 专用可启动内核、ADT 或安装镜像。本阶段未重启、刷写或调整设备分区。
+当前 Actions 产物用于验证 8796 的源码编译和静态接口；尚未形成 nabu 专用可启动内核、ADT 或临时 boot.img。设备写入仅限另文记录的已授权 `nabu_system` 内部；本轮未重启，未修改 GPT、Android 引导分区或活动槽。

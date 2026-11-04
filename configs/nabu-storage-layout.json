@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "nabu-20F66-persistent-v1",
+  "partition_name": "nabu_system",
+  "partition_bytes": 64424509440,
+  "logical_block_bytes": 4096,
+  "manifest_format": "SHNGROOT-v1",
+  "root_image_bytes": 10737418240,
+  "system_windows": [
+    {"name": "OS", "filename": "20F66-OS.apfs", "offset": 1048576, "bytes": 5068816384, "sha256": "437891d485a5812f9e4c7a5870e27b83dd54e506d18aa679f0c549902ed63c7a", "volume_uuid": "65a02939-b0d4-4bd2-b5dc-7d670691ee10"},
+    {"name": "SystemOS", "filename": "20F66-SystemOS.apfs", "offset": 6442450944, "bytes": 2663383040, "sha256": "ed44dccbbe29287ad659dba892a50eb03ac1df2ec604da4256e48c741f15d626", "volume_uuid": "faeabb4a-72cb-451b-a33c-75418e0f882f"}
+  ],
+  "data": {
+    "offset": 10737418240,
+    "bytes": 52613349376,
+    "label": "NabuData",
+    "container_uuid": "2fb37bd1-f391-47c8-9efc-d1b2c08baafa",
+    "volume_uuid": "168f804b-0cb5-4167-a239-c71953e36966",
+    "case_sensitive": true,
+    "purpose": "Persistent raw APFS Data window; kernel write/mount path and reboot persistence remain to be qualified"
+  },
+  "reserved": {"offset": 63350767616, "bytes": 1073741824, "purpose": "Future logs; not an enabled kernel write window"},
+  "formatter": {"repository": "https://github.com/linux-apfs/apfsprogs.git", "commit": "1bd1c1c2140d13d1b6d2e03379316572bee70aa3", "tool": "mkapfs", "host_checker": "apfsck", "qualification": "Experimental host tools; no Apple mount qualification inferred"},
+  "device_boot_validated": false,
+  "persistence_validated": false
+}
