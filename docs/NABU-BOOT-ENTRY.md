@@ -2,7 +2,7 @@
 
 更新：2026-11-04，Asia/Shanghai。本文区分当前设备、固定源码和待验证候选。
 
-接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。首次临时启动已经到达 DarwinBoot 的退出 Boot Services 前交接阶段；内核入口执行与 UFS／Data 挂载仍待验证。系统区安装见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
+接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。第三次临时启动的照片已证明 XNU 执行至启用 MMU 后的检查点 5；C 初始化、副核启动与 UFS／Data 挂载仍待验证。系统区安装见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
 
 用户要求启动只能临时进行。核对设备与镜像后执行 `adb reboot bootloader`、`fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。设备操作已获本会话授权。
 
@@ -78,7 +78,17 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 `check_nabu_kernel_report.py` 对实际编译 blob 执行 3 个 Unicorn 场景：高／低物理地址、检查点／异常原因、无效显示参数，并检查输入寄存器保留、栈切换与内存边界哨兵；实际 slot binder 通过 7 项 ASan／UBSan 场景。8796 ABI 和 13,644 个截断 ADT／5 个分配场景通过。这些是主机检查，不证明真实 MMU 行为或内核执行；第三轮须单独记录屏幕结果。
 
-2026-11-04 10:10:15 完成检查点 5 版本部署，收据为 `log/device/nabu-chain-20261104-101015/deployment.json`。10:10:58 开始第三次临时启动，源码提交 `9540428e1dbb1968315bb0af2374658608f95ccc`；实际命令为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-03\boot.img`。发送与 Booting 返回 OKAY，确切启动链、回调构建／主机检查和运行收据冻结在 `log/device/nabu-boot-20261104-03/`。屏幕回调结果与返回 Android 后的回收尚待完成。
+2026-11-04 10:10:15 完成检查点 5 版本部署，收据为 `log/device/nabu-chain-20261104-101015/deployment.json`。10:10:58 开始第三次临时启动，源码提交 `9540428e1dbb1968315bb0af2374658608f95ccc`；实际命令为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-03\boot.img`。发送与 Booting 返回 OKAY，确切启动链、回调构建／主机检查和运行收据冻结在 `log/device/nabu-boot-20261104-03/`。
+
+用户照片确认第四条品红色带、`XNU CALLBACK REACHED`、`KERNEL CHECKPOINT - INTENTIONAL STOP`、REASON=2、CODE=5。此处 X4..X7 是未定义为异常状态的寄存器；LOG PA／BYTES 为零，符合汇编检查点 ABI。它证明启动 CPU 实际执行内核，并到达 `common_start` 中写 SCTLR_EL1 启用 MMU、ISB 之后的检查点。它不是异常或完整系统启动，也不证明副核运行、C 初始化或存储挂载。
+
+照片保存在本地 run 目录的 `screen-checkpoint5.jpg`，哈希及解释在 `screen-observation.json`，`run.json` 已按该证据标记 `kernel_execution_validated=true` 并限定证据范围。返回 Android 后回读 `handoff-19E557B6.txt`（7298 bytes，SHA-256 `ee289058cc490524fa797f0072f34f8caf8c7d96f8b8d40d71f16a233303ccb1`），它记录 checkpoint=5、callback PA=`0x181444000`；30 份 GPT 元数据和 14 个受检引导分区哈希全部一致。
+
+### C 初始化诊断候选
+
+后续 loader 支持已核对的检查点 1..5、10..21、30..35、40..44，0 保留为关闭诊断。默认选择 12，实际内核 `0xfffffff00743f2b8` 调用 `ml_parse_cpu_topology`，随后 `0xfffffff00743f2bc` 把 12 放入 w0、`0xfffffff00743f2c0` 调用 `loader_checkpoint`。因此到达 12 可证明经过 C 入口、boot_args 复制、PE_init_platform(FALSE)、早期 boot-arg 处理和 CPU 拓扑解析，但副核还没有启动。C 回调入口保持物理地址的恒等映射，报告 stub 在切换自己的物理栈前关闭 MMU。
+
+`stage_nabu_boot_chain.py --checkpoint N` 将选定值写入 ADT 并记录在部署收据中，重复输出目录必须匹配原 ADT，防止意外改变已冻结的候选。WSL v6 构建通过；ADT 的 46 个检查点接受／拒绝用例、13,644 个截断输入、5 个分配场景、9 个实际 binder 场景和 3 个报告 blob 仿真场景均通过。报告 blob 与第三轮相同；UniXNU.efi SHA-256 为 `bb23ca127907b8b90359c479b25c84f6c5e67ba724c6cf49547bf21bac1f8c06`（95,232 bytes），DarwinBoot.efi 为 `25727a0474692c527b0ac6115a66cfacd5683996ea5281acdba06f1b04c0b214`（32,256 bytes）。
 
 ## 当前设备入口
 

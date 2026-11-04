@@ -44,7 +44,7 @@ def main():
     frame_size = stride * height
     results = []
     for i, (base, reason, code, valid_video) in enumerate([
-            (0x181448000, 2, 5, True), (0x204000, 1, 0x96000004, True),
+            (0x181448000, 2, 12, True), (0x204000, 1, 0x96000004, True),
             (0x281448000, 2, 5, False)]):
         uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_ARM)
         uc.mem_map(base-4096, 16384+8192)
@@ -103,8 +103,10 @@ typedef struct {UINT64 Address,FileSize;} SEGMENT;
 typedef struct {UINT64 Base; UINTN Count; SEGMENT Segments[2];} KERNEL;
 static const UINT64 mDiagFont[95]={42};
 '''
-    binder = function((ROOT/'patches/darwinboot/NabuHandoff.h').read_text(), 'NabuInstallKernelReport')
-    test = prelude + (a.blob_work/'NabuKernelReportBlob.h').read_text() + binder + r'''
+    header = (ROOT/'patches/darwinboot/NabuHandoff.h').read_text()
+    binder = function(header, 'NabuInstallKernelReport')
+    defines = header[:header.index('typedef struct')]
+    test = prelude + defines + (a.blob_work/'NabuKernelReportBlob.h').read_text() + binder + r'''
 int main(void){
  unsigned char *ram=aligned_alloc(16384,65536);assert(ram);memset(ram,0,65536);
  UINT64 pa=(UINT64)(uintptr_t)ram, dst=pa+16384, video[6]={1,2,3,4,5,6};
@@ -123,7 +125,11 @@ int main(void){
  UINT64 *cfg=(UINT64 *)(uintptr_t)(dst+NABU_KERNEL_REPORT_CONFIG);
  assert(memcmp(cfg+8,video,sizeof(video))==0&&cfg[14]==42);
  assert(memcmp((void *)(uintptr_t)dst,mNabuKernelReport,NABU_KERNEL_REPORT_CONFIG)==0);
- free(ram);puts("7 slot binding cases passed");return 0;
+ slot[1]=slot[2]=slot[3]=0;
+ assert(NabuInstallKernelReport(&k,pa,dst,12,video)==0&&slot[2]==12);
+ slot[1]=slot[2]=slot[3]=0;
+ assert(NabuInstallKernelReport(&k,pa,dst,45,video)==2);
+ free(ram);puts("9 slot binding cases passed");return 0;
 }
 '''
     src, exe = a.output/'binder.c', a.output/'binder'

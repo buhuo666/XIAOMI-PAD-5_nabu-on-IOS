@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Used only after AdtNode has validated the complete Apple tree.
+
+// Existing assembly and arm_init checkpoints in the pinned 8796 kernel.
+#define NABU_CHECKPOINT_VALID(N) (((N) >= 1 && (N) <= 5) || \
+                                ((N) >= 10 && (N) <= 21) || \
+                                ((N) >= 30 && (N) <= 35) || \
+                                ((N) >= 40 && (N) <= 44))
 typedef struct {
   BOOLEAN Enabled;
   BOOLEAN AutoMemory;
@@ -68,7 +74,7 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
     if (AsciiStrCmp (Key, "nabu-handoff-version") == 0 && Length == 4) { Version = U32 (Data + Value); }
     if (AsciiStrCmp (Key, "darwinboot-auto-memory") == 0 && Length == 4) { Auto = U32 (Data + Value); }
     if (AsciiStrCmp (Key, "nabu-kernel-checkpoint") == 0) {
-      if (Length != 4 || U32 (Data + Value) > 5) { return FALSE; }
+      if (Length != 4 || (U32 (Data + Value) != 0 && !NABU_CHECKPOINT_VALID (U32 (Data + Value)))) { return FALSE; }
       Checkpoint = U32 (Data + Value);
     }
     if (AsciiStrCmp (Key, "dram-base") == 0 && Length == 8) { Base = Value; }
@@ -102,7 +108,7 @@ NabuInstallKernelReport (KERNEL *Kernel, UINT64 Address, UINT64 ReportAddress,
   UINT8 *Data;
   UINT64 *Slot = NULL;
   UINT64 *Config;
-  if (Checkpoint == 0 || Checkpoint > 5 || (ReportAddress & (SIZE_16KB - 1)) != 0) {
+  if (!NABU_CHECKPOINT_VALID (Checkpoint) || (ReportAddress & (SIZE_16KB - 1)) != 0) {
     return EFI_INVALID_PARAMETER;
   }
   for (Index = 0; Index < Kernel->Count; ++Index) {

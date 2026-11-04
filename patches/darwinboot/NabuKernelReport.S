@@ -3,8 +3,9 @@
 .global kernel_report_start
 .type kernel_report_start, %function
 kernel_report_start:
-  // The XNU callback arrives at a physical PC with the MMU off. Its stack
-  // may still be a kernel VA; do not touch it before installing our own.
+  // Assembly callbacks arrive with the MMU off; C callbacks identity-map
+  // this code through TTBR0. Neither permits use of the old virtual stack
+  // after disabling translation. Install our physical stack before C.
   msr daifset, #15
   dsb sy
   mrs x9, sctlr_el1

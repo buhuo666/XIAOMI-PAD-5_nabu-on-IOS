@@ -31,7 +31,7 @@ def main():
     full_header = (a.tree/'DarwinBootPkg/Driver/NabuHandoff.h').read_text()
     header = full_header.split('STATIC VOID')[0] + function(full_header, 'NabuFindChosen')
     window = (a.tree/'DarwinBootPkg/Driver/WindowSize.h').read_text()
-    blob = make_tree(bytes(range(64))).encode()
+    blob = make_tree(bytes(range(64)), checkpoint=12).encode()
     prelude = r'''
 #include <stdint.h>
 #include <stddef.h>
@@ -99,7 +99,15 @@ static int adt(unsigned char*b,size_t size,NABU_HANDOFF*out){
 }
 int main(void){
  NABU_HANDOFF info={0};assert(adt(blob,sizeof(blob),&info));
- assert(info.Enabled&&info.AutoMemory&&info.Checkpoint==5&&U64(blob+info.DramBase)==0&&U64(blob+info.DramSize)==0);
+ assert(info.Enabled&&info.AutoMemory&&info.Checkpoint==12&&U64(blob+info.DramBase)==0&&U64(blob+info.DramSize)==0);
+ size_t checkpoint_at=0;for(size_t p=0;p+40<=sizeof(blob);p++){
+  if(memcmp(blob+p,"nabu-kernel-checkpoint",22)==0){checkpoint_at=p+36;break;}}
+ assert(checkpoint_at);unsigned checkpoint_cases=0;
+ for(UINT32 n=0;n<=45;n++){
+  memcpy(blob+checkpoint_at,&n,4);NABU_HANDOFF test={0};
+  int expected=n==0||(n>=1&&n<=5)||(n>=10&&n<=21)||(n>=30&&n<=35)||(n>=40&&n<=44);
+  assert(adt(blob,sizeof(blob),&test)==expected);if(expected)assert(test.Checkpoint==n);++checkpoint_cases;}
+ UINT32 selected=12;memcpy(blob+checkpoint_at,&selected,4);
  for(size_t n=0;n<sizeof(blob);n++){NABU_HANDOFF bad={0};assert(!adt(blob,n,&bad));}
  blob[info.DramBase]=1;NABU_HANDOFF bad={0};assert(!adt(blob,sizeof(blob),&bad));blob[info.DramBase]=0;
  KERNEL kernel={.Base=0xfffffff007004000ULL};UINT64 size,address;
@@ -118,7 +126,7 @@ int main(void){
  assert(AllocateWindow(&kernel,&size,0,&address)==9&&alloc_calls==calls);
  // Fixed mode still reserves exactly the requested size.
  size=0x10000000;assert(AllocateWindow(&kernel,&size,0,&address)==0&&size==0x10000000&&allocated_bytes==size);
- printf("{\"passed\":true,\"truncated_adt_cases\":%zu,\"allocation_scenarios\":5}\n",sizeof(blob));
+ printf("{\"passed\":true,\"truncated_adt_cases\":%zu,\"allocation_scenarios\":5,\"checkpoint_cases\":%u}\n",sizeof(blob),checkpoint_cases);
 }
 '''
     c = a.output/'actual-handoff.c'

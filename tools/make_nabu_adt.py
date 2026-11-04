@@ -11,6 +11,8 @@ import zlib
 U32 = lambda x: struct.pack('<I', x)
 U64 = lambda x: struct.pack('<Q', x)
 STR = lambda x: x.encode('ascii') + b'\0'
+CHECKPOINTS = (0, *range(1, 6), *range(10, 22), *range(30, 36), *range(40, 45))
+DEFAULT_CHECKPOINT = 12
 
 
 class Node:
@@ -44,7 +46,9 @@ def nvram():
     return bytes(bank)
 
 
-def make_tree(seed):
+def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT):
+    if checkpoint not in CHECKPOINTS:
+        raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     cpus = []
     for i in range(8):
         props = {'device_type': STR('cpu'), 'state': STR('running' if i == 0 else 'waiting'),
@@ -58,7 +62,7 @@ def make_tree(seed):
     chosen = Node('chosen', {
         'random-seed': seed, 'nabu-handoff-version': U32(1),
         'darwinboot-memory-size': U64(12 << 30), 'darwinboot-auto-memory': U32(1),
-        'nabu-kernel-checkpoint': U32(5),
+        'nabu-kernel-checkpoint': U32(checkpoint),
         'dram-base': U64(0), 'dram-size': U64(0),
         'debug-enabled': U32(1), 'psci-method': STR('smc'),
         'osenvironment': STR('main'), 'display-scale': U32(2),
@@ -115,8 +119,9 @@ def parse(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
     args = parser.parse_args()
-    blob = make_tree(secrets.token_bytes(64)).encode()
+    blob = make_tree(secrets.token_bytes(64), args.checkpoint).encode()
     root, children = parse(blob)
     nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
     assert len(nodes['cpus'][1]) == 8
@@ -125,6 +130,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(blob)
     report = {'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest(), 'cpu_count': 8,
+              'checkpoint': args.checkpoint,
               'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
               'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
               'device_boot_validated': False, 'root_storage_driver_integrated': False}

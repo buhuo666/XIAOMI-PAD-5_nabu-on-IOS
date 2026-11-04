@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from make_nabu_adt import make_tree, parse
+from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41671552454-attempt-1/xnu8796-reference-13/artifacts/8796-reference/mach.development.bcm2837'
@@ -43,6 +43,7 @@ def main():
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--adb', default='D:/platform-tools/adb.exe')
     ap.add_argument('--gpt-backup', type=Path)
+    ap.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
     a = ap.parse_args()
     assert sha(KERNEL) == KERNEL_SHA, 'Kernel differs from verified successful build'
     efi = ROOT/'artifacts/nabu-efi'
@@ -59,10 +60,10 @@ def main():
         blob = adt_path.read_bytes()
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
-        assert blob == make_tree(chosen['random-seed']).encode(), 'Existing ADT differs from current builder'
+        assert blob == make_tree(chosen['random-seed'], a.checkpoint).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
-        blob = make_tree(secrets.token_bytes(64)).encode()
+        blob = make_tree(secrets.token_bytes(64), a.checkpoint).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -71,6 +72,7 @@ def main():
         target.write_bytes(data)
         manifest.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
     receipt = {'files': manifest, 'status': 'prepared', 'kernel_execution_validated': False,
+               'checkpoint': a.checkpoint,
                'root_storage_integrated': False, 'deployment_scope': 'nabu_esp files only'}
     (a.output/'chain-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n')
     if not a.apply:
