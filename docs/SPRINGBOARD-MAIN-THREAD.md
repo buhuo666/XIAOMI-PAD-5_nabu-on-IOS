@@ -105,3 +105,5 @@
 本次候选只在 `/chosen` 增加六字节 `mac-address-wifi0`，值来自连接设备 Android 的 `wlan0/address`，且 `addr_assign_type=0`。设备标识、地址与哈希保留在被 Git 忽略的本地目录，公开源码不硬编码设备地址。没有添加网卡服务或声称 Wi-Fi 驱动可用。部署工具新增 `--wifi-mac-file`，部署前再次与本机 sysfs 对照；省略该参数仍生成原版设备树。
 
 候选 `artifacts/nabu-chain-desktop-v20` 与第十九轮使用同一随机种子，独立递归比较确认只有上述属性变化。其余五个启动文件及 boot.img 均逐字节一致；保留 `ustacks=lsd`、90 秒一次采样及 120 秒返回。7 个非法地址输入被拒绝，旧参数生成结果与冻结 ADT 一致，复用候选但遗漏身份参数会在写文件前拒绝。实际候选 ADT 通过 loader 原生 ASan／UBSan 解析，既有 46 个 checkpoint、5 个分配和 bootstrap 边界检查通过。设备结果待临时启动与照片验证。
+
+第二十轮于 `2026-11-04T19:46:02.639810+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `fa1e121de4825c84e81a89a49f3dd19fe057b198`，部署收据 `log/device/nabu-chain-20261104-194445/deployment.json`。六个文件已 SHA-256 回读，部署前 Wi-Fi 地址再核对一致；启动前 30 份 GPT 元数据通过、14 个引导分区哈希已记录。84 份输入／验证文件及 boot.img 冻结在 `log/device/nabu-boot-20261104-20/`。当前仅确认命令成功，实际桌面／lsd 等待变化需要约两分钟后的照片；恢复 Android 后仍需本轮 `--collect`。
