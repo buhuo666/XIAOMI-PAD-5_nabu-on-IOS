@@ -61,3 +61,5 @@ macOS Actions `41778561798`（attempt 1，源码提交 `f613199a1f32640e10b6b248
 macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`）完整编译和全部检查成功。前一轮 `41784486372` 已编译两个程序，但测试用的 `__unused` 宏与 macOS 头部重复，现以定义保护修正。候选内核为 17,126,384 bytes、SHA-256 `ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529`；下载后再次核对大小、哈希、11 个原生范围的 3,069 条指令、13 个生成存储文件、3 个用户态源码文件与首错处理源码。
 
 `artifacts/nabu-bootstrap-v2/bootstrap.apfs` 为 8 MiB，SHA-256 `15b08f2febf2f12f24fe27acf3a9b5c7af4e5ae0462e262c8d597611dee5c212`。两个 APFS 容器检查通过，独立读取其中的 stage0、init 和初始设置偏好通过。该包先使用前一轮已编译的程序组装，现已逐字节确认与完整成功构建的两个程序相同。第十三轮准备沿用 120 秒窗口，设备执行结果待收集。
+
+2026-11-04 14:26:40 完成六个 ESP 文件部署和哈希回读（`log/device/nabu-chain-20261104-142640/deployment.json`），14:27:35 执行第十三轮临时启动（Asia/Shanghai）。发送与 Booting 均返回 OKAY；启动源提交 `4c4ced37ccc416fe5afac19e3580d3aacc956761`，启动前 30 份 GPT 元数据和 14 个受检引导分区均完成核验。343 份冻结输入／检查文件及 boot.img、run.json 保存在 `log/device/nabu-boot-20261104-13/`。当前等待约两分钟后的完整屏幕，重点为 `NABU USERLAND`、`NABU INIT FAILURE` 及 launchd／dyld 日志；此轮运行和桌面尚未验证。拍照后恢复 Android，再对同一运行目录执行 `--collect`。

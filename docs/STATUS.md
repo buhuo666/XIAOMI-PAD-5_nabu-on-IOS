@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十二轮照片确认源构建 init 到达 phase 5（SystemOS 挂载完成），存储读取 121 次、失败 0 次，随后进入停机路径；尚未到达 launchd exec 阶段。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。主机复现了一个确定错误：20F66 iPad 镜像缺少 NanoLaunchDaemons，原复合绑定因此失败并跳过后续绑定。第十三轮候选改为独立绑定及可选目录检测，并保留首个 PID1 初始化失败到屏幕返回报告；主机 ASan/UBSan 与 arm64 编译语法检查通过，macOS 构建和实机验证待完成。详见 [用户态初始化](../userland/nabu/README.md)。
+最新主线结果：第十二轮照片确认源构建 init 到达 phase 5（SystemOS 挂载完成），存储读取 121 次、失败 0 次，随后进入停机路径；尚未到达 launchd exec 阶段。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。主机复现了一个确定错误：20F66 iPad 镜像缺少 NanoLaunchDaemons，原复合绑定因此失败并跳过后续绑定。第十三轮改为独立绑定及可选目录检测，并保留首个 PID1 初始化失败到屏幕返回报告；macOS Actions `41784700433` 全部通过，产物／源码／APFS 回读均已核对。2026-11-04 14:27:35（Asia/Shanghai）执行第十三轮临时启动，发送和 Booting 成功，343 份冻结证据位于 `log/device/nabu-boot-20261104-13/`；正在等待屏幕结果，尚未确认 launchd 或桌面。详见 [用户态初始化](../userland/nabu/README.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 
@@ -90,4 +90,4 @@ v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长�
 4. 在已通过主机／编译检查的 32 页早期页表、8796 loader ABI 和最大 12 GiB 解析能力之上，取得最终 UEFI 所有权后再选择实际窗口。补齐 nabu ADT、CPU／UFS 和内存交接，实现实际板级构建。
 5. 将已选择的 OS／SystemOS／磁盘 Data 窗口接入 20F66 存储 ABI、nabu UFS 有界写入及 `/private/var` 挂载。参考 nabu 补丁当前禁用 UFS 写入，不能直接使用其 RAM Data 路径实现用户要求的状态保存。
 
-当前参考内核与 nabu 八核 ADT、EFI 和临时 boot.img 已组成可测试的启动链。它尚未整合原生 UFS、原版组件预链接和 Data 挂载；不能将其称为可用 iPadOS 系统。设备写入包括另文记录的 `nabu_system` 安装和本次 ESP 文件部署，启动只允许 `fastboot boot`，不得修改 GPT、Android 引导分区或活动槽。
+当前启动链已接通只读原生 UFS、OS／SystemOS 挂载和静态 RAM bootstrap；磁盘 Data 挂载、状态持久化与桌面仍未完成，不能称为可用 iPadOS 系统。设备写入包括另文记录的 `nabu_system` 安装和 ESP 文件部署，启动只允许 `fastboot boot`，不得修改 GPT、Android 引导分区或活动槽。
