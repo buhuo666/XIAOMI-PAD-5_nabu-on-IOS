@@ -28,7 +28,8 @@ def main():
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     source = (a.tree/'DarwinBootPkg/Driver/DarwinBoot.c').read_text()
-    header = (a.tree/'DarwinBootPkg/Driver/NabuHandoff.h').read_text().split('STATIC EFI_STATUS')[0]
+    full_header = (a.tree/'DarwinBootPkg/Driver/NabuHandoff.h').read_text()
+    header = full_header.split('STATIC VOID')[0] + function(full_header, 'NabuFindChosen')
     window = (a.tree/'DarwinBootPkg/Driver/WindowSize.h').read_text()
     blob = make_tree(bytes(range(64))).encode()
     prelude = r'''

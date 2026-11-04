@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 NABU_EFI_WORK=${NABU_EFI_WORK:-/home/buhuo/nabu16-efi-v1}
+NABU_EFI_EDK=${NABU_EFI_EDK:-"$NABU_EFI_WORK/edk2"}
 export PROJECT_ROOT NABU_EFI_WORK
 export CLANG_BIN=/usr/lib/llvm-18/bin/
 export PATH="$CLANG_BIN:$PATH"
@@ -19,16 +20,16 @@ def git(path,*args):return subprocess.check_output(['git','-C',str(path),*args],
 assert git(p,'rev-parse','HEAD')==cfg['commit']
 for rel,commit in cfg['submodules'].items():assert git(p/rel,'rev-parse','HEAD')==commit
 PY
-if [ ! -d "$NABU_EFI_WORK/edk2" ]; then
-  cp -a src/edk2-efi8796 "$NABU_EFI_WORK/edk2"
+if [ ! -d "$NABU_EFI_EDK" ]; then
+  cp -a src/edk2-efi8796 "$NABU_EFI_EDK"
 fi
 if [ ! -d "$NABU_EFI_WORK/loader" ]; then
   python3.12 tools/prepare_8796_loader.py --output "$NABU_EFI_WORK/loader"
 fi
-python3.12 tools/restore_git_exec.py "$NABU_EFI_WORK/edk2"
+python3.12 tools/restore_git_exec.py "$NABU_EFI_EDK"
 python3.12 tools/check_darwinboot_8796.py --tree "$NABU_EFI_WORK/loader" --output log/host/nabu-efi/abi
 python3.12 tools/check_nabu_handoff.py --tree "$NABU_EFI_WORK/loader" --output log/host/nabu-efi/handoff
-export UNIXNU_EDK2="$NABU_EFI_WORK/edk2"
+export UNIXNU_EDK2="$NABU_EFI_EDK"
 export UNIXNU_BUILD_DIR="$NABU_EFI_WORK/workspace"
 bash src/unixnu/package/build.sh -b DEBUG -t CLANGPDB 2>&1 | tee log/host/nabu-efi/unixnu-build.log
 export WORKSPACE="$UNIXNU_BUILD_DIR"

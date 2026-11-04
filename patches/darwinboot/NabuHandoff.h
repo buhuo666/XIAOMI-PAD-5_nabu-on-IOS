@@ -7,6 +7,41 @@ typedef struct {
   UINTN DramSize;
 } NABU_HANDOFF;
 
+// Direct framebuffer text; safe after ExitBootServices because it calls no
+// firmware service and allocates nothing. Three rows stay visible mid-screen.
+STATIC VOID
+NabuDrawPhase (UINT64 Video[6], CONST CHAR16 *Text, UINTN Row)
+{
+  volatile UINT32 *Fb = (volatile UINT32 *)(UINTN)Video[0];
+  UINTN X = 0, Y, Index, Gx, Gy, Dx, Dy;
+  UINT64 Glyph, Bits;
+  CHAR16 Ch;
+  if (Video[0] == 0 || Video[3] < 24 || Video[4] < 224 || Row >= 3) { return; }
+  Y = Video[4] / 2 + Row * 56;
+  if (Y + 56 > Video[4]) { return; }
+  for (Index = 0; Text[Index] != 0; ++Index) {
+    Ch = Text[Index];
+    if (Ch < 32 || Ch > 126) { continue; }
+    if (X + 24 > Video[3]) { break; }
+    Glyph = mDiagFont[Ch - 32];
+    for (Gy = 0; Gy < 56; ++Gy) {
+      for (Gx = 0; Gx < 24; ++Gx) { Fb[(Y + Gy) * (Video[2] / 4) + X + Gx] = 0xff000000; }
+    }
+    for (Gy = 0; Gy < 12; ++Gy) {
+      Bits = Gy < 6 ? (Glyph >> 32) >> (Gy * 5) : (Glyph & 0xffffffffULL) >> ((Gy - 6) * 5);
+      for (Gx = 0; Gx < 5; ++Gx) {
+        if ((Bits >> Gx) & 1) {
+          for (Dy = 0; Dy < 4; ++Dy) {
+            for (Dx = 0; Dx < 4; ++Dx) { Fb[(Y + Gy * 4 + Dy) * (Video[2] / 4) + X + Gx * 4 + Dx] = 0xffffffff; }
+          }
+        }
+      }
+    }
+    X += 24;
+  }
+  __asm__ volatile ("dsb sy" ::: "memory");
+}
+
 STATIC BOOLEAN
 NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOFF *Out)
 {

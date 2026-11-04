@@ -90,9 +90,16 @@ def main():
             if mode not in (b'100644', b'100755') or path.suffix.lower() not in ('.efi', '.dtb', '.aml'):
                 continue
             data = path.read_bytes()
-            assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest() == blob.decode(), 'Input binary differs from pinned Git blob'
+            canonical = data
+            # Upstream's absent Linux DTBs contain the text "dummy\n". A
+            # Windows checkout can apply CRLF to these text placeholders.
+            placeholder_crlf = path.suffix.lower() == '.dtb' and data == b'dummy\r\n'
+            if placeholder_crlf:
+                canonical = b'dummy\n'
+            assert hashlib.sha1(b'blob '+str(len(canonical)).encode()+b'\0'+canonical).hexdigest() == blob.decode(), 'Input binary differs from pinned Git blob: '+str(path)
             binary_records.append({'path': path.relative_to(args.output).as_posix(),
                                    'bytes': len(data), 'git_blob': blob.decode(),
+                                   'text_placeholder_crlf': placeholder_crlf,
                                    'sha256': hashlib.sha256(data).hexdigest()})
     (report.parent / 'input-binaries.json').write_text(json.dumps(binary_records, indent=2) + '\n')
 

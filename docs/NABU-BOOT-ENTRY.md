@@ -2,13 +2,15 @@
 
 更新：2026-11-04，Asia/Shanghai。本文区分当前设备、固定源码和待验证候选。
 
-接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。系统区安装已完成；内核 UFS／Data 挂载与真机启动仍待验证，见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
+接手验收更新：`f77e851` 对应内核 Actions `41671552454`、独立 EFI Actions `41671552536` 均成功。2026-11-04 又在本地 WSL 完成板级固件、两个 EFI 程序、八核 ADT，并部署现有 ESP。首次临时启动已经到达 DarwinBoot 的退出 Boot Services 前交接阶段；内核入口执行与 UFS／Data 挂载仍待验证。系统区安装见 [设备安装记录](DEVICE-INSTALLATION-20F66.md)。
 
 用户要求启动只能临时进行。核对设备与镜像后执行 `adb reboot bootloader`、`fastboot boot <verified-nabu-image.img>`。不得执行 `fastboot flash`、`erase`、`set_active`，不得写入 boot、recovery、xbl、abl 或修改活动槽。设备操作已获本会话授权。
 
 ## 本地构建与部署结果
 
 工具链：WSL Ubuntu 22.04，LLVM／Clang／LLD 18.1.8，Python 3.12.16。Mu 固件固定上游提交 `d8aab0e2c272caeef5329716ff554c08cfebd6bd`；应用补丁 `patches/firmware/nabu-temporary-boot.patch`。直接依赖通过固定 Git gitlink 或上游 descriptor 中的版本、SHA-256 校验，离线导入的 Stuart 依赖收据在 `log/ci/nabu-firmware/local-cache-import.json`。
+
+以下是首次实机所用产物，新诊断 EFI 另列于后文。
 
 | 产物 | bytes | SHA-256 |
 |---|---:|---|
@@ -35,6 +37,32 @@ wsl -d Ubuntu-22.04 -- env NABU_EFI_WORK=/home/buhuo/nabu16-efi-v2 bash /mnt/d/g
 ```
 
 以下章节保留前期入口调查背景，不能作为部署后的当前 ESP 清单。
+
+## 首次实机与分阶段诊断
+
+2026-11-04 09:28:59（Asia/Shanghai）开始的实机记录使用源码提交 `4efc8f4025a4099b4e4117517cf072bc4e982c5d`，收据在 `log/device/nabu-boot-20261104-01/run.json`。实际命令为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-01\boot.img`；发送与 Booting 均返回 OKAY。
+
+用户照片显示 UniXNU 背景上的 DarwinBoot 交接文字，不能据此判为菜单按键故障。该文字位于 ExitBootServices 调用之前。照片没有包含物理屏幕最顶端，无法判断绿色条是否出现。返回 Android 后，回收 `EFI/Nabu16/handoff-1A7F4ABE.txt`，7264 bytes，SHA-256 `f913d266b4852efe0da84c284c3bce16455996185fd11772294941631b9a6e3c`。这份日志明确属于 pre-ExitBootServices：
+
+| 字段 | 实际值 |
+|---|---|
+| EL / MPIDR / CNTFRQ | 1 / `0x81000000` / 19,200,000 Hz |
+| 连续分配基址 / 长度 | `0x180004000` / `0x1F8C00000`，7.88671875 GiB |
+| boot_args / 内核入口物理地址 | `0x18143C000` / `0x1804484A8` |
+| framebuffer | `0x9C000000`，1600×2560，rowBytes 6400，32 bpp |
+
+内存映射记录已证明该高地址窗口在固件中成功登记并完成整段分配；它不证明 XNU 已接管或使用这段内存。回收工具确认 6 个 LUN 的 30 份 GPT 元数据、所有受检 Android 引导分区哈希与启动前一致，Android 槽 A 正常返回。
+
+WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II。DarwinBoot 加入不调用 UEFI 服务的 framebuffer 文本与汇编阶段条，完整构建、8796 ABI 和实际 ADT／分配器检查通过：
+
+| 新诊断产物 | bytes | SHA-256 |
+|---|---:|---|
+| UniXNU.efi | 95,232 | `76a0ed84ce6119d619e2499c72837225d903a1bfe5ffbdd5aa1809b7b8fbd20b` |
+| DarwinBoot.efi | 28,672 | `f0cab6d9f5ebfb646ddd16a26ce3c4c4a0e85239fa03816d0402ec5ea173fd12` |
+
+屏幕中部依次显示 P1（最终 memory map 前）、P2（即将调用 ExitBootServices）、P3（返回成功或错误）；最顶端绿色条表示进入 loader 汇编，蓝色条表示完整窗口的 cache sweep 完成，橙色条表示 MMU／cache 关闭后即将跳转。任何色条都不证明内核入口执行。此轮保持原有约 7.89 GiB cache sweep 行为，以先定位实际停点。
+
+复现：`NABU_EFI_WORK=/home/buhuo/nabu16-efi-v4 NABU_EFI_EDK=/home/buhuo/nabu16-efi-v2/edk2 bash tools/build_nabu_efi_wsl.sh`。补丁或头文件改变时须使用新生成目录，不能把旧 loader 树的再次编译当成新修改已进入产物。
 
 ## 当前设备入口
 
@@ -64,7 +92,7 @@ wsl -d Ubuntu-22.04 -- env NABU_EFI_WORK=/home/buhuo/nabu16-efi-v2 bash /mnt/d/g
 
 该快照包含 `Platforms/SurfaceDuo1Pkg/Device/xiaomi-nabu/`，其产品 PCD 是 nabu／SM8150-AC。`build_cfg/sm8150.json` 规定 UEFI 基址 `0x9fc00000`、大小 `0x300000`、Android header v0、4096 字节页和压缩 payload。`PythonLibs/PostBuild.py` 实际将 BootShim 与固件卷拼接、gzip 压缩、追加 Android DTB，再用 mkbootimg 打包。参考构建入口为 `build_uefi.py -d xiaomi-nabu -t DEBUG`，README 指定输出 `Build/SurfaceDuo1Pkg/xiaomi-nabu.img`。
 
-上述调查已推进到本地构建与逐段检查成功，具体输入收据见本地构建章节。仍待本机启动与日志回读。
+上述调查已推进到本地构建、逐段检查与首次本机 loader 运行，具体输入收据和实机结果见上文。
 
 ## 12 GiB 相关的固件约束
 
@@ -72,7 +100,7 @@ wsl -d Ubuntu-22.04 -- env NABU_EFI_WORK=/home/buhuo/nabu16-efi-v2 bash /mnt/d/g
 
 其固件内存表还保留了 `[0xc0000000,0xc0300000)` 的 MPSS_EFS。启用 `USE_MEMORY_FOR_SERIAL_OUTPUT=1` 时，又将 `[0x17fe00000,0x180000000)` 划作 PStore。因此 Android 下无固定洞的 11 GiB 高段不能直接被当作这个固件下连续可分配窗口。最终窗口必须来自所用固件的真实 descriptors 与整段分配成功记录。
 
-另外，调查快照的 `SpiltAndAddRamPartitions()` 会覆盖前面 `AddRamPartition()` 的错误状态；对于整 2 GiB 倍数还会尝试零长度尾段，调用者也未传播其返回值。本次补丁已修复并通过主机边界测试，实际映射结果仍须从真机交接日志确认。
+另外，调查快照的 `SpiltAndAddRamPartitions()` 会覆盖前面 `AddRamPartition()` 的错误状态；对于整 2 GiB 倍数还会尝试零长度尾段，调用者也未传播其返回值。本次补丁已修复并通过主机边界测试；首次交接日志已记录约 7.89 GiB 高地址窗口的实际分配。
 
 ## 真机测试的剩余前提
 

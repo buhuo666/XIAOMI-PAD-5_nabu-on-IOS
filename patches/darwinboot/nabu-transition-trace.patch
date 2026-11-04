@@ -1,0 +1,72 @@
+--- a/DarwinBootPkg/Driver/DarwinBoot.c
++++ b/DarwinBootPkg/Driver/DarwinBoot.c
+@@ -724,17 +724,21 @@
+   DEBUG ((DEBUG_ERROR, "ID_AA64PFR0_EL1  0x%lx\n", READ_SYSREG (id_aa64pfr0_el1)));
+   DEBUG ((DEBUG_ERROR, "\nExiting boot services. A green bar across the top\nmeans the loader transition stub ran.\n"));
+   for (Attempt = 0; Attempt < 3; Attempt++) {
++    if (Nabu.Enabled) { NabuDrawPhase (Video, L"P1: final memory map", 0); }
+     MapSize = Capacity;
+     Status = gBS->GetMemoryMap (&MapSize, Map, &Key, &Stride, &Version);
+     if (EFI_ERROR (Status)) {
+       if (Attempt == 0) { goto Fail; }
+       CpuDeadLoop ();
+     }
++    if (Nabu.Enabled) { NabuDrawPhase (Video, L"P2: ExitBootServices entered", 1); }
+     Status = gBS->ExitBootServices (mImage, Key);
+     if (!EFI_ERROR (Status)) {
++      if (Nabu.Enabled) { NabuDrawPhase (Video, L"P3: EBS OK - entering stub", 2); }
+       DarwinEnter (ArgsAddress, Address + Kernel.Entry - Kernel.Base, Address, WindowSize, Video[0], Video[2] * Video[4]);
+       CpuDeadLoop ();
+     }
++    if (Nabu.Enabled) { NabuDrawPhase (Video, L"P3: ExitBootServices error", 2); }
+     if (Status != EFI_INVALID_PARAMETER) { CpuDeadLoop (); }
+   }
+   CpuDeadLoop ();
+--- a/DarwinBootPkg/Driver/Entry.S
++++ b/DarwinBootPkg/Driver/Entry.S
+@@ -9,6 +9,9 @@
+ // PA (0 for none), x5=its size in bytes. EL1 only.
+ ASM_FUNC(DarwinEnter)
+   msr daifset, #15
++  mov x12, x4
++  lsr x13, x5, #4
++  bic x13, x13, #7
+   // Breadcrumb: a green bar (BGRA 0xFF00FF00) over the top 1/16 of the frame
+   // buffer shows that this code ran, whatever the kernel does afterwards.
+   cbz x4, 2f
+@@ -40,6 +43,18 @@
+   ic iallu
+   dsb sy
+   isb
++  // Blue second band: the complete owned-window cache sweep finished.
++  cbz x12, 4f
++  mov x9, x13
++  add x11, x12, x13
++  mov w10, #0x00ff
++  movk w10, #0xff00, lsl #16
++5:
++  stp w10, w10, [x11], #8
++  subs x9, x9, #8
++  b.hi 5b
++  dsb sy
++4:
+   mrs x4, sctlr_el1
+   bic x4, x4, #1
+   bic x4, x4, #4
+@@ -49,4 +64,16 @@
+   tlbi vmalle1
+   dsb sy
+   isb
++  // Amber third band: MMU/cache shutdown finished, immediately before br.
++  cbz x12, 6f
++  mov x9, x13
++  add x11, x12, x13, lsl #1
++  mov w10, #0x8000
++  movk w10, #0xffff, lsl #16
++7:
++  stp w10, w10, [x11], #8
++  subs x9, x9, #8
++  b.hi 7b
++  dsb sy
++6:
+   br x1
