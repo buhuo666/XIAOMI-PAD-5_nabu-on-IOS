@@ -12,8 +12,8 @@ import tomllib
 from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL = ROOT/'artifacts/ci/41778561798-attempt-1/xnu8796-reference-20/artifacts/8796-reference/mach.development.bcm2837'
-KERNEL_SHA = '0905569c42a60f4418d712f720eb5f734d7ac63da4e5c3bfdc2df4718aaf8b17'
+KERNEL = ROOT/'artifacts/ci/41784700433-attempt-1/xnu8796-reference-23/artifacts/8796-reference/mach.development.bcm2837'
+KERNEL_SHA = 'ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529'
 
 
 def sha(path):

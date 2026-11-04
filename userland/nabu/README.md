@@ -56,4 +56,8 @@ macOS Actions `41778561798`（attempt 1，源码提交 `f613199a1f32640e10b6b248
 
 修正为独立检查各个绑定，仅可选 Nano 目录的 ENOENT 被接受；权限错误、非目录和挂载错误仍失败。已有的 AltAccount 目录也被覆盖为空。新增 `kern.nabu_userland_failure` 只接受 PID1 的 1–191 字节可打印 ASCII，原子发布首个失败字符串，在最终返回报告追加 `NABU INIT FAILURE`。后续失败不覆盖首个失败；此信息仍只存在 RAM，依赖屏幕照片保存，未增加持久化写入。
 
-`tools/check_nabu_userland.py` 执行实际抽取的 C，复现旧短路失败，再验证新绑定能继续到 xpc，并覆盖错误传播、诊断长度、PID1 限制、拷贝失败和发布状态。两组 ASan／UBSan 测试与完整生成程序的 arm64 语法检查已通过。第十三轮尚待 macOS 完整构建及设备执行。当前仍使用 RAM Data，持久化与完整 12 GB 内存接管待后续完成。
+`tools/check_nabu_userland.py` 执行实际抽取的 C，复现旧短路失败，再验证新绑定能继续到 xpc，并覆盖错误传播、诊断长度、PID1 限制、拷贝失败和发布状态。两组 ASan／UBSan 测试与完整生成程序的 arm64 语法检查已通过。当前仍使用 RAM Data，持久化与完整 12 GB 内存接管待后续完成。
+
+macOS Actions `41784700433`（源码 `f785b223d2a3dc1df8ad2430b9f2a7f4bb730eb4`）完整编译和全部检查成功。前一轮 `41784486372` 已编译两个程序，但测试用的 `__unused` 宏与 macOS 头部重复，现以定义保护修正。候选内核为 17,126,384 bytes、SHA-256 `ddc90e74903baaeb041358e77b75c50986e852bb9a7c1bda935c9e5e5ccd6529`；下载后再次核对大小、哈希、11 个原生范围的 3,069 条指令、13 个生成存储文件、3 个用户态源码文件与首错处理源码。
+
+`artifacts/nabu-bootstrap-v2/bootstrap.apfs` 为 8 MiB，SHA-256 `15b08f2febf2f12f24fe27acf3a9b5c7af4e5ae0462e262c8d597611dee5c212`。两个 APFS 容器检查通过，独立读取其中的 stage0、init 和初始设置偏好通过。该包先使用前一轮已编译的程序组装，现已逐字节确认与完整成功构建的两个程序相同。第十三轮准备沿用 120 秒窗口，设备执行结果待收集。
