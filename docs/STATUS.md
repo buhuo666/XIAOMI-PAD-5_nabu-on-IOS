@@ -12,6 +12,8 @@
 
 用户进一步明确：允许在已有 64 GiB 区域重新初始化并写入 iPadOS，要求系统状态持久保存；启动仍只使用 `fastboot boot`。系统材料已经全部传入设备并核验哈希。磁盘布局与写入验收以 [设备安装记录](DEVICE-INSTALLATION-20F66.md) 为准；不能将传输、APFS 初始化或编译成功当成持久化功能已通过。
 
+第二轮实机更新：用户观察到 `P3: EBS OK - ENTERING STUB` 和由上到下绿、蓝、橙三条色带，确认 loader 已走到关闭 MMU／cache 后的分支前标记。返回 Android 后，30 份 GPT 元数据和 14 个受检引导分区哈希均一致。已有内核的 `XNULDRST` 接口允许捕获早期异常或在检查点 5（启用 MMU 后）主动停下；新 EFI 的屏幕报告代码已在本地构建并通过主机验证，准备继续实机确认内核执行。
+
 ## 已完成
 
 - 建立独立工作目录和 Git 工程，下载 23 个固定提交的源码仓库；清单在 `configs/sources.lock.json`。另记录 21 条 UniXNU gitlink 与 19 个图形补丁的哈希，见 `docs/SOURCE-BASELINE.md`。

@@ -46,6 +46,7 @@ for subpath,expected in cfg['edk2']['submodules'].items():
 (root/'log/ci/efi8796/edk2-source.json').write_text(json.dumps(cfg['edk2'],indent=2)+'\n')
 PY
 EDK2="$PROJECT_ROOT/build/efi8796/edk2"
+python3 tools/build_nabu_kernel_report.py --output build/efi8796/loader/DarwinBootPkg/Driver/NabuKernelReportBlob.h --work build/efi8796/kernel-report
 export UNIXNU_EDK2="$EDK2"
 export UNIXNU_BUILD_DIR="$PROJECT_ROOT/build/efi8796/workspace"
 export PYTHON_COMMAND=python3

@@ -64,7 +64,19 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 复现：`NABU_EFI_WORK=/home/buhuo/nabu16-efi-v4 NABU_EFI_EDK=/home/buhuo/nabu16-efi-v2/edk2 bash tools/build_nabu_efi_wsl.sh`。补丁或头文件改变时须使用新生成目录，不能把旧 loader 树的再次编译当成新修改已进入产物。
 
-2026-11-04 09:44:46 完成新诊断链的 ESP 部署与逐文件 SHA-256 回读，收据为 `log/device/nabu-chain-20261104-094446/deployment.json`。09:45:17 的第二次启动记录绑定提交 `dbc2aaf3f4af6e0b6c98295b7948edb697b6570e`；启动前核对 30 份 GPT 元数据和 14 个实际存在的引导分区哈希。实际命令仍为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-02\boot.img`，Booting 返回 OKAY。`log/device/nabu-boot-20261104-02/` 保存确切 EFI／内核／ADT／配置、源与构建收据、汇编反汇编及 run.json；屏幕标记观察和返回 Android 后回收尚待完成，不能将本次命令成功升级为内核执行证据。
+2026-11-04 09:44:46 完成新诊断链的 ESP 部署与逐文件 SHA-256 回读，收据为 `log/device/nabu-chain-20261104-094446/deployment.json`。09:45:17 的第二次启动记录绑定提交 `dbc2aaf3f4af6e0b6c98295b7948edb697b6570e`；启动前核对 30 份 GPT 元数据和 14 个实际存在的引导分区哈希。实际命令仍为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-02\boot.img`，Booting 返回 OKAY。`log/device/nabu-boot-20261104-02/` 保存确切 EFI／内核／ADT／配置、源与构建收据、汇编反汇编及 run.json。
+
+用户报告 P1/P2/P3 均可见，P3 为 `EBS OK - ENTERING STUB`，最顶部由上到下为绿色、蓝色、橙色。它确认 ExitBootServices 返回成功、owned window 的 cache sweep 完成、MMU／cache 关闭后的分支前标记执行。该证据尚未证明内核入口执行。设备恢复 Android 后回读 `handoff-19C4F7E8.txt`（7220 bytes，SHA-256 `c32715b711b8a96c1ad69ca39a8b74eb2ab8e84d1a1d508af28df99a7be74101`），窗口仍为 `0x180004000 + 0x1F8C00000`。30 份 GPT 元数据及 14 个受检引导分区哈希全部与启动前一致。
+
+## 内核检查点诊断候选
+
+现有参考内核已编译进 `LOADER_CHECKPOINT 1..5` 与早期异常回调，`_loader_stub_slot` 为 `0xfffffff0074497f0`，文件偏移 `0x4457f0`；唯一的 `XNULDRST` 标记之后有三个初始为零的 64 位字段。新 loader 仅在已通过 nabu ADT 校验且 `nabu-kernel-checkpoint` 为 1..5 时绑定回调；本轮选择 5，位置在内核启用 MMU 后。磁盘内核文件保持已验证哈希，回调地址／检查点／PA-VA 差值仅写入本次分配的内存副本。
+
+`NabuKernelReport.c`／`.S` 由本地 LLVM 18 编译为无未决符号、无运行时重定位的 2192 字节代码。loader 为它和独立物理栈保留 16 KiB，并纳入 TopOfKernelData。回调先保存 x0..x7，切换到自己的物理栈，直接绘制第四条品红色带及检查点或异常报告，然后停机。它不恢复或调用 UEFI，不写磁盘。REASON=2 时 CODE 是主动停止的检查点号，x4..x7 未被内核检查点 ABI 定义；REASON=1 时打印 ESR／ELR／FAR／LR／SP。
+
+本地 WSL `/home/buhuo/nabu16-efi-v5` 构建结果：UniXNU.efi 为 95,232 bytes，SHA-256 `ca90d0101857bc6b2c3c96740ea2c43ce994179955aa3ab91576da0f52506c2b`；DarwinBoot.efi 为 31,744 bytes，SHA-256 `70a530626f32f4aeedd42cfbd735e32945bb5519bc63a5dd8229ac1730e52030`。EFI 中的回调 blob 与已测试 blob 逐字节一致，SHA-256 为 `d17b880b7249121bb9fa690d43e372d66c518deff6efa4632619f1793821fab2`。
+
+`check_nabu_kernel_report.py` 对实际编译 blob 执行 3 个 Unicorn 场景：高／低物理地址、检查点／异常原因、无效显示参数，并检查输入寄存器保留、栈切换与内存边界哨兵；实际 slot binder 通过 7 项 ASan／UBSan 场景。8796 ABI 和 13,644 个截断 ADT／5 个分配场景通过。这些是主机检查，不证明真实 MMU 行为或内核执行；第三轮须单独记录屏幕结果。
 
 ## 当前设备入口
 

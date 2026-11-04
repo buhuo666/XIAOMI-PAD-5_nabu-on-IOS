@@ -5,6 +5,8 @@ typedef struct {
   BOOLEAN AutoMemory;
   UINTN DramBase;
   UINTN DramSize;
+  UINT32 Checkpoint;
+  UINT64 ReportAddress;
 } NABU_HANDOFF;
 
 // Direct framebuffer text; safe after ExitBootServices because it calls no
@@ -47,7 +49,7 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
 {
   UINTN Count, Children, Index, Length, Value, End;
   UINTN Base = MAX_UINTN, Bytes = MAX_UINTN;
-  UINT32 Version = 0, Auto = 0;
+  UINT32 Version = 0, Auto = 0, Checkpoint = 0;
   BOOLEAN Chosen = FALSE;
   CONST CHAR8 *Key;
   if ((Depth > 32) || (*Offset > Size) || (Size - *Offset < 8)) { return FALSE; }
@@ -65,6 +67,10 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
     if (AsciiStrCmp (Key, "name") == 0 && Length == 7 && CompareMem (Data + Value, "chosen", 7) == 0) { Chosen = TRUE; }
     if (AsciiStrCmp (Key, "nabu-handoff-version") == 0 && Length == 4) { Version = U32 (Data + Value); }
     if (AsciiStrCmp (Key, "darwinboot-auto-memory") == 0 && Length == 4) { Auto = U32 (Data + Value); }
+    if (AsciiStrCmp (Key, "nabu-kernel-checkpoint") == 0) {
+      if (Length != 4 || U32 (Data + Value) > 5) { return FALSE; }
+      Checkpoint = U32 (Data + Value);
+    }
     if (AsciiStrCmp (Key, "dram-base") == 0 && Length == 8) { Base = Value; }
     if (AsciiStrCmp (Key, "dram-size") == 0 && Length == 8) { Bytes = Value; }
     *Offset = End;
@@ -76,6 +82,7 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
     Out->AutoMemory = TRUE;
     Out->DramBase = Base;
     Out->DramSize = Bytes;
+    Out->Checkpoint = Checkpoint;
   }
   for (Index = 0; Index < Children; ++Index) {
     if (!NabuFindChosen (Data, Size, Offset, Depth + 1, Out)) { return FALSE; }
@@ -83,11 +90,47 @@ NabuFindChosen (UINT8 *Data, UINTN Size, UINTN *Offset, UINTN Depth, NABU_HANDOF
   return TRUE;
 }
 
+#include "NabuKernelReportBlob.h"
+
+// Bind only the kernel's explicit, unique and previously unset callback slot.
+// The report is copied into owned RAM and never tries to re-enter UEFI.
+STATIC EFI_STATUS
+NabuInstallKernelReport (KERNEL *Kernel, UINT64 Address, UINT64 ReportAddress,
+                         UINT32 Checkpoint, UINT64 Video[6])
+{
+  UINTN Index, Offset, Matches = 0;
+  UINT8 *Data;
+  UINT64 *Slot = NULL;
+  UINT64 *Config;
+  if (Checkpoint == 0 || Checkpoint > 5 || (ReportAddress & (SIZE_16KB - 1)) != 0) {
+    return EFI_INVALID_PARAMETER;
+  }
+  for (Index = 0; Index < Kernel->Count; ++Index) {
+    Data = (UINT8 *)(UINTN)(Address + Kernel->Segments[Index].Address - Kernel->Base);
+    for (Offset = 0; Offset + 32 <= Kernel->Segments[Index].FileSize; Offset += 8) {
+      if (CompareMem (Data + Offset, "XNULDRST", 8) != 0) { continue; }
+      if (U64 (Data + Offset + 8) != 0 || U64 (Data + Offset + 16) != 0 ||
+          U64 (Data + Offset + 24) != 0) { return EFI_COMPROMISED_DATA; }
+      Slot = (UINT64 *)(Data + Offset);
+      ++Matches;
+    }
+  }
+  if (Matches != 1) { return EFI_COMPROMISED_DATA; }
+  CopyMem ((VOID *)(UINTN)ReportAddress, mNabuKernelReport, sizeof (mNabuKernelReport));
+  Config = (UINT64 *)(UINTN)(ReportAddress + NABU_KERNEL_REPORT_CONFIG);
+  CopyMem (Config + 8, Video, 6 * sizeof (UINT64));
+  CopyMem (Config + 14, mDiagFont, 95 * sizeof (UINT64));
+  Slot[1] = ReportAddress;
+  Slot[2] = Checkpoint;
+  Slot[3] = Address - Kernel->Base;
+  return EFI_SUCCESS;
+}
+
 STATIC EFI_STATUS
 NabuWriteHandoff (EFI_FILE_PROTOCOL *Root, KERNEL *Kernel, UINT64 Address,
                   UINT64 WindowSize, UINT64 ArgsAddress, UINT64 Video[6],
                   EFI_MEMORY_DESCRIPTOR *Map, UINTN MapSize, UINTN Stride,
-                  CONST CHAR8 *CommandLine)
+                  CONST CHAR8 *CommandLine, CONST NABU_HANDOFF *Nabu)
 {
   EFI_FILE_PROTOCOL *File;
   EFI_STATUS Status;
@@ -102,11 +145,12 @@ NabuWriteHandoff (EFI_FILE_PROTOCOL *Root, KERNEL *Kernel, UINT64 Address,
     "NABU8796: pre-ExitBootServices evidence; kernel execution not yet established\n"
     "MPIDR=%lx CNTFRQ=%lu EL=%lu MMFR0=%lx PFR0=%lx\n"
     "kernel_va=%lx allocated_pa=%lx allocated_bytes=%lx args_pa=%lx entry_pa=%lx\n"
-    "video_pa=%lx width=%lu height=%lu row=%lu depth=%lu\nargs=%a\n",
+    "video_pa=%lx width=%lu height=%lu row=%lu depth=%lu\nargs=%a\n"
+    "kernel_checkpoint=%u callback_pa=%lx (diagnostic stop, not a full boot)\n",
     READ_SYSREG (mpidr_el1), READ_SYSREG (cntfrq_el0), DarwinCurrentEl () >> 2,
     READ_SYSREG (id_aa64mmfr0_el1), READ_SYSREG (id_aa64pfr0_el1),
     Kernel->Base, Address, WindowSize, ArgsAddress, Address + Kernel->Entry - Kernel->Base,
-    Video[0], Video[3], Video[4], Video[2], Video[5], CommandLine);
+    Video[0], Video[3], Video[4], Video[2], Video[5], CommandLine, Nabu->Checkpoint, Nabu->ReportAddress);
   Written = Length;
   Status = File->Write (File, &Written, Line);
   if (!EFI_ERROR (Status) && Written != Length) { Status = EFI_DEVICE_ERROR; }

@@ -58,6 +58,7 @@ def make_tree(seed):
     chosen = Node('chosen', {
         'random-seed': seed, 'nabu-handoff-version': U32(1),
         'darwinboot-memory-size': U64(12 << 30), 'darwinboot-auto-memory': U32(1),
+        'nabu-kernel-checkpoint': U32(5),
         'dram-base': U64(0), 'dram-size': U64(0),
         'debug-enabled': U32(1), 'psci-method': STR('smc'),
         'osenvironment': STR('main'), 'display-scale': U32(2),

@@ -99,7 +99,7 @@ static int adt(unsigned char*b,size_t size,NABU_HANDOFF*out){
 }
 int main(void){
  NABU_HANDOFF info={0};assert(adt(blob,sizeof(blob),&info));
- assert(info.Enabled&&info.AutoMemory&&U64(blob+info.DramBase)==0&&U64(blob+info.DramSize)==0);
+ assert(info.Enabled&&info.AutoMemory&&info.Checkpoint==5&&U64(blob+info.DramBase)==0&&U64(blob+info.DramSize)==0);
  for(size_t n=0;n<sizeof(blob);n++){NABU_HANDOFF bad={0};assert(!adt(blob,n,&bad));}
  blob[info.DramBase]=1;NABU_HANDOFF bad={0};assert(!adt(blob,sizeof(blob),&bad));blob[info.DramBase]=0;
  KERNEL kernel={.Base=0xfffffff007004000ULL};UINT64 size,address;

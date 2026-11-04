@@ -2,7 +2,7 @@
 
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
-当前进展：Actions `41671552454` 的完整 8796 参考内核构建成功。本地 WSL 已生成 nabu 临时 `boot.img`、UniXNU.efi、DarwinBoot.efi 和八核 ADT。首次 `fastboot boot` 实机到达 DarwinBoot 的退出 Boot Services 前交接阶段，分配约 7.89 GiB 连续内存；返回 Android 后 GPT 和所检查的引导分区哈希一致。尚未证明内核入口执行，新版 EFI 已加入分阶段屏幕标记。系统区已有 OS／SystemOS／Data，内核存储驱动与持久化挂载尚未接通。见 [启动入口记录](docs/NABU-BOOT-ENTRY.md) 与 [项目进展](docs/STATUS.md)。
+当前进展：Actions `41671552454` 的完整 8796 参考内核构建成功。本地 WSL 已生成 nabu 临时 `boot.img`、UniXNU.efi、DarwinBoot.efi 和八核 ADT。第二次 `fastboot boot` 已由屏幕标记确认 ExitBootServices 成功、loader 的 cache sweep 和 MMU／cache 关闭完成；返回 Android 后 GPT 和所检查的引导分区哈希一致。内核入口执行尚未证明，下一诊断版已接入现有内核的检查点与早期异常报告。系统区已有 OS／SystemOS／Data，内核存储驱动与持久化挂载尚未接通。见 [启动入口记录](docs/NABU-BOOT-ENTRY.md) 与 [项目进展](docs/STATUS.md)。
 
 用户提供的弃用内核已解包，并从可核对的旧补丁链恢复 85 个硬件参考文件；仅作为调查线索，不用于当前构建，也不作为硬件正确性证据。见 [历史硬件参考](docs/ABANDONED-KERNEL-REFERENCE.md)。
 
