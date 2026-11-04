@@ -8,11 +8,12 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tomllib
 from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL = ROOT/'artifacts/ci/41774440467-attempt-1/xnu8796-reference-19/artifacts/8796-reference/mach.development.bcm2837'
-KERNEL_SHA = 'd3a382e33c44f43836170c5a8278ab501ef55d619ea472bb81dd6a4d53a8e2fc'
+KERNEL = ROOT/'artifacts/ci/41778561798-attempt-1/xnu8796-reference-20/artifacts/8796-reference/mach.development.bcm2837'
+KERNEL_SHA = '0905569c42a60f4418d712f720eb5f734d7ac63da4e5c3bfdc2df4718aaf8b17'
 
 
 def sha(path):
@@ -44,26 +45,42 @@ def main():
     ap.add_argument('--adb', default='D:/platform-tools/adb.exe')
     ap.add_argument('--gpt-backup', type=Path)
     ap.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
+    ap.add_argument('--bootstrap', type=Path, help='Verified local bootstrap.apfs; report must be beside it')
     a = ap.parse_args()
     assert sha(KERNEL) == KERNEL_SHA, 'Kernel differs from verified successful build'
     efi = ROOT/'artifacts/nabu-efi'
     for f in json.loads((efi/'build-report.json').read_text())['binaries']:
         assert sha(efi/f['name']) == f['sha256']
+    config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
+    config=tomllib.loads(config_bytes.decode())
+    entry=next(x for x in config['entry'] if x['id']=='nabu8796')
+    bootstrap_mode='initrd' in entry
+    if bootstrap_mode:
+        assert a.bootstrap is not None and entry['initrd']==r'\EFI\Nabu16\Payloads\bootstrap.apfs'
+        args=entry['args'].split()
+        assert all(x in args for x in ['nabu-storage=1','nabu-bootstrap=1','rd=md0','root_apfs=nabu_os'])
+        assert not any(x.startswith(('nabu-root-probe=','return_panic=','return_cpu=')) for x in args)
+        boot_report=json.loads((a.bootstrap.parent/'bootstrap-report.json').read_text())
+        assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024
+        assert sha(a.bootstrap)==boot_report['sha256'] and len(boot_report['containers'])==2
+    else:
+        assert a.bootstrap is None, 'Config has no initrd'
     files = {
         'EFI/Nabu16/UniXNU.efi': (efi/'UniXNU.efi').read_bytes(),
         'EFI/Nabu16/DarwinBoot.efi': (efi/'DarwinBoot.efi').read_bytes(),
         'EFI/Nabu16/Payloads/kernel.macho': KERNEL.read_bytes(),
-        'EFI/UniXNU/unixnu.toml': (ROOT/'configs/nabu-unixnu.toml').read_bytes(),
+        'EFI/UniXNU/unixnu.toml': config_bytes,
     }
+    if bootstrap_mode:files['EFI/Nabu16/Payloads/bootstrap.apfs']=a.bootstrap.read_bytes()
     adt_path = a.output/'EFI/Nabu16/Payloads/kernel.macho.adt'
     if adt_path.exists():
         blob = adt_path.read_bytes()
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
-        assert blob == make_tree(chosen['random-seed'], a.checkpoint).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+        assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
-        blob = make_tree(secrets.token_bytes(64), a.checkpoint).encode()
+        blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -75,6 +92,7 @@ def main():
                'checkpoint': a.checkpoint,
                'root_storage_integrated': True, 'root_mount_validated': False,
                'storage_writes_enabled': False, 'deployment_scope': 'nabu_esp files only'}
+    receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
     (a.output/'chain-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n')
     if not a.apply:
         print(json.dumps(receipt, indent=2))

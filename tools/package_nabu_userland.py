@@ -29,6 +29,8 @@ def main():
     assert not a.work.exists() and not a.output.exists()
     a.work.mkdir(parents=True);a.output.mkdir(parents=True)
     source=ROOT/'src/hakios-8796';build=json.loads((a.programs/'build-report.json').read_text())
+    assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()==build['source_commit']
+    assert not subprocess.check_output(['git','-C',str(source),'status','--porcelain'])
     for item in build['binaries']:
         p=a.programs/item['name'];assert p.stat().st_size==item['bytes'] and digest(p)==item['sha256'] and item['static_arm64_verified']
     inp=json.loads((a.inputs/'inputs.json').read_text());assert (inp['build'],inp['product'])==('20F66','iPad7,11')
@@ -98,6 +100,7 @@ def main():
             'source_programs':build,'input_metadata_sha256':digest(a.inputs/'inputs.json'),
             'jobs':len(list((root/'LaunchDaemons').glob('*.plist'))),'temporary_data':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':False,'device_execution_validated':False,
+            'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}
     (a.output/'bootstrap-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 

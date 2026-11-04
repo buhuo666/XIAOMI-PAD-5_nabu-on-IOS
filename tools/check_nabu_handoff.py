@@ -32,6 +32,10 @@ def main():
     header = full_header.split('STATIC VOID')[0] + function(full_header, 'NabuFindChosen')
     window = (a.tree/'DarwinBootPkg/Driver/WindowSize.h').read_text()
     blob = make_tree(bytes(range(64)), checkpoint=12).encode()
+    bootstrap_tree = make_tree(bytes(range(64)), checkpoint=0, bootstrap=True)
+    bootstrap_blob = bootstrap_tree.encode()
+    bootstrap_tree.children[0].children[0].props['PackedRAMDisk'] = bytes(16)
+    duplicate_blob = bootstrap_tree.encode()
     prelude = r'''
 #include <stdint.h>
 #include <stddef.h>
@@ -91,6 +95,8 @@ static void region(unsigned i,UINT32 type,UINT64 base,UINT64 bytes){test_map[i]=
     code = prelude + window + function(source, 'AdtNode') + header
     code += function(source, 'RunEnd') + function(source, 'AllocateWindow')
     code += '\nstatic unsigned char blob[]={' + ','.join(map(str, blob)) + '};\n'
+    code += '\nstatic unsigned char bootstrap[]={' + ','.join(map(str, bootstrap_blob)) + '};\n'
+    code += '\nstatic unsigned char duplicate[]={' + ','.join(map(str, duplicate_blob)) + '};\n'
     code += r'''
 static int adt(unsigned char*b,size_t size,NABU_HANDOFF*out){
  UINTN pos=0,rd=MAX_UINTN,tc=MAX_UINTN,addon=MAX_UINTN;UINT64 win=0;BOOLEAN packed=0;
@@ -100,6 +106,13 @@ static int adt(unsigned char*b,size_t size,NABU_HANDOFF*out){
 int main(void){
  NABU_HANDOFF info={0};assert(adt(blob,sizeof(blob),&info));
  assert(info.Enabled&&info.AutoMemory&&info.Checkpoint==12&&U64(blob+info.DramBase)==0&&U64(blob+info.DramSize)==0);
+ UINTN bp=0,brd=MAX_UINTN,btc=MAX_UINTN,ba=MAX_UINTN;UINT64 bw=0;BOOLEAN packed=0;
+ assert(AdtNode(bootstrap,sizeof(bootstrap),&bp,0,3,&brd,&btc,&ba,&bw,&packed));
+ assert(bp==sizeof(bootstrap)&&brd!=MAX_UINTN&&btc==MAX_UINTN&&ba==MAX_UINTN&&!packed);
+ assert(U64(bootstrap+brd)==0&&U64(bootstrap+brd+8)==0&&bw==0x300000000ULL);
+ NABU_HANDOFF bi={0};assert(adt(bootstrap,sizeof(bootstrap),&bi)&&bi.Checkpoint==0);
+ UINT32 blen=8;memcpy(bootstrap+brd-4,&blen,4);bi=(NABU_HANDOFF){0};assert(!adt(bootstrap,sizeof(bootstrap),&bi));
+ blen=16;memcpy(bootstrap+brd-4,&blen,4);bi=(NABU_HANDOFF){0};assert(!adt(duplicate,sizeof(duplicate),&bi));
  size_t checkpoint_at=0;for(size_t p=0;p+40<=sizeof(blob);p++){
   if(memcmp(blob+p,"nabu-kernel-checkpoint",22)==0){checkpoint_at=p+36;break;}}
  assert(checkpoint_at);unsigned checkpoint_cases=0;
@@ -126,7 +139,7 @@ int main(void){
  assert(AllocateWindow(&kernel,&size,0,&address)==9&&alloc_calls==calls);
  // Fixed mode still reserves exactly the requested size.
  size=0x10000000;assert(AllocateWindow(&kernel,&size,0,&address)==0&&size==0x10000000&&allocated_bytes==size);
- printf("{\"passed\":true,\"truncated_adt_cases\":%zu,\"allocation_scenarios\":5,\"checkpoint_cases\":%u}\n",sizeof(blob),checkpoint_cases);
+ printf("{\"passed\":true,\"truncated_adt_cases\":%zu,\"allocation_scenarios\":5,\"checkpoint_cases\":%u,\"bootstrap_cases\":3}\n",sizeof(blob),checkpoint_cases);
 }
 '''
     c = a.output/'actual-handoff.c'

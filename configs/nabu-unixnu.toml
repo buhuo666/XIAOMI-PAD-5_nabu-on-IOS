@@ -17,10 +17,11 @@ connect = true
 
 [[entry]]
 id = "nabu8796"
-title = "XNU 8796 - 8 CPU bring-up"
+title = "XNU 8796 - userland bootstrap"
 type = "xnu"
 path = '\EFI\Nabu16\Payloads\kernel.macho'
-args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0 -enable_kprintf_spam nabu-storage=1 nabu-root-probe=1"
+initrd = '\EFI\Nabu16\Payloads\bootstrap.apfs'
+args = "-v keepsyms=1 debug=0x14e cpus=8 small_cores_after=0 serial=0 -enable_kprintf_spam nabu-storage=1 nabu-bootstrap=1 rd=md0 root_apfs=nabu_os loader_return_after=120"
 
 [[entry]]
 id = "reset"

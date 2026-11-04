@@ -35,3 +35,13 @@
 | 8 | exec 返回失败，errno 是对应错误 |
 
 当前仍沿用参考内核的 Mini AMFI／安全接口，其 trust-cache API 不是原版实现；此次不加载未接通消费路径的 trust-cache sidecar，不能称作原版安全栈或完整认证链验证。
+
+## 第十二轮候选与已完成的主机验证
+
+macOS Actions `41778561798`（attempt 1，源码提交 `f613199a1f32640e10b6b24868f9aeec45fa2499`）完整构建及检查成功。启动内核为 17,126,048 bytes，SHA-256 `0905569c42a60f4418d712f720eb5f734d7ac63da4e5c3bfdc2df4718aaf8b17`。下载后核对了内核哈希、导出合同和原生指令：6 个返回路径范围的 1,500 条指令、5 个存储入口范围的 1,569 条指令与实际启动内核一致。本地生成的 13 个存储文件规范化换行后也与该次 CI 一致。
+
+静态 stage0 为 34,496 bytes、init 为 51,768 bytes，均已核对普通 arm64、可执行入口、LC_UNIXTHREAD 和无 dyld／动态库依赖。8 MiB 的 `artifacts/nabu-bootstrap-v1/bootstrap.apfs` 包含两个各 4 MiB 的 APFS 容器，SHA-256 `daf73f92e2831ffc771742e46c89e1dd25ea8e81bc7217b805f2f93d1d6518e6`。两个容器分别通过 `apfsck -c -u -w`；独立提取其中的程序后，字节与下载的 CI 程序完全相同。包内共有 387 个任务，其中明确选择启动的为 21 个。
+
+本地补充的实际 EFI ADT 解析器测试通过 13,644 个截断输入、5 个分配场景、46 个检查点和 3 个 bootstrap 场景；这 3 个新增场景在上述 CI 完成后运行，不能计入该次 CI。主机记录为 `log/host/nabu-userland-verification.json`、`log/host/nabu-bootstrap-adt/report.json` 和 `log/host/nabu-storage/ci-userland-source-verification.json`。
+
+当前启动配置使用 `nabu-storage=1 nabu-bootstrap=1 rd=md0 root_apfs=nabu_os loader_return_after=120`，加载本地 bootstrap.apfs，已移除原挂载探针。第十二轮将验证这条用户态路径；截至准备阶段，未确认 stage0、init、原版 launchd 或桌面在设备上执行。RAM Data 不具备跨重启持久性，12 GB 全容量接管也仍待完成。
