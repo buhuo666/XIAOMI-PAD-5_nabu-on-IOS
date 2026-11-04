@@ -11,8 +11,8 @@ import subprocess
 from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL = ROOT/'artifacts/ci/41671552454-attempt-1/xnu8796-reference-13/artifacts/8796-reference/mach.development.bcm2837'
-KERNEL_SHA = 'a2bc4d4292214639fc4f1dce938c830a8bfdde72102b33b2db81fe995d318a98'
+KERNEL = ROOT/'artifacts/ci/41765915458-attempt-1/xnu8796-reference-17/artifacts/8796-reference/mach.development.bcm2837'
+KERNEL_SHA = '1a252b0f5506123f228cea5e009abb68d710e35a75ca60bf4025f9bc36f6a3b5'
 
 
 def sha(path):

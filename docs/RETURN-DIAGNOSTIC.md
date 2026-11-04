@@ -16,4 +16,17 @@ REA 确认本轮冻结内核是 arm64 Mach-O，SHA-256 `a2bc4d4292214639fc4f1dce
 
 `tools/check_return_diagnostics.py` 从生成后的实际 C 文件提取路由和格式化代码，以 ASan／UBSan 检查 8 个场景：未启用定时器、正常／panic 目标回调、xcall 失败、无效或缺失目标、早晚参数不同、长命令行。IRQ、调度及硬件关闭动作在这些主机测试中使用替身，不能作板上证据。
 
-需要 macOS 的完整内核构建及六个实际代码范围的原生 LLDB 解码均由现有 GitHub Actions `bootstrap.yml` 执行。LLDB 输出逐范围核对原始指令哈希。构建和原生检查成功后才准备新的实机候选，尚未宣称此异常已解决。
+需要 macOS 的完整内核构建及六个实际代码范围的原生 LLDB 解码均由现有 GitHub Actions `bootstrap.yml` 执行。LLDB 输出逐范围核对原始指令哈希，尚未宣称此实机异常已解决。
+
+## macOS Actions 验收与第九轮候选
+
+Actions `41765915458`、提交 `f89d0d19e2f4c9136bb1b6c055238711cbdd27ed` 全部通过：完整构建退出码 0、导出合同、原版／候选接口分析、SMP／页表检查及返回诊断原生检查。此前两个失败分别来自主机检查的 macOS `__unused` 重定义，以及错误要求优化后仍保留每个静态变量名；后者改为核对日志格式和实际调用指令，未改变内核诊断补丁。
+
+| 产物 | bytes | SHA-256 |
+|---|---:|---|
+| `mach.development.bcm2837` | 17,106,424 | `1a252b0f5506123f228cea5e009abb68d710e35a75ca60bf4025f9bc36f6a3b5` |
+| `mach.development.bcm2837.unstripped` | 22,904,104 | `cd3e9e0e4cb62dd435838a1648aa85fba60896cde2178522ae5ee575131a7c6a` |
+
+下载后核对全部内核和项目补丁的哈希，将六个原生代码范围的 1,499 条 LLDB 指令逐字节与待启动的 stripped 内核对照一致。初始化处三次参数解析、定时回调处两次参数解析、`cpu_xcall` 及早晚格式化调用均存在。验收收据为 `log/host/return-diagnostic-08/ci-candidate-verification.json`。
+
+第九轮采用此内核，沿用 v8 EFI、原有临时 boot.img 及 `loader_return_after=30 return_cpu=7 return_panic=1`。重点记录末尾的 `nabu_diag init`、`expired`、`xcall`、`callback` 和各核计数；实际结果仍需屏幕及恢复 Android 后回读确认。
