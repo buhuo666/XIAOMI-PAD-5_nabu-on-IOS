@@ -78,6 +78,8 @@ WSL 新构建目录 `/home/buhuo/nabu16-efi-v4` 复用固定版本的 v2 EDK II�
 
 `check_nabu_kernel_report.py` 对实际编译 blob 执行 3 个 Unicorn 场景：高／低物理地址、检查点／异常原因、无效显示参数，并检查输入寄存器保留、栈切换与内存边界哨兵；实际 slot binder 通过 7 项 ASan／UBSan 场景。8796 ABI 和 13,644 个截断 ADT／5 个分配场景通过。这些是主机检查，不证明真实 MMU 行为或内核执行；第三轮须单独记录屏幕结果。
 
+2026-11-04 10:10:15 完成检查点 5 版本部署，收据为 `log/device/nabu-chain-20261104-101015/deployment.json`。10:10:58 开始第三次临时启动，源码提交 `9540428e1dbb1968315bb0af2374658608f95ccc`；实际命令为 `adb reboot bootloader` 和 `fastboot boot D:\github-IOS\XIAOMI_PAD5-NABU\log\device\nabu-boot-20261104-03\boot.img`。发送与 Booting 返回 OKAY，确切启动链、回调构建／主机检查和运行收据冻结在 `log/device/nabu-boot-20261104-03/`。屏幕回调结果与返回 Android 后的回收尚待完成。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。
