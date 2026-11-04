@@ -134,6 +134,10 @@ v8 已在 `/home/buhuo/nabu16-efi-v8` 构建成功：UniXNU.efi 为 95,232 bytes
 
 macOS Actions `41772094078` 生成并验证了原生 UFS／BSD 根窗口候选。2026-11-04 12:25:43（Asia/Shanghai）使用源提交 `5852715f1b0f26c273447a2b4ea64dcced5a189a` 执行第十次临时启动，发送与 Booting 成功。冻结证据在 `log/device/nabu-boot-20261104-10/`；首轮目标是实际 OS 挂载及完整 launchd 哈希一致，结果待屏幕确认。详见 [存储接入记录](NABU-STORAGE-BRINGUP.md)。
 
+### 第十一轮：接管固件已有的 UFS stream
+
+第十轮已定位到固件 stream `0x300` 指向 bank 1，旧策略在发送存储命令前拒绝继续。macOS Actions `41774440467` 验证新策略后，第十一轮于 2026-11-04 12:46:22（Asia/Shanghai）执行 `fastboot boot`，发送与 Booting 成功，源提交 `3ccda8f1dd1ee49618339a9711722410d93dfc51`。确切候选位于 `log/device/nabu-boot-20261104-11/`，实际读取／挂载结果待确认。日志回收能力与限制见 [存储接入记录](NABU-STORAGE-BRINGUP.md)。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。

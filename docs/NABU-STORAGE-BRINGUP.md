@@ -56,6 +56,8 @@ Android 下的只读预检 `log/device/nabu-storage-preflight/report.json` 确�
 
 修正候选已由 macOS Actions `41774440467`、提交 `721e8250395294bceec245cdc63d674e3bc7d383` 完整编译并通过全部检查，包括新旧 SMMU 测试。下载后的 generated headers／transport 与本地规范化源码哈希一致，5 个存储入口范围的 1,555 条原生指令及 6 个返回范围的 1,500 条指令与 stripped 内核一致。启动内核为 17,125,752 bytes，SHA-256 `d3a382e33c44f43836170c5a8278ab501ef55d619ea472bb81dd6a4d53a8e2fc`；未剥离内核为 22,928,120 bytes，SHA-256 `2661c39336efdd456c087c1c36785d7588f43ce4237e79df9523c119ad43bbe8`。收据为 `log/host/nabu-storage/ci-verification-retarget.json`，第十一轮拟使用此候选继续同一只读挂载探针。
 
+2026-11-04 12:45:38（Asia/Shanghai）完成第十一轮 ESP 文件部署及 SHA-256 回读，收据 `log/device/nabu-chain-20261104-124538/deployment.json`。12:46:22 执行临时 `fastboot boot`，发送及 Booting 成功，源提交 `3ccda8f1dd1ee49618339a9711722410d93dfc51`。确切启动链、生成策略、macOS 检查和 boot.img 已冻结到 `log/device/nabu-boot-20261104-11/`；是否越过 SMMU、读取 GPT／系统卷及完成挂载仍待屏幕证据，恢复 Android 后回读也待完成。
+
 ## 日志回收边界
 
 ESP 的 `handoff-*.txt` 由 loader 在 ExitBootServices 之前写入，恢复 Android 后可以自动取回。屏幕上的 XNU 日志目前保存在内核 RAM，返回报告器只绘屏，没有写入存储；重启后不能保证保留。因此 ESP 交接日志不能替代运行期日志或照片。
