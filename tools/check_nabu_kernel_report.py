@@ -65,7 +65,13 @@ def main():
         log_data = b''
         if log_case in ('valid', 'long'):
             prefix = b'line\r\n' * (12000 if log_case == 'long' else 80)
+            if log_case == 'long':
+                prefix = (b'--- loader_return_after expired ---\n--- panic buffer ---\n'
+                          b'return_panic: the panic that was asked for, on cpu 7\n') + prefix
             log_data = prefix + b'wrapped: ' + b'x' * 400 + b'\x01\r\nPANIC: root device not available\n'
+            if log_case == 'valid':
+                # Incomplete patterns at the mapped end must not match or overread.
+                log_data += b'--- loader_return_after expire'
             log_length = len(log_data)
             uc.mem_map(log_address, (log_length+4095) & ~4095)
             uc.mem_write(log_address, log_data)
@@ -79,7 +85,10 @@ def main():
         if log_data:
             def log_read(_uc, _access, address, size, _value, _data):
                 reads.append((address,size))
-            uc.hook_add(unicorn.UC_HOOK_MEM_READ, log_read, begin=log_address, end=log_address+len(log_data)-1)
+            # Include mapped padding so a read just past the declared log is
+            # caught even when it remains inside the last mapped page.
+            uc.hook_add(unicorn.UC_HOOK_MEM_READ, log_read, begin=log_address,
+                        end=log_address+((len(log_data)+4095) & ~4095)-1)
         for n, value in enumerate(incoming):
             uc.reg_write(getattr(arm, f'UC_ARM64_REG_X{n}'), value)
         uc.reg_write(arm.UC_ARM64_REG_PSTATE, 0x3c5)
@@ -95,10 +104,30 @@ def main():
             assert struct.unpack_from('<I',frame, (height*3//16)*stride)[0] == 0xffff00ff
             assert struct.unpack_from('<I',frame, (height//4)*stride)[0] == 0xff000000
             if log_data:
-                assert reads and min(p for p,n in reads) >= log_address + max(0,log_length-65536)
+                assert reads and min(p for p,n in reads) >= log_address
                 assert max(p+n for p,n in reads) <= log_address+log_length
                 log_y = height//4 + 12*56
-                assert b'\xff\xff\xff\xff' in frame[log_y*stride:]
+                assert b'\xff\xff\xff\xff' in frame[(log_y+28)*stride:]
+                def glyphs_match(label, x, y, scale, color):
+                    # Compare every foreground/background pixel of the literal
+                    # expected labels; a white pixel alone cannot prove text.
+                    for i, char in enumerate(label):
+                        glyph = font[ord(char)-32]
+                        for gy in range(12):
+                            bits = (glyph >> 32) >> (gy*5) if gy < 6 else (glyph & 0xffffffff) >> ((gy-6)*5)
+                            for gx in range(6):
+                                expected = color if gx < 5 and (bits >> gx) & 1 else 0xff000000
+                                for dy in range(scale):
+                                    for dx in range(scale):
+                                        at = (y+gy*scale+dy)*stride + (x+i*6*scale+gx*scale+dx)*4
+                                        assert struct.unpack_from('<I',frame,at)[0] == expected
+                suffix = 'YES' if log_case == 'long' else 'NOT SEEN'
+                glyphs_match('TIMER MARKER: '+suffix,24,height//4+10*56,4,0xffffffff)
+                glyphs_match('PANIC BUFFER: '+suffix,800,height//4+10*56,4,0xffffffff)
+                if log_case == 'long':
+                    glyphs_match('return_panic: the panic that was asked for, on cpu 7',12,log_y,2,0xffffff00)
+                else:
+                    glyphs_match('REQUESTED PANIC LINE NOT SEEN',12,log_y,2,0xffffffff)
             y0, rows = height//4, height-height//4
             crop=frame[y0*stride:(y0+rows)*stride]
             rgb=bytearray(width*rows*3)

@@ -2,7 +2,7 @@
 
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
-当前进展：第六次临时启动已由用户确认 XNU 执行到检查点 21，完成 `machine_startup()` 之前的早期初始化；此前检查点 17 已验证 `arm_vm_init()` 返回。设备为用户确认的 12 GB 扩容机，当前 loader 交接的连续窗口约 7.89 GiB，尚未完整利用可用内存。返回 Android 后 GPT 和所检查的引导分区哈希一致。第七轮候选取消检查点主动停止，保留八核参数，并显示内核返回时的日志末尾；30 秒诊断返回仅在相关定时任务能够运行时触发。副核、调度、原生存储与 Data 持久化挂载仍待验证。见 [启动入口记录](docs/NABU-BOOT-ENTRY.md) 与 [项目进展](docs/STATUS.md)。
+当前进展：第七次临时启动的照片显示 `GenericARMPE: 8 of 8 processors are running`，CPU 3–7 的 online／initCPU 日志及 framebuffer 初始化；已返回诊断画面。逐核 SGI／timer 增长、跨核调度和 TLB 测试尚未通过完整验收。设备为用户确认的 12 GB 扩容机，当前 loader 交接的连续窗口约 7.89 GiB，尚未完整利用可用内存。返回 Android 后 GPT 和 14 个受检引导分区哈希一致。下一轮指定 CPU 7 主动诊断，补充返回原因标记；原生存储与 Data 持久化挂载仍待接通。见 [启动入口记录](docs/NABU-BOOT-ENTRY.md) 与 [项目进展](docs/STATUS.md)。
 
 用户提供的弃用内核已解包，并从可核对的旧补丁链恢复 85 个硬件参考文件；仅作为调查线索，不用于当前构建，也不作为硬件正确性证据。见 [历史硬件参考](docs/ABANDONED-KERNEL-REFERENCE.md)。
 

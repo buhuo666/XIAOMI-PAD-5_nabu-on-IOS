@@ -40,13 +40,27 @@ static void text(const char *s, unsigned row, unsigned column, uint32_t color)
   draw(s, kernel_report_config.video[4] / 4 + row * 56, column, 4, color);
 }
 
+// Search only the validated log, including markers displaced by an appended
+// message buffer. A missing marker is not proof that an event did not happen.
+static uint64_t find_marker(const volatile unsigned char *log, uint64_t length,
+                            const char *marker)
+{
+  for (uint64_t i = 0; i < length; ++i) {
+    uint64_t j = 0;
+    while (marker[j] && j < length - i && log[i + j] == (unsigned char)marker[j]) ++j;
+    if (!marker[j]) return i;
+  }
+  return length;
+}
+
 static void log_tail(void)
 {
   uint64_t address = kernel_report_config.incoming[0];
   uint64_t length = kernel_report_config.incoming[1];
   uint64_t owned = kernel_report_config.owned_base;
   uint64_t bytes = kernel_report_config.owned_bytes;
-  uint64_t y = kernel_report_config.video[4] / 4 + 12 * 56;
+  uint64_t summary_y = kernel_report_config.video[4] / 4 + 12 * 56;
+  uint64_t y = summary_y + 28;
   unsigned rows = (kernel_report_config.video[4] - y) / 28;
   unsigned columns = (kernel_report_config.video[3] - 24) / 12;
   if (rows > 40) rows = 40;
@@ -60,6 +74,23 @@ static void log_tail(void)
   text("KERNEL LOG TAIL - HALTED", 11, 24, 0xffffffff);
   if (!rows || !columns) return;
   const volatile unsigned char *log = (const volatile unsigned char *)address;
+  uint64_t timer = find_marker(log, length, "--- loader_return_after expired ---");
+  uint64_t panic = find_marker(log, length, "--- panic buffer ---");
+  text(timer < length ? "TIMER MARKER: YES" : "TIMER MARKER: NOT SEEN", 10, 24, 0xffffffff);
+  text(panic < length ? "PANIC BUFFER: YES" : "PANIC BUFFER: NOT SEEN", 10, 800, 0xffffffff);
+  uint64_t requested = find_marker(log, length, "return_panic: the panic that was asked for, on cpu ");
+  if (requested < length) {
+    char line[129];
+    unsigned n = 0;
+    while (requested < length && n < columns && log[requested] != '\n' && log[requested] != '\r') {
+      unsigned c = log[requested++];
+      line[n++] = c >= 32 && c <= 126 ? c : '?';
+    }
+    line[n] = 0;
+    draw(line, summary_y, 12, 2, 0xffffff00);
+  } else {
+    draw("REQUESTED PANIC LINE NOT SEEN", summary_y, 12, 2, 0xffffffff);
+  }
   uint64_t start = length > 65536 ? length - 65536 : 0;
   uint64_t starts[40], count = 1;
   unsigned col = 0;

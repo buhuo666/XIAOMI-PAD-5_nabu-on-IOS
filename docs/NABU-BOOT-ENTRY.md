@@ -110,7 +110,19 @@ v7 EFI 在 checkpoint=0 时仍安装回调，只取消检查点主动停止。�
 
 本地 `/home/buhuo/nabu16-efi-v7` 构建成功。UniXNU.efi 为 95,232 bytes，SHA-256 `abd0c4763a6535b450be7a88f6447ad07e98086130a0feb902b479f05f6452f0`；DarwinBoot.efi 为 32,768 bytes，SHA-256 `c70f661b30f0a261f0b2ce05bb07330e8e385f3768a5e23ca4bf917576aff80d`。回调 blob 为 3016 bytes，SHA-256 `b297dea327f520bc32fcac86f0bbaf9dbdad93aa53e56ad8cd8c37e84084820b`，8 个 Unicorn 场景和 12 个 binder ASan／UBSan 场景通过。原有 8796 ABI、13,644 个截断 ADT、5 个分配场景及 46 个检查点用例也通过。接手时已核对构建输入与当前源码、EFI 内嵌 blob 与测试记录一致；这些检查均不替代第七轮实机观察。
 
-2026-11-04 10:42:14 完成 v7 部署，5 个文件 SHA-256 回读通过，收据 `log/device/nabu-chain-20261104-104214/deployment.json`。10:42:52 的第七次临时启动绑定源码提交 `4a6d477dc07b8f70e31214abf95ab7ff194ab997`，执行 `adb reboot bootloader` 和 `fastboot boot`，发送及 Booting 均为 OKAY。确切启动链、构建／测试记录、部署收据与 boot.img 已冻结在 `log/device/nabu-boot-20261104-07/`。当前只确认临时启动命令成功，屏幕结果及返回 Android 后回读待收集。
+2026-11-04 10:42:14 完成 v7 部署，5 个文件 SHA-256 回读通过，收据 `log/device/nabu-chain-20261104-104214/deployment.json`。10:42:52 的第七次临时启动绑定源码提交 `4a6d477dc07b8f70e31214abf95ab7ff194ab997`，执行 `adb reboot bootloader` 和 `fastboot boot`，发送及 Booting 均为 OKAY。确切启动链、构建／测试记录、部署收据与 boot.img 已冻结在 `log/device/nabu-boot-20261104-07/`。后续屏幕与回读结果如下。
+
+第七轮照片 `screen-return-smp.jpg` 的 SHA-256 为 `da77506ea871da44a6c24f42467554e32c3a375da2c6335fb4bdc76ffa88ea85`。照片明确显示 REASON=0、CODE=0、LOG PA=`0x180C189C0`、LOG BYTES=`0x4B86`，CPU 3–7 online／initCPU、`GenericARMPE: 8 of 8 processors are running`，以及显示尺寸 1125×2436／面板 1600×2560／rowBytes 6400。CPU 0–2 的单独启动行没有出现在可见末尾；八核总数来自内核打印。`panic_trace` 是普通追踪前缀，不能当作 panic 证据；照片也没有显示定时器到期标记，因此尚不判定返回触发原因。照片与解释已保存到运行目录。
+
+返回 Android 后，30 份 GPT 元数据和 14 个受检引导分区哈希一致。新增 ESP 文件 `handoff-19EF9EE0.txt` 为 7396 bytes，SHA-256 `66288461ddffffa8473db30629315cbad68bf833825b0fade6c5eb4c13a18266`，记录 checkpoint=0 及 30 秒参数。此 ESP 文件仍是退出 Boot Services 前的日志，内核末尾日志证据来自照片。
+
+### 第八轮：指定 CPU 7 的定时主动诊断
+
+沿用已验收内核，加入 `return_cpu=7 return_panic=1`。现有 `loader_return_timer()` 写入到期标记，再通过 `cpu_xcall(7, loader_return_test, ...)` 请求目标 CPU 执行诊断，预期 panic 正文为 `return_panic: the panic that was asked for, on cpu 7`。若目标调用失败，代码会在定时任务所在 CPU 回退执行，因此必须核对实际 CPU 编号。任务发起 CPU 未记录，不能仅凭该编号判定所有跨核调用或全体 SGI 已通过。返回时副核向启动 CPU 交接的路径也需要结合实机结果判断。
+
+新版报告在合法日志范围内搜索定时器到期／panic buffer 标记，并单独显示主动 panic 行；其余最多 40 行仍来自最后 64 KiB。这样即使返回流程追加消息缓冲区，也能保留触发原因线索。标记未命中只表示本次提供的日志里未见，不证明事件没有发生。原生存储、Data 挂载与全部 12 GB RAM 利用仍不在该测试的验收范围内。
+
+v8 已在 `/home/buhuo/nabu16-efi-v8` 构建成功：UniXNU.efi 为 95,232 bytes、SHA-256 `9cc5a5c8e26c7f9db605309289d43579507c28ad9f1b5cf90e50b3f2a0df95a4`；DarwinBoot.efi 为 33,792 bytes、SHA-256 `840080d6a2a6a053b7c7b9a6d4dcf1306568b426d4a1a844995cb50305ecc3cb`。3680 字节报告 blob 的 SHA-256 为 `ae9f96ce901e6609b0ff0dae9ee4e3805e98cce5233c5680b75b19133d286ab9`，与 EFI 内嵌字节一致。8 个仿真场景、12 个 binder 场景及 ABI／ADT 检查通过；补充验证了超过尾部 64 KiB 的标记仍显示、不完整标记不会匹配，并监视日志最后一页的填充区域以捕获越界读取。仿真图仅为测试输出，不是实机证据。
 
 ## 当前设备入口
 

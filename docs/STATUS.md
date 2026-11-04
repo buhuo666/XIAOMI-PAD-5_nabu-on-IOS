@@ -6,9 +6,9 @@
 
 用户已将下一阶段定为八核启动与扩容内存调查，不再把单核作为独立里程碑。新增补丁和主机验证见 [八核与内存实验](SMP-MEMORY-EXPERIMENT.md)。
 
-最新实机结果：第六轮用户确认 `XNU CALLBACK REACHED`、`REASON=2`、`CODE=0x15`，证实启动 CPU 到达 `machine_startup()` 之前的早期初始化末尾；第五轮检查点 17 已验证 `arm_vm_init()` 返回。八核参数保留，副核与调度尚无运行证据。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。第七轮候选使用 v7 EFI 与现有内核，以 checkpoint=0 取消主动停止，捕获内核返回与日志末尾。
+最新实机结果：第七轮照片显示 `GenericARMPE: 8 of 8 processors are running`，CPU 3–7 逐个 online／initCPU，以及 MiniIOMobileFramebuffer 初始化。返回报告 REASON=0、CODE=0，日志长度 `0x4B86`（19,334 bytes）。这已提供副核执行和八核计数的板上证据，但尚无各核 SGI／timer 增长、跨核调度或 TLB 验收结果。照片末尾没有可见的定时器到期／panic 标记，返回原因仍未单独确认。返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区哈希一致。
 
-v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长日志、越界／溢出长度及无效显示参数；实际 binder 通过 12 个 ASan／UBSan 场景。EFI 内嵌 blob、生成源文件、构建输入与测试记录已核对一致。`loader_return_after=30` 只有在相关启动及定时任务正常运行后才会触发，不能保证卡死时自动返回，也不表示自动恢复 Android。第七轮已于 2026-11-04 10:42:52（Asia/Shanghai）执行，fastboot 的发送与 Booting 均成功；屏幕结果和返回 Android 后回读待收集，记录在 `log/device/nabu-boot-20261104-07/`。
+v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长日志、越界／溢出长度及无效显示参数；实际 binder 通过 12 个 ASan／UBSan 场景。第七轮冻结记录、照片及回读结果位于 `log/device/nabu-boot-20261104-07/`。第八轮候选加入 `return_cpu=7 return_panic=1`，利用已有定时回调在目标 CPU 主动生成带 CPU 编号的 panic 诊断；新版屏幕单列日志内的返回标记。`loader_return_after=30` 仍依赖初始化与定时任务能够运行，不能保证卡死时自动返回，也不表示自动恢复 Android。
 
 用户再次确认设备物理配置为 12 GB 扩容 RAM。当前约 7.89 GiB 是 loader 在现有固件内存图中整段分配并交给 XNU 的连续窗口，不能当作整机容量；后续目标仍是核对并利用所有可安全管理的 RAM，区分物理容量、固定与固件动态预留、loader 所有权和 XNU 实际管理量。
 
