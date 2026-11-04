@@ -25,6 +25,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--tree', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
+    ap.add_argument('--bootstrap-adt', type=Path,
+                    help='Exercise the actual staged bootstrap ADT with the loader parser')
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     source = (a.tree/'DarwinBootPkg/Driver/DarwinBoot.c').read_text()
@@ -33,7 +35,7 @@ def main():
     window = (a.tree/'DarwinBootPkg/Driver/WindowSize.h').read_text()
     blob = make_tree(bytes(range(64)), checkpoint=12).encode()
     bootstrap_tree = make_tree(bytes(range(64)), checkpoint=0, bootstrap=True)
-    bootstrap_blob = bootstrap_tree.encode()
+    bootstrap_blob = a.bootstrap_adt.read_bytes() if a.bootstrap_adt else bootstrap_tree.encode()
     bootstrap_tree.children[0].children[0].props['PackedRAMDisk'] = bytes(16)
     duplicate_blob = bootstrap_tree.encode()
     prelude = r'''

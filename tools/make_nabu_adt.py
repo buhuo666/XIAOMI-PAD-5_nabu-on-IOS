@@ -46,7 +46,14 @@ def nvram():
     return bytes(bank)
 
 
-def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False):
+def validate_wifi_mac(value):
+    """Accept the six binary octets of a nonzero unicast Wi-Fi address."""
+    if not isinstance(value, bytes) or len(value) != 6 or not any(value) or value[0] & 1:
+        raise ValueError('Wi-Fi MAC must be six binary octets, nonzero and unicast')
+    return value
+
+
+def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     cpus = []
@@ -70,6 +77,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False):
         'nvram-bank-count': U32(1), 'nvram-current-bank': U32(0),
         'nvram-proxy-data': nvram(),
     }, [Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
+    if wifi_mac is not None:
+        # MobileGestalt reads this CFData before falling back to network-service
+        # matching. This supplies board identity; it does not publish a NIC.
+        chosen.props['mac-address-wifi0'] = validate_wifi_mac(wifi_mac)
     return Node('device-tree', {
         'model': STR('Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
         'platform-name': STR('nabu'), '#address-cells': U32(2), '#size-cells': U32(2),
@@ -121,8 +132,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
     parser.add_argument('--bootstrap', action='store_true')
+    parser.add_argument('--wifi-mac-file', type=Path,
+                        help='Local file containing the six binary octets read from this device')
     args = parser.parse_args()
-    blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap).encode()
+    wifi_mac = validate_wifi_mac(args.wifi_mac_file.read_bytes()) if args.wifi_mac_file else None
+    blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap, wifi_mac).encode()
     root, children = parse(blob)
     nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
     assert len(nodes['cpus'][1]) == 8
@@ -133,6 +147,7 @@ def main():
     report = {'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest(), 'cpu_count': 8,
               'checkpoint': args.checkpoint,
               'bootstrap_ramdisk_required': args.bootstrap,
+              'wifi_mac_supplied': wifi_mac is not None,
               'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
               'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
               'device_boot_validated': False, 'root_storage_driver_integrated': False}

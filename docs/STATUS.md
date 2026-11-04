@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第十八轮取得 SpringBoard 四线程、48 地址样本。主线程仍等 LaunchServices 的 gSessionLock，另一线程经 `_LSCopyServerStore` 等待 `getServerStoreBlockingWithCompletionHandler:` 的 NSXPC 同步回复；栈与原版代码支持数据库获取请求阻塞会话初始化，尚未直接读取锁持有者或服务端状态。读取 15,548 次无失败，正常定时返回，仍无桌面；恢复 Android 后 30 份 GPT 元数据／14 个受检引导分区一致。第十九轮已于 18:43 执行临时 fastboot boot，发送和 Booting 成功，改采 lsd 并修正多进程线程栈的 PID／slide 归属；20 个回调仿真和 12 个 binder 检查通过。等待本轮照片及返回 Android 后回读。详见 [线程等待调查](SPRINGBOARD-MAIN-THREAD.md)。
+最新主线结果：第十九轮 lsd 样本进一步定位到 MobileGestalt 的 Wi-Fi 地址查询回退：缺少设备树地址后等待 IONetworkController，数据库 seeding 尚未完成。两个模糊手工栈值已判无效并排除，关键回退调用由其余清晰帧与原缓存指令确认。第二十轮候选仅新增 `/chosen/mac-address-wifi0` 为本机 Android 读取的六字节地址，其余启动文件及随机种子保持一致；原生 loader 检查通过，尚待设备启动及画面验证。第十九轮恢复 Android 后 30 份 GPT 元数据／14 个受检引导分区一致。详见 [线程等待调查](SPRINGBOARD-MAIN-THREAD.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

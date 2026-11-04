@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 import tomllib
-from make_nabu_adt import make_tree, parse, CHECKPOINTS, DEFAULT_CHECKPOINT
+from make_nabu_adt import make_tree, parse, validate_wifi_mac, CHECKPOINTS, DEFAULT_CHECKPOINT
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41784700433-attempt-1/xnu8796-reference-23/artifacts/8796-reference/mach.development.bcm2837'
@@ -46,7 +46,10 @@ def main():
     ap.add_argument('--gpt-backup', type=Path)
     ap.add_argument('--checkpoint', type=int, choices=CHECKPOINTS, default=DEFAULT_CHECKPOINT)
     ap.add_argument('--bootstrap', type=Path, help='Verified local bootstrap.apfs; report must be beside it')
+    ap.add_argument('--wifi-mac-file', type=Path,
+                    help='Six binary octets from this device; rechecked against Android before deployment')
     a = ap.parse_args()
+    wifi_mac = validate_wifi_mac(a.wifi_mac_file.read_bytes()) if a.wifi_mac_file else None
     assert sha(KERNEL) == KERNEL_SHA, 'Kernel differs from verified successful build'
     efi = ROOT/'artifacts/nabu-efi'
     for f in json.loads((efi/'build-report.json').read_text())['binaries']:
@@ -77,10 +80,10 @@ def main():
         blob = adt_path.read_bytes()
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
-        assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+        assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
-        blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode).encode()
+        blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -93,6 +96,9 @@ def main():
                'root_storage_integrated': True, 'root_mount_validated': False,
                'storage_writes_enabled': False, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
+    receipt['wifi_mac_supplied'] = wifi_mac is not None
+    if wifi_mac is not None:
+        receipt['wifi_mac_source_sha256'] = hashlib.sha256(wifi_mac).hexdigest()
     (a.output/'chain-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n')
     if not a.apply:
         print(json.dumps(receipt, indent=2))
@@ -111,6 +117,12 @@ def main():
         return subprocess.check_output(adb+['exec-out', 'su', '-c', cmd], timeout=120)
     assert shell('getprop ro.product.device').strip() == b'nabu'
     assert shell('getprop ro.boot.slot_suffix').strip() == b'_a'
+    if wifi_mac is not None:
+        observed = shell('cat /sys/class/net/wlan0/address').decode().strip()
+        assert re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', observed)
+        assert bytes.fromhex(observed.replace(':', '')) == wifi_mac, 'Wi-Fi identity differs from candidate'
+        assert shell('cat /sys/class/net/wlan0/addr_assign_type').strip() == b'0', 'Wi-Fi address is not marked permanent'
+        receipt['wifi_mac_rechecked_on_device'] = True
     assert shell('readlink -f /dev/block/by-name/nabu_esp').strip() == b'/dev/block/sda35'
     assert shell('blockdev --getsize64 /dev/block/sda35').strip() == b'4294967296'
     assert b'uid=0' in shell('id')

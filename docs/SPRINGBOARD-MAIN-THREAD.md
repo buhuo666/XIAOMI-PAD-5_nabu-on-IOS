@@ -77,3 +77,31 @@
 最终回调为 7,888 bytes，SHA-256 `d2009328cc80a89643320b6398653627eb332fbce12aa7622a57a10f9e47f2c9`，已通过 20 个机器码仿真场景和 12 个实际 binder 的 ASan／UBSan 场景。覆盖不同 PID／slide、同 PID 不同时间、两种日志片段边界、重复消息、长行和容量上限，并逐像素核对预期文本。最终 DarwinBoot.efi 为 37,888 bytes，SHA-256 `6cdebde7bfae67fc64798d7961b4a1a7b3be90812c951763f2e6ce90d147dbf1`，内嵌回调与测试版本一致，ABI／handoff 检查通过。UniXNU、内核、bootstrap 和 boot.img 沿用第十八轮字节。部署和实机结果待后续回执。
 
 第十九轮已于 `2026-11-04T18:43:05.646233+08:00` 执行临时 `fastboot boot`，发送和 Booting 均成功。部署收据为 `log/device/nabu-chain-20261104-184208/deployment.json`，六个文件回读一致；启动前核对 30 份 GPT 元数据并记录 14 个引导分区哈希。73 份输入／验证文件和确切 boot.img 已冻结于 `log/device/nabu-boot-20261104-19/`，源提交 `8997d02ff2c2fa222fbd0a669f45360ad6015548`。目前只确认启动命令成功，等待约两分钟后的完整线程报告照片，随后恢复 Android 并执行该轮 `--collect`。
+
+## 第十九轮照片与接手续查
+
+已归档用户提供的原图至 `log/device/nabu-boot-20261104-19/screen-lsd-threads.jpg`，并保存线程裁切。照片显示 REASON／CODE 为 0、TIMER MARKER 为 YES，读取 15,531 次、失败 0；仍未见桌面。已执行本轮 `--collect`，返回 Android 后 30 份 GPT 元数据和 14 个受检引导分区核对一致。
+
+照片包含 `lsd[22]` 的 11 个线程，共享缓存 slide `0x39598000`。手工转录及原缓存符号结果在 `log/host/display-v20/run19-stacks.json`，原缓存／符号文件已重新验证 SHA-256。REA 当前 Windows 原生 provider 不支持本目标，沿用本地缓存解析和 LLVM 符号解码；未声称取得 REA 反编译结果。
+
+- `0x3eb`：`LSDatabaseBlockingFetchClient getServerStoreBlockingWithCompletionHandler:` → `__LAUNCH_SERVICES_CLIENTS_ARE_WAITING_FOR_THE_DATABASE_TO_FINISH_SEEDING__` → dispatch group wait → ulock。这直接补上服务端等待数据库 seeding 的采样证据；尚未把这条请求与 SpringBoard 的具体 XPC 连接关联。
+- `0x13b`：`__LSServerMain` → `beginListening` → `performJournalRecovery` → dispatch 同步队列等待。
+- `0x3ea`：`restoreInactiveInstalls` → dispatch group wait。
+- `0x3da`：信号量等待，下游多个地址落于 libMobileGestalt；该镜像符号稀疏，不能把距离很远的最近下界 `_MGSetAnswer`／`__MGCacheCopyValueForKey` 当成实际函数名。尾部地址还需进一步核对。
+- `0x4a8`：CoreFoundation RunLoop／Mach 消息等待，外层包含 libMobileGestalt 地址。其余六个线程为 workqueue 等待路径。
+
+当前结论：数据库初始化未完成是明确的新定位；单次采样不能证明死锁，也不能据此直接绕过锁或禁用数据库初始化。下一步对照原缓存函数边界及指令核实 MobileGestalt 等待的具体调用、完成信号来源，再决定是否需要采集其依赖服务。当前接手没有部署新候选或重启设备。
+
+## 第二十轮：Wi-Fi 地址查询等待的最小实验
+
+进一步核对 LC_FUNCTION_STARTS 和具体 section 后，发现第十九轮手工转录的 `0x1d5a898e4`、`0x1d5a89810` 落在 MobileGestalt 的常量区。这两项转录无效，保留原记录但排除出调用链证明；没有猜测替换地址。其他帧的 section／函数边界见 `log/host/display-v20/run19-frame-validation.json`。最近下界符号不可替代函数身份，之前显示的 `_MGSetAnswer` 远距离标签不是实际函数名。
+
+已确认的返回地址 `0x1d5a53214`／`0x1d5a59320`，减 slide 后分别为 `0x19c4bb214`／`0x19c4c1320`。原版指令明确显示：Wi-Fi 地址查询先从 `IODeviceTree:/chosen` 读 CFData 属性 `mac-address-wifi0`；失败后依次查询 `sdio`、`wlan`、`marconi-wifi` 的 `local-mac-address`，再进入 `IONetworkController` 匹配。当前样本处于这个最后的回退路径。常量字符串和 CFString 指针均从原 cache 读取，后者按 slide-info v2 解码并核实链成员。
+
+该回退函数将数值 5 交给异步 RunLoop helper；调用线程等待信号量，工作块按该秒数运行 CFRunLoop，退出后 signal。另一条已确认样本 `0x1d5a59780` 正位于该 RunLoop 调用之后。libdispatch 的 GOT 目标包含选择实现的 resolver，已继续核实其中的 `dispatch_semaphore_wait`／`signal`／`create` 调用，未把 resolver 的最近下界冷函数标签当作真实语义。重复缺失查询导致建库缓慢是当前最强解释，仍没有直接测量每个 bundle 的查询次数或证明所有等待都由此引起。
+
+`wifi-wait-proof.json` 保存具体函数、字符串、原始缓存哈希和证据边界；八个函数的 328 条指令另用 LLVM18 解码并逐地址／机器码对照原缓存。已有参考移植 `hakios.wlan.cpp` 中的描述与此一致，但结论以本机采样和 20F66 原缓存为依据。第十九轮冻结 ADT 没有 wlan／MAC 属性；当前 bootstrap 没有 MobileGestalt 缓存种子，Data 仍为每轮重新初始化的 RAM 包。
+
+本次候选只在 `/chosen` 增加六字节 `mac-address-wifi0`，值来自连接设备 Android 的 `wlan0/address`，且 `addr_assign_type=0`。设备标识、地址与哈希保留在被 Git 忽略的本地目录，公开源码不硬编码设备地址。没有添加网卡服务或声称 Wi-Fi 驱动可用。部署工具新增 `--wifi-mac-file`，部署前再次与本机 sysfs 对照；省略该参数仍生成原版设备树。
+
+候选 `artifacts/nabu-chain-desktop-v20` 与第十九轮使用同一随机种子，独立递归比较确认只有上述属性变化。其余五个启动文件及 boot.img 均逐字节一致；保留 `ustacks=lsd`、90 秒一次采样及 120 秒返回。7 个非法地址输入被拒绝，旧参数生成结果与冻结 ADT 一致，复用候选但遗漏身份参数会在写文件前拒绝。实际候选 ADT 通过 loader 原生 ASan／UBSan 解析，既有 46 个 checkpoint、5 个分配和 bootstrap 边界检查通过。设备结果待临时启动与照片验证。

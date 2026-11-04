@@ -2,7 +2,7 @@
 
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
-当前进展：实机已报告八核在线及 framebuffer 初始化，原生只读 UFS、OS／SystemOS 挂载和 RAM 用户态 bootstrap 已接通。第十八轮采到 SpringBoard 四个线程：主线程等 LaunchServices 会话锁，另一线程等待服务端返回数据库；仍未进入桌面，下一轮转向 lsd 采样。详见 [线程等待调查](docs/SPRINGBOARD-MAIN-THREAD.md)。用户要求优先进入桌面，主动 panic 日志问题已[暂缓](docs/DEFERRED-PANIC-DIAGNOSTICS.md)，当前诊断采用 120 秒正常定时返回。Data 仍在 RAM 中，磁盘持久化未完成。设备为 12 GB 扩容机，loader 当前交接的连续窗口约 7.89 GiB；完整跨核调度、TLB 和全部可用 RAM 仍待验收。总体进展见 [STATUS](docs/STATUS.md)。
+当前进展：实机已报告八核在线及 framebuffer 初始化，原生只读 UFS、OS／SystemOS 挂载和 RAM 用户态 bootstrap 已接通。第十九轮 lsd 采样已定位到 MobileGestalt 查询 Wi-Fi 地址的回退等待；第二十轮候选仅补充本机设备树地址，验证是否解除建库阻塞，仍未确认桌面。详见 [线程等待调查](docs/SPRINGBOARD-MAIN-THREAD.md)。用户要求优先进入桌面，主动 panic 日志问题已[暂缓](docs/DEFERRED-PANIC-DIAGNOSTICS.md)，当前诊断采用 120 秒正常定时返回。Data 仍在 RAM 中，磁盘持久化未完成。设备为 12 GB 扩容机，loader 当前交接的连续窗口约 7.89 GiB；完整跨核调度、TLB 和全部可用 RAM 仍待验收。总体进展见 [STATUS](docs/STATUS.md)。
 
 用户提供的弃用内核已解包，并从可核对的旧补丁链恢复 85 个硬件参考文件；仅作为调查线索，不用于当前构建，也不作为硬件正确性证据。见 [历史硬件参考](docs/ABANDONED-KERNEL-REFERENCE.md)。
 
