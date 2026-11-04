@@ -42,7 +42,9 @@ def main():
 #include <setjmp.h>
 typedef int boolean_t, kern_return_t;
 typedef void *thread_call_param_t, *thread_call_t;
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 #define MAX_CPUS 8
 #define GENERIC_GIC_V3_IRQ 1
 #define NSEC_PER_SEC 1000000000
