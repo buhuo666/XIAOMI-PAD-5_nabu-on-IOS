@@ -110,6 +110,8 @@ v7 EFI 在 checkpoint=0 时仍安装回调，只取消检查点主动停止。�
 
 本地 `/home/buhuo/nabu16-efi-v7` 构建成功。UniXNU.efi 为 95,232 bytes，SHA-256 `abd0c4763a6535b450be7a88f6447ad07e98086130a0feb902b479f05f6452f0`；DarwinBoot.efi 为 32,768 bytes，SHA-256 `c70f661b30f0a261f0b2ce05bb07330e8e385f3768a5e23ca4bf917576aff80d`。回调 blob 为 3016 bytes，SHA-256 `b297dea327f520bc32fcac86f0bbaf9dbdad93aa53e56ad8cd8c37e84084820b`，8 个 Unicorn 场景和 12 个 binder ASan／UBSan 场景通过。原有 8796 ABI、13,644 个截断 ADT、5 个分配场景及 46 个检查点用例也通过。接手时已核对构建输入与当前源码、EFI 内嵌 blob 与测试记录一致；这些检查均不替代第七轮实机观察。
 
+2026-11-04 10:42:14 完成 v7 部署，5 个文件 SHA-256 回读通过，收据 `log/device/nabu-chain-20261104-104214/deployment.json`。10:42:52 的第七次临时启动绑定源码提交 `4a6d477dc07b8f70e31214abf95ab7ff194ab997`，执行 `adb reboot bootloader` 和 `fastboot boot`，发送及 Booting 均为 OKAY。确切启动链、构建／测试记录、部署收据与 boot.img 已冻结在 `log/device/nabu-boot-20261104-07/`。当前只确认临时启动命令成功，屏幕结果及返回 Android 后回读待收集。
+
 ## 当前设备入口
 
 2026-11-03 23:57 的只读检查发现：4 GiB `nabu_esp` 上只有 `EFI/NabuDiag/NabuProbe.efi` 与两个 JSON。`probe-deployment.json` 自述 `firmware_executed=false`、`kernel_executed=false`，且没有默认启动路径或 startup 脚本。文件级备份保存在本地 `backup/esp/20261103-235736/`。
