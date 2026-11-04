@@ -27,7 +27,7 @@ jobs:
       - name: Install Ubuntu build dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y build-essential clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu uuid-dev nasm acpica-tools python3-venv mono-devel nuget
+          sudo apt-get install -y build-essential clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu uuid-dev nasm acpica-tools python3-venv mono-devel
       - name: Build nabu temporary boot image
         run: bash tools/build_nabu_firmware.sh
       - name: Preserve image and build evidence
