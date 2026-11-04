@@ -12,6 +12,7 @@ void nabu_storage_finish(const char *result) __attribute__((noreturn));
 int nabu_root_device(char *name, unsigned name_bytes, int *device, uint32_t *flags);
 void nabu_root_probe_mounted(void);
 uint32_t nabu_userland_status(void);
+const char *nabu_userland_failure(void);
 #ifdef __cplusplus
 }
 #endif

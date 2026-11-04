@@ -34,21 +34,14 @@ def verify(path):
     return {'name':path.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'entry':hex(entry),'static_arm64_verified':True}
 
 
-def main():
-    ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--output',type=Path,required=True)
-    ap.add_argument('--work',type=Path,required=True)
-    a=ap.parse_args();assert sys.platform=='darwin','Native userland build runs in macOS Actions'
-    assert not a.work.exists();a.work.mkdir(parents=True);a.output.mkdir(parents=True,exist_ok=True)
-    src=ROOT/'src/hakios-8796'
-    expected=next(x['commit'] for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources'] if x['name']=='hakios-8796-reference')
-    assert subprocess.check_output(['git','-C',str(src),'rev-parse','HEAD'],text=True).strip()==expected
+def generate_sources(src):
     stage=(src/'userland/src/stage0.c').read_text()
     stage=once(stage,'(void *)"/dev/md1"','(void *)"/dev/md0,c=1"')
     stage=stage.replace('cannot mount /dev/md1 on /hakios','cannot mount bootstrap container 1 on /redwood')
     init=(src/'userland/src/init.c').read_text()
     init=once(init,'\tmount_cryptex("OS", ",c=1", devpath);\n\tmount_cryptex("App", ",c=2", devpath);',
         '\tif (mount("apfs", "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
+        '\t\tnabu_failure("mount SystemOS", (unsigned)errno);\n'
         '\t\tprintf("NABU INIT: SystemOS mount failed: %s\\n", strerror(errno));\n'
         '\t\treboot(RB_HALT); return;\n\t}\n'
         '\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");\n')
@@ -60,14 +53,7 @@ def main():
         '\tcheck(stat("/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", &cache) == 0, "SystemOS dyld cache visible");\n'
         '\tprintf("NABU INIT: Data is temporary RAM; disk Data has not been modified\\n");\n'
         '\tif (failures) { printf("NABU INIT: required setup failed; launchd not started\\n"); reboot(RB_HALT); return 1; }')
-    sources={'stage0.c':stage,'init.c':init}
-    helper='''
-static void nabu_stage(unsigned phase,unsigned error)
-{
-    unsigned value=(phase<<16)|(error&0xffff);
-    (void)sysctlbyname("kern.nabu_userland_stage",NULL,NULL,&value,sizeof(value));
-}
-'''
+    helper='#include "NabuInitSupport.h"\n'
     stage=once(stage,'#include "mini.h"','#include "mini.h"\n'+helper)
     stage=once(stage,'\t(void)argc, (void)argv;','\t(void)argc, (void)argv;\n\tnabu_stage(1,0);')
     init=once(init,'#define PATTERN_SIZE',helper+'\n#define PATTERN_SIZE')
@@ -81,8 +67,47 @@ static void nabu_stage(unsigned phase,unsigned error)
     init=once(init,'\t\texecve(argv[1], argv + 1, envp);',
         '\t\tif (getpid()==1) nabu_stage(7,0);\n\t\texecve(argv[1], argv + 1, envp);\n'
         '\t\tint exec_error=errno;\n\t\tif (getpid()==1) nabu_stage(8,(unsigned)exec_error);\n\t\terrno=exec_error;')
-    sources={'stage0.c':stage,'init.c':init}
+    old='\tcheck(bind_dir(in_image("/LaunchDaemons"), "/flash/System/Library/LaunchDaemons") &&\n\t    bind_dir(in_image("/empty"), "/flash/System/Library/NanoLaunchDaemons") &&\n\t    bind_dir(in_image("/empty"), "/flash/System/Library/LaunchAngels") &&\n\t    bind_dir(in_image("/xpc"), "/flash/System/Library/xpc"), "our launchd jobs, not Darwin\'s");'
+    new='\tcheck(bind_dir(in_image("/LaunchDaemons"), "/flash/System/Library/LaunchDaemons"), "bind launchd jobs");\n'
+    for name in ('NanoLaunchDaemons','NanoLaunchDaemonsAltAccount'):
+        new+=f'\tcheck(nabu_bind_optional(in_image("/empty"), "/flash/System/Library/{name}"), "bind optional {name}");\n'
+    new+='\tcheck(bind_dir(in_image("/empty"), "/flash/System/Library/LaunchAngels"), "bind LaunchAngels");\n'
+    new+='\tcheck(bind_dir(in_image("/xpc"), "/flash/System/Library/xpc"), "bind xpc policy");'
+    init=once(init,old,new)
+    init=once(init,'\t\tfailures++;','\t\tfailures++;\n\t\tnabu_failure(what, 0);')
+    for anchor,what in [
+        ('\t\tprintf("  bindfs %s on %s: %s\\n", from, to, strerror(errno));','to'),
+        ('\t\tprintf("  synthetic directory %s: %s\\n", path, strerror(errno));','path'),
+        ('\t\tprintf("  mount %s: %s\\n", devpath, strerror(errno));','devpath'),
+        ('\t\tprintf("  switching the root: %s\\n", strerror(errno));','"switch root"'),
+        ('\t\t\tprintf("  mount: %s\\n", strerror(errno));','"mount RAM Data"'),
+        ('\t\t\t\tprintf("  %s: %s\\n", f[4], strerror(errno));','f[4]')]:
+        # The last message occurs for both directory creation and seed copy.
+        assert anchor in init
+        init=init.replace(anchor,'\t\tnabu_failure('+what+', (unsigned)errno);\n'+anchor)
+    init=once(init,'\tcheck(stat("/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", &cache) == 0, "SystemOS dyld cache visible");',
+        '\tint cache_ok = stat("/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", &cache) == 0;\n'
+        '\tif (!cache_ok) nabu_failure("SystemOS dyld cache", (unsigned)errno);\n'
+        '\tcheck(cache_ok, "SystemOS dyld cache visible");')
+    return {'stage0.c':stage,'init.c':init,
+            'NabuInitSupport.h':(ROOT/'patches/nabu-userland/NabuInitSupport.h').read_text()}
+
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--output',type=Path,required=True)
+    ap.add_argument('--work',type=Path,required=True)
+    ap.add_argument('--generate-only',action='store_true')
+    a=ap.parse_args()
+    assert a.generate_only or sys.platform=='darwin','Native userland build runs in macOS Actions'
+    assert not a.work.exists();a.work.mkdir(parents=True);a.output.mkdir(parents=True,exist_ok=True)
+    src=ROOT/'src/hakios-8796'
+    expected=next(x['commit'] for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources'] if x['name']=='hakios-8796-reference')
+    assert subprocess.check_output(['git','-C',str(src),'rev-parse','HEAD'],text=True).strip()==expected
+    assert not subprocess.check_output(['git','-C',str(src),'status','--porcelain'])
+    sources=generate_sources(src)
     for name,text in sources.items():(a.work/name).write_text(text)
+    if a.generate_only:return
     clang=subprocess.check_output(['xcrun','--find','clang'],text=True).strip()
     flags=[clang,'-target','arm64-apple-ios16.5','-Os','-ffreestanding','-fno-stack-protector','-fno-builtin',
            '-Wall','-Wextra','-Wno-unused-function','-I'+str(src/'userland/libmini')]

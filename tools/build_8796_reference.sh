@@ -6,6 +6,7 @@ cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
 python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot ShengUfs nabu --report log/ci/source-checkouts.json
 python3 tools/build_nabu_userland.py --work build/nabu-userland --output artifacts/nabu-userland
+python3 tools/check_nabu_userland.py --output log/ci/nabu-userland-check
 python3 tools/prepare_8796_loader.py --output build/darwinboot8796-capacity/tree
 python3 tools/check_darwinboot_8796.py --tree build/darwinboot8796-capacity/tree --output log/ci/darwinboot8796
 export JOBS=3

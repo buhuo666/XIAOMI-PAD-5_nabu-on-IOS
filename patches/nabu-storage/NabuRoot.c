@@ -45,6 +45,33 @@ SYSCTL_PROC(_kern,OID_AUTO,nabu_userland_stage,CTLTYPE_INT|CTLFLAG_RW|CTLFLAG_LO
 uint32_t nabu_userland_status(void)
 { return os_atomic_load(&nabu_user_status,acquire); }
 
+/* Retain the first PID1 setup failure through shutdown and the later return
+ * report. Immutable after publication; readers never see a partial string. */
+static unsigned nabu_failure_state;
+static char nabu_failure_text[192];
+static int nabu_user_failure_sysctl(struct sysctl_oid *oid __unused,
+    void *arg1 __unused, int arg2 __unused, struct sysctl_req *req)
+{
+  char text[sizeof(nabu_failure_text)];
+  if (!req->newptr || proc_selfpid()!=1) return EPERM;
+  if (!req->newlen || req->newlen>=sizeof(text)) return EINVAL;
+  int error=SYSCTL_IN(req,text,req->newlen);
+  if (error) return error;
+  for (size_t i=0;i<req->newlen;i++)
+    if ((unsigned char)text[i]<32 || (unsigned char)text[i]>126) return EINVAL;
+  text[req->newlen]=0;
+  if (os_atomic_cmpxchg(&nabu_failure_state,0,1,acq_rel)) {
+    memcpy(nabu_failure_text,text,req->newlen+1);
+    os_atomic_store(&nabu_failure_state,2,release);
+  }
+  return 0;
+}
+SYSCTL_PROC(_kern,OID_AUTO,nabu_userland_failure,CTLTYPE_STRING|CTLFLAG_WR|CTLFLAG_LOCKED,
+    NULL,0,nabu_user_failure_sysctl,"A","First PID1 bootstrap failure");
+
+const char *nabu_userland_failure(void)
+{ return os_atomic_load(&nabu_failure_state,acquire)==2 ? nabu_failure_text : NULL; }
+
 static int nabu_open(dev_t dev, int flags, int type __unused, proc_t p __unused)
 {
   if (nabu_major < 0 || (unsigned)minor(dev) >= 2) return ENXIO;

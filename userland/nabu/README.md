@@ -48,4 +48,12 @@ macOS Actions `41778561798`（attempt 1，源码提交 `f613199a1f32640e10b6b248
 
 2026-11-04 13:36:26（Asia/Shanghai）完成六个 ESP 启动文件的部署和哈希回读，收据为 `log/device/nabu-chain-20261104-133626/deployment.json`。13:37:10 开始第十二轮临时启动，源提交 `4bceed619b56135435225abdca4ac59c689e66fb`，`fastboot boot` 的发送和 Booting 均返回 OKAY。启动前核对了 30 份 GPT 元数据并记录 14 个受检引导分区哈希；336 个启动链／构建／检查证据文件与 boot.img 保存在 `log/device/nabu-boot-20261104-12/`。
 
-目前仅确认启动命令成功，设备执行结果等待屏幕证据。恢复 Android 后用同一目录运行 `tools/run_nabu_temporary_boot.py --collect` 回读交接日志并复核分区。屏幕若显示 phase 7，只能证明已尝试 exec；还须查看 launchd／dyld 的后续输出或实际桌面，不能据此认定原版 launchd 执行成功。
+第十二轮照片现已保存为 `log/device/nabu-boot-20261104-12/screen-userland-phase5.jpg`，SHA-256 `8d7ecc4d987615f3978211ff2978f991a7545527a4a2e0e9265ddd156a42b941`。画面为 phase 5、errno 0、121 次存储读取、0 次失败，包含约 23 秒处的 `systemHalt`／卸载日志，随后定时返回。结合该轮准确源码，phase 5 表明 init 已经作为 PID1 完成根切换和 SystemOS 挂载；它不证明后续初始化全部通过。未见 phase 7，未确认原版 launchd 执行或桌面。Android 回收已完成，30 份 GPT 元数据和 14 个受检引导分区哈希一致。
+
+## 第十三轮修正候选
+
+本地 20F66 文件清单确认 `/System/Library/NanoLaunchDaemons` 不存在，`NanoLaunchDaemonsAltAccount`、`LaunchAngels` 和 `xpc` 存在。第十二轮源码使用短路 AND 连接四个 bindfs 操作，第二项必定失败，后面的 LaunchAngels／xpc 也不会执行；该失败被计入 `failures`，可触发 phase 5 之后的主动停机。照片本身未显示具体失败项，所以不能排除其他初始化失败。
+
+修正为独立检查各个绑定，仅可选 Nano 目录的 ENOENT 被接受；权限错误、非目录和挂载错误仍失败。已有的 AltAccount 目录也被覆盖为空。新增 `kern.nabu_userland_failure` 只接受 PID1 的 1–191 字节可打印 ASCII，原子发布首个失败字符串，在最终返回报告追加 `NABU INIT FAILURE`。后续失败不覆盖首个失败；此信息仍只存在 RAM，依赖屏幕照片保存，未增加持久化写入。
+
+`tools/check_nabu_userland.py` 执行实际抽取的 C，复现旧短路失败，再验证新绑定能继续到 xpc，并覆盖错误传播、诊断长度、PID1 限制、拷贝失败和发布状态。两组 ASan／UBSan 测试与完整生成程序的 arm64 语法检查已通过。第十三轮尚待 macOS 完整构建及设备执行。当前仍使用 RAM Data，持久化与完整 12 GB 内存接管待后续完成。
