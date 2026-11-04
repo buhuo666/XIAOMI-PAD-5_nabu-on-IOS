@@ -53,8 +53,15 @@ def validate_wifi_mac(value):
     return value
 
 
+def validate_userland_serial(value):
+    """An explicit compatibility label; never infer it from an attached device."""
+    if not isinstance(value, str) or not 1 <= len(value) <= 32 or not value.isascii() or not value.isalnum():
+        raise ValueError('Compatibility serial must contain 1-32 ASCII letters/digits')
+    return value
+
+
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
-              userland_model=None):
+              userland_model=None, userland_serial=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -87,7 +94,7 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.
         chosen.props['mac-address-wifi0'] = validate_wifi_mac(wifi_mac)
-    return Node('device-tree', {
+    tree = Node('device-tree', {
         # hw.product feeds MobileGestalt's device-class selection. Keep board
         # routing and the displayed hardware name separate from this opt-in
         # compatibility model for the supplied iPadOS userland.
@@ -103,6 +110,11 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         Node('defaults', {'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
         Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5'),
                                         'artwork-scale-factor': U32(2)})])
+    if userland_serial is not None:
+        # IOPlatformExpertDevice publishes this NUL-terminated ADT data as
+        # IOPlatformSerialNumber. Keep the value local and explicit.
+        tree.props['serial-number'] = STR(validate_userland_serial(userland_serial))
+    return tree
 
 
 def parse(data):
@@ -146,10 +158,14 @@ def main():
                         help='Local file containing the six binary octets read from this device')
     parser.add_argument('--userland-model', choices=['iPad7,11'],
                         help='Use the supplied iPadOS model for hw.product/device-class compatibility')
+    parser.add_argument('--userland-serial-file', type=Path,
+                        help='Local ASCII compatibility serial; never read automatically from Android')
     args = parser.parse_args()
     wifi_mac = validate_wifi_mac(args.wifi_mac_file.read_bytes()) if args.wifi_mac_file else None
+    userland_serial = (validate_userland_serial(args.userland_serial_file.read_text(encoding='ascii').strip())
+                       if args.userland_serial_file else None)
     blob = make_tree(secrets.token_bytes(64), args.checkpoint, args.bootstrap, wifi_mac,
-                     args.userland_model).encode()
+                     args.userland_model, userland_serial).encode()
     root, children = parse(blob)
     nodes = {p['name'].rstrip(b'\0').decode(): (p, c) for p, c in children}
     assert len(nodes['cpus'][1]) == 8
@@ -162,6 +178,7 @@ def main():
               'bootstrap_ramdisk_required': args.bootstrap,
               'wifi_mac_supplied': wifi_mac is not None,
               'userland_model': args.userland_model,
+              'compatibility_serial_supplied': userland_serial is not None,
               'window': 'largest successfully allocated EFI conventional run, capped at 12 GiB',
               'runtime_requirements': 'Nabu DarwinBoot handoff patch; boot MPIDR 0; CNTFRQ 19200000',
               'device_boot_validated': False, 'root_storage_driver_integrated': False}

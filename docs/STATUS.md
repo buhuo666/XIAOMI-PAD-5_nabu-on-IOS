@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第二十三轮正常定时返回，Android 回收确认 30 份 GPT 元数据与 14 个引导分区一致。已真实读回 56 MiB 持久日志并通过记录／全流哈希，但 capture 容量在约 193 秒耗尽，END 明确报告另有 349,179,156 bytes 丢失，完整日志验收未通过。约 87% 已保存字节来自 sleepd 连接重试；原版 iPad 镜像没有该服务，原 cache 代码确认当前不识别的型号会归为 iPod。显式 iPad7,11 用户态兼容型号、512 MiB 捕获和 640 MiB 独立日志区域的候选已通过原生编译及检查，新区域清单已回读且旧槽 0、1 哈希不变；第二十四轮临时启动命令成功，运行中用户报告苹果 Logo、一次黑屏后 Logo 变扁；发现逻辑／物理尺寸的非等比缩放线索，等待 Android 回收，桌面尚未确认。详见 [设备类别调查](DEVICE-CLASS-COMPATIBILITY.md) 与 [日志落盘格式](NABU-PERSISTENT-LOG-FORMAT.md)。
+最新主线结果：第二十四轮已恢复 Android，30 份 GPT 元数据和 14 个受检引导分区一致。已完整读回 640 MiB 原始日志区域，恢复 2,247,453 bytes 连续有效前缀至约 538 秒；用户确认苹果 Logo 仍在时手动重启，因此没有 END，不能归因于容量失败，也未通过完整收尾验收。本轮已确认 iPad class=3，保存前缀内 sleepd/HKSP 重试为零；SpringBoard 主动保留 Logo，Setup 场景超时，尚未进入桌面。日志同时确认 1125×2436 手机画面被拉伸到 1600×2560 面板。按用户“只伪装型号、使用真实硬件配置”要求，已采集 Android 显示/CPU 数据并提交原生尺寸与物理 DPI 修正，17 组主机检查通过，macOS Actions `41855566365` 排队中。详见 [真实硬件配置](NABU-NATIVE-HARDWARE.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

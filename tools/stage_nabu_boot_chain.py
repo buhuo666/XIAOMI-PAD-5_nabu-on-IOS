@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 import tomllib
-from make_nabu_adt import make_tree, parse, validate_wifi_mac, CHECKPOINTS, DEFAULT_CHECKPOINT
+from make_nabu_adt import make_tree, parse, validate_wifi_mac, validate_userland_serial, CHECKPOINTS, DEFAULT_CHECKPOINT
 from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 
@@ -74,9 +74,13 @@ def main():
                     help='Six binary octets from this device; rechecked against Android before deployment')
     ap.add_argument('--userland-model', choices=['iPad7,11'],
                     help='Explicit model compatibility for the selected iPadOS userland')
+    ap.add_argument('--userland-serial-file', type=Path,
+                    help='Explicit local compatibility serial, independent of the Android device identity')
     ap.add_argument('--log-preparation', type=Path, help='Verified fresh runtime-log slot preparation receipt')
     a = ap.parse_args()
     wifi_mac = validate_wifi_mac(a.wifi_mac_file.read_bytes()) if a.wifi_mac_file else None
+    userland_serial = (validate_userland_serial(a.userland_serial_file.read_text(encoding='ascii').strip())
+                       if a.userland_serial_file else None)
     assert sha(KERNEL) == KERNEL_SHA, 'Kernel differs from verified successful build'
     efi = ROOT/'artifacts/nabu-efi'
     for f in json.loads((efi/'build-report.json').read_text())['binaries']:
@@ -117,11 +121,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model).encode()
+                         a.userland_model, userland_serial).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -136,6 +140,7 @@ def main():
                'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
     receipt['wifi_mac_supplied'] = wifi_mac is not None
+    receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model
     if wifi_mac is not None:
         receipt['wifi_mac_source_sha256'] = hashlib.sha256(wifi_mac).hexdigest()

@@ -54,3 +54,22 @@ XNU 当前只管理 loader 成功取得的连续窗口，已观察为 8,468,299,
 
 后续验证应分别检查原生比例、尺寸/DPI、桌面交接和完整 END。
 日志单元 0、1、2..11 均保留；下一轮只能选新的空闲区域。
+
+## 独立兼容序列号
+
+用户随后要求序列号也使用公开 iPad 示例，而不使用本机 Android 序列号。
+ADT/部署工具新增显式 `--userland-serial-file`，仅增加 root 的 NUL 结尾
+`serial-number`。不自动读取 Android 编号，不写入公开仓库。
+标准 XNU `IOPlatformExpertDevice::configureDefaults` 在启动服务匹配前把该字段发布为
+`IOPlatformSerialNumber`；这只确认源码路径，OS 实机读取仍待验收。
+
+本地候选使用 Jamf 官方开发文档 “Jamf Pro Components (Single Login)” 中明确标为
+`iPad7,11` / iPad 7th Generation (Wi-Fi) 的公开示例编号。出处与值记录在 ignored
+`log/host/display-v25/serial-provenance.json`，输入在 `device/`。
+该文档未标明销售地区，不能声称是国行或真实有效设备；仅用于字段读取测试，
+不作为 Apple 激活记录。加入该字段后，硬件节点保持逐字节相同，实际 loader ADT
+解析/截断/分配场景检查通过。
+
+原生构建 `41855566365` attempt 1 因 hosted runner 未接单而取消，没有执行编译。
+已发起 attempt 2；工作流另增加 Intel macOS 15 备选执行池，仍锁定 Xcode 16.4、
+arm64 内核目标及所有原生检查。

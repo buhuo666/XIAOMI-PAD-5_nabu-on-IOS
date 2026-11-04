@@ -129,3 +129,16 @@ EFI build; their binaries differ and are not represented as byte-identical.
 The selected local EFI's 1723 Boot instructions are independently checked
 against its PE bytes, including all enlarged limits and the final window guard.
 Receipts are under `log/host/display-v24/kernel/` and `efi/`.
+
+
+## Run 24 recovery
+
+The recovered prefix confirms class 3 and zero sleepd/HKSP matches across all
+2,247,453 bytes (through approximately 538 seconds). The raw 640 MiB extent
+was fully read, but the user manually restarted while the Apple logo remained;
+there is no END and complete-stream recovery remains unqualified. All 30 GPT
+records and 14 boot partitions match. Three stack samples were recovered at
+263.360, 383.362 and 503.363 seconds. SpringBoard explicitly sustains the logo
+while Setup encounters scene watchdog timeouts; nonempty swaps are recorded
+but do not prove the desktop. See `log/host/display-v25/run24-analysis*` and
+[native hardware configuration](NABU-NATIVE-HARDWARE.md).
