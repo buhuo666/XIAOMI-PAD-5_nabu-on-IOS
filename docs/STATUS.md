@@ -4,7 +4,7 @@
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
-最新主线结果：第二十一轮五分钟窗口仍未见桌面。约 263 秒的 SpringBoard 主线程保存状态已到 QuartzCore 图形路径创建，选中样本未见早先 LaunchServices 数据库等待，但尚不能证明全部建库完成或主线程持续前进。读取 33,721 次无失败；恢复 Android 后 30 份 GPT 元数据／14 个受检引导分区一致。第二十二轮候选延长至 600 秒，并在名义 240／360／480 秒采前四个线程，验证时间不足的假设；待部署及真机结果。详见 [线程等待调查](SPRINGBOARD-MAIN-THREAD.md)。
+最新主线结果：第二十一轮五分钟窗口仍未见桌面。约 263 秒的 SpringBoard 主线程保存状态已到 QuartzCore 图形路径创建，选中样本未见早先 LaunchServices 数据库等待，但尚不能证明全部建库完成或主线程持续前进。读取 33,721 次无失败；恢复 Android 后 30 份 GPT 元数据／14 个受检引导分区一致。第二十二轮已成功执行临时 fastboot boot，延长至 600 秒并在名义 240／360／480 秒采前四个线程，验证时间不足的假设；等待画面及恢复 Android 后回读。详见 [线程等待调查](SPRINGBOARD-MAIN-THREAD.md)。
 
 当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 

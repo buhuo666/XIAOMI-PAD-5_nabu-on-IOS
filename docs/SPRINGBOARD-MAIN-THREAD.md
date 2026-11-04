@@ -153,3 +153,5 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 时间由 EARLY_BOOT 初始化后计算，后续间隔从每次采样完成后计算，实际时间还受初始化／调度开销影响。定时返回依赖内核调度，不是硬件看门狗。loader 日志保留最早 256 KiB、随后最新 1 MiB，再追加 message buffer；较早样本可能被覆盖，丢失时间头会明确显示 HEADER NOT CAPTURED。当前仍为 RAM Data，重启不会保留此轮临时数据库，不能把多轮运行时间相加当成同一次建库；本轮不改变 Data 策略。
 
 候选 `artifacts/nabu-chain-desktop-v22` 已通过 TOML 结构对照、五个载荷逐字节比较与 boot.img 一致性检查。现有内核／EFI 与上一轮一致，沿用已有原生验证和覆盖多次采样／十二条容量的报告检查，配置调整不重复重建。部署与临时启动回执待记录。
+
+第二十二轮于 `2026-11-04T20:23:33.582954+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `34945eda2e7a53b945fe5c3549d48b2439200081`；部署回执 `log/device/nabu-chain-20261104-202214/deployment.json`，六个启动文件回读一致。启动前核对 30 份 GPT 元数据并记录 14 个受检引导分区哈希，64 份输入与验证文件及确切 boot.img 保存在 `log/device/nabu-boot-20261104-22/`。当前仅确认临时启动命令成功，等待十分钟运行窗口内的桌面或定时报告，再恢复 Android 执行本轮 `--collect`。
