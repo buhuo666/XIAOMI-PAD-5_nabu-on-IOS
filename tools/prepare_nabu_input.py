@@ -15,6 +15,7 @@ def main():
     copied = []
     for name, parent in [('NabuTouch.cpp', 'iokit/Kernel/nabu_input'),
                          ('NabuTouchPackets.h', 'iokit/Kernel/nabu_input'),
+                         ('NabuTouchReady.h', 'iokit/Kernel/nabu_input'),
                          ('NabuButtons.c', 'bsd/dev/nabu_input')]:
         dest = args.tree/parent/name
         dest.parent.mkdir(parents=True, exist_ok=True)

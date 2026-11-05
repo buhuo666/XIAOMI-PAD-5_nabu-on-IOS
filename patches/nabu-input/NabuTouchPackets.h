@@ -21,7 +21,8 @@ static int nabu_decode_contacts(const uint8_t packet[80], uint32_t width,
         watchdog &= packet[i] == 0xfd || packet[i] == 0xfe;
         esd &= packet[i] == 0x77;
     }
-    if (watchdog || esd) return -2;
+    if (watchdog) return -2;
+    if (esd) return -3;
     uint8_t checksum = 0;
     for (unsigned i = 0; i <= 64; ++i) checksum += packet[i];
     if (checksum || width < 2 || height < 2) return -1;

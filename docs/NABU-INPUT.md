@@ -88,3 +88,18 @@ SpringBoard 的 MPVolumeControllerRouteDataSource 多次报告
 另保留两个独立现象：首次有效触摸前出现 20,991 次坏校验及累计 4 次固件加载，
 随后有效帧持续增加且 bus-errors=0；约255秒 SpringBoard 经 SBRestartManager 重启，
 后续仍接收按键并进入 Settings。这两项尚未归因，不影响本次音量事件已到达的结论。
+
+## 基础稳定性修正（第二十七轮候选）
+
+用户补充确认第二十六轮切换过语言／地区，255 秒附近的 SBRestartManager
+退出伴随 locale 变更通知；按当前证据归为设置操作触发的重启，不修改系统重启策略。
+
+触摸改为轮询 GPIO39 的上升沿锁存状态，只在新事件后读取 SPI 数据。
+MiCode nabu-r-oss 的 NT36523 使用上升沿 IRQ；SM8150 GPIO39 位于 NORTH tile，
+寄存器页为 0x03927000，与 GPIO23..26 所在 EAST tile 不同。
+保持 raw-status 使能、关闭 IRQ 输出，每 4 ms 检查锁存；读帧前应答，保留传输期间的新边沿。
+0x77 握手和 0xfd/0xfe watchdog 分开处理，后者需连续 11 个实际事件才重载，
+前者在 1.5 秒无有效帧后恢复；不再重复计算同一份空闲数据。
+
+实际 packet/contact 与 GPIO 锁存辅助代码通过 ASan/UBSan 检查。
+参考源码、哈希和主机结果在 `log/host/stability-v27/`；实际 GPIO 和触摸效果待新内核实机确认。

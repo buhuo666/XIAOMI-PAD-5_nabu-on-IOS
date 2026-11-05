@@ -10,6 +10,7 @@
 #include <kern/clock.h>
 #include <pexpert/pexpert.h>
 #include "NabuTouchPackets.h"
+#include "NabuTouchReady.h"
 extern "C" {
 vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 void hakios_touch_post(uint32_t, uint32_t, uint32_t, uint32_t);
@@ -47,6 +48,7 @@ constexpr uint64_t kGccQupPa = 0x0011e000;   // GCC + 0x1e000: wrap2 AHB CBCRs, 
 constexpr uint64_t kGccVotePa = 0x00152000;  // GCC + 0x52000: APCS clock branch vote at +0x14
 constexpr uint64_t kSePa = 0x00c84000;
 constexpr uint64_t kTlmmSpiPa = 0x03517000;  // GPIO 23..26, one 0x1000 window each
+constexpr uint64_t kTlmmIrqPa = 0x03927000;  // GPIO39, NORTH tile (not SPI's EAST tile)
 constexpr uint32_t kRcg = 0x278;             // wrap2 S1 RCG CMD within kGccQupPa
 
 enum : uint32_t {
@@ -383,45 +385,67 @@ void runTouch(void)
     gSe = map(kSePa, 0x4000);
     if (!gSe.base || !clocksUp()) { TLOG("clock setup failed"); return; }
     pinsUp();
+    Mmio ready = map(kTlmmIrqPa, 0x1000);
+    if (!ready.base) { TLOG("GPIO39 map failed"); return; }
+    nabu_touch_ready_init(ready);
     if (!seInit() || !ntChipId()) { TLOG("SPI or chip identification failed"); return; }
     nabu_touch_stats[0] = 2;
     if (!ntDownload(fw)) { TLOG("firmware download failed"); return; }
     nabu_touch_stats[0] = 3;
-    TLOG("point polling active: %ux%u, 8 ms interval", gXMax, gYMax);
+    TLOG("GPIO39 rising-edge polling active: %ux%u, 4 ms interval ctl=%#x cfg=%#x",
+         gXMax, gYMax, ready.r(0), ready.r(8));
     NabuContacts previous = {};
     uint8_t packet[80];
     unsigned restartFrames = 0;
+    uint64_t esdDeadline = 0;
     uint64_t nextStatus = deadlineUs(30000000);
     for (;;) {
-        if (ntRead(0x2fe00, packet, sizeof(packet))) {
-            ++nabu_touch_stats[1];
-            NabuContacts current;
-            int result = nabu_decode_contacts(packet, gXMax, gYMax, &current);
-            if (result == 0) {
+        if (nabu_touch_take_ready(ready)) {
+            ++nabu_touch_stats[6];
+            if (ntRead(0x2fe00, packet, sizeof(packet))) {
+                ++nabu_touch_stats[1];
+                NabuContacts current;
+                int result = nabu_decode_contacts(packet, gXMax, gYMax, &current);
+                if (result == 0) {
+                    restartFrames = 0;
+                    esdDeadline = 0;
+                    if (current.active) ++nabu_touch_stats[2];
+                    nabu_publish_contacts(&previous, &current, hakios_touch_post);
+                    ++nabu_touch_stats[4];
+                } else if (result == -2 && ++restartFrames > 10) {
+                    NabuContacts released = {};
+                    nabu_publish_contacts(&previous, &released, hakios_touch_post);
+                    TLOG("controller restart pattern; reloading firmware");
+                    if (!ntDownload(fw)) return;
+                    restartFrames = 0;
+                    esdDeadline = 0;
+                } else if (result == -3) {
+                    restartFrames = 0;
+                    if (!esdDeadline) esdDeadline = deadlineUs(1500000);
+                } else if (result == -1) {
+                    restartFrames = 0;
+                    ++nabu_touch_stats[3];
+                }
+            } else {
                 restartFrames = 0;
-                if (current.active) ++nabu_touch_stats[2];
-                nabu_publish_contacts(&previous, &current, hakios_touch_post);
-                ++nabu_touch_stats[4];
-            } else if (result == -2 && ++restartFrames >= 10) {
-                NabuContacts released = {};
-                nabu_publish_contacts(&previous, &released, hakios_touch_post);
-                TLOG("controller restart pattern; reloading firmware");
-                if (!ntDownload(fw)) return;
-                restartFrames = 0;
-            } else if (result == -1) {
-                restartFrames = 0;
-                ++nabu_touch_stats[3];
+                ++nabu_touch_stats[5];
             }
-        } else {
-            ++nabu_touch_stats[5];
+        }
+        if (esdDeadline && mach_absolute_time() >= esdDeadline) {
+            NabuContacts released = {};
+            nabu_publish_contacts(&previous, &released, hakios_touch_post);
+            TLOG("ESD handshake timed out; reloading firmware");
+            if (!ntDownload(fw)) return;
+            restartFrames = 0;
+            esdDeadline = 0;
         }
         if (mach_absolute_time() >= nextStatus) {
-            TLOG("frames=%u touching=%u bad=%u accepted=%u bus-errors=%u firmware-loads=%u",
+            TLOG("frames=%u touching=%u bad=%u accepted=%u bus-errors=%u firmware-loads=%u ready=%u",
                  nabu_touch_stats[1], nabu_touch_stats[2], nabu_touch_stats[3],
-                 nabu_touch_stats[4], nabu_touch_stats[5], nabu_touch_stats[7]);
+                 nabu_touch_stats[4], nabu_touch_stats[5], nabu_touch_stats[7], nabu_touch_stats[6]);
             nextStatus = deadlineUs(60000000);
         }
-        IOSleep(8);
+        IOSleep(4);
     }
 }
 void touchThread(void *, wait_result_t)
