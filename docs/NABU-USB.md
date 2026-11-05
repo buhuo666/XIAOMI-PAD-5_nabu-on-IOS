@@ -3,6 +3,22 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十五轮：原版 FairPlayIOKit 已打开，AES 错误触发旧日志封存
+
+用户确认桌面正常，AMDS发现设备且Lockdown端口连接成功，QueryType仍超时。
+原版FairPlayIOKit匹配非空、IOServiceOpen成功，selector22/23均返回0、输出4字节。
+selector21输入552字节后请求AES-128、32字节、selector2201，适配层真实返回
+kIOReturnUnsupported。原版组件的服务初始化和用户客户端路径已通过，不能据此
+认定完整FairPlay操作、配对或同步通过。
+
+此前为Image4失败设置的诊断对所有AES Unsupported调用nabu_log_finish，在约47秒
+封存全局日志。因此虽然本轮296,622字节日志带END，仍缺少此后运行记录；这不是
+设备停机证据。第五十六轮将终止采集限定到既有Image4 selector2212错误，保留
+selector2201真实返回值并继续采集原版服务后续结果。没有替换其密钥或成功状态。
+
+完整64MiB日志槽已备份清空，APFS计数25→26、fullfsync成功，GPT/引导分区一致，
+设备已回Android。第五十五轮证据位于 ignored `log/host/native-usb-v55/`。
+
 ## 第五十四轮：桌面与原生 USBMux 通过，配对服务缺少内核组件
 
 用户确认桌面正常。12字节BOS回复完整提交并完成，随后首次bulk OUT收到20字节，

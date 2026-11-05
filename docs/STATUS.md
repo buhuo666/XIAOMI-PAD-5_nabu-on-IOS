@@ -2,6 +2,11 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
+最新实机：第五十五轮桌面正常，原版FairPlayIOKit服务打开和版本查询成功；后续
+AES selector2201返回不支持，旧AES诊断提前封存日志。第五十六轮仅修正此采集问题，
+继续观察真实失败路径；Lockdown仍超时，配对/同步未通过。APFS计数25→26，完整
+日志槽已备份清空，设备在Android。见 [USB连接](NABU-USB.md)。
+
 最新实机：第五十四轮桌面正常，原生USBMux双向传输成功，AMDS首次发现设备；
 Lockdown端口可连接但QueryType超时，配对/同步未通过。FairPlay的真实调用确认
 缺少FairPlayIOKit服务，正在处理原版组件带偏移的导入重绑定。APFS计数24→25，

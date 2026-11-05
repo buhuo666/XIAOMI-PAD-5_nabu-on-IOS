@@ -81,8 +81,10 @@ IOReturn NabuAES::performAES(IOMemoryDescriptor *input,IOMemoryDescriptor *outpu
     cc_clear(sizeof(software),&software);
     if (native_aes_registered) {
         IOLog("NABU AES: descriptor result=0x%x\n",result);
-        // Image4 panics on this measured failure before the periodic writer runs.
-        if (result==kIOReturnUnsupported) nabu_log_finish();
+        // Only the measured Image4 nonce failure requires terminal capture.
+        // FairPlay also submits unsupported hardware selectors; those must
+        // return their real error without sealing all subsequent runtime logs.
+        if (result==kIOReturnUnsupported && key && key->selector==2212) nabu_log_finish();
     }
     return result;
 }
