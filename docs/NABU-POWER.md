@@ -31,6 +31,13 @@ power-trace 任务）。诊断工具源码保留供后续按需使用。
 
 ## 第三十七轮：读取 SDAM 中的电量计历史
 
+第三十七轮用户已确认桌面、电量、时间和 USB 响应“均正常”。日志中 39 次
+历史记录均为学习容量 8688 mAh、循环计数 0、八桶全 0，与 Android 一致；
+无 PMIC 读失败或无效样本。APFS 启动计数 `7→8`，fullfsync 成功。完整
+64 MiB slot14 已备份，提取 1,334,587 bytes 日志，17:56:11 清空并回读确认。
+当前无 powerd 密集采样或 power-trace 任务的 v37 内核／bootstrap v10 已验收。
+结果保存在 `log/host/power-v37/device-results.json`。
+
 本机 Android 活设备树的 `qpnp,fg/nvmem` 为 phandle `0x610`，实际指向
 PM8150 slave 0 的 `sdam@b100`，名称为 `fg_sdam`。此前列出的 FG SRAM
 学习容量地址只是厂商驱动没有 SDAM 时的路径，不是这台设备使用的路径。
