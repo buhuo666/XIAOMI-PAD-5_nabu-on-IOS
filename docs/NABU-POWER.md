@@ -227,3 +227,6 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 
 第三十七轮已于 `2026-11-05T17:52:26.193926+08:00` 成功发送 `fastboot boot`，源提交 `9d24b6a`。
 实际桌面状态及 SDAM 数值待用户测试和日志回收；输入在 `log/device/nabu-boot-20261105-37/`，接续在 `log/host/power-v37/continuation.json`。
+
+第三十八轮已于 `2026-11-05T18:06:41.480544+08:00` 成功发送 `fastboot boot`，源提交 `cc56b7c`。
+温度授权流程、数值及桌面回归待实机确认，输入在 `log/device/nabu-boot-20261105-38/`，接续在 `log/host/power-v38/continuation.json`。
