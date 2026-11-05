@@ -1,5 +1,7 @@
 # 小米平板 5（nabu）工作目录
 
+项目工作约定见 [特殊步骤清单](docs/SPECIAL-STEPS.md)，后续任务遵循根目录 [AGENTS.md](AGENTS.md)。
+
 当前目标：XNU 8796.121.2 + iPadOS 16.5（20F66），普通 arm64，iPad7,11／J171AP 供体。
 
 当前进展：实机已报告八核在线及 framebuffer 初始化，原生只读 UFS、OS／SystemOS 挂载和 RAM 用户态 bootstrap 已接通。第二十一轮五分钟运行仍未见桌面，但 SpringBoard 主线程保存状态已到 QuartzCore 图形路径创建。第二十二轮延长至十分钟并分三次采样，验证是否仍需等待。详见 [线程等待调查](docs/SPRINGBOARD-MAIN-THREAD.md)。用户要求优先进入桌面，主动 panic 日志问题已[暂缓](docs/DEFERRED-PANIC-DIAGNOSTICS.md)，当前候选诊断采用 600 秒正常定时返回。Data 仍在 RAM 中，磁盘持久化未完成。设备为 12 GB 扩容机，loader 当前交接的连续窗口约 7.89 GiB；完整跨核调度、TLB 和全部可用 RAM 仍待验收。总体进展见 [STATUS](docs/STATUS.md)。

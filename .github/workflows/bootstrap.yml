@@ -55,6 +55,8 @@ jobs:
           cp log/ci/nabu-setup-compat/report.json artifacts/nabu-setup-compat/host-check.json
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
+      - name: Compile the APFS Data block device
+        run: python3 tools/build_nabu_data_block.py --tree build/xnu8796-reference/tree --output artifacts/nabu-data-block
       - name: Verify linked kernel against the selected export contract
         if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
         run: python3 tools/check_nabu_export_contract.py --tree build/xnu8796-reference/tree --verify-generated --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-export-contract-linked.json
@@ -84,6 +86,7 @@ jobs:
             artifacts/nabu-userland/
             artifacts/nabu-setup-compat/
             artifacts/nabu-input-bridge/
+            artifacts/nabu-data-block/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14

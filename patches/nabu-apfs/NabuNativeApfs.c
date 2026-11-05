@@ -65,4 +65,8 @@ void nabu_apfs_load(void)
     mount_list_unlock();
     printf("NABU APFS: load-status=%#x registered=%d (registration may be deferred)\n",
         nabu_apfs_load_status,nabu_apfs_registered);
+    if (!nabu_apfs_load_status) {
+        kern_return_t data_status=OSKextLoadKextWithIdentifier("org.nabu.driver.DataBlock");
+        printf("NABU DATA BLOCK: kext load-status=%#x\n",data_status);
+    }
 }

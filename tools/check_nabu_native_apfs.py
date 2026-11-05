@@ -38,6 +38,7 @@ static size_t fixture_strlcpy(char *d,const char *s,size_t n){snprintf(d,n,"%s",
 static void mount_list_lock(void){}
 static void mount_list_unlock(void){}
 static kern_return_t OSKextLoadKextWithIdentifier(const char *id) {
+ if(!strcmp(id,"org.nabu.driver.DataBlock"))return 0;
  assert(!strcmp(id,"com.apple.filesystems.apfs"));++loads;
  if(install){tables[1]=(struct vfstable){&original,"apfs",26,1,NULL};tables[0].vfc_next=&tables[1];}
  return result;
