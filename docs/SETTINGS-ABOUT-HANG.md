@@ -39,3 +39,7 @@ Settings 打开时出现 Wi-Fi、CoreTelephony 等缺失服务请求，但这些
 
 第三十一轮输入和日志在 `log/device/nabu-boot-20261105-31/`。
 本轮进度在 `log/host/settings-about-v33/`。
+
+用户补充对照：RAM Data 启动时“关于本机”可正常查看，改为持久存储后才卡住。后续优先核对存储容量、可用空间、挂载信息与相关 IOKit 查询，仍以 Preferences 实际等待栈确认具体调用，不把服务缺失日志直接当成原因。
+
+第三十二轮已于 `2026-11-05T16:02:19.134818+08:00` 执行 `fastboot boot`，发送与 Booting 均成功；源提交 `d8b02908bd11c210c5c2d1738fc3eea351a71e87`。同一内核和 bootstrap 下，仅调整了采样配置。实机确认和日志回收待进行，输入在 `log/device/nabu-boot-20261105-32/`，接续在 `log/host/settings-about-v33/continuation.json`。
