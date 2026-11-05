@@ -2,6 +2,15 @@
 #define NABU_DYLD_CACHE_DIRECTORY "/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld"
 #define NABU_DYLD_CACHE_ENV "DYLD_SHARED_CACHE_DIR=" NABU_DYLD_CACHE_DIRECTORY
 
+static const char *nabu_boot_filesystem(void)
+{
+    int renamed=0;
+    size_t size=sizeof(renamed);
+    if (sysctlbyname("kern.nabu_apfs_legacy_renamed",&renamed,&size,NULL,0)==0 && renamed)
+        return "apfsro";
+    return "apfs";
+}
+
 static unsigned nabu_phase;
 
 static void nabu_stage(unsigned phase, unsigned error)

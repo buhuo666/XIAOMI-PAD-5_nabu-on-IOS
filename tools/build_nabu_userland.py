@@ -36,9 +36,11 @@ def verify(path):
 
 def generate_sources(src):
     stage=(src/'userland/src/stage0.c').read_text()
+    stage=stage.replace('mount("apfs",','mount(nabu_boot_filesystem(),')
     stage=once(stage,'(void *)"/dev/md1"','(void *)"/dev/md0,c=1"')
     stage=stage.replace('cannot mount /dev/md1 on /hakios','cannot mount bootstrap container 1 on /redwood')
     init=(src/'userland/src/init.c').read_text()
+    init=init.replace('mount("apfs",','mount(nabu_boot_filesystem(),')
     data_start=init.index('static int\nmount_data_volume(void)')
     data_end=init.index('/* What is under PATH',data_start)
     init=init[:data_start]+(ROOT/'patches/nabu-userland/NabuDataMount.inc').read_text()+'\n\n'+init[data_end:]
@@ -50,7 +52,7 @@ def generate_sources(src):
         '\tif (!failures && var_kept) check(nabu_data_boot_record(),"persist Data boot record");\n'
         '\tif (failures) { reboot(RB_HALT); return 1; }\n\trestore_var();')
     init=once(init,'\tmount_cryptex("OS", ",c=1", devpath);\n\tmount_cryptex("App", ",c=2", devpath);',
-        '\tif (mount("apfs", "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
+        '\tif (mount(nabu_boot_filesystem(), "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
         '\t\tnabu_failure("mount SystemOS", (unsigned)errno);\n'
         '\t\tprintf("NABU INIT: SystemOS mount failed: %s\\n", strerror(errno));\n'
         '\t\treboot(RB_HALT); return;\n\t}\n'

@@ -48,10 +48,14 @@ def main():
 static unsigned mounted, failures, reported, status;
 static int stat_error, mount_error, non_directory;
 static int flash_root_mode, test_pid=1;
+static int legacy_renamed;
 #define getpid() test_pid
 static char message[192];
 static int mock_sysctl(const char *name,void *old,size_t *len,const void *value,size_t size) {
   (void)old;(void)len;
+  if (!strcmp(name,"kern.nabu_apfs_legacy_renamed")) {
+    assert(old && len && *len==sizeof(int));memcpy(old,&legacy_renamed,sizeof(int));return 0;
+  }
   if (!strcmp(name,"kern.nabu_userland_stage")) {
     assert(size==4);memcpy(&status,value,4);
   } else {
@@ -83,6 +87,8 @@ static int mock_mount(const char *type,const char *to,int flags,void *from) {
 static const char *in_image(const char *path) {return path;}
 static void check(int ok,const char *what) {(void)what;if(!ok)failures++;}
 int main(void) {
+  assert(!strcmp(nabu_boot_filesystem(),"apfs"));
+  legacy_renamed=1;assert(!strcmp(nabu_boot_filesystem(),"apfsro"));legacy_renamed=0;
   errno=35;nabu_stage(3,0);assert(errno==35&&status==(3U<<16));
 '''+old_block+r'''
   assert(mounted==1&&failures==1); /* Reproduce run-12's short-circuit. */

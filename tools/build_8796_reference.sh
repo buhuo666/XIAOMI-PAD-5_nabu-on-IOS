@@ -60,6 +60,8 @@ done
 cd "$PROJECT_ROOT"
 python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
 python3 tools/prepare_nabu_input.py --tree "$XNU_SRC" --output log/ci/nabu-input/source.json
+python3 tools/prepare_nabu_native_apfs.py --tree "$XNU_SRC" --output log/ci/nabu-native-apfs/source.json
+python3 tools/check_nabu_native_apfs.py --output log/ci/nabu-native-apfs/checks
 python3 tools/check_nabu_input.py --output log/ci/nabu-input/checks
 python3 tools/check_nabu_storage.py --tree "$XNU_SRC" --output log/ci/nabu-storage/host
 python3 tools/check_nabu_log_writer.py --tree "$XNU_SRC" --output log/ci/nabu-log-writer
