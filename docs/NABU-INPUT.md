@@ -54,3 +54,16 @@ bootstrap v6 SHA-256
 
 
 第二十六轮于 `2026-11-05T10:34:24.181348+08:00` 执行 `fastboot boot`，发送及 Booting 均成功，源提交 `d9c3ef8b9240c42ca9c55f95992b12588255a60b`。六个 ESP 文件已回读一致；新日志单元 14 为独立 64 MiB，旧单元 0..13 与包含 SWEETLOG 的单元 15 合计 960 MiB 的完整哈希在部署后保持一致。245 份输入／验收文件和确切 boot.img 保存在 `log/device/nabu-boot-20261105-26/`。本轮启用触摸、PM8150 按键与 backboardd 输入桥；没有 loader_return_after，也未启用五指测试退出。实际滑动及按键结果待用户测试，当前仅确认启动命令成功。
+
+## 第二十六轮实机反馈
+
+用户已明确确认进入桌面、触摸可操作、电源键可息屏。音量加减都已测试，
+尚未看到响应；音量条未显示的原因未确定。本轮系统持续运行，运行日志尚待回收。
+口述记录保存在 `log/device/nabu-boot-20261105-26/user-observation-input.json`。
+
+音量路径的初步核对：内核使用 PM8150 对应位，桥接使用 consumer page 的
+volume increment/decrement usage 0xe9/0xea。bootstrap v6 已包含 mediaserverd
+和 mediaremoted 的按需启动项，其中有 volumecontroller/systemcontroller 服务。
+独立 APFS 清单确认 `/hal` 目录为空；初始化把它挂到系统 HAL 目录，当前尚未提供
+板载音频输出插件。需要本轮实际按键事件与媒体服务日志来区分输入、路由和 HUD。
+当前没有据此更改按键映射或制造虚拟音量状态。
