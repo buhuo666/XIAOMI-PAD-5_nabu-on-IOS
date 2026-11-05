@@ -1,0 +1,53 @@
+name: nabu16 - AppleImage4 AES analysis
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/appleimage4-analysis.yml'
+      - 'analysis/image4/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  image4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Obtain the original Image4 component
+        run: |
+          python3 tools/fetch_sources.py --only XnuPrelink lzfse --report log/ci/image4-analysis/sources.json
+          python3 tools/fetch_ipsw_members.py
+          python3 tools/inspect_kernelcache.py OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.release.ipad7c --payload-output build/kernelcache.20f66.lzfse
+          make -C src/lzfse -j3
+          src/lzfse/build/bin/lzfse -decode -i build/kernelcache.20f66.lzfse -o OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.decoded.macho
+          python3 tools/inspect_kernelcache.py OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.decoded.macho --report log/ci/image4-analysis/original.json
+          python3 analysis/image4/extract_image4.py
+      - name: Download Ghidra and verify the download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/image4-analysis/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,urllib.request,zipfile
+          release=json.loads(pathlib.Path('log/ci/image4-analysis/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          actual='sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != asset['digest']: raise RuntimeError('Ghidra download digest mismatch')
+          with zipfile.ZipFile(archive) as package: package.extractall('build')
+          PY
+      - name: Decompile original Image4 on Linux
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          mkdir -p build/ghidra-project
+          build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-project Image4 -import log/ci/image4-analysis/AppleImage4.elf -processor AARCH64:LE:64:v8A -analysisTimeoutPerFile 600 -scriptPath analysis/image4 -postScript ExportImage4.java log/ci/image4-analysis -log log/ci/image4-analysis/ghidra.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: image4-analysis-${{ github.run_number }}
+          path: log/ci/image4-analysis/
+          retention-days: 14
