@@ -139,3 +139,6 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 
 第三十四轮已于 `2026-11-05T16:42:03.571381+08:00` 成功发送 `fastboot boot`，源提交 `555dd73`。
 时间与 USB 图标响应的实测结果待用户确认；输入在 `log/device/nabu-boot-20261105-34/`，接续在 `log/host/power-v34/continuation.json`。
+
+第三十六轮已于 `2026-11-05T17:32:14.586514+08:00` 成功发送 `fastboot boot`，源提交 `481ca90`。
+平台 UUID 查询与 USB 图标延迟等待实机确认，确切输入在 `log/device/nabu-boot-20261105-36/`，接续在 `log/host/power-v36/continuation.json`。
