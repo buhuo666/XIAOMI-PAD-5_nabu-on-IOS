@@ -3,6 +3,7 @@
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/IODeviceTreeSupport.h>
 #include <libkern/c++/OSData.h>
+#include <libkern/OSDebug.h>
 #include <kern/clock.h>
 #include <kern/thread_call.h>
 #include <sys/errno.h>
@@ -12,6 +13,7 @@ extern "C" void nabu_log_finish(void);
 class NabuAES : public NativeAES {
     OSDeclareDefaultStructors(NabuAES)
     unsigned char nonceKey[16];
+    unsigned uidTraceCount = 0;
 public:
     bool start(IOService *) override;
     bool isKeySupported(unsigned selector) override;
@@ -66,6 +68,16 @@ IOReturn NabuAES::performAES(IOMemoryDescriptor *input,IOMemoryDescriptor *outpu
     if (native_aes_registered)
         IOLog("NABU AES: descriptor bytes=%llu operation=%u selector=%u bits=%u\n",
             bytes,operation,key ? key->selector : ~0U,key ? key->bits : 0);
+    if (key && key->selector==2201 &&
+        __atomic_fetch_add(&uidTraceCount,1,__ATOMIC_RELAXED)<2) {
+        void *frames[20];
+        unsigned count=OSBacktrace(frames,20);
+        IOLog("NABU AES UID: frames=%u inputLength=%llu outputLength=%llu inputOffset=%llu outputOffset=%llu inPlace=%u callback=%u\n",
+            count,input ? input->getLength() : 0,output ? output->getLength() : 0,
+            inputOffset,outputOffset,input==output,callback!=nullptr);
+        for (unsigned i=0;i<count;++i)
+            IOLog("NABU AES UID: frame=%u address=%#llx\n",i,(unsigned long long)(uintptr_t)frames[i]);
+    }
     // 20F66 Image4 encrypts a nonce seed with selector 2212, AES-128 and a
     // zero IV. Supply this port's persistent software key to the real CBC path.
     IOAESKeyData software={};

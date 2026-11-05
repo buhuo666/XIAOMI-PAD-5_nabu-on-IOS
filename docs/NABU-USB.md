@@ -3,6 +3,23 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十七轮候选：让 HWInfo 等待进入原版错误处理
+
+继续追踪用途时发现原版Lockdown已有非致命失败路径：bringup_stuff_ok在
+FairPlayGetHWInfo返回非零时记录错误并返回，缺少CESM证书也记录后继续；当前阻塞
+发生在1203号MIG请求的无限接收等待。配对会话的SSL证书/私钥读取来自配对记录与
+lockdown-identities keychain，不能仅凭静态关系宣称不依赖其余服务，但值得先实测。
+
+候选新增独立libnabu.lockdown-timeout.dylib，仅作用于原版lockdownd的
+0x10002bdd8返回点、消息1203、send24/receive60、options3、timeout0：加5秒
+MACH_RCV_TIMEOUT，保持实际mach_msg结果、消息及errno。其他IPC透传，不生成
+FairPlay回复、不替换UID/AES密钥、不更改认证结果。原MIG已有超时后释放reply port
+并返回错误的路径。ASan/UBSan验证精确请求、真实错误/成功透传及七类非目标请求。
+最终bootstrap两库及inject.conf回读一致。是否能使QueryType/配对响应仍待实机。
+
+同时增加前两次AES2201调用栈及公开版本/selector21内部状态观测，仅为定位32字节
+产物用途。静态/合成启动请求的分析在ignored `log/host/native-usb-v56/uid-purpose-analysis/`。
+
 ## 第五十六轮：完整后续日志确认 UID 请求失败与服务退出
 
 用户确认桌面正常，AMDS发现设备，62078端口可连接，QueryType仍超时。日志提前

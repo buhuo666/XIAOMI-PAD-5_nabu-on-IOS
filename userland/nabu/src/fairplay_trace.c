@@ -302,6 +302,20 @@ static kern_return_t traced_struct_method(mach_port_t connection, uint32_t selec
     kern_return_t result = IOConnectCallStructMethod(connection, selector, input, input_size, output, output_size);
     trace("NABU FAIRPLAY TRACE: END IOConnectCallStructMethod kr=%d output_bytes=%lu caller=0x%llx\n",
           result, (unsigned long)(output_size ? *output_size : 0), caller);
+    if (!result && (selector==22 || selector==23) && output && output_size && *output_size==4) {
+        const unsigned char *bytes=output;
+        uint32_t version=(uint32_t)bytes[0] | (uint32_t)bytes[1]<<8 |
+            (uint32_t)bytes[2]<<16 | (uint32_t)bytes[3]<<24;
+        trace("NABU FAIRPLAY TRACE: VERSION selector=%u value=%u\n",selector,version);
+    }
+    if (!result && selector==21 && output && output_size && *output_size==552) {
+        const unsigned char *bytes=output;
+        uint32_t length=(uint32_t)bytes[544] | (uint32_t)bytes[545]<<8 |
+            (uint32_t)bytes[546]<<16 | (uint32_t)bytes[547]<<24;
+        uint32_t status=(uint32_t)bytes[548] | (uint32_t)bytes[549]<<8 |
+            (uint32_t)bytes[550]<<16 | (uint32_t)bytes[551]<<24;
+        trace("NABU FAIRPLAY TRACE: RESULT selector=21 length=%u internal_status=%#x\n",length,status);
+    }
     return result;
 }
 
