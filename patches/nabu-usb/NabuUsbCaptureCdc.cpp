@@ -265,6 +265,10 @@ ep_end_transfer(unsigned dep, uint32_t rsc)
 	}
 	(void)ep_cmd(dep, kDepcmdEndTransfer | (1u << 11) |
 	    ((resource & 0x7fu) << kDepcmdParamShift), 0, 0, 0, nullptr);
+	/* DWC_usb31 does not equate CMDACT clear with END_TRANSFER complete.
+	 * Linux uses a 1 ms delay when CMDIOC is absent. Run 41 immediately
+	 * restarted EP0 and got command status 1 (NO_RESOURCE). */
+	IOSleep(1);
 	g_resources[dep] = 0;
 }
 
@@ -902,16 +906,16 @@ handle_device_event(uint32_t ev)
 	const unsigned info = (ev >> 16) & 0x1ffu;
 	log_cdc("NABU USB CDCLOG devt type=%u info=%03x\n", type, info);
 	if (type == kDevEventReset) {
-		/* Linux dwc3_gadget_reset_interrupt: end active transfers, put
-		 * EP0 back into setup phase, clear test mode and the device
-		 * address, then re-arm SETUP. */
-		ep_end_transfer(0, 0);
-		ep_end_transfer(1, 0);
+		/* Keep a pending SETUP transfer, as dwc3_ep0_reset_state does.
+		 * Only reset a control endpoint which is already in DATA/STATUS. */
+		if (g_ep0_state != kEp0Setup) {
+			ep0_restart();
+		} else {
+			log_cdc("NABU USB CDCLOG reset keep-setup resource=%u\n", g_resources[0]);
+		}
 		if (g_bulk_busy) {
 			ep_end_transfer(3, g_bulk_rsc);
 		}
-		(void)ep_cmd(0, kDepcmdSetStall, 0, 0, 0, nullptr);
-		(void)ep_cmd(0, kDepcmdClearStall, 0, 0, 0, nullptr);
 		uint32_t dctl = mrd(g_regs, kDwc3Dctl);
 		mwr(g_regs, kDwc3Dctl, dctl & ~kDctlTstctrlMask);
 		uint32_t dcfg = mrd(g_regs, kDwc3Dcfg);
@@ -922,7 +926,6 @@ handle_device_event(uint32_t ev)
 		g_bulk_busy = false;
 		disable_data_endpoints();
 		g_data_eps_programmed = false;
-		ep0_arm_setup();
 	} else if (type == kDevEventConnectDone) {
 		const unsigned speed = mrd(g_regs, kDwc3Dsts) & kDstsConnectspdMask;
 		if (speed != kDcfgHighSpeed) {
@@ -934,6 +937,8 @@ handle_device_event(uint32_t ev)
 		dcfg &= ~kDcfgSpeedMask;
 		dcfg |= kDcfgHighSpeed;
 		mwr(g_regs, kDwc3Dcfg, dcfg);
+		(void)ep_enable(0, kEpTypeControl, 64, kDepcfgActionModify);
+		(void)ep_enable(1, kEpTypeControl, 64, kDepcfgActionModify);
 		log_cdc("NABU USB CDCLOG connect speed=%u dsts=%08x\n",
 		    mrd(g_regs, kDwc3Dsts) & kDstsConnectspdMask,
 		    mrd(g_regs, kDwc3Dsts));
@@ -1118,7 +1123,7 @@ usb_run(void)
 	    enabled != 1) {
 		return;
 	}
-	puts_cdc("NABU USB CDCLOG 8796-v41 start\n");
+	puts_cdc("NABU USB CDCLOG 8796-v42 start\n");
 
 	int init = 0;
 	int allow_smmu = 0;

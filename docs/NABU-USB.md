@@ -44,3 +44,19 @@ ignored `build/python-usb/`。该VID/PID沿用参考原型，仅作本地开发�
 主机记录在 `log/host/usb-v41/`。
 
 第四十一轮已于 `2026-11-05T19:41:41.061301+08:00` 发送 `fastboot boot` 成功，源提交 `57cc470`。电脑接收器已先行启动，Windows枚举及实时日志待验证。确切输入保存在 `log/device/nabu-boot-20261105-41/`，接续在 `log/host/usb-v41/continuation.json`。
+
+
+## 第四十一轮回收与第四十二轮修正
+
+用户确认桌面正常。GCC电源和五个时钟均有效，DWC3 ID=33313130；USB SID0x140复用
+slot4/bank3，SMMU无全局错误。三个DMA页成功映射，EP0编程和RUN_STOP成功。
+电脑发出的USB reset到达，但随后的EP0 START_TRANSFER返回1（NO_RESOURCE），
+通道在24–25秒阶段停止，因此Windows没有串口。
+
+Linux v6.17 DWC3参考明确区分DWC_usb31的END_TRANSFER完成与CMDACT清除：无CMDIOC时
+需等待1ms再使用资源。其USB reset处理还保留已经处于SETUP阶段的EP0传输。
+第四十二轮据此加入结束传输等待，保留待接收SETUP，并在ConnectDone按MODIFY更新
+EP0最大包长。实际主机测试新增延迟资源释放模型和初始reset不重复START的检查。
+
+第四十一轮日志完整备份后已清空槽；GPT/引导分区一致，APFS计数11→12同步成功。
+第四十二轮编译与主机检查通过，准备再次验证Windows枚举。

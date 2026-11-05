@@ -7,14 +7,22 @@
 using namespace nabu_usb_capture;
 static uint32_t core[0x100000/4], ep0[0x4000/4], bulk[0x4000/4];
 static unsigned log_count;
+static unsigned starts[32];
+static bool ending[32];
 static const char capture[] = "immutable boot log\n";
 extern "C" uint32_t nabu_usb_test_mmio_read(volatile uint32_t *base, uint32_t off) { assert(off % 4 == 0); return base[off/4]; }
 extern "C" void nabu_usb_test_mmio_write(volatile uint32_t *base, uint32_t off, uint32_t value)
 {
     assert(off % 4 == 0);
     if (base == core && off >= 0xc80c && off <= 0xc9fc && (off-0xc80c)%16 == 0) {
+        unsigned dep=(off-0xc80c)/16;
         value &= ~kDepcmdCmdact;
-        if ((value & 15) == kDepcmdStartTransfer) value |= 1u << 16;
+        if ((value & 15) == kDepcmdEndTransfer) ending[dep]=true;
+        if ((value & 15) == kDepcmdStartTransfer) {
+            starts[dep]++;
+            if (ending[dep]) value |= 1u << 12;
+            else value |= 1u << 16;
+        }
     }
     base[off/4] = value;
 }
@@ -24,7 +32,7 @@ extern "C" void FlushPoC_DcacheRegion(vm_offset_t, unsigned) {}
 extern "C" const char *nabu_log_capture_data(void) { return capture; }
 extern "C" uint32_t nabu_log_capture_length(void) { return sizeof(capture)-1; }
 void IOLog(const char *, ...) { ++log_count; }
-void IOSleep(unsigned) {}
+void IOSleep(unsigned ms) { if (ms) memset(ending,0,sizeof(ending)); }
 int PE_parse_boot_argn(const char *, void *, int) { return 0; }
 int kernel_thread_start(void (*)(void *, wait_result_t), void *, thread_t *) { return 1; }
 void thread_deallocate(thread_t) {}
@@ -46,6 +54,9 @@ int main()
     ep0_arm_setup();
     assert(ep0[0]==g_ep0_pa+kEp0SetupBuffer && ep0[2]==8);
     assert(ep0[3]&kTrbCtrlHwo);
+    unsigned setup_starts=starts[0];
+    handle_device_event(1u|(kDevEventReset<<8));
+    assert(starts[0]==setup_starts && g_ep0_state==kEp0Setup && !g_faulted);
     setup(0x80,6,0x200,255);
     assert(g_ep0_state==kEp0Data && g_ep0_trbs==2);
     assert(ep0[2]==64 && ep0[6]==3);
@@ -81,6 +92,11 @@ int main()
     // Reset returns endpoints to unconfigured state and re-arms setup.
     handle_device_event(1u|(kDevEventReset<<8));
     assert(!g_configured && !g_bulk_enabled && g_ep0_state==kEp0Setup && !g_faulted);
+    // Restart after END must wait for the controller to release the resource.
+    ep_end_transfer(0,0);
+    assert(!ending[0]);
+    ep0_arm_setup();
+    assert(!g_faulted);
 
     using namespace nabu_usb::smmu;
     static uint32_t smmu[kWindow/4];
