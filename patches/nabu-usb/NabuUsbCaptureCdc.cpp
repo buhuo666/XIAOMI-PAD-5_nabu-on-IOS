@@ -186,6 +186,7 @@ unsigned g_setups;
 unsigned g_events;
 bool g_bulk_enabled;
 bool g_bulk_busy;
+bool g_dtr;
 uint32_t g_bulk_rsc;
 unsigned g_bulk_len;
 uint64_t g_log_cursor;
@@ -732,8 +733,20 @@ ep0_setup(void)
 		static const uint8_t coding[7] = { 0x00, 0xC2, 0x01, 0x00, 0, 0, 8 };
 		stage_put(0, coding, sizeof(coding));
 		resp = sizeof(coding);
-	} else if (req == 0x20 || req == 0x22 || req == 0x23) {
-		/* SET_LINE_CODING (OUT data), SET_CONTROL_LINE_STATE, SEND_BREAK. */
+	} else if (req == 0x22) { /* CDC SET_CONTROL_LINE_STATE */
+		const bool opened = (val & 1u) != 0;
+		if (opened != g_dtr) {
+			if (g_bulk_busy) {
+				ep_end_transfer(3, g_bulk_rsc);
+				g_bulk_busy = false;
+			}
+			if (opened) g_log_cursor = 0;
+			g_dtr = opened;
+			log_cdc("NABU USB CDCLOG reader=%s cursor=%llu\n",
+			    opened ? "open-replay" : "closed", static_cast<unsigned long long>(g_log_cursor));
+		}
+	} else if (req == 0x20 || req == 0x23) {
+		/* SET_LINE_CODING (OUT data), SEND_BREAK. */
 	} else {
 		stall = true;
 	}
@@ -775,7 +788,7 @@ ep0_setup(void)
 static void
 bulk_pump(void)
 {
-	if (!g_bulk_enabled || g_bulk_busy || g_bulk == nullptr) {
+	if (!g_bulk_enabled || !g_dtr || g_bulk_busy || g_bulk == nullptr) {
 		return;
 	}
 	struct NabuUsbLogSnapshot snap;
@@ -906,6 +919,7 @@ handle_device_event(uint32_t ev)
 	const unsigned info = (ev >> 16) & 0x1ffu;
 	log_cdc("NABU USB CDCLOG devt type=%u info=%03x\n", type, info);
 	if (type == kDevEventReset) {
+		g_dtr = false;
 		/* Keep a pending SETUP transfer, as dwc3_ep0_reset_state does.
 		 * Only reset a control endpoint which is already in DATA/STATUS. */
 		if (g_ep0_state != kEp0Setup) {
@@ -943,6 +957,7 @@ handle_device_event(uint32_t ev)
 		    mrd(g_regs, kDwc3Dsts) & kDstsConnectspdMask,
 		    mrd(g_regs, kDwc3Dsts));
 	} else if (type == kDevEventDisconnect) {
+		g_dtr = false;
 		g_bulk_busy = false;
 		g_bulk_enabled = false;
 		g_configured = 0;
@@ -1123,7 +1138,7 @@ usb_run(void)
 	    enabled != 1) {
 		return;
 	}
-	puts_cdc("NABU USB CDCLOG 8796-v42 start\n");
+	puts_cdc("NABU USB CDCLOG 8796-v43 start\n");
 
 	int init = 0;
 	int allow_smmu = 0;

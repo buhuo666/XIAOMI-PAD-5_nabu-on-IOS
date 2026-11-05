@@ -78,6 +78,10 @@ int main()
     assert(g_ep0_state==kEp0Setup);
     setup(0,9,1,0);
     assert(g_configured==1 && g_bulk_enabled);
+    g_dtr=false;
+    bulk_pump();
+    assert(!g_bulk_busy && g_log_cursor==0);
+    setup(0x21,0x22,3,0);
     bulk_pump();
     assert(g_bulk_busy && g_bulk_len==sizeof(capture)-1);
     assert(memcmp((uint8_t*)bulk+kBulkStage,capture,sizeof(capture)-1)==0);
@@ -85,6 +89,14 @@ int main()
     unsigned prior=log_count;
     bulk_complete();
     assert(!g_bulk_busy && g_log_cursor==sizeof(capture)-1 && log_count==prior);
+    setup(0x21,0x22,0,0);
+    assert(!g_dtr);
+    bulk_pump();
+    assert(!g_bulk_busy);
+    setup(0x21,0x22,3,0);
+    assert(g_dtr && g_log_cursor==0);
+    bulk_pump();
+    assert(g_bulk_busy && !memcmp((uint8_t*)bulk+kBulkStage,capture,sizeof(capture)-1));
     uint8_t out[32];
     assert(!nabuUsbLogCopy(sizeof(capture),1,out));
     assert(!nabuUsbLogCopy(sizeof(capture)-1,1,out));
