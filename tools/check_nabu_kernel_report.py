@@ -50,6 +50,7 @@ def main():
             (0x181448000, 0, 0, True, 'past-window'),
             (0x181448000, 0, 0, True, 'oversize'),
             (0x181448000, 0, 0, True, 'overflow'),
+            (0x181448000, 0, 0, True, 'native-usb'),
             (0x181448000, 0, 0, True, 'desktop'),
             (0x181448000, 0, 0, True, 'desktop-empty'),
             (0x181448000, 0, 0, True, 'desktop-wrap'),
@@ -92,6 +93,13 @@ def main():
         elif log_case == 'past-window': log_address,log_length = owned+owned_bytes-8,9
         elif log_case == 'oversize': log_length = 1536*1024+1
         elif log_case == 'overflow': owned,owned_bytes,log_length = (1<<64)-0x1000,0x2000,16
+        elif log_case == 'native-usb':
+            log_data=(b'NABU USERLAND: phase=7 errno=0\n'
+                      b'NABU NATIVE USB: configurations all=2 advertised=2\n'
+                      b'last USB failure evidence\n')
+            log_length=len(log_data)
+            uc.mem_map(log_address,(log_length+4095)&~4095)
+            uc.mem_write(log_address,log_data)
         elif log_case.startswith('desktop'):
             log_data=b'--- loader_return_after expired ---\n'
             if 'stack' in log_case:
@@ -245,6 +253,10 @@ def main():
                 glyphs_match('PANIC BUFFER: '+('YES' if log_case=='long' else 'NOT SEEN'),800,height//4+10*56,4,0xffffffff)
                 if log_case == 'long':
                     glyphs_match('return_panic: the panic that was asked for, on cpu 7',12,log_y,2,0xffffff00)
+                elif log_case == 'native-usb':
+                    glyphs_match('KERNEL LOG TAIL - HALTED',24,height//4+11*56,4,0xffffffff)
+                    glyphs_match('NABU NATIVE USB: configurations all=2 advertised=2',12,log_y+56,2,0xffffffff)
+                    glyphs_match('last USB failure evidence',12,log_y+84,2,0xffffffff)
                 elif log_case.startswith('desktop'):
                     glyphs_match('DESKTOP LOG SUMMARY - HALTED',24,height//4+11*56,4,0xffffffff)
                     glyphs_match('NABU USERLAND: phase=7 errno=0',12,log_y+28,2,0xffffffff)

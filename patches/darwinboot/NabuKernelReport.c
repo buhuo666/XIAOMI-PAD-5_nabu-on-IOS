@@ -267,8 +267,12 @@ static void log_tail(void)
   text(timer < length ? "TIMER MARKER: YES" : "TIMER MARKER: NOT SEEN", 10, 24, 0xffffffff);
   text(panic < length ? "PANIC BUFFER: YES" : "PANIC BUFFER: NOT SEEN", 10, 800, 0xffffffff);
   uint64_t requested = find_marker(log, length, "return_panic: the panic that was asked for, on cpu ");
+  /* Native USB bring-up can halt before the disk logger's next checkpoint.
+   * Run 50's desktop summary hid the remaining USB/error lines in RAM. */
+  int native_usb = find_marker(log, length, "NABU USB NATIVE:") < length ||
+    find_marker(log, length, "NABU NATIVE USB:") < length;
   if (kernel_report_config.incoming[2] == 0 && panic == length && requested == length &&
-      find_marker(log, length, "NABU USERLAND: phase=7") < length) {
+      !native_usb && find_marker(log, length, "NABU USERLAND: phase=7") < length) {
     text("DESKTOP LOG SUMMARY - HALTED", 11, 24, 0xffffffff);
     draw("SELECTED LOG EVIDENCE; NO MATCH DOES NOT MEAN NOT RUNNING", summary_y, 12, 2, 0xffffffff);
     desktop_log(log, length, y, rows, columns);

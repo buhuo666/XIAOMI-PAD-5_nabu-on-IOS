@@ -36,7 +36,9 @@ def main():
     blob = make_tree(bytes(range(64)), checkpoint=12).encode()
     bootstrap_tree = make_tree(bytes(range(64)), checkpoint=0, bootstrap=True)
     bootstrap_blob = a.bootstrap_adt.read_bytes() if a.bootstrap_adt else bootstrap_tree.encode()
-    bootstrap_tree.children[0].children[0].props['PackedRAMDisk'] = bytes(16)
+    chosen = next(node for node in bootstrap_tree.children if node.props['name'] == b'chosen\0')
+    memory_map = next(node for node in chosen.children if node.props['name'] == b'memory-map\0')
+    memory_map.props['PackedRAMDisk'] = bytes(16)
     duplicate_blob = bootstrap_tree.encode()
     prelude = r'''
 #include <stdint.h>
