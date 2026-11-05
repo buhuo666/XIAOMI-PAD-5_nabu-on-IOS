@@ -3,7 +3,31 @@
 2026-11-05，用户要求优先修复电池、电量计、PMIC、RTC。第三十三轮已确认
 进入桌面，电量显示及 USB 插拔状态有效，RTC 正常走时。显示时间错误来自
 US/Pacific 初始时区；第三十四轮用户已确认时间正确，USB 图标仍约 5 秒更新。
-第三十五轮继续修复充电阶段检测，并记录通知链路的实际时间。
+第三十六轮用户已确认 USB 插拔响应正确，日志确认平台 UUID 修复消除了固定等待。
+
+## 第三十六轮验收与可用基线
+
+用户反馈：“这次正确了，设备已恢复安卓”。本轮 `gethostuuid rc=0 elapsed-ms=0`，
+即成功返回且耗时低于日志的 1 ms 分辨率。四次 USB 电源切换后，PMRD 从
+`kPMPowerSource` 到 `kPMMinutesToSleep` 的间隔分别为 7.596、6.748、7.145、
+7.698 ms，第三十五轮约 6 秒的偏好等待已消失。诊断进程同一 uptime 时钟下，
+对应 IOKit 与 IOPS 回调仅相隔 1–2 ms。该间隔不是物理插拔到屏幕绘制的测量；
+图标响应以用户实机验收为准。
+
+电量计与 PMIC 未记录读失败或副本不一致，RTC 持续走时。APFS 启动计数
+`6→7`、`fullfsync=ok`。完整 64 MiB slot14 已备份，恢复 1,823,628 bytes
+日志；用户手动重启，因此日志流没有 END。该槽于 17:40:39（Asia/Shanghai）
+清空并回读确认。30 份 GPT 记录和 Android 引导分区检查通过。
+
+可用基线保留 `artifacts/nabu-power-v36/kernel.native-apfs.macho`、稳定平台 UUID、
+原有 RTC 校准及 Image4 key。移除启动参数中的密集 powerd 栈采样，bootstrap
+采用已验收的 v10（与本轮 v12 使用同一 PID1 程序，387 个启动任务，没有临时
+power-trace 任务）。诊断工具源码保留供后续按需使用。
+
+精确结果在 `log/host/power-v36/device-results.json`，关键日志在同目录
+`power-events.txt`。MiniIONetworkStack 仍报告 registry busy=1；本轮不作为
+“关于本机”修复的证据。下一项基础工作为真实 FG 温度、学习容量及循环次数读取；
+完整充电／温控策略、RTC 告警和手动校时偏移持久化尚未实现。
 
 ## 第三十五轮定位与第三十六轮平台 UUID 修复
 
@@ -30,7 +54,7 @@ IOKitUser 2022.120.2 的 `copyActivePreferences` 读取 AC/Battery/UPS 三组偏
 诊断程序改为分别记录 IOKit 与 IOPS 回调，移除回调中的同步快照请求，
 并直接记录 gethostuuid 的返回码与耗时。powerd 栈采样改为每 500 ms，
 用于候选未解决时捕获实际等待调用。稳定 UUID/不同设备区分/ADT 回读测试通过，
-内核与诊断程序已编译链接。是否消除等待仍需第三十六轮实机确认。
+内核与诊断程序已编译链接，第三十六轮验收已确认消除等待，见上方记录。
 
 ## 第三十四轮结果与第三十五轮候选
 
@@ -141,4 +165,4 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 时间与 USB 图标响应的实测结果待用户确认；输入在 `log/device/nabu-boot-20261105-34/`，接续在 `log/host/power-v34/continuation.json`。
 
 第三十六轮已于 `2026-11-05T17:32:14.586514+08:00` 成功发送 `fastboot boot`，源提交 `481ca90`。
-平台 UUID 查询与 USB 图标延迟等待实机确认，确切输入在 `log/device/nabu-boot-20261105-36/`，接续在 `log/host/power-v36/continuation.json`。
+平台 UUID 查询及 USB 图标响应均已验收，确切输入与回收日志在 `log/device/nabu-boot-20261105-36/`，接续在 `log/host/power-v36/continuation.json`。
