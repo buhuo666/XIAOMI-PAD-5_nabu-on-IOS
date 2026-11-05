@@ -10,6 +10,7 @@ typedef const void *CFStringRef;
 typedef const void *CFTypeRef;
 typedef const void *CFAllocatorRef;
 typedef struct __CFMachPort *CFMachPortRef;
+typedef struct __CFRunLoopSource *CFRunLoopSourceRef;
 typedef struct CFMachPortContext CFMachPortContext;
 typedef void (*CFMachPortCallBack)(CFMachPortRef, void *, long, void *);
 typedef void *CFMutableDictionaryRef;
@@ -52,9 +53,12 @@ extern int gethostuuid(unsigned char[16], const struct timespec_abi *);
 extern kern_return_t bootstrap_check_in(mach_port_t, const char *, mach_port_t *);
 extern CFMachPortRef CFMachPortCreateWithPort(CFAllocatorRef, mach_port_t,
     CFMachPortCallBack, CFMachPortContext *, unsigned char *);
+extern CFRunLoopSourceRef CFMachPortCreateRunLoopSource(CFAllocatorRef, CFMachPortRef, long);
 extern unsigned char CFStringGetCString(CFStringRef, char *, long, uint32_t);
 extern CFTypeRef MGCopyAnswer(CFStringRef);
 extern CFMutableDictionaryRef IOServiceMatching(const char *);
+extern kern_return_t IOMainPort(mach_port_t, mach_port_t *);
+extern io_object_t IOIteratorNext(io_object_t);
 extern kern_return_t IOServiceGetMatchingServices(mach_port_t, CFMutableDictionaryRef, io_object_t *);
 extern kern_return_t IOServiceOpen(io_object_t, mach_port_t, uint32_t, io_object_t *);
 extern kern_return_t IOConnectCallStructMethod(mach_port_t, uint32_t, const void *, size_t, void *, size_t *);
@@ -243,6 +247,32 @@ static CFMutableDictionaryRef traced_matching(const char *name)
     return result;
 }
 
+static CFRunLoopSourceRef traced_cf_mach_source(CFAllocatorRef allocator,
+    CFMachPortRef port, long order)
+{
+    trace("NABU FAIRPLAY TRACE: BEGIN CFMachPortCreateRunLoopSource\n");
+    CFRunLoopSourceRef result = CFMachPortCreateRunLoopSource(allocator, port, order);
+    trace("NABU FAIRPLAY TRACE: END CFMachPortCreateRunLoopSource nonnull=%d\n", result != 0);
+    return result;
+}
+
+static kern_return_t traced_io_main_port(mach_port_t bootstrap, mach_port_t *port)
+{
+    trace("NABU FAIRPLAY TRACE: BEGIN IOMainPort\n");
+    kern_return_t result = IOMainPort(bootstrap, port);
+    trace("NABU FAIRPLAY TRACE: END IOMainPort kr=%d port_nonnull=%d\n",
+          result, !result && port && *port != 0);
+    return result;
+}
+
+static io_object_t traced_iterator_next(io_object_t iterator)
+{
+    trace("NABU FAIRPLAY TRACE: BEGIN IOIteratorNext\n");
+    io_object_t result = IOIteratorNext(iterator);
+    trace("NABU FAIRPLAY TRACE: END IOIteratorNext nonnull=%d\n", result != 0);
+    return result;
+}
+
 static kern_return_t traced_matching_services(mach_port_t main_port, CFMutableDictionaryRef matching, io_object_t *iterator)
 {
     unsigned long long caller = (unsigned long long)(uintptr_t)__builtin_return_address(0);
@@ -313,20 +343,28 @@ static _Noreturn void traced__exit(int status)
     _exit(status);
 }
 
-/* Dyld performs interposition; this library never rewrites target memory.
- * A2's imports can carry nonzero addends. Whether this loader interposes those
- * imports is a runtime coverage question; an absent event is not proof of no call.
+/* Dyld matches the resolved import address including its chained addend.
+ * These addends are from the selected 20F66 A2 imports. Bias both tuple members
+ * equally, so A2's existing subtraction reaches the wrapper exactly. The
+ * wrapper's ordinary zero-addend import still calls the original implementation.
+ * Dyld performs all fixups; this library never rewrites target memory.
  */
+#define NABU_INTERPOSE(Replacement, Original, Addend) \
+    {(const void *)((uintptr_t)&Replacement + (Addend)), \
+     (const void *)((uintptr_t)&Original + (Addend))}
 __attribute__((used, section("__DATA,__interpose")))
 static const struct { const void *replacement, *original; } interposers[] = {
-    {(const void *)traced_bootstrap_check_in, (const void *)bootstrap_check_in},
-    {(const void *)traced_cf_mach_port, (const void *)CFMachPortCreateWithPort},
-    {(const void *)traced_matching, (const void *)IOServiceMatching},
-    {(const void *)traced_matching_services, (const void *)IOServiceGetMatchingServices},
-    {(const void *)traced_open, (const void *)IOServiceOpen},
-    {(const void *)traced_struct_method, (const void *)IOConnectCallStructMethod},
-    {(const void *)traced_answer, (const void *)MGCopyAnswer},
-    {(const void *)traced_hostuuid, (const void *)gethostuuid},
-    {(const void *)traced_exit, (const void *)exit},
-    {(const void *)traced__exit, (const void *)_exit},
+    NABU_INTERPOSE(traced_bootstrap_check_in, bootstrap_check_in, 0x2816318a),
+    NABU_INTERPOSE(traced_cf_mach_port, CFMachPortCreateWithPort, 0),
+    NABU_INTERPOSE(traced_cf_mach_source, CFMachPortCreateRunLoopSource, 0x622e09de),
+    NABU_INTERPOSE(traced_io_main_port, IOMainPort, 0x23ea878a),
+    NABU_INTERPOSE(traced_iterator_next, IOIteratorNext, 0x34665be2),
+    NABU_INTERPOSE(traced_matching, IOServiceMatching, 0x6c87f10a),
+    NABU_INTERPOSE(traced_matching_services, IOServiceGetMatchingServices, 0x4d6c57e2),
+    NABU_INTERPOSE(traced_open, IOServiceOpen, 0x16bf9746),
+    NABU_INTERPOSE(traced_struct_method, IOConnectCallStructMethod, 0x54dc95f2),
+    NABU_INTERPOSE(traced_answer, MGCopyAnswer, 0x31bbd672),
+    NABU_INTERPOSE(traced_hostuuid, gethostuuid, 0x0a481f77),
+    NABU_INTERPOSE(traced_exit, exit, 0),
+    NABU_INTERPOSE(traced__exit, _exit, 0),
 };

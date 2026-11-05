@@ -16,9 +16,10 @@ LIBRARIES = {
         'mach_task_self', 'thread_get_state', 'mach_vm_read_overwrite', 'mach_port_deallocate',
         'exit', '_exit', 'gethostuuid', 'bootstrap_check_in', 'dyld_stub_binder'],
     '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation': [
-        'CFStringGetCString', 'CFMachPortCreateWithPort'],
+        'CFStringGetCString', 'CFMachPortCreateWithPort', 'CFMachPortCreateRunLoopSource'],
     '/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit': ['IOServiceMatching',
-        'IOServiceGetMatchingServices', 'IOServiceOpen', 'IOConnectCallStructMethod'],
+        'IOServiceGetMatchingServices', 'IOServiceOpen', 'IOConnectCallStructMethod',
+        'IOMainPort', 'IOIteratorNext'],
     '/usr/lib/libMobileGestalt.dylib': ['MGCopyAnswer'],
 }
 
@@ -60,19 +61,20 @@ def main():
                 section_size = struct.unpack_from('<Q', data, offset + 40)[0]
                 sections.append((name, section_size))
         at += size
-    assert ('__interpose', 10 * 16) in sections
+    assert ('__interpose', 13 * 16) in sections
     assert any(name in ('__mod_init_func', '__init_offsets') for name, _ in sections)
     assert 0x1d in commands
     report = {'source': str(source), 'binary': str(binary), 'install_name': install_name,
         'bytes': len(data), 'architecture': 'arm64', 'target_os': 'iOS 16.5', 'filetype': 'MH_DYLIB',
-        'interpose_entries': 10, 'constructor_present': True, 'adhoc_code_signature': True,
+        'interpose_entries': 13, 'constructor_present': True, 'adhoc_code_signature': True,
         'scope': 'Original calls and arguments, results and errno preserved; stderr metadata only',
         'process': 'fairplayd.A2 only', 'imports': LIBRARIES, 'runtime_verified': False,
         'main_image_selection': 'Enumerate images and match exact /usr/sbin/fairplayd.A2 path',
         'atexit_frames': 24, 'atexit_resolution': 'backtrace plus dladdr module/base/symbol metadata',
         'main_samples_ms': [10, 100, 500, 2000], 'main_sample_max_frames': 12,
         'sampler': 'Detached observer thread; original constructor thread sampled without suspend or writes; process exit ends sampling',
-        'coverage_limit': 'Nonzero-addend chained imports require runtime coverage verification; no event is not proof of no call'}
+        'interposition': 'Tuple pairs include exact selected 20F66 A2 import addends; wrappers call zero-addend originals',
+        'coverage_limit': 'Invocation and addend-adjusted interposition still require runtime verification; no event is not proof of no call'}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 
