@@ -261,3 +261,6 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 
 第三十八轮已于 `2026-11-05T18:06:41.480544+08:00` 成功发送 `fastboot boot`，源提交 `cc56b7c`。
 温度授权流程、数值及桌面回归待实机确认，输入在 `log/device/nabu-boot-20261105-38/`，接续在 `log/host/power-v38/continuation.json`。
+
+第三十九轮已于 `2026-11-05T18:37:47.787713+08:00` 成功发送 `fastboot boot`，源提交 `73f5687`。
+温度授权修正待实机日志确认，输入在 `log/device/nabu-boot-20261105-39/`，接续在 `log/host/power-v39/continuation.json`。
