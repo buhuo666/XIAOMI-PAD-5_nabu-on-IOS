@@ -18,7 +18,7 @@ class IOUSBDevicePipe;
 
 struct NativeUSBCompletion {
     void *target;
-    void (*action)(void *target, void *parameter, IOReturn status, uint32_t bytesRemaining);
+    void (*action)(void *target, void *parameter, IOReturn status, uint32_t bytesTransferred);
     void *parameter;
 };
 struct NativeUSBIORequest {
@@ -34,7 +34,7 @@ struct NativeUSBIORequest {
     uint8_t reserved32[6];
     uint64_t opaque38;
     uint64_t lengthOrFrameCount;     // +0x40
-    uint64_t remainingOrFrameList;   // +0x48, bulk completion consumes low 32 bits
+    uint64_t transferredOrFrameList; // +0x48, actual bytes transferred (low 32 bits)
     NativeUSBCompletion completion; // +0x50
 };
 static_assert(sizeof(NativeUSBIORequest) == 0x68, "20F66 request ABI");

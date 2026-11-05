@@ -10,8 +10,11 @@ from check_darwinboot_8796 import host_command, host_path
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARIES = {
     '/usr/lib/libSystem.B.dylib': ['vsnprintf', 'write', '__error', 'getprogname', 'getpid',
-        'atexit', '_dyld_get_image_vmaddr_slide', '_dyld_get_image_name', 'exit', '_exit',
-        'gethostuuid', 'dyld_stub_binder'],
+        'atexit', '_dyld_image_count', '_dyld_get_image_vmaddr_slide', '_dyld_get_image_name',
+        '_dyld_get_image_header', 'backtrace', 'dladdr', 'pthread_create', 'pthread_detach',
+        'nanosleep', 'mach_absolute_time', 'mach_timebase_info', 'mach_thread_self',
+        'mach_task_self', 'thread_get_state', 'mach_vm_read_overwrite', 'mach_port_deallocate',
+        'exit', '_exit', 'gethostuuid', 'dyld_stub_binder'],
     '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation': ['CFStringGetCString'],
     '/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit': ['IOServiceMatching',
         'IOServiceGetMatchingServices', 'IOServiceOpen', 'IOConnectCallStructMethod'],
@@ -37,7 +40,7 @@ def main():
     binary = args.output / 'libnabu.fairplay-trace.dylib'
     install_name = '/redwood/lib/libnabu.fairplay-trace.dylib'
     subprocess.run(host_command(['clang-18', '-target', 'arm64-apple-ios16.5', '-std=c11',
-        '-Os', '-ffreestanding', '-fno-stack-protector', '-fno-builtin', '-Wall', '-Wextra', '-Werror',
+        '-Os', '-ffreestanding', '-fno-stack-protector', '-fno-builtin', '-fno-omit-frame-pointer', '-Wall', '-Wextra', '-Werror',
         '-c', host_path(source), '-o', host_path(obj)]), check=True)
     subprocess.run(host_command(['ld64.lld-18', '-arch', 'arm64', '-platform_version', 'ios', '16.5', '16.5',
         '-dylib', '-install_name', install_name, '-adhoc_codesign', '-o', host_path(binary),
@@ -64,6 +67,10 @@ def main():
         'interpose_entries': 8, 'constructor_present': True, 'adhoc_code_signature': True,
         'scope': 'Original calls and arguments, results and errno preserved; stderr metadata only',
         'process': 'fairplayd.A2 only', 'imports': LIBRARIES, 'runtime_verified': False,
+        'main_image_selection': 'Enumerate images and match exact /usr/sbin/fairplayd.A2 path',
+        'atexit_frames': 24, 'atexit_resolution': 'backtrace plus dladdr module/base/symbol metadata',
+        'main_samples_ms': [10, 100, 500, 2000], 'main_sample_max_frames': 12,
+        'sampler': 'Detached observer thread; original constructor thread sampled without suspend or writes; process exit ends sampling',
         'coverage_limit': 'Nonzero-addend chained imports require runtime coverage verification; no event is not proof of no call'}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

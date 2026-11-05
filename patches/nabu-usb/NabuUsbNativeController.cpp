@@ -420,7 +420,7 @@ void NabuUsbNativeController::startNext(unsigned index)
         if (!endpoint.head) endpoint.tail = nullptr;
         IOFree(failed, sizeof(Pending));
         request->status = result;
-        request->remainingOrFrameList = request->lengthOrFrameCount;
+        request->transferredOrFrameList = 0;
         native_usb_complete_io(this, request);
     }
     endpoint.dispatching = false;
@@ -438,7 +438,9 @@ void NabuUsbNativeController::complete(void *cookie, IOReturn status, uint32_t r
     if (pending->timedOut) status = kIOReturnTimeout;
     IOFree(pending, sizeof(Pending));
     request->status = status;
-    request->remainingOrFrameList = remaining;
+    // The DWC3 transport reports unreceived bytes; DeviceFamily's completion
+    // consumes actual bytes transferred (dataStageWriteCompletion adds them).
+    request->transferredOrFrameList = request->lengthOrFrameCount - remaining;
     native_usb_complete_io(this, request);
     startNext(index);
 }
@@ -456,7 +458,7 @@ void NabuUsbNativeController::cancel(unsigned index)
         if (!endpoint.head) endpoint.tail = nullptr;
         IOFree(pending, sizeof(Pending));
         request->status = kIOReturnAborted;
-        request->remainingOrFrameList = request->lengthOrFrameCount;
+        request->transferredOrFrameList = 0;
         native_usb_complete_io(this, request);
     }
     endpoint.aborting = wasAborting;
