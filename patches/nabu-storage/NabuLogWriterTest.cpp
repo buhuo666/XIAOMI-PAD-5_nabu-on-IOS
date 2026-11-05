@@ -9,6 +9,7 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include <cerrno>
 #ifdef __APPLE__
 #include <CommonCrypto/CommonDigest.h>
 #define SHA256_CTX CC_SHA256_CTX
@@ -102,14 +103,20 @@ static void cacheInvalidate(const void *p, size_t n)
 static void clock_interval_to_deadline(uint32_t n, unsigned scale, uint64_t *out) { *out=ticks+uint64_t(n)*scale; }
 static uint64_t mach_absolute_time() { return ticks; }
 static void IODelay(uint32_t n) { ticks+=n; }
-static void IOLockLock(void *)
+static bool streamLockHeld;
+static void *gNabuReadLock=reinterpret_cast<void *>(2);
+static void IOLockLock(void *lock)
 {
+  if (lock==gNabuReadLock) { assert(!streamLockHeld);streamLockHeld=true;return; }
   assert(!lockHeld);lockHeld=true;
   if(poisonOnLock) { gHost.poisoned=true;gHost.ready=false; }
   if(fatalOnLock) registers[0x20/4]=0x20000;
   if(busyOnLock) registers[0x58/4]=1;
 }
-static void IOLockUnlock(void *) { assert(lockHeld);lockHeld=false; }
+static void IOLockUnlock(void *lock) {
+  if (lock==gNabuReadLock) { assert(streamLockHeld);streamLockHeld=false;return; }
+  assert(lockHeld);lockHeld=false;
+}
 static IOReturn recordTransport(IOReturn result, uint32_t ocs)
 { gRootDiagnostic.result=result;gRootDiagnostic.ocs=ocs;return result; }
 #include "headers/RootCommands.h"
@@ -138,6 +145,7 @@ static void reset(bool clearDisk=true, unsigned slot=0,unsigned span=1)
   gHost={memory,0x8cb5e9000,true,false,0,reinterpret_cast<void *>(1),124380950};
   gNabuLayout={partitionFirst,124380927};gNabuPublished=true;
   gNabuLogWriter={};gNabuLogWriteOpen=false;gNabuLogWriteFirst=gNabuLogWriteBlocks=0;
+  gNabuDataWriteOpen=false;gNabuDataFirst=0;streamLockHeld=false;
   gRootDiagnostic={};ticks=mmioWrites=releases=diskWrites=syncs=failWrite=failSync=0;
   poisonOnLock=fatalOnLock=busyOnLock=partialWrite=released=lockHeld=false;
   operations.clear();
@@ -323,10 +331,12 @@ static void testExtent(const char *dump)
   auto writes=diskWrites;assert(!nabuLogStart(2,10) && diskWrites==writes);
   puts("PASS v2 640 MiB extent, exact slot/span binding, far-tail freshness, prior/next extent exclusion, immutable manifest and 512 MiB continuous committed stream");
 }
+#include "NabuDataTest.inc"
 int main(int argc,char **argv)
 {
   (void)hostNop;(void)hostQueryRead; // Retained read-only production helpers.
   testCommands();testWriter(argc>1?argv[1]:nullptr);testFailures();
   testExtent(argc>2?argv[2]:nullptr);
+  testData();
   puts("PASS all actual writer/command scenarios; hardware and medium effects simulated");
 }

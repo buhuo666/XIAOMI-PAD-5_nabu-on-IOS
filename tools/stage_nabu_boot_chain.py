@@ -117,6 +117,7 @@ def main():
     config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
+    data_enabled='nabu-data=1' in entry['args'].split()
     bootstrap_mode='initrd' in entry
     setup_compat_enabled = False
     log_args=[x for x in entry['args'].split() if x.startswith(('nabu-log-slot','nabu-log-span'))]
@@ -134,6 +135,8 @@ def main():
         assert all(x in args for x in ['nabu-storage=1','nabu-bootstrap=1','rd=md0','root_apfs=nabu_os'])
         assert not any(x.startswith(('nabu-root-probe=','return_panic=','return_cpu=')) for x in args)
         boot_report=json.loads((a.bootstrap.parent/'bootstrap-report.json').read_text())
+        if data_enabled:
+            assert boot_report.get('persistent_data_supported') is True
         assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024
         assert sha(a.bootstrap)==boot_report['sha256'] and len(boot_report['containers'])==2
         setup_compat_enabled = check_setup_compat_boot_policy(args, boot_report)
@@ -148,6 +151,7 @@ def main():
             assert 'nabu-input=1' not in args and touch_firmware is None
     else:
         assert a.bootstrap is None, 'Config has no initrd'
+        assert not data_enabled, 'Persistent Data requires the qualified PID1 bootstrap'
         assert not any(x.startswith('nabu-setup-compat') for x in entry['args'].split())
     files = {
         'EFI/Nabu16/UniXNU.efi': (efi/'UniXNU.efi').read_bytes(),
@@ -177,9 +181,10 @@ def main():
     receipt = {'files': manifest, 'status': 'prepared', 'kernel_execution_validated': False,
                'checkpoint': a.checkpoint,
                'root_storage_integrated': True, 'root_mount_validated': False,
-               'storage_writes_enabled': bool(log_prepared), 'system_data_writes_enabled': False,
+               'storage_writes_enabled': bool(log_prepared) or data_enabled,
+               'system_data_writes_enabled': data_enabled,
                'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
-    receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
+    receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode and not data_enabled)
     receipt['setup_compat_enabled'] = setup_compat_enabled
     receipt['input_bridge_enabled'] = bootstrap_mode and bool(boot_report.get('input_bridge'))
     receipt['touch_firmware_in_adt'] = touch_firmware is not None

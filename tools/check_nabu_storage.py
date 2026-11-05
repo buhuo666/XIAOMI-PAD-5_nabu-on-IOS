@@ -98,15 +98,15 @@ int main() {
         run=subprocess.run(host_command([host_path(exe)]),capture_output=True,text=True,encoding='utf-8',errors='replace',check=True)
         (a.output/(name+'.log')).write_text(run.stdout+run.stderr,encoding='utf-8')
         results.append({'name':name,'passed':True,'output':run.stdout.strip()})
-    # Generic Data writes remain removed. The separate writer harness exercises
-    # the only admitted WRITE(10) capability, which defaults to closed.
+    # Generic upstream store writes remain removed. The writer harness exercises
+    # the independently admitted Data and log windows; both default to closed.
     commands=(source/'RootCommands.h').read_text()
     assert 'hostWrite4k (' not in commands and 'hostStoreOpen' not in commands
     assert '// NABU_LOG_WRITE_GATE_V1' in commands
     report={'passed':True,'tests':results,'scope':'ASan/UBSan on actual generated policies; simulated MMIO/DMA only; no device claim'}
     if a.candidate:
         data=a.candidate.read_bytes();s,segs=symbols(data)
-        names=['_nabu_storage_prepare','_nabu_storage_read','_nabu_root_device','_nabu_root_probe_mounted','_nabu_storage_finish','_nabu_log_finish','_nabu_log_capture_seal','_nabu_log_capture_msgbuf']
+        names=['_nabu_storage_prepare','_nabu_storage_read','_nabu_storage_write','_nabu_storage_sync','_nabu_storage_writable','_nabu_root_device','_nabu_root_probe_mounted','_nabu_storage_finish','_nabu_log_finish','_nabu_log_capture_seal','_nabu_log_capture_msgbuf']
         ranges=[]
         for name in names:
             va=s[name];end=min(v for v in s.values() if v>va);n=min(end-va,16384)

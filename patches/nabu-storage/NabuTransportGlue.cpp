@@ -2,6 +2,7 @@
 // Verified system reads and a separately admitted append-only log slot for XNU 8796.
 namespace {
 #include "RootLayout.h"
+#include "NabuDataIdentity.h"
 RootLayout gNabuLayout;
 IOLock *gNabuReadLock;
 bool gNabuAttempted, gNabuPublished;
@@ -40,10 +41,21 @@ bool nabuContract(const char **why)
         expected.name,(unsigned long long)actual.offset,(unsigned long long)actual.size);
     loader_log_line(line);
   }
+  uint32_t dataEnabled=0;
+  if (PE_parse_boot_argn("nabu-data",&dataEnabled,sizeof(dataEnabled)) && dataEnabled==1) {
+    gNabuDataFirst=r.userdataFirst+NABU_DATA_OFFSET/4096;
+    if (NABU_DATA_OFFSET+NABU_DATA_BYTES>NABU_PARTITION_BYTES ||
+        hostRead4k(0,gNabuDataFirst,1,gScratch)!=kIOReturnSuccess ||
+        !nabuDataIdentity(gScratch)) {
+      *why="installed APFS Data identity/geometry/checksum"; return false;
+    }
+    gNabuDataWriteOpen=true;
+    loader_log_line("NABU DATA: installed 49 GiB APFS admitted read/write; OS/SystemOS remain read-only\n");
+  }
   gNabuReadLock=IOLockAlloc();
   if (!gNabuReadLock) { *why="read lock allocation"; return false; }
   gNabuPublished=true;
-  gRootDiagnostic.published=2;
+  gRootDiagnostic.published=gNabuDataWriteOpen ? 3:2;
   return true;
 }
 }
@@ -70,12 +82,21 @@ extern "C" int nabu_storage_prepare(void)
 }
 
 extern "C" uint64_t nabu_storage_size(unsigned window)
-{ return gNabuPublished && window<2 ? nabu_windows[window].bytes : 0; }
+{
+  if (!gNabuPublished) return 0;
+  return window<2 ? nabu_windows[window].bytes : window==2 && gNabuDataWriteOpen ? NABU_DATA_BYTES:0;
+}
+
+extern "C" int nabu_storage_writable(unsigned window)
+{ return gNabuPublished && window==2 && gNabuDataWriteOpen; }
+
+static uint64_t nabuWindowOffset(unsigned window)
+{ return window==2 ? NABU_DATA_OFFSET:nabu_windows[window].offset; }
 
 extern "C" int nabu_storage_read(unsigned window,uint64_t offset,void *out,uint64_t bytes)
 {
-  if (!gNabuPublished || window>=2 || (bytes && !out) ||
-      !nabuStorageRange(nabu_windows[window].bytes,offset,bytes)) return EINVAL;
+  uint64_t size=nabu_storage_size(window);
+  if (!size || (bytes && !out) || !nabuStorageRange(size,offset,bytes)) return EINVAL;
   if (!bytes) return 0;
   IOLockLock(gNabuReadLock);
   uint8_t *dst=static_cast<uint8_t *>(out);
@@ -84,13 +105,45 @@ extern "C" int nabu_storage_read(unsigned window,uint64_t offset,void *out,uint6
     uint64_t skip=offset&4095, take=bytes;
     if (take>kDataMax-skip) take=kDataMax-skip;
     uint32_t blocks=static_cast<uint32_t>((skip+take+4095)/4096);
-    uint64_t lba=gNabuLayout.userdataFirst+nabu_windows[window].offset/4096+offset/4096;
+    uint64_t lba=gNabuLayout.userdataFirst+nabuWindowOffset(window)/4096+offset/4096;
     if (hostRead4k(0,lba,blocks,gScratch)!=kIOReturnSuccess) { error=EIO; break; }
     memcpy(dst,gScratch+skip,static_cast<size_t>(take));
     dst+=take; offset+=take; bytes-=take;
     gRootDiagnostic.reads++;
   }
   if (error) gRootDiagnostic.failures++;
+  IOLockUnlock(gNabuReadLock);
+  return error;
+}
+
+extern "C" int nabu_storage_write(unsigned window,uint64_t offset,const void *data,uint64_t bytes)
+{
+  if (!nabu_storage_writable(window)) return EROFS;
+  if ((bytes && !data) || !nabuStorageRange(NABU_DATA_BYTES,offset,bytes)) return EINVAL;
+  IOLockLock(gNabuReadLock);
+  const uint8_t *src=static_cast<const uint8_t *>(data);
+  int error=0;
+  while (bytes) {
+    uint64_t skip=offset&4095, take=bytes;
+    if (take>kDataMax-skip) take=kDataMax-skip;
+    uint32_t blocks=static_cast<uint32_t>((skip+take+4095)/4096);
+    uint64_t lba=gNabuDataFirst+offset/4096;
+    // Preserve neighboring 512-byte logical sectors in a physical 4 KiB block.
+    if ((skip || (take&4095)) && hostRead4k(0,lba,blocks,gScratch)!=kIOReturnSuccess) { error=EIO; break; }
+    memcpy(gScratch+skip,src,static_cast<size_t>(take));
+    if (nabuDataWrite4k(lba,blocks,gScratch)!=kIOReturnSuccess) { error=EIO; break; }
+    src+=take; offset+=take; bytes-=take;
+  }
+  if (error) gRootDiagnostic.failures++;
+  IOLockUnlock(gNabuReadLock);
+  return error;
+}
+
+extern "C" int nabu_storage_sync(unsigned window)
+{
+  if (!nabu_storage_writable(window)) return window<2 ? 0:ENXIO;
+  IOLockLock(gNabuReadLock);
+  int error=nabuDataSync()==kIOReturnSuccess ? 0:EIO;
   IOLockUnlock(gNabuReadLock);
   return error;
 }

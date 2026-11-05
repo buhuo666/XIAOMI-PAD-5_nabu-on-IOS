@@ -6,6 +6,9 @@ extern "C" {
 #endif
 int nabu_storage_prepare(void);
 int nabu_storage_read(unsigned window, uint64_t offset, void *out, uint64_t bytes);
+int nabu_storage_write(unsigned window, uint64_t offset, const void *data, uint64_t bytes);
+int nabu_storage_sync(unsigned window);
+int nabu_storage_writable(unsigned window);
 uint64_t nabu_storage_size(unsigned window);
 void nabu_storage_append_report(void);
 void nabu_storage_finish(const char *result) __attribute__((noreturn));

@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// All offsets are byte offsets inside one published window. No write API.
+// All offsets are byte offsets inside one published window.
 static inline int nabuStorageRange(uint64_t size, uint64_t offset, uint64_t bytes)
 {
   return offset <= size && bytes <= size - offset;

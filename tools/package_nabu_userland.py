@@ -73,6 +73,10 @@ def main():
     assert not subprocess.check_output(['git','-C',str(source),'status','--porcelain'])
     for item in build['binaries']:
         p=a.programs/item['name'];assert p.stat().st_size==item['bytes'] and digest(p)==item['sha256'] and item['static_arm64_verified']
+    from build_nabu_userland import generate_sources
+    generated=generate_sources(source)
+    for item in build['generated_sources']:
+        assert hashlib.sha256(generated[item['name']].encode()).hexdigest()==item['sha256'], 'Rebuild PID1 from the current sources before packaging'
     inp=json.loads((a.inputs/'inputs.json').read_text());assert (inp['build'],inp['product'])==('20F66','iPad7,11')
     for item in inp['files']:
         p=a.inputs/'rootfs'/item['path'];assert p.stat().st_size==item['bytes'] and digest(p)==item['sha256']
@@ -139,7 +143,7 @@ def main():
         injection+=input_report['library']+' '+input_report['process']+'\n'
     (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
-    (root/'etc/motd').write_text('Darwin 20F66 on nabu; temporary Data bootstrap\n')
+    (root/'etc/motd').write_text('Darwin 20F66 on nabu; nabu-data=1 selects persistent APFS Data\n')
     images=[]
     for label,tree in [('Boot',boot),('NabuInit',root)]:
         image=a.output/(label+'.apfs')
@@ -159,7 +163,8 @@ def main():
             'jobs':len(list((root/'LaunchDaemons').glob('*.plist'))),
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
-            'temporary_data':True,'setup_assistant_skipped_in_seed':True,
+            'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
+            'persistent_data_supported':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':setup_report is not None or input_report is not None,
             'input_bridge':input_report,
             'setup_compat':setup_report,'device_execution_validated':False,

@@ -39,6 +39,16 @@ def generate_sources(src):
     stage=once(stage,'(void *)"/dev/md1"','(void *)"/dev/md0,c=1"')
     stage=stage.replace('cannot mount /dev/md1 on /hakios','cannot mount bootstrap container 1 on /redwood')
     init=(src/'userland/src/init.c').read_text()
+    data_start=init.index('static int\nmount_data_volume(void)')
+    data_end=init.index('/* What is under PATH',data_start)
+    init=init[:data_start]+(ROOT/'patches/nabu-userland/NabuDataMount.inc').read_text()+'\n\n'+init[data_end:]
+    init=once(init,'\tvar_kept = mount_data_volume();',
+        '\tvar_kept = mount_data_volume();\n'
+        '\tif (var_kept<0) { check(0,"mount persistent APFS Data"); return; }')
+    init=once(init,'\tmount_writable();\n\trestore_var();',
+        '\tmount_writable();\n'
+        '\tif (!failures && var_kept) check(nabu_data_boot_record(),"persist Data boot record");\n'
+        '\tif (failures) { reboot(RB_HALT); return 1; }\n\trestore_var();')
     init=once(init,'\tmount_cryptex("OS", ",c=1", devpath);\n\tmount_cryptex("App", ",c=2", devpath);',
         '\tif (mount("apfs", "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
         '\t\tnabu_failure("mount SystemOS", (unsigned)errno);\n'
@@ -51,7 +61,7 @@ def generate_sources(src):
     init=once(init,'\ttest_files();\n\ttest_writable();\n\ttest_memory();\n\ttest_processes();\n\ttest_dynamic();\n\ttest_devices();\n\ttest_time();',
         '\tstruct stat cache;\n'
         '\tcheck(stat("/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64", &cache) == 0, "SystemOS dyld cache visible");\n'
-        '\tprintf("NABU INIT: Data is temporary RAM; disk Data has not been modified\\n");\n'
+        '\tprintf("NABU INIT: Data mode=%s\\n",var_kept?"persistent APFS":"temporary RAM");\n'
         '\tif (failures) { printf("NABU INIT: required setup failed; launchd not started\\n"); reboot(RB_HALT); return 1; }')
     helper='#include "NabuInitSupport.h"\n'
     stage=once(stage,'#include "mini.h"','#include "mini.h"\n'+helper)

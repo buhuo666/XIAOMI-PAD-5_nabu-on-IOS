@@ -10,6 +10,7 @@ import sys
 
 from check_darwinboot_8796 import host_command, host_path
 from nabu_log_format import inspect_slot
+from prepare_nabu_storage import data_contract_header, contract_header
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,11 +31,13 @@ def integrate_commands(text):
     anchor = '  if (!hostClearUcd ()) return kIOReturnNotReady;\n  uint8_t *ucd = gHost.virt + kUcdOffset;\n  ucd[0] = 0x01;'
     assert text.count(anchor) == 1
     gate = '''  // NABU_LOG_WRITE_GATE_V1
-  if ((direction == 1 && !nabuLogWriteCommandAllowed(lun, cdb, cdbLength, dataBytes)) ||
+  // NABU_DATA_WRITE_GATE_V1
+  if ((direction == 1 && !nabuLogWriteCommandAllowed(lun, cdb, cdbLength, dataBytes) &&
+       !nabuDataWriteCommandAllowed(lun, cdb, cdbLength, dataBytes)) ||
       (cdb[0] == 0x2a && direction != 1)) return kIOReturnBadArgument;
 '''
     text = text.replace(anchor, gate + anchor)
-    return '#include "NabuLogWriteCommands.h"\n' + text
+    return '#include "NabuLogWriteCommands.h"\n#include "NabuDataWriteCommands.h"\n' + text
 
 
 def main():
@@ -52,10 +55,18 @@ def main():
         p = source / name
         shutil.copy2(p, headers / name)
         identities.append({'path': str(p.resolve()), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
-    for name in ('NabuLogFormat.h', 'NabuLogWriteCommands.h', 'NabuLogWriter.h'):
+    for name in ('NabuLogFormat.h', 'NabuLogWriteCommands.h', 'NabuLogWriter.h',
+                 'NabuDataWriteCommands.h','NabuDataIdentity.h','NabuStoragePolicy.h'):
         p = source / name if a.tree else ROOT / 'patches/nabu-storage' / name
         shutil.copy2(p, headers / name)
         identities.append({'path': str(p.resolve()), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
+    (headers/'NabuDataContract.h').write_text(data_contract_header())
+    (headers/'NabuStorageContract.h').write_text(contract_header(json.loads((ROOT/'configs/nabu-storage-probe.json').read_text())))
+    glue=(source/'NabuUfsTransport.cpp' if a.tree else ROOT/'patches/nabu-storage/NabuTransportGlue.cpp').read_text()
+    start=glue.index('extern "C" uint64_t nabu_storage_size')
+    end=glue.index('extern "C" void nabu_storage_append_report',start)
+    (headers/'DataOperations.inc').write_text(glue[start:end])
+    shutil.copy2(ROOT/'patches/nabu-storage/NabuDataTest.inc',out/'NabuDataTest.inc')
     p = source / 'RootCommands.h'
     commands = p.read_text()
     if a.tree:

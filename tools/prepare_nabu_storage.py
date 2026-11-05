@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -44,6 +45,18 @@ def contract_header(cfg):
         'static const struct NabuStorageWindow nabu_windows[2]={\n'+',\n'.join(
             '{"'+x['name']+'",'+str(x['offset'])+'ULL,'+str(x['bytes'])+'ULL,'+
             array(x['image_sha256'])+','+array(x['superblock_sha256'])+'}' for x in w)+'\n};\n')
+
+
+def data_contract_header():
+    cfg=json.loads((ROOT/'configs/nabu-storage-layout.json').read_text())
+    data=cfg['data']
+    assert data['offset']==cfg['root_image_bytes'] and data['offset']+data['bytes']==cfg['reserved']['offset']
+    assert data['offset']%4096==data['bytes']%4096==0
+    identity=','.join(f'0x{x:02x}' for x in uuid.UUID(data['container_uuid']).bytes)
+    return ('// Generated from the installed nabu-storage-layout.json.\n#pragma once\n'
+        '#include <stdint.h>\n'
+        f'#define NABU_DATA_OFFSET {data["offset"]}ULL\n#define NABU_DATA_BYTES {data["bytes"]}ULL\n'
+        'static const uint8_t nabu_data_uuid[16]={'+identity+'};\n')
 
 
 def main():
@@ -134,11 +147,13 @@ static bool gRootDiagnosticEnabled;
     for name in ('NabuBoard.h','RootTransportLayout.h','RootDiagnostics.h','RootQueue.h','TransferPoll.h','SmmuTakeover.h'):
         shutil.copy2(a.work/name,dest/name)
     commands=(a.work/'RootCommands.h').read_text();commands=commands[:commands.index('// ---- Persistent store and log windows')]
-    commands='#include "NabuLogWriteCommands.h"\n'+commands
+    commands='#include "NabuLogWriteCommands.h"\n#include "NabuDataWriteCommands.h"\n'+commands
     command_anchor='  if (!hostClearUcd ()) return kIOReturnNotReady;\n  uint8_t *ucd = gHost.virt + kUcdOffset;\n  ucd[0] = 0x01;'
     commands=replace_once(commands,command_anchor,
         '  // NABU_LOG_WRITE_GATE_V1\n'
-        '  if ((direction == 1 && !nabuLogWriteCommandAllowed(lun,cdb,cdbLength,dataBytes)) ||\n'
+        '  // NABU_DATA_WRITE_GATE_V1: separately admitted installed Data range.\n'
+        '  if ((direction == 1 && !nabuLogWriteCommandAllowed(lun,cdb,cdbLength,dataBytes) &&\n'
+        '       !nabuDataWriteCommandAllowed(lun,cdb,cdbLength,dataBytes)) ||\n'
         '      (cdb[0] == 0x2a && direction != 1)) return kIOReturnBadArgument;\n'
         +command_anchor)
     commands=replace_once(commands,'lba > 0xffffffffULL - (blocks - 1))',
@@ -149,10 +164,12 @@ static bool gRootDiagnosticEnabled;
     (dest/'RootLayout.h').write_text(layout)
     resources=(ROOT/'src/nabu/ufs/NabuUfsResources.h').read_text().replace('static bool ','static inline bool ')
     (dest/'NabuUfsResources.h').write_text(resources)
-    for name in ('NabuStorageApi.h','NabuStoragePolicy.h','NabuLogFormat.h','NabuLogWriteCommands.h','NabuLogWriter.h'):
+    for name in ('NabuStorageApi.h','NabuStoragePolicy.h','NabuLogFormat.h','NabuLogWriteCommands.h','NabuLogWriter.h',
+                 'NabuDataWriteCommands.h','NabuDataIdentity.h'):
         shutil.copy2(ROOT/'patches/nabu-storage'/name,dest/name)
     shutil.copy2(ROOT/'patches/nabu-storage/NabuLogCapture.h',a.tree/'osfmk/arm64/NabuLogCapture.h')
     cfg=json.loads((ROOT/'configs/nabu-storage-probe.json').read_text());(dest/'NabuStorageContract.h').write_text(contract_header(cfg))
+    (dest/'NabuDataContract.h').write_text(data_contract_header())
     (dest/'NabuUfsTransport.cpp').write_text(generated)
     shutil.copy2(ROOT/'patches/nabu-storage/NabuRoot.c',a.tree/'bsd/dev/nabu_root.c')
     with (a.tree/'iokit/conf/files.arm64').open('a') as f:
@@ -178,7 +195,7 @@ static bool gRootDiagnosticEnabled;
             'storage_contract_sha256':hashlib.sha256((ROOT/'configs/nabu-storage-probe.json').read_bytes()).hexdigest(),
             'log_capture_header_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogCapture.h').read_bytes()).hexdigest(),
             'log_runtime_sha256':hashlib.sha256((ROOT/'patches/nabu-storage/NabuLogRuntime.inc').read_bytes()).hexdigest(),
-            'scope':'OS/SystemOS/Data stay read-only; explicit nabu-log-slot/span admits one newly prepared bounded v1/v2 extent in the existing 1 GiB reserved area'}
+            'scope':'OS/SystemOS read-only; nabu-data=1 admits installed APFS Data; nabu-log-slot/span separately admits one prepared log extent'}
     a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// BSD block providers for two verified, read-only nabu_system windows.
+// BSD block providers: verified OS/SystemOS, and explicitly selected APFS Data.
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -22,7 +22,7 @@
 
 extern void loader_log_line(const char *);
 static int nabu_major = -1;
-static uint32_t nabu_block_size[2] = {4096,4096};
+static uint32_t nabu_block_size[3] = {4096,4096,4096};
 static char nabu_probe_result[192];
 static uint8_t nabu_probe_buffer[16384];
 static uint32_t nabu_user_status;
@@ -74,8 +74,9 @@ const char *nabu_userland_failure(void)
 
 static int nabu_open(dev_t dev, int flags, int type __unused, proc_t p __unused)
 {
-  if (nabu_major < 0 || (unsigned)minor(dev) >= 2) return ENXIO;
-  return (flags & FWRITE) ? EROFS : 0;
+  unsigned window=(unsigned)minor(dev);
+  if (nabu_major < 0 || !nabu_storage_size(window)) return ENXIO;
+  return (flags & FWRITE) && !nabu_storage_writable(window) ? EROFS:0;
 }
 static int nabu_close(dev_t dev __unused, int flags __unused, int type __unused, proc_t p __unused)
 { return 0; }
@@ -87,12 +88,14 @@ static void nabu_strategy(buf_t bp)
   int error = 0;
   caddr_t mapped;
   buf_setresid(bp, buf_count(bp));
-  if (nabu_major < 0 || window >= 2) error = ENXIO;
-  else if (!(buf_flags(bp) & B_READ)) error = EROFS;
+  if (nabu_major < 0 || !nabu_storage_size(window)) error = ENXIO;
+  else if (!(buf_flags(bp) & B_READ) && !nabu_storage_writable(window)) error = EROFS;
   else if (buf_blkno(bp) < 0 || !nabuStorageRequest(nabu_storage_size(window),
       (uint64_t)buf_blkno(bp), nabu_block_size[window], buf_count(bp), &offset, &take)) error = EINVAL;
+  else if (!(buf_flags(bp) & B_READ) && take!=buf_count(bp)) error=EINVAL;
   else if (take && !(error = buf_map(bp, &mapped))) {
-    error = nabu_storage_read(window, offset, mapped, take);
+    error = (buf_flags(bp)&B_READ) ? nabu_storage_read(window,offset,mapped,take):
+        nabu_storage_write(window,offset,mapped,take);
     buf_unmap(bp);
     if (!error) buf_setresid(bp, (uint32_t)(buf_count(bp) - take));
   }
@@ -103,7 +106,7 @@ static void nabu_strategy(buf_t bp)
 static int nabu_ioctl(dev_t dev, u_long cmd, caddr_t data, int flags __unused, proc_t p __unused)
 {
   unsigned window=(unsigned)minor(dev);
-  if (nabu_major < 0 || window >= 2) return ENXIO;
+  if (nabu_major < 0 || !nabu_storage_size(window)) return ENXIO;
   switch (cmd) {
     case DKIOCGETBLOCKSIZE: *(uint32_t *)data=nabu_block_size[window]; return 0;
     case DKIOCGETPHYSICALBLOCKSIZE: *(uint32_t *)data=4096; return 0;
@@ -113,13 +116,20 @@ static int nabu_ioctl(dev_t dev, u_long cmd, caddr_t data, int flags __unused, p
       nabu_block_size[window]=n; return 0;
     }
     case DKIOCGETBLOCKCOUNT: *(uint64_t *)data=nabu_storage_size(window)/nabu_block_size[window]; return 0;
-    case DKIOCISWRITABLE: *(uint32_t *)data=0; return 0;
+    case DKIOCISWRITABLE: *(uint32_t *)data=nabu_storage_writable(window); return 0;
+    case DKIOCISFORMATTED: *(uint32_t *)data=1; return 0;
+    case DKIOCGETFEATURES: *(uint32_t *)data=0; return 0;
+    case DKIOCSYNCHRONIZECACHE:
+    case DKIOCSYNCHRONIZE: return nabu_storage_sync(window);
     case DKIOCGETMAXBLOCKCOUNTREAD: *(uint64_t *)data=131072/nabu_block_size[window]; return 0;
+    case DKIOCGETMAXBLOCKCOUNTWRITE: *(uint64_t *)data=131072/nabu_block_size[window]; return 0;
+    case DKIOCGETMAXBYTECOUNTREAD:
+    case DKIOCGETMAXBYTECOUNTWRITE: *(uint64_t *)data=131072; return 0;
     default: return ENOTTY;
   }
 }
 static int nabu_psize(dev_t dev)
-{ return (unsigned)minor(dev)<2 ? (int)nabu_block_size[minor(dev)] : -1; }
+{ return nabu_storage_size((unsigned)minor(dev)) ? (int)nabu_block_size[minor(dev)] : -1; }
 static const struct bdevsw nabu_bdevsw = {
   .d_open=nabu_open, .d_close=nabu_close, .d_strategy=nabu_strategy,
   .d_ioctl=nabu_ioctl, .d_dump=eno_dump, .d_psize=nabu_psize, .d_type=D_DISK,
@@ -133,9 +143,11 @@ int nabu_root_device(char *name, unsigned name_bytes, int *device, uint32_t *fla
   if (nabu_major < 0) {
     nabu_major=bdevsw_add(-1,&nabu_bdevsw);
     if (nabu_major < 0) nabu_storage_finish("no BSD block major");
-    for (unsigned i=0;i<2;i++) {
-      if (!devfs_make_node(makedev(nabu_major,i),DEVFS_BLOCK,UID_ROOT,GID_OPERATOR,0440,
-          "nabu_%s",i ? "systemos":"os")) nabu_storage_finish("devfs publication failed");
+    static const char *names[]={"os","systemos","data"};
+    for (unsigned i=0;i<3;i++) {
+      if (!nabu_storage_size(i)) continue;
+      if (!devfs_make_node(makedev(nabu_major,i),DEVFS_BLOCK,UID_ROOT,GID_OPERATOR,i==2?0600:0440,
+          "nabu_%s",names[i])) nabu_storage_finish("devfs publication failed");
     }
   }
   uint32_t bootstrap=0;

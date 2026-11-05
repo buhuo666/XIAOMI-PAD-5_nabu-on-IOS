@@ -17,7 +17,9 @@
 
 第二十五轮回收：用户确认已进入锁屏，触摸、电源及音量键均无响应，在锁屏时手动重启。恢复 1,880,169 bytes 连续日志至约 241 秒，缺少 END 与手动重启一致；30 份 GPT 和 14 个引导分区哈希一致。日志确认原生 1600×2560、276 DPI 和 `NABU SETUP: local UI policy installed`。下一步接入 NT36523 触摸与 PM8150 按键。按用户 2026-11-05 要求，后续取消 `loader_return_after` 自动终止，持续运行供交互测试。
 
-当前优先级（用户于 2026-11-04 调整）：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
+当前优先级（用户于 2026-11-05 调整）：启动稳定、触摸稳定、设置保存。第二十六轮桌面重启已由用户确认与语言／地区切换对应。GPIO39 就绪读帧修正已提交 `b069c37`；持久 APFS Data 接入已完成源码与主机检查，原生构建和两次实机启动验收待完成，见 [持久 Data](NABU-PERSISTENT-DATA.md)。
+
+此前桌面阶段优先级：先推进进入 iPadOS 桌面，暂缓主动 panic 日志和调用记录的细节。第九轮确认早晚参数一致、CPU 7 执行 requested-panic 回调、八核 signal 计数增长；缺少 panic 正文与混合结果行的状态保存在 [暂缓问题快照](DEFERRED-PANIC-DIAGNOSTICS.md)。本轮已恢复 Android，GPT 和 14 个受检引导分区回读一致。
 
 桌面主线进展：原生只读 UFS、固定 OS／SystemOS 窗口、BSD 根选择及挂载后读取 launchd 的候选已由 macOS Actions `41772094078` 全部验收。设备端元数据只读复核一致；准备第十轮实机测试，尚未确认 XNU 挂载成功。用户要求跳过首次设置／激活引导，偏好种子已准备但尚未部署。详见 [存储接入](NABU-STORAGE-BRINGUP.md) 与 [用户态初始化策略](../userland/nabu/README.md)。
 
