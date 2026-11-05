@@ -86,3 +86,18 @@ Actions 汇总接口一度保留旧的 queued；工具现按具体 attempt 与 j
 
 2026-11-05 按用户要求简化 Setup 兼容库，移除运行时函数哈希、镜像和回滚检查。
 8 个包装行为检查通过；显示几何、物理 DPI 和独立序列号配置沿用现有候选。
+
+## 第二十五轮构建完成（2026-11-05）
+
+简化提交 `28d5253` 的 ARM macOS Actions `41949431958` 全部通过。选定 stripped
+内核 SHA-256 `37be9911d59e1dabad97d29470953d79cce4911e788acfffd3b7b19e8406d400`。
+显示配置及消费者等 23 个链接范围已对照待启动内核；现用 DarwinBoot 可解析该
+558,383,104 bytes 虚拟跨度。原生显示检查确认 start 调用新的 configureDisplay。
+
+bootstrap v5 包含简化后的普通 arm64 库，SHA-256
+`58da7fcb5664578f1a2da9a7ba4c4797448afb8f4a600a642ec77c92b334c3c5`，
+只为 SpringBoard 加载，并启用 `nabu-setup-compat=1`。两个静态启动程序、兼容库、
+注入配置和偏好种子均已从 APFS 独立回读；bootstrap SHA-256
+`7c3280c013c9a06cc6ac7e87475bb003232f8bdb125f3c70082e1705469f8cbf`。
+下一轮使用新日志单元 12..13，保留 0..11；600 秒定时返回与线程采样参数不变。
+原生编译和打包通过，实机显示、序列号读取及桌面仍待观察。
