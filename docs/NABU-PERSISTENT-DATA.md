@@ -101,3 +101,5 @@ Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功�
 第二十九轮采用 `artifacts/nabu-data-v30c/kernel.native-apfs.macho` 和现有 bootstrap v8。新加 NabuAES 诊断类记录请求长度、操作、密钥选择器、位数及返回码，不输出密钥内容，也未替换硬件密钥。launchd 线程采样安排在 60/90/120 秒；自动终止保持关闭。编译及预链接已成功，按用户要求不再运行 QEMU，直接进行真机测试。
 
 沿用现有 49 GiB APFS Data 和 slot14 日志区，部署只更新现有 ESP 文件。实机需要确认 AES 错误参数、启动是否前进，以及若能继续到 PID1 挂载阶段，能否读回上一轮计数 1。主机记录位于 `log/host/apfs-native-v30/`。
+
+第二十九轮已于 `2026-11-05T15:10:25.138671+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `61bb3168e1a19795708c83f3b12d0a79842aea21`。本轮跳过 QEMU，待用户观察及恢复 Android 后回收日志。确切启动包、源码、对象文件、部署记录保存在 `log/device/nabu-boot-20261105-29/`；接续记录为 `log/host/apfs-native-v30/continuation.json`。启动命令成功不代表进入桌面或持久化验收通过。
