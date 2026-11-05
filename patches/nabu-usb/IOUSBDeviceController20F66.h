@@ -104,7 +104,8 @@ public:
     virtual void abiSlot220(); // 220: 0x6e0; inherit only, signature not recovered
     virtual IOUSBDeviceControlRequest * abiSlot221CreateControlRequest(); // 221: 0x6e8
     virtual void abiSlot222(); // 222: 0x6f0; inherit only, signature not recovered
-    virtual void abiSlot223(); // 223: 0x6f8; inherit only, signature not recovered
+    virtual IOReturn abiSlot223Io(uint32_t endpoint, IOMemoryDescriptor *buffer,
+        uint64_t length, NativeUSBCompletion *completion, uint64_t reserved, uint32_t timeoutMs);
     virtual void abiSlot224(); // 224: 0x700; inherit only, signature not recovered
     virtual IOReturn ioGated(NativeUSBIORequest *request) = 0; // 225: 0x708
     virtual NativeUSBIORequest * abiSlot226AllocateIORequest(); // 226: 0x710

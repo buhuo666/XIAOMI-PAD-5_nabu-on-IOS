@@ -1995,10 +1995,10 @@
       "byte_offset": 1784,
       "original_va": "0xfffffff005ef1008",
       "exported_names": [],
-      "alias": "abiSlot223",
-      "declaration": "virtual void abiSlot223(); // 223: 0x6f8; inherit only, signature not recovered",
+      "alias": "abiSlot223Io",
+      "declaration": "virtual IOReturn abiSlot223Io(uint32_t, IOMemoryDescriptor *, uint64_t, NativeUSBCompletion *, uint64_t, uint32_t);",
       "pure_virtual": false,
-      "signature_status": "unrecovered; inherit original target only"
+      "signature_status": "ARM64 calling ABI recovered; x5 is unused and forwarded unchanged"
     },
     {
       "slot": 224,

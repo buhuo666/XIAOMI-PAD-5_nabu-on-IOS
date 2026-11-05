@@ -15,6 +15,7 @@ struct NativeEndpoint {
 };
 NativeEndpoint g_native_eps[32];
 bool g_native_active, g_native_connected;
+bool g_native_control_stalling;
 int g_native_vbus = -1;
 void *g_native_control_cookie;
 uint32_t g_native_control_length, g_native_setup_length;
@@ -277,10 +278,15 @@ extern "C" void nabu_dwc3_stall_endpoint(uint32_t address, bool stalled)
 {
     const unsigned dep = native_dep(address);
     if (dep <= 1 && stalled) {
+        // The stock control reset can invoke the controller's stall hook again
+        // while the first hook is retiring its queued request.
+        if (g_native_control_stalling) return;
+        g_native_control_stalling = true;
         ep_end_transfer(0, 0); ep_end_transfer(1, 0);
         nabu_native_usb_abort_control();
         ep0_restart();
         g_native_eps[0].stalled = g_native_eps[1].stalled = true;
+        g_native_control_stalling = false;
         return;
     }
     ep_cmd(dep, stalled ? kDepcmdSetStall : kDepcmdClearStall, 0, 0, 0, nullptr);

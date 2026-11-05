@@ -149,6 +149,7 @@ class NabuUsbNativeController : public IOUSBDeviceController {
     bool onBus = false;
     uint16_t appliedAddress = 0;
     IOReturn configurationError = kIOReturnSuccess;
+    unsigned submissions = 0;
 
     IOReturn submitHead(unsigned index);
     void startNext(unsigned index);
@@ -211,6 +212,8 @@ public:
     void abiSlot198ScheduleReenumeration() override { abiSlot205GoOffAndOnBus(); }
     IOReturn doRemoteWakeGated() override { return kIOReturnUnsupported; }
     IOReturn ioGated(NativeUSBIORequest *request) override;
+    IOReturn abiSlot223Io(uint32_t endpoint, IOMemoryDescriptor *buffer,
+        uint64_t length, NativeUSBCompletion *completion, uint64_t reserved, uint32_t timeoutMs) override;
 
     void poll(void (*callback)());
     void setup(const void *setup8);
@@ -266,6 +269,7 @@ void NabuUsbNativeController::free()
 
 IOReturn NabuUsbNativeController::goOnBus(bool activate)
 {
+    IOLog("NABU NATIVE USB: goOnBus activate=%u was=%u\n",activate,onBus);
     if (!activate) {
         draining = true;
         cancelAll();
@@ -327,6 +331,8 @@ void NabuUsbNativeController::prepareConfiguration(OSArray *)
 IOReturn NabuUsbNativeController::activateEndpoint(uint32_t address, uint32_t type,
     uint32_t maxPacket, uint32_t interval, uint32_t properties)
 {
+    IOLog("NABU NATIVE USB: activate ep=%x type=%u packet=%u interval=%u properties=%x\n",
+        address,type,maxPacket,interval,properties);
     if (configurationError) return configurationError;
     if ((address & ~0x8fU) || type == 1 || properties) return kIOReturnUnsupported;
     IOReturn status = nabu_dwc3_activate_endpoint(address, type, maxPacket, interval);
@@ -358,8 +364,25 @@ IOReturn NabuUsbNativeController::submitHead(unsigned index)
     return result;
 }
 
+IOReturn NabuUsbNativeController::abiSlot223Io(uint32_t endpoint, IOMemoryDescriptor *buffer,
+    uint64_t length, NativeUSBCompletion *completion, uint64_t reserved, uint32_t timeoutMs)
+{
+    if (!(endpoint & 15) || submissions < 16)
+        IOLog("NABU NATIVE USB: native io ep=%x length=%llu bufferLength=%llu direction=%u completion=%u timeout=%u\n",
+            endpoint,length,buffer ? buffer->getLength() : 0,
+            buffer ? static_cast<unsigned>(buffer->getDirection()) : 0,
+            completion && completion->action,timeoutMs);
+    IOReturn result = IOUSBDeviceController::abiSlot223Io(endpoint,buffer,length,completion,reserved,timeoutMs);
+    if (result) IOLog("NABU NATIVE USB: native io rejected ep=%x status=%x\n",endpoint,result);
+    return result;
+}
+
 IOReturn NabuUsbNativeController::ioGated(NativeUSBIORequest *request)
 {
+    if (submissions++ < 16)
+        IOLog("NABU NATIVE USB: submit ep=%x length=%llu timeout=%u iso=%u draining=%u onBus=%u active=%u\n",
+            request->endpoint,request->lengthOrFrameCount,request->options,request->isIsochronous,
+            draining,onBus,endpoints[endpointIndex(request->endpoint)].active);
     if (draining || !onBus) return kIOReturnNotReady;
     if (request->isIsochronous) return kIOReturnUnsupported;
     if ((request->endpoint & ~0x8fU) || request->lengthOrFrameCount > UINT32_MAX)
@@ -376,6 +399,7 @@ IOReturn NabuUsbNativeController::ioGated(NativeUSBIORequest *request)
     if (!wasEmpty || endpoint.dispatching) return kIOReturnSuccess;
     IOReturn result = submitHead(endpointIndex(request->endpoint));
     if (result) {
+        IOLog("NABU NATIVE USB: submit rejected ep=%x status=%x\n",request->endpoint,result);
         endpoint.head = endpoint.tail = nullptr;
         IOFree(pending, sizeof(Pending));
     }

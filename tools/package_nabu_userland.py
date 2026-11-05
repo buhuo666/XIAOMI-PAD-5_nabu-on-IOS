@@ -134,11 +134,6 @@ def main():
         (root/'LaunchDaemons/org.nabu.lockdown-stack-sample.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     if a.fairplay_trace:
         shutil.copy2(a.fairplay_trace,root/'lib/libnabu.fairplay-trace.dylib')
-        path=root/'LaunchDaemons/com.apple.fairplayd.A2.plist'
-        job=plistlib.loads(path.read_bytes())
-        assert job['Program']=='/usr/sbin/fairplayd.A2'
-        job.setdefault('EnvironmentVariables',{})['DYLD_INSERT_LIBRARIES']='/redwood/lib/libnabu.fairplay-trace.dylib'
-        path.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -173,6 +168,8 @@ def main():
         target=root/'lib/libnabu.input.dylib'
         shutil.copy2(input_library,target);target.chmod(0o755)
         injection+=input_report['library']+' '+input_report['process']+'\n'
+    if a.fairplay_trace:
+        injection+='/redwood/lib/libnabu.fairplay-trace.dylib fairplayd.A2\n'
     (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; nabu-data=1 selects persistent APFS Data\n')
