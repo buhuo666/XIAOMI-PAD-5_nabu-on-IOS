@@ -30,6 +30,7 @@ def main():
     include += [headers/'EXPORT_HDRS'/directory for directory in ('osfmk','bsd','libkern','pexpert','iokit','security')]
     flags += ['-I'+host_path(p) for p in include]
     for name,source in [('NabuAES',ROOT/'patches/nabu-apfs/NabuAES.cpp'),
+                        ('NabuDataBlock',ROOT/'patches/nabu-storage/NabuDataBlock.cpp'),
                         ('AESReference',ROOT/'patches/nabu-apfs/AESReference.cpp'),
                         ('NabuDataKmod',ROOT/'patches/nabu-storage/NabuDataKmod.cpp')]:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)

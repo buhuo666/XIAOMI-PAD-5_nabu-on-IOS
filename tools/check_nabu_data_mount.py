@@ -33,6 +33,7 @@ def main():
 static const char *arg;
 static int mount_error, mounts, ram_mounts, failures, cleanups, var_kept;
 static int lookup_waits, sleeps;
+static int fullsync_calls, fullsync_error;
 static char directory[]="/tmp/nabu-data-check-XXXXXX";
 static const char *boot_arg(const char *name) {assert(!strcmp(name,"nabu-data"));return arg;}
 static void nabu_failure(const char *what,unsigned e) {(void)what;assert(e==(unsigned)mount_error);}
@@ -62,6 +63,10 @@ static const char *mapped(const char *p,char out[256]) {
 }
 static int mapped_open(const char *p,int flags,int mode) {char out[256];return open(mapped(p,out),flags,mode);}
 static int mapped_rename(const char *a,const char *b) {char x[256],y[256];return rename(mapped(a,x),mapped(b,y));}
+static long mini_syscall(long number,long fd,long cmd,long a,long b,long c,long d) {
+    assert(number==92 && cmd==51 && !a && !b && !c && !d);++fullsync_calls;
+    if(fullsync_error){errno=fullsync_error;return -1;}return fsync((int)fd);
+}
 static void empty_tree(const char *p,int depth) {
     assert(!depth && (!strcmp(p,"/private/var/tmp") || !strcmp(p,"/private/var/run") || !strcmp(p,"/private/var/vm")));
     ++cleanups;
@@ -87,9 +92,12 @@ int main(void) {
     assert(nabu_data_boot_record());
     // A second PID1 invocation reads the committed count, then increments it.
     assert(nabu_data_boot_record());
+    assert(fullsync_calls==4);
+    fullsync_error=EIO;assert(!nabu_data_boot_record());fullsync_error=0;
     uint32_t data[2];int fd=open("/private/var/db/nabu-boot-count",O_RDONLY,0);
     assert(fd>=0 && read(fd,data,sizeof(data))==sizeof(data));close(fd);
     assert(data[0]==0x3144424e && data[1]==2);
+    char pending[256];mapped("/private/var/db/nabu-boot-count.tmp",pending);assert(unlink(pending)==0);
     char path[256];mapped("/private/var/db/nabu-boot-count",path);assert(unlink(path)==0);
     assert(rmdir(directory)==0);
     puts("PASS: APFS volume lookup, asynchronous publication, native mount arguments, mount failure handling, transient-only cleanup and boot record across two starts");

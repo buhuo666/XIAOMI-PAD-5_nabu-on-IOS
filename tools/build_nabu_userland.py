@@ -116,8 +116,9 @@ def main():
     ap.add_argument('--output',type=Path,required=True)
     ap.add_argument('--work',type=Path,required=True)
     ap.add_argument('--generate-only',action='store_true')
+    ap.add_argument('--local-llvm',action='store_true',help='Use local LLVM 18 and the existing static Mach-O adapter')
     a=ap.parse_args()
-    assert a.generate_only or sys.platform=='darwin','Native userland build runs in macOS Actions'
+    assert a.generate_only or a.local_llvm or sys.platform=='darwin','Use macOS Actions or --local-llvm'
     assert not a.work.exists();a.work.mkdir(parents=True);a.output.mkdir(parents=True,exist_ok=True)
     src=ROOT/'src/hakios-8796'
     expected=next(x['commit'] for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources'] if x['name']=='hakios-8796-reference')
@@ -126,21 +127,38 @@ def main():
     sources=generate_sources(src)
     for name,text in sources.items():(a.work/name).write_text(text)
     if a.generate_only:return
-    clang=subprocess.check_output(['xcrun','--find','clang'],text=True).strip()
+    if a.local_llvm:
+        from check_darwinboot_8796 import host_command,host_path
+        from build_nabu_apfs_probe import static_entry
+        clang='clang-18'
+        command=host_command
+        path=host_path
+    else:
+        clang=subprocess.check_output(['xcrun','--find','clang'],text=True).strip()
+        command=lambda args:args
+        path=str
     flags=[clang,'-target','arm64-apple-ios16.5','-Os','-ffreestanding','-fno-stack-protector','-fno-builtin',
-           '-Wall','-Wextra','-Wno-unused-function','-I'+str(src/'userland/libmini')]
+           '-Wall','-Wextra','-Wno-unused-function','-I'+path(src/'userland/libmini')]
     objects=[]
     for name in ('mini.c','start.S'):
         obj=a.work/(name+'.o')
-        subprocess.run(flags+['-c',str(src/'userland/libmini'/name),'-o',str(obj)],check=True)
-        objects.append(str(obj))
+        subprocess.run(command(flags+['-c',path(src/'userland/libmini'/name),'-o',path(obj)]),check=True)
+        objects.append(path(obj))
     binaries=[]
     for name in ('stage0','init'):
         out=a.output/name
-        subprocess.run(flags+['-static','-nostdlib','-Wl,-e,_start','-Wl,-pagezero_size,0x100000000',
-                             str(a.work/(name+'.c')),*objects,'-o',str(out)],check=True)
+        if a.local_llvm:
+            obj=a.work/(name+'.o');linked=a.work/(name+'.linked')
+            subprocess.run(command(flags+['-c',path(a.work/(name+'.c')),'-o',path(obj)]),check=True)
+            subprocess.run(command(['ld64.lld-18','-arch','arm64','-platform_version','ios','16.5','16.5',
+                '-e','_start','-pagezero_size','0x100000000','-headerpad','0x1000',
+                '-o',path(linked),path(obj),*objects]),check=True)
+            out.write_bytes(static_entry(linked.read_bytes()))
+        else:
+            subprocess.run(flags+['-static','-nostdlib','-Wl,-e,_start','-Wl,-pagezero_size,0x100000000',
+                                 str(a.work/(name+'.c')),*objects,'-o',str(out)],check=True)
         binaries.append(verify(out))
-    report={'source_commit':expected,'compiler':subprocess.check_output([clang,'--version'],text=True).splitlines()[0],
+    report={'source_commit':expected,'compiler':subprocess.check_output(command([clang,'--version']),text=True).splitlines()[0],
             'binaries':binaries,'generated_sources':[{'name':n,'sha256':hashlib.sha256((a.work/n).read_bytes()).hexdigest()} for n in sources],
             'scope':'Static source-built bootstrap only; no Apple payload included, no device execution or desktop claim'}
     (a.output/'build-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))

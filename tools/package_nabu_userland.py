@@ -7,11 +7,24 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import stat
 import struct
 import subprocess
 import sys
 
 ROOT=Path(__file__).resolve().parents[1]
+
+
+def bootstrap_permissions(node, path=''):
+    """Set the image's Unix metadata independently of Windows/WSL mount modes."""
+    node.uid=node.gid=0
+    if stat.S_ISDIR(node.mode):
+        node.mode=stat.S_IFDIR|0o755
+        for name,child in node.children.items():
+            bootstrap_permissions(child,path+'/'+name)
+    elif stat.S_ISREG(node.mode):
+        executable=path.startswith('/sbin/') or (path.startswith('/lib/') and path.endswith('.dylib'))
+        node.mode=stat.S_IFREG|(0o755 if executable else 0o644)
 
 
 def digest(p):
@@ -125,9 +138,16 @@ def main():
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; nabu-data=1 selects persistent APFS Data\n')
     images=[]
+    sys.path.insert(0,str(source/'tools/apfs'))
+    from mkapfs import read_tree,Volume,Container
     for label,tree in [('Boot',boot),('NabuInit',root)]:
         image=a.output/(label+'.apfs')
-        subprocess.run([sys.executable,str(source/'tools/apfs/mkapfs.py'),'-o',str(image),label+'='+str(tree)],check=True)
+        nodes=read_tree(str(tree))
+        bootstrap_permissions(nodes)
+        volume=Volume(0,label,nodes,False,1683900000*1000000000,None,[])
+        container=Container([volume],256,image.name)
+        container.layout()
+        container.write(str(image))
         run=subprocess.run([str(a.apfsck),'-c','-u','-w',str(image)],capture_output=True,check=True)
         (a.output/(label+'-apfsck.log')).write_bytes(run.stdout+run.stderr)
         with image.open('rb') as f:header=f.read(4096)
@@ -141,6 +161,7 @@ def main():
     report={'bytes':target.stat().st_size,'sha256':digest(target),'containers':[{'name':p.name,'bytes':p.stat().st_size,'sha256':digest(p)} for p in images],
             'source_programs':build,'input_metadata_sha256':digest(a.inputs/'inputs.json'),
             'jobs':len(list((root/'LaunchDaemons').glob('*.plist'))),
+            'unix_metadata':{'owner':'root:wheel','directories':'0755','data_files':'0644','programs_and_libraries':'0755'},
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',

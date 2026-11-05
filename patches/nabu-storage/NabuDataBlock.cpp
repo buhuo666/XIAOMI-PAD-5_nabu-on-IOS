@@ -20,6 +20,7 @@ class NabuDataBlock : public IOBlockStorageDevice {
     uint8_t *memory = nullptr;
     uint8_t *bounce = nullptr;
     uint64_t bytes = 0;
+    uint64_t writeCalls = 0, writtenBytes = 0;
 
 public:
     bool start(IOService *provider) override;
@@ -132,6 +133,13 @@ IOReturn NabuDataBlock::doAsyncReadWrite(IOMemoryDescriptor *buffer, UInt64 bloc
         }
     }
     if (done != length) status = kIOReturnIOError;
+    if (write) {
+        ++writeCalls;
+        writtenBytes += done;
+        if (writeCalls<=3 || status)
+            IOLog("NABU DATA IO: write offset=%llu bytes=%llu completed=%llu status=%#x\n",
+                offset,length,done,status);
+    }
     IOLockUnlock(gate);
     completion->action(completion->target, completion->parameter, status, done);
     return kIOReturnSuccess;
@@ -141,6 +149,7 @@ IOReturn NabuDataBlock::doSynchronizeCache()
 {
     IOLockLock(gate);
     int error = memory ? 0 : nabu_storage_sync(kWindow);
+    IOLog("NABU DATA IO: sync writes=%llu bytes=%llu errno=%d\n",writeCalls,writtenBytes,error);
     IOLockUnlock(gate);
     return error ? kIOReturnIOError : kIOReturnSuccess;
 }

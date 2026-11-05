@@ -2,7 +2,7 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
-当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。第二十八轮实机已挂载原版 APFS Data，启动计数 0→1 且 fsync 成功；launchd 停在 libignition。第二十九轮停在 HALTED，完整日志单元已回收并清空，但只有 BEGIN、无正文。Actions 41986602232 已反编译原版 AppleImage4，定位到未支持的 AES selector 2212。第三十轮候选为该请求接入持久软件密钥，并修正早期失败的日志落盘。按用户要求跳过 QEMU，第三十轮于 `2026-11-05T15:28:33.923176+08:00` 执行临时启动命令成功，等待实机结果和日志回收。实机跨启动计数及设置保留仍待验收。详见 [持久 Data](NABU-PERSISTENT-DATA.md) 和 [Image4 AES](NABU-IMAGE4-AES.md)。
+当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。第三十轮的 AES 与 libignition 已通过，但 bootstrap v8 把 387 个服务文件的权限打包成 0777，launchd 拒绝加载，SpringBoard 未启动。与可进入桌面的第二十六轮对比后已修正；bootstrap v9 实际镜像的服务权限已全部恢复 0644，并加入完整媒体刷新与 Data 写入统计。准备第三十一轮直接真机验证桌面与计数读回。详见 [第二十六／三十轮对比](RUN26-RUN30-COMPARISON.md)。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 
