@@ -1,0 +1,960 @@
+{
+  "schema_version": 1,
+  "target": {
+    "product": "iPad7,11",
+    "build": "20F66",
+    "architecture": "arm64"
+  },
+  "scope": "Bounded device capability comparison; not a complete MobileGestalt key inventory. Static key identifiers do not prove a true, non-null or supported runtime answer.",
+  "api": {
+    "valid": "bool MGIsQuestionValid(CFStringRef key)",
+    "answer": "CFTypeRef MGCopyAnswer(CFStringRef key)",
+    "answer_with_error": "CFTypeRef MGCopyAnswerWithError(CFStringRef key, void *unused, int *error)",
+    "error_pointer_argument": 3,
+    "copy_ownership": "Release non-null answers with CFRelease",
+    "all_keys_enumerator": "No MGCopyAllAnswers found in the stock symbol inventory; MGCopyMultipleAnswers requires an input CFArray and omits null results."
+  },
+  "sources": [
+    {
+      "url": "https://github.com/PoomSmart/MGKeys",
+      "file": "mapping-gestalt.h",
+      "github_blob_sha": "9be0f7aeb17908305dcbe35eb1377adcad82c6e1",
+      "local_evidence": "log/host/mg-scan-v40/key-inventory/",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2020 - 2026 PoomSmart",
+      "license_text": "MIT License\n\nCopyright (c) 2020 - 2026 PoomSmart\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+    }
+  ],
+  "comparison_notes": [
+    "Model/class fields are compatibility identity; do not replace real nabu geometry or managed RAM with stock iPad values.",
+    "EnhancedMultitasking keys are candidates relevant to Stage Manager; their complete consumer policy was not established here.",
+    "DeviceSupportsApplePencil reports an OS capability declaration, not proof of nabu pen protocol support.",
+    "Memory bytes should be captured through hw.memsize and Android /proc/meminfo. DevicePerformanceMemoryClass exists as a literal but its obfuscated query identifier was not found; it is not included as a verified query.",
+    "No MGSetAnswer, cache deletion, cache rebuild or write API is part of this scan. MG may maintain its own internal cache during normal queries."
+  ],
+  "queries": [
+    {
+      "key": "ProductType",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 379,
+        "obfuscated_key": "h9jDsbgj7xIVeIQ8S3/X3Q",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8f73"
+      }
+    },
+    {
+      "key": "ProductName",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 431,
+        "obfuscated_key": "ivIu8YTDnBSrYv/SN4G8Ag",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7689"
+      }
+    },
+    {
+      "key": "DeviceClass",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 9,
+        "obfuscated_key": "+3Uf0Pm5F8Xy7Onyvko0vA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9599"
+      }
+    },
+    {
+      "key": "DeviceClassNumber",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 550,
+        "obfuscated_key": "mtrAoWJ3gsq+I90ZnQ0vQw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f84f8"
+      }
+    },
+    {
+      "key": "HardwarePlatform",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 107,
+        "obfuscated_key": "5pYKlGnYYBzGvAlIU8RjEQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f49be"
+      }
+    },
+    {
+      "key": "HWModelStr",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 24,
+        "obfuscated_key": "/YYygAofPDbhrwToVsXdeA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7028"
+      }
+    },
+    {
+      "key": "ModelNumber",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 254,
+        "obfuscated_key": "D0cJ8r7U5zve6uA6QbOiLA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f946e"
+      }
+    },
+    {
+      "key": "ProductVersion",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 675,
+        "obfuscated_key": "qNNddlUK+B/YlooNoymwgA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8cef"
+      }
+    },
+    {
+      "key": "BuildVersion",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 561,
+        "obfuscated_key": "mZfUC7qo4pURNhyMHZ62RQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f818e"
+      }
+    },
+    {
+      "key": "BoardId",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 42,
+        "obfuscated_key": "0uthiXrHZ212KvcJizKHEw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f5fd8"
+      }
+    },
+    {
+      "key": "ChipID",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 100,
+        "obfuscated_key": "566JrJVMlDfnslGpwUzNlQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6c79"
+      }
+    },
+    {
+      "key": "CPUArchitecture",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 470,
+        "obfuscated_key": "k7QIBwZJJOVw+Sej/8h8VA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9f36"
+      }
+    },
+    {
+      "key": "CPUType",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 879,
+        "obfuscated_key": "xZm4Ky2/qswyf7ykvlchYg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9f64"
+      }
+    },
+    {
+      "key": "CPUSubType",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 203,
+        "obfuscated_key": "AWEfP3xWh0q1MjO3JAy/AA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f801e"
+      }
+    },
+    {
+      "key": "SerialNumber",
+      "category": "identity",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 804,
+        "obfuscated_key": "VasUgeSzVyHdB27g2XpN0g",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f849c"
+      }
+    },
+    {
+      "key": "main-screen-width",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 347,
+        "obfuscated_key": "g7YQ1Djxh4YiKlEeaoGhzg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7c32"
+      }
+    },
+    {
+      "key": "main-screen-height",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 614,
+        "obfuscated_key": "OjzOua0LkOegX7pQdgMksw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9c3f"
+      }
+    },
+    {
+      "key": "main-screen-pitch",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 37,
+        "obfuscated_key": "0l4wqBtWEAK1tOkeBHkU6Q",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f601d"
+      }
+    },
+    {
+      "key": "main-screen-scale",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 734,
+        "obfuscated_key": "SNfDJgQFV2Xj7+WnozcJPw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8388"
+      }
+    },
+    {
+      "key": "main-screen-orientation",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 58,
+        "obfuscated_key": "1qDdT/85SS7sxriK0wIbbg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9e50"
+      }
+    },
+    {
+      "key": "main-screen-class",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 317,
+        "obfuscated_key": "fdh+s6j3VijuyrK7xLjd7g",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f5b15"
+      }
+    },
+    {
+      "key": "screen-dimensions",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 390,
+        "obfuscated_key": "HkXhfA7q9eBKIU2+6yTgQg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f72f1"
+      }
+    },
+    {
+      "key": "MainScreenStaticInfo",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 605,
+        "obfuscated_key": "oBbtJ8x+s1q0OkaiocPuog",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f4f0c"
+      }
+    },
+    {
+      "key": "MainScreenCanvasSizes",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 887,
+        "obfuscated_key": "ybGkijAwLTwevankfVzsDQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f709b"
+      }
+    },
+    {
+      "key": "MainDisplayRotation",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 418,
+        "obfuscated_key": "IIYjwu1lbAyGz5t0c4ECoA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f772a"
+      }
+    },
+    {
+      "key": "AvailableDisplayZoomSizes",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 424,
+        "obfuscated_key": "ILaGO+KV5JAOq7Q5GEwbWQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7e15"
+      }
+    },
+    {
+      "key": "MaximumScreenScale",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 857,
+        "obfuscated_key": "XmExwNGRvYTII6QC0+jvsA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6079"
+      }
+    },
+    {
+      "key": "ArtworkTraits",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 619,
+        "obfuscated_key": "oPeik/9e8lQWMszEjbPzng",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8c4e"
+      }
+    },
+    {
+      "key": "ArtworkTraitDisplayGamut",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 517,
+        "obfuscated_key": "LTI8wHvEYKy8zR1IXBW1uQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f98d5"
+      }
+    },
+    {
+      "key": "OLEDDisplay",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 583,
+        "obfuscated_key": "noqTy5fUbyK03UHxWigBBQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7b63"
+      }
+    },
+    {
+      "key": "HasExtendedColorDisplay",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 189,
+        "obfuscated_key": "Aixt/MEN2O2B7f+8m4TxUA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f81ea"
+      }
+    },
+    {
+      "key": "DisplayDriverICChipID",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 905,
+        "obfuscated_key": "yPqGUljqvtItkM6XMCZaQw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6efd"
+      }
+    },
+    {
+      "key": "DisplayMaxNits",
+      "category": "display",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 205,
+        "obfuscated_key": "awLQ2KgwSTZswuKgSSjmEQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9a73"
+      }
+    },
+    {
+      "key": "BacklightCapability",
+      "category": "brightness",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 51,
+        "obfuscated_key": "1DQNgySZSIjPqLWroIzfiQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f967f"
+      }
+    },
+    {
+      "key": "DeviceRequiresSoftwareBrightnessCalculations",
+      "category": "brightness",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 71,
+        "obfuscated_key": "2Qf/8sQyx6voo3Mw3QKgZQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7c49"
+      }
+    },
+    {
+      "key": "DeviceSupportsFrameSynchronousBrightness",
+      "category": "brightness",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 22,
+        "obfuscated_key": "/oWN4fE81uA9pCW4FmD7Ug",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9df4"
+      }
+    },
+    {
+      "key": "DisplayInactiveBrightnessClass",
+      "category": "brightness",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 914,
+        "obfuscated_key": "Z+gc4OJwBMm2YaVtp4usig",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f87ef"
+      }
+    },
+    {
+      "key": "multitasking",
+      "category": "multitasking",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 694,
+        "obfuscated_key": "RECLuzbJ6oh8q4NKR8RtNg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f83cd"
+      }
+    },
+    {
+      "key": "multitasking-gestures",
+      "category": "multitasking",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 786,
+        "obfuscated_key": "UFqkf9tcH1ltsOMzpdwSUw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8a45"
+      }
+    },
+    {
+      "key": "DeviceSupportsEnhancedMultitasking",
+      "category": "multitasking",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 667,
+        "obfuscated_key": "qeaj75wk3HF4DwQ8qbIi7g",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7bd6"
+      }
+    },
+    {
+      "key": "DeviceSupportsSingleDisplayEnhancedMultitasking",
+      "category": "multitasking",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 315,
+        "obfuscated_key": "fbpzGGoBNcvDLt4LlZGnfA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7153"
+      }
+    },
+    {
+      "key": "DeviceSupportsApplePencil",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 893,
+        "obfuscated_key": "yhHcB0iH0d1XzPO/CFd3ow",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f79dc"
+      }
+    },
+    {
+      "key": "hardware-keyboard",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 20,
+        "obfuscated_key": "/GK+yfRFY/b5ZDIDpdVImg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6d8d"
+      }
+    },
+    {
+      "key": "HomeButtonType",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 463,
+        "obfuscated_key": "JwLB44/jEB8aFDpXQ16Tuw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7181"
+      }
+    },
+    {
+      "key": "TouchDelivery120Hz",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 67,
+        "obfuscated_key": "2OK50OGmkXM1ospsh766WQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7a94"
+      }
+    },
+    {
+      "key": "SupportsForceTouch",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 298,
+        "obfuscated_key": "eQd5mlz0BN0amTp/2ccMoA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f5cf8"
+      }
+    },
+    {
+      "key": "touch-id",
+      "category": "input",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 158,
+        "obfuscated_key": "8Shl+AdVKo09f1Sldkb0kA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9cb2"
+      }
+    },
+    {
+      "key": "ambient-light-sensor",
+      "category": "sensors",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 515,
+        "obfuscated_key": "lo3szoQ4sLy7o3+ZD0GcAQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9c9b"
+      }
+    },
+    {
+      "key": "accelerometer",
+      "category": "sensors",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 78,
+        "obfuscated_key": "39ZkJVEsL4pmCXbg+89QmQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4fa061"
+      }
+    },
+    {
+      "key": "gyroscope",
+      "category": "sensors",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 83,
+        "obfuscated_key": "4+qmMh9JBDh72Nq6fD64RQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4fa033"
+      }
+    },
+    {
+      "key": "magnetometer",
+      "category": "sensors",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 293,
+        "obfuscated_key": "ELLSWiPOyh0roYBypZFHFA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f61a4"
+      }
+    },
+    {
+      "key": "proximity-sensor",
+      "category": "sensors",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 109,
+        "obfuscated_key": "5v2p6i7PyIMdWOK4n/+G4A",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7c1b"
+      }
+    },
+    {
+      "key": "wifi",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 549,
+        "obfuscated_key": "mtHZd1H8XJ2DMVtNVUSkag",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f75ba"
+      }
+    },
+    {
+      "key": "bluetooth",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 871,
+        "obfuscated_key": "XSLlJd/8sMyXO0qtvvUTBQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8d1d"
+      }
+    },
+    {
+      "key": "bluetooth-le",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 142,
+        "obfuscated_key": "8/HMvzDR3J6m0aY3NYeqcg",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7d8b"
+      }
+    },
+    {
+      "key": "WifiVendor",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 229,
+        "obfuscated_key": "c7fCSBIbX1mFaRoKT5zTIw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9281"
+      }
+    },
+    {
+      "key": "WifiChipset",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 566,
+        "obfuscated_key": "NaA/zJV7myg2w4YNmSe4yQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7e2c"
+      }
+    },
+    {
+      "key": "WifiAddress",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 356,
+        "obfuscated_key": "gI6iODv8MZuiP0IA+efJCw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7198"
+      }
+    },
+    {
+      "key": "BluetoothAddress",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 469,
+        "obfuscated_key": "k5lVWbXuiZHLA17KGiVUAA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7547"
+      }
+    },
+    {
+      "key": "DeviceSupportsDisplayPort",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 240,
+        "obfuscated_key": "CoWnN4xo783YGn4wLrUatA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9d81"
+      }
+    },
+    {
+      "key": "DeviceSupportsUSBTypeCDisplay",
+      "category": "network",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 473,
+        "obfuscated_key": "khE304sL66yzf7K+2e+0cw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9ae6"
+      }
+    },
+    {
+      "key": "HasBattery",
+      "category": "battery",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 654,
+        "obfuscated_key": "pX2TxZTxWKS7QSXZDC/Z6A",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9e67"
+      }
+    },
+    {
+      "key": "gas-gauge-battery",
+      "category": "battery",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 332,
+        "obfuscated_key": "FOs+LbLUs+TajsEE4xkbrw",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f5b5a"
+      }
+    },
+    {
+      "key": "BatteryCurrentCapacity",
+      "category": "battery",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 313,
+        "obfuscated_key": "f2DlVMUVcV+MeWs/g2ku+g",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f8599"
+      }
+    },
+    {
+      "key": "BatteryIsCharging",
+      "category": "battery",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 731,
+        "obfuscated_key": "sLe8lqXRlqZM74MNUoVcyQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6c34"
+      }
+    },
+    {
+      "key": "BatteryIsFullyCharged",
+      "category": "battery",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 446,
+        "obfuscated_key": "jgE7MmmkZAG0BiWVqD7bMQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f69c7"
+      }
+    },
+    {
+      "key": "front-facing-camera",
+      "category": "camera",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 533,
+        "obfuscated_key": "mAAbkChrX3bpxPIffHG1BQ",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9ef1"
+      }
+    },
+    {
+      "key": "rear-facing-camera",
+      "category": "camera",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 266,
+        "obfuscated_key": "dp7SlZZQotrh8McQoH1xFA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f9554"
+      }
+    },
+    {
+      "key": "still-camera",
+      "category": "camera",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 590,
+        "obfuscated_key": "nv4RoLkNoPT0/rsO8Yaiew",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f7924"
+      }
+    },
+    {
+      "key": "video-camera",
+      "category": "camera",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 588,
+        "obfuscated_key": "nteaxwXwZWYUI9z46VDRnA",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f79ae"
+      }
+    },
+    {
+      "key": "RearCameraCapability",
+      "category": "camera",
+      "confidence": "stock-identifier-observed; runtime validity and value pending",
+      "provenance": {
+        "source": "PoomSmart/MGKeys mapping-gestalt.h",
+        "source_line": 119,
+        "obfuscated_key": "6iI7/9cVUGIjdrSvIXEt4A",
+        "stock_image": "/usr/lib/libMobileGestalt.dylib",
+        "stock_build": "20F66 arm64",
+        "stock_string_address": "0x19c4f6090"
+      }
+    }
+  ]
+}
