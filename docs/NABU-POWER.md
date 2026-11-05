@@ -5,6 +5,30 @@
 US/Pacific 初始时区；第三十四轮用户已确认时间正确，USB 图标仍约 5 秒更新。
 第三十六轮用户已确认 USB 插拔响应正确，日志确认平台 UUID 修复消除了固定等待。
 
+## 当前已验证基线：第三十九轮
+
+用户确认：“均正常，已恢复 Android”。本轮温度授权超时为 0，所有五条周期
+诊断都在第一次检查时获得 grant；首次启动读取耗时 22.337 ms，之后记录为
+4.643–4.675 ms。温度为 24.75–25.00°C，未出现 SPMI 读写、DMA 或归还错误。
+实际初始 ARB=0x4（MEM_CLR_LOG 置位、低延迟未开启），修正后后续读取均为
+ARB=0x2、INTF=0、DMA_CTL=0x2。硬件记录确认低延迟配置原先确实缺失，
+本次正确设置后，第三十八轮交替发生的超时在本轮测试中消失。
+
+SDAM 仍为学习容量 8688 mAh、循环计数 0。RTC 连续走时；Android 前后校准
+相差 1 秒，采集分辨率也为 1 秒，用户未报告显示时间异常。APFS 计数 `9→10`，
+fullfsync 成功。完整 64 MiB slot14 已备份，提取 1,324,704 bytes，手动重启
+对应日志没有 END；于 18:42:12 清空并回读确认。GPT 和 Android 引导分区一致。
+
+可用基线为 `artifacts/nabu-power-v39/kernel.native-apfs.macho`（实机源提交
+`73f568736d345bb7d30d469cf1f2ba517d5dce79`）配合 bootstrap v10；保留原有
+平台 UUID、RTC 校准和 Image4 key。当前设备已回 Android，本轮不再启动。
+后续启动必须重新准备日志槽凭据，第三十九轮的已清空凭据不能重用。
+精确结果、关键日志和接续信息分别在 `log/host/power-v39/device-results.json`、
+`power-events.txt`、`continuation.json`。
+
+本轮验收覆盖温度读取及桌面／USB 回归，不等于完整充电和温控策略已实现。
+RTC 告警、手动校时偏移持久化、Android 近满电显示策略仍保留为后续工作。
+
 ## 第三十六轮验收与可用基线
 
 用户反馈：“这次正确了，设备已恢复安卓”。本轮 `gethostuuid rc=0 elapsed-ms=0`，
@@ -263,4 +287,4 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 温度授权流程、数值及桌面回归待实机确认，输入在 `log/device/nabu-boot-20261105-38/`，接续在 `log/host/power-v38/continuation.json`。
 
 第三十九轮已于 `2026-11-05T18:37:47.787713+08:00` 成功发送 `fastboot boot`，源提交 `73f5687`。
-温度授权修正待实机日志确认，输入在 `log/device/nabu-boot-20261105-39/`，接续在 `log/host/power-v39/continuation.json`。
+温度授权修正已通过本轮实机验收，输入与回收日志在 `log/device/nabu-boot-20261105-39/`，接续在 `log/host/power-v39/continuation.json`。
