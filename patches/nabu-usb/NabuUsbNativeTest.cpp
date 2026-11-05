@@ -8,18 +8,32 @@ using IOReturn = int;
 constexpr int kIOReturnSuccess=0, kIOReturnIOError=-1, kIOReturnUnderrun=-2,
     kIOReturnOverrun=-3, kIOReturnAborted=-4, kIOReturnBadArgument=-5,
     kIOReturnUnsupported=-6, kIOReturnNotReady=-7;
+static bool ordinary_buffer(const void *, unsigned);
 class IOMemoryDescriptor {
 public:
     uint8_t data[65536] = {};
     unsigned readBytes(unsigned off, void *dst, unsigned n)
-    { assert(off+n<=sizeof(data)); memcpy(dst,data+off,n); return n; }
+    { assert(off+n<=sizeof(data) && ordinary_buffer(dst,n)); memcpy(dst,data+off,n); return n; }
     unsigned writeBytes(unsigned off, const void *src, unsigned n)
-    { assert(off+n<=sizeof(data)); memcpy(data+off,src,n); return n; }
+    { assert(off+n<=sizeof(data) && ordinary_buffer(src,n)); memcpy(data+off,src,n); return n; }
 };
 #define NABU_USB_NATIVE_SERVICE 1
 #define main cdc_regression_main
 #include "NabuUsbTest.cpp"
 #undef main
+
+static bool ordinary_buffer(const void *pointer, unsigned length)
+{
+    const uintptr_t p=reinterpret_cast<uintptr_t>(pointer);
+    auto overlaps=[&](const volatile void *page) {
+        const uintptr_t base=reinterpret_cast<uintptr_t>(page);
+        return base && p<base+16384 && base<p+length;
+    };
+    if (overlaps(g_ep0)) return false;
+    for (unsigned dep=2;dep<g_native_endpoint_count;++dep)
+        if (overlaps(g_native_eps[dep].dma)) return false;
+    return true;
+}
 
 struct Completion { void *cookie; IOReturn status; uint32_t remaining; } completions[64];
 static unsigned completed, controlOut, controlOutLength, resetCount;
@@ -37,11 +51,12 @@ extern "C" void nabu_native_usb_setup(const void*)
 {
     if (setupMode==1) assert(nabu_dwc3_submit(0x80,&controlReply,67,(void*)101)==0);
     if (setupMode==2) assert(nabu_dwc3_submit(0x80,&controlReply,0,(void*)102)==0);
+    if (setupMode==3) assert(nabu_dwc3_submit(0x80,&controlReply,82,(void*)104)==0);
 }
 extern "C" void nabu_native_usb_out_data(const void *p,uint32_t n)
 {
     ++controlOut;controlOutLength=n;
-    if (n) { assert(p && !memcmp(p,"1234567",n)); assert(nabu_dwc3_submit(0x80,&controlReply,0,(void*)103)==0); }
+    if (n) { assert(p && ordinary_buffer(p,n) && !memcmp(p,"1234567",n)); assert(nabu_dwc3_submit(0x80,&controlReply,0,(void*)103)==0); }
     if (!n && reenumerateOnStatus) {
         reenumerateOnStatus=false;
         assert(nabu_dwc3_set_active(false));
@@ -171,5 +186,19 @@ int main()
     assert(cableConnects==1 && !cableDisconnects); // Link state is not cable state.
     powerPresent=0;native_poll_events();assert(cableDisconnects==1);
     powerPresent=1;native_poll_events();assert(cableConnects==2);
+    // Run51 halted on an 82-byte UTF-16 string: ordinary bcopy's paired tail
+    // writes at DMA+50. Descriptor methods must receive only normal RAM.
+    for (unsigned i=0;i<82;++i) controlReply.data[i]=(uint8_t)(i^0x5a);
+    ep0_stage()[82]=0x6d;
+    const unsigned beforeString=completed;
+    setupMode=3;setup(0x80,6,0x303,255);
+    assert(g_ep0_trbs==2 && ep0[2]==64 && ep0[6]==18);
+    assert(!memcmp(ep0_stage(),controlReply.data,82) && ep0_stage()[82]==0x6d);
+    ep0[2]=0;ep0[6]=0;handle_dep_event((1<<1)|(kDepevtXferComplete<<6));
+    assert(completed==beforeString+1 && completions[beforeString].cookie==(void*)104);
+    assert(completions[beforeString].status==0 && completions[beforeString].remaining==0);
+    handle_dep_event((kDepevtXferNotReady<<6)|(kDepevtStatusControlStatus<<12));
+    handle_dep_event(kDepevtXferComplete<<6);
+    assert(g_ep0_state==kEp0Setup && !g_faulted);
     puts("Native DWC3 checks passed: bidirectional DMA, short packets, ZLP, completion reentry, abort, native control stages and reset.");
 }

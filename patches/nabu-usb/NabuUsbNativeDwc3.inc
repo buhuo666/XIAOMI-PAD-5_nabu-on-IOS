@@ -4,6 +4,10 @@ namespace nabu_usb_capture {
 namespace {
 constexpr unsigned kNativeStage = 0x100;
 constexpr unsigned kNativeChunk = 0x3e00; // 31 high-speed packets; 16 KiB DMA page.
+// Serialized by the native workloop; never exposed to the DMA engine.
+// readBytes/writeBytes use ordinary bcopy, whose >=64-byte tail can be
+// unaligned. The ml_io_map aliases below are Device memory, not ordinary RAM.
+uint8_t g_native_copy[kNativeChunk];
 uint8_t *g_native_dma[32];
 struct NativeEndpoint {
     volatile uint32_t *dma;
@@ -23,6 +27,18 @@ uint32_t g_native_control_length, g_native_setup_length;
 
 static unsigned native_dep(uint32_t address)
 { return ((address & 15u) << 1) | ((address >> 7) & 1u); }
+
+static void native_copy_to_dma(volatile uint8_t *destination, uint32_t length)
+{
+    for (uint32_t i = 0; i < length; ++i) destination[i] = g_native_copy[i];
+    mmio_barrier();
+}
+
+static void native_copy_from_dma(const volatile uint8_t *source, uint32_t length)
+{
+    mmio_barrier();
+    for (uint32_t i = 0; i < length; ++i) g_native_copy[i] = source[i];
+}
 
 static bool native_dma_setup(uint64_t limit)
 {
@@ -62,9 +78,12 @@ static IOReturn native_start_chunk(unsigned dep)
         ep.programmed = (ep.chunk + ep.maxPacket - 1) / ep.maxPacket * ep.maxPacket;
         if (!ep.programmed) ep.programmed = ep.maxPacket;
     }
-    uint8_t *stage = reinterpret_cast<uint8_t *>(const_cast<uint32_t *>(ep.dma)) + kNativeStage;
-    if ((dep & 1u) && ep.chunk && ep.buffer->readBytes(ep.done, stage, ep.chunk) != ep.chunk)
-        return kIOReturnUnderrun;
+    volatile uint8_t *stage = reinterpret_cast<volatile uint8_t *>(ep.dma) + kNativeStage;
+    if ((dep & 1u) && ep.chunk) {
+        if (ep.buffer->readBytes(ep.done, g_native_copy, ep.chunk) != ep.chunk)
+            return kIOReturnUnderrun;
+        native_copy_to_dma(stage, ep.chunk);
+    }
     ep.dma[0] = static_cast<uint32_t>(ep.pa + kNativeStage);
     ep.dma[1] = static_cast<uint32_t>((ep.pa + kNativeStage) >> 32);
     ep.dma[2] = ep.programmed;
@@ -86,8 +105,8 @@ static void native_bulk_complete(unsigned dep)
     const uint32_t actual = ep.programmed - remaining;
     if (actual > ep.chunk) { native_finish(dep, kIOReturnOverrun); return; }
     if (!(dep & 1u) && actual) {
-        const uint8_t *stage = reinterpret_cast<const uint8_t *>(const_cast<uint32_t *>(ep.dma)) + kNativeStage;
-        if (ep.buffer->writeBytes(ep.done, stage, actual) != actual) {
+        native_copy_from_dma(reinterpret_cast<const volatile uint8_t *>(ep.dma) + kNativeStage, actual);
+        if (ep.buffer->writeBytes(ep.done, g_native_copy, actual) != actual) {
             native_finish(dep, kIOReturnUnderrun); return;
         }
     }
@@ -163,7 +182,9 @@ static void native_dep_event(uint32_t event)
         if (dep == 1) {
             native_control_complete(kIOReturnSuccess, remaining);
         } else {
-            nabu_native_usb_out_data(ep0_stage(), programmed - remaining);
+            const uint32_t actual = programmed - remaining;
+            native_copy_from_dma(ep0_stage(), actual);
+            nabu_native_usb_out_data(g_native_copy, actual);
         }
         return;
     }
@@ -346,7 +367,10 @@ extern "C" IOReturn nabu_dwc3_submit(uint32_t address, IOMemoryDescriptor *buffe
     const unsigned dep = native_dep(address);
     if (dep < 2) {
         if (dep != 1 || length > kEp0StageBytes || g_native_control_cookie) return kIOReturnBadArgument;
-        if (length && buffer->readBytes(0, ep0_stage(), length) != length) return kIOReturnUnderrun;
+        if (length) {
+            if (buffer->readBytes(0, g_native_copy, length) != length) return kIOReturnUnderrun;
+            native_copy_to_dma(ep0_stage(), length);
+        }
         g_native_control_cookie = cookie; g_native_control_length = length;
         if (!length && (!g_ep0_three || !g_ep0_in)) g_ep0_state = kEp0WaitStatus;
         else ep0_data(1, kEp0Stage, length);

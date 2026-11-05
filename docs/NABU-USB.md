@@ -3,6 +3,24 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十一轮：配置公开已修复，82 字节字符串复制停机
+
+原始日志照片确认 `all=2 advertised=2`，两个配置的 accessorySwap/extended/locked
+均为 0；普通 USB 配置修复已生效。电脑读完设备描述符、分配地址并读取配置0的
+18字节描述符，随后请求字符串3（语言0409，wLength=255）。最后一条USB日志是
+提交82字节回复，之后进入返回报告。Windows显示未知USB设备／代码43，仍未完成枚举。
+
+静态调用链和实际内核 bcopy 指令仿真显示：`readBytes` 经 `copypv` 调用普通 bcopy，
+82字节复制的最后成对写入落在目标偏移50，未按8字节对齐；18字节复制不走该路径。
+DMA别名由 `ml_io_map` 映射为Device内存，不允许这类未对齐访问。这个缺陷与停点
+吻合，但没有捕获故障ESR。第五十二轮通过普通RAM中转，再按volatile字节读写Device
+别名，覆盖控制IN/OUT和bulk IN/OUT。主机ASan/UBSan验证82字节控制回复及下一次
+SETUP，检查描述符API和原版OUT回调均不再接收DMA别名；实机修复效果待验证。
+
+第五十一轮照片内存日志42,311字节，磁盘检查点36,281字节；完整64MiB槽已备份清空。
+APFS计数21→22、fullfsync成功，GPT/引导分区一致，设备已回Android。证据在 ignored
+`log/host/native-usb-v51/`、`log/device/nabu-boot-20261105-51/`。
+
 ## 第五十轮：早期停机，最终日志待补齐
 
 用户照片显示 `KERNEL RETURN`、`REASON=0`、`CODE / ESR=0`、`HALTED`，没有定时返回
