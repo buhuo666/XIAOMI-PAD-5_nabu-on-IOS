@@ -51,6 +51,10 @@ def generate_sources(src):
         '\tmount_writable();\n'
         '\tif (!failures && var_kept) check(nabu_data_boot_record(),"persist Data boot record");\n'
         '\tif (failures) { reboot(RB_HALT); return 1; }\n\trestore_var();')
+    init=once(init,'static int\ncount_entries(const char *path)',
+        (ROOT/'patches/nabu-userland/NabuTimeZone.inc').read_text()+'\n\nstatic int\ncount_entries(const char *path)')
+    init=once(init,'\trestore_var();',
+        '\trestore_var();\n\tif (!nabu_fix_timezone()) printf("NABU TIME: timezone initialization failed errno=%d\\n",errno);')
     init=once(init,'\tmount_cryptex("OS", ",c=1", devpath);\n\tmount_cryptex("App", ",c=2", devpath);',
         '\tif (mount(nabu_boot_filesystem(), "/private/preboot/Cryptexes/OS", MNT_RDONLY, (void *)"/dev/nabu_systemos") != 0) {\n'
         '\t\tnabu_failure("mount SystemOS", (unsigned)errno);\n'

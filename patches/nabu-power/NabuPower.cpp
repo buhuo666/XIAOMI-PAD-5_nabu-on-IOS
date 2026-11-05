@@ -97,13 +97,22 @@ void NabuBattery::report(const NabuPowerSample &s)
 static NabuBattery *battery;
 static thread_call_t poll_call;
 static unsigned samples;
+static unsigned polls;
+static bool have_sample, previous_external;
 static uint32_t previous_rtc;
 static uint64_t rtc_offset;
 
 static void poll_power(thread_call_param_t, thread_call_param_t)
 {
+    // Check only USB insertion at 4 Hz. Read the gauge on a transition or
+    // every 5 seconds, so the faster icon response does not poll all ADCs.
+    bool refresh = !have_sample || polls % 20 == 0;
+    uint8_t usb;
+    if (!refresh && read_registers(0x21310, &usb, 1))
+        refresh = ((usb & 0x10) != 0) != previous_external;
     NabuPowerSample sample;
-    if (nabu_read_power(read_registers, &sample)) {
+    if (refresh && nabu_read_power(read_registers, &sample)) {
+        bool transition = have_sample && sample.external != previous_external;
         if (!battery) {
             NabuBattery *made = new NabuBattery;
             IOService *platform = IOService::getPlatform();
@@ -121,20 +130,25 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
                 }
             }
         } else battery->report(sample);
-        if (samples++ % 6 == 0)
+        if (transition)
+            IOLog("NABU BATTERY: USB %s; power-source status updated\n", sample.external ? "connected" : "disconnected");
+        if (samples++ % 6 == 0 || transition)
             IOLog("NABU BATTERY: sample=%u MSOC=%u percent=%u voltage=%umV current=%dmA present=%u USB=%u charging=%u full=%u state=%u\n",
                   samples, sample.raw_soc, sample.percent, sample.voltage_mv, sample.current_ma,
                   sample.present, sample.external, sample.charging, sample.full, sample.charger_state);
-    } else IOLog("NABU BATTERY: no coherent hardware sample; no values published\n");
+        previous_external = sample.external;
+        have_sample = true;
+    } else if (refresh) IOLog("NABU BATTERY: no coherent hardware sample; no values published\n");
 
     uint32_t raw;
-    if (nabu_read_rtc(read_registers, &raw)) {
-        if (samples <= 2 || samples % 6 == 1)
+    if (polls % 20 == 0 && nabu_read_rtc(read_registers, &raw)) {
+        if (polls == 20 || polls % 120 == 0)
             IOLog("NABU RTC: counter=%u delta=%u calibrated-UTC=%llu\n", raw, raw - previous_rtc, raw + rtc_offset);
         previous_rtc = raw;
     }
+    ++polls;
     uint64_t deadline;
-    clock_interval_to_deadline(5, NSEC_PER_SEC, &deadline);
+    clock_interval_to_deadline(250, NSEC_PER_MSEC, &deadline);
     thread_call_enter_delayed(poll_call, deadline);
 }
 
@@ -177,5 +191,6 @@ extern "C" void nabu_power_start(void)
         return;
     }
     poll_call = thread_call_allocate_with_priority(poll_power, nullptr, THREAD_CALL_PRIORITY_KERNEL);
+    IOLog("NABU BATTERY: USB poll=250ms; gauge poll=5s or USB transition\n");
     thread_call_enter(poll_call);
 }

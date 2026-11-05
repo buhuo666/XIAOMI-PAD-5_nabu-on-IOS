@@ -108,6 +108,8 @@ def main():
     skeleton=subprocess.check_output([sys.executable,str(source/'sysimage/mkvarskel.py'),str(a.inputs/'rootfs.slt')]).decode()
     skeleton=skeleton.replace('l\t/usr/share/zoneinfo\t/private/var/db/timezone/zoneinfo',
         'l\t/usr/share/zoneinfo.default\t/private/var/db/timezone/zoneinfo')
+    skeleton=skeleton.replace('l\t/var/db/timezone/zoneinfo/US/Pacific\t/private/var/db/timezone/localtime',
+        'l\t/var/db/timezone/zoneinfo/Asia/Shanghai\t/private/var/db/timezone/localtime')
     # Copy tracked public seed files only, never ignored local keys or state.
     tracked=subprocess.check_output(['git','-C',str(source),'ls-files','userland/var'],text=True).splitlines()
     for rel in tracked:

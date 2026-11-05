@@ -1,7 +1,35 @@
 # Pad 5 电源与时钟
 
-2026-11-05，用户要求优先修复电池、电量计、PMIC、RTC。第三十三轮候选已完成
-主机编译、预链接与读数测试，实机效果尚未验证。
+2026-11-05，用户要求优先修复电池、电量计、PMIC、RTC。第三十三轮已确认
+进入桌面，电量显示及 USB 插拔状态有效，RTC 正常走时。显示时间错误来自
+US/Pacific 初始时区；USB 图标延迟与 5 秒轮询一致。第三十四轮针对这两项修正。
+
+## 第三十三轮结果与第三十四轮修正
+
+用户确认日期正常、电量可见，USB 拔插均延迟超过 3 秒。完整 64 MiB 日志单元
+已回收并于 16:31 清空。实测 arbiter 为 `0x50000000`，三个 PMIC slave 0/2/4
+分别报告 subtype `0x1e/0x20/0x1f`。电量计 MSOC=255，即 100%；电压在
+4352–4416 mV 之间，拔线期间电流为 -813/-466 mA，USB=0。未记录总线读错误或
+电量计副本不一致。APFS 计数 `3→4`，F_FULLFSYNC 成功。
+
+RTC 连续记录 5 秒增量，初始 UTC 为 `1793867236`，即 08:27:16 UTC。
+launchd 随后显示 `2026-11-05 00:27:20`，而 Asia/Shanghai 应为 16:27。
+bootstrap v9 的 var.skel 确实把 localtime 指向 `zoneinfo/US/Pacific`。
+
+第三十四轮将 USB 检测改为 250 ms，检测到变化立即刷新电池并发布状态；
+完整 FG 读数和 RTC 仍每约 5 秒读取。该周期是驱动检测间隔，最终图标延迟还需
+实机确认。当前仍为 observer 轮询，尚未接入 SPMI 中断。
+
+bootstrap v10 在 launchd 启动前把旧模板的 US/Pacific 链接一次性改为
+Asia/Shanghai，并持久化迁移标记；后续用户选定的时区不再被覆盖。新 Data
+初始模板也使用 Asia/Shanghai。未改变 UTC 校准值，继续沿用第三十三轮的 RTC 差值。
+
+主机验证通过：时区迁移、写入失败保留原链接、迁移后的重启和用户后续时区选择；
+Data 挂载与文件同步回归；静态 PID1 编译、内核对象编译及链接；两个 APFS
+容器的 apfsck；7-Zip 独立读回上海时区和全部 387 个 launchd plist 的 0644 权限。
+候选为 `artifacts/nabu-power-v34/kernel.native-apfs.macho` 和 bootstrap v10。
+
+以下为第三十三轮的实现记录。
 
 ## 硬件依据
 
