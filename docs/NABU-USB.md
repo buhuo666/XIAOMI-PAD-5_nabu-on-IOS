@@ -3,6 +3,32 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 当前结果：USB日志通道已验证
+
+第四十三轮已通过Windows内置usbser驱动识别为COM5，在iPadOS运行期间直接接收内核
+与用户态日志。第一次保存1,077,243字节，电脑关闭后重开保存1,155,555字节；后者完整
+包含前者，前缀逐字节一致。恢复Android后，两份USB数据也分别与本轮磁盘日志前缀
+逐字节一致，起始偏移均为0。第四十二轮少收12,288字节的问题已消除。
+
+第二次接收在对话被中断时停止，没有正常结束收据；只验收实际保存的字节，不声称
+完成了计划的全部30秒。第四十二轮已有用户拔插后桌面正常和电脑恢复接收的证据；
+第四十三轮验证的是电脑端关闭/重开与从头重放。
+
+磁盘日志2,226,692字节，未出现USB命令失败、USB停止或内核panic；关闭读端后，USB
+线程继续运行并暂停发送。APFS计数13→14、fullfsync成功；30份GPT和14个引导分区
+一致，完整64 MiB日志槽已备份并清空。当前设备已在Android，电脑接收进程已结束。
+
+可用基线为 `artifacts/nabu-usb-v43/kernel.native-apfs.macho` 和bootstrap v10，内核
+源码提交 `f3e0ec8`。下一次临时启动仍需重新准备日志槽凭据。结构化验收与完整证据
+在 ignored `log/host/usb-v43/device-results.json`、`validation.md`。
+
+使用 `tools/capture_nabu_usb_log.py --output <新的日志目录> --seconds 0` 可以持续接收，
+Ctrl+C结束。工具自动寻找开发VID/PID对应的COM口；端口号以后可能变化。每次打开
+都会从已捕获日志开头重放，分别保存为 `session-NN.log`；`runtime.log` 是包含这些
+重复前缀的总流。Windows先完成接收缓冲清理，再抬高DTR请求发送。
+
+本阶段为设备到电脑的日志通道；电脑命令、文件传输、USB网络和Apple配对服务尚未接入。
+
 ## 第一阶段：Windows CDC 日志口
 
 采用 `src/nabu/usb/` 的源码参考，来源为 UniXNU-nabu `54b4f984`，BSD-2-Clause-Patent。
