@@ -67,3 +67,24 @@ volume increment/decrement usage 0xe9/0xea。bootstrap v6 已包含 mediaserverd
 独立 APFS 清单确认 `/hal` 目录为空；初始化把它挂到系统 HAL 目录，当前尚未提供
 板载音频输出插件。需要本轮实际按键事件与媒体服务日志来区分输入、路由和 HUD。
 当前没有据此更改按键映射或制造虚拟音量状态。
+
+## 第二十六轮回收与音量定位
+
+已回到 Android 并回收 3,584,037 bytes 有效连续日志至约 440.558 秒，
+30 份 GPT 元数据及 14 个受检引导分区一致。没有 END，按有效前缀保留。
+固件首次下载成功，版本 0x19、PID0x5953、9.6 MHz SPI；输入桥创建了触摸和按键服务。
+
+音量减 13 组、音量加 15 组完整按下/抬起事件，在内核与 backboardd 中逐项对应；
+backboardd 使用 page0xC、usage0xEA/0xE9，目标是 SpringBoard PID5，重启后为 PID170。
+因此本次音量键的硬件读取、映射和用户态递交均有日志依据，不需要再改键值。
+
+SpringBoard 的 MPVolumeControllerRouteDataSource 多次报告
+`volume control not available` 和 MediaRemote error36：
+`Endpoint volume control is only possible if the endpoint is picked or remote controllable.`
+结合 bootstrap v6 空 HAL 目录，当前缺口在可用音频输出端点及路由，不能用“HUD 没启动”
+概括为独立界面进程问题。后续应接入本板实际音频输出，再验证路由和音量反馈。
+证据位于 `log/host/volume-v27/volume-path-proof.json`，原始日志在本轮目录。
+
+另保留两个独立现象：首次有效触摸前出现 20,991 次坏校验及累计 4 次固件加载，
+随后有效帧持续增加且 bus-errors=0；约255秒 SpringBoard 经 SBRestartManager 重启，
+后续仍接收按键并进入 Settings。这两项尚未归因，不影响本次音量事件已到达的结论。
