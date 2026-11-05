@@ -78,6 +78,9 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         cpus.append(Node('cpu' + str(i), props))
     chosen = Node('chosen', {
         'random-seed': seed, 'nabu-handoff-version': U32(1),
+        'crypto-hash-method': STR('sha2-384'),
+        'mix-n-match-prevention-status': U32(1),
+        'boot-manifest-hash': hashlib.sha384(b'nabu-20F66').digest(),
         'darwinboot-memory-size': U64(12 << 30), 'darwinboot-auto-memory': U32(1),
         'nabu-kernel-checkpoint': U32(checkpoint),
         'dram-base': U64(0), 'dram-size': U64(0),
@@ -89,7 +92,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         'display-rotation': U32(0), 'nvram-bank-size': U32(8192),
         'nvram-bank-count': U32(1), 'nvram-current-bank': U32(0),
         'nvram-proxy-data': nvram(),
-    }, [Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
+    }, [Node('manifest-properties', {'BNCH': hashlib.sha384(b'nabu-20F66').digest()}),
+        Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
     if wifi_mac is not None:
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.

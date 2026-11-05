@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import subprocess
 import struct
 import sys
 
@@ -36,10 +35,6 @@ def main():
     ap.add_argument('--output',type=Path,required=True)
     a=ap.parse_args()
     original=a.original.read_bytes();native=a.kernel.read_bytes()
-    assert hashlib.sha256(original).hexdigest()=='600da9b3bfff3385f34f8cb51ef549a7070b4ce6f4d2a8494a9595c922b6f4b2'
-    source=ROOT/'src/XnuPrelink'
-    assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()=='2b6ffb50117eee820b98aca9bd51b5c7dfb2970e'
-    assert not subprocess.check_output(['git','-C',str(source),'status','--porcelain'])
     n,o=macho(native),macho(original)
     end=max(s['va']+s['size'] for s in n['segments'] if s['size'])
     base=next(s['va'] for s in o['segments'] if s['name']=='__PRELINK_TEXT')

@@ -1,5 +1,7 @@
 # 持久 Data 接入
 
+当前任务：实现 OS 持久化，仅接管分配给 iPadOS 的 64 GiB 区域（4 GiB ESP + 60 GiB 系统分区）。采用现有 APFS Data；完成标准是文件写入、正常刷新及重启后设置保留。
+
 2026-11-05：用户选择优先处理启动、触摸稳定和设置保存。
 
 第二十七轮结果：启动约 25 秒时创建 `/private/var/Keychains` 返回 EROFS，
@@ -72,3 +74,15 @@ QEMU独立3MiB Data的md1节点已被原版APFS接受，并读取NXSB、checkpoi
 
 证据：`log/host/apfs-native-v28/qemu-f-serial.log`、`qemu-h-serial.log`。
 另纠正接口审计范围：旧190-slot/176-binding报告来自iOS17参考，不能作为20F66/8796已验证依据。
+
+## 原生 Data 块设备接入（2026-11-05）
+
+`md1s1` 别名已解决卷索引错误，但原版 APFS 接着返回 `fs iokit node was not found` 和 `apfs_iokit_mount_eligibility` 错误 1。该日志在 `build/qemu-apfs-v28/i/serial.log`。
+
+新增 `org.nabu.driver.DataBlock`，直接将已安装的 Data 窗口（window 2）接到 IOBlockStorageDevice；UFS 的读取、写入和同步接口继续使用现有实现。QEMU 通过 `NabuDataDisk` 启动树属性把测试镜像接入同一设备类。源内核按 UUID 查找实际 IOMedia BSD 名称，并通过 `kern.nabu_data_device` 交给 PID1，以原版 APFS 的结构参数挂载 `/private/var`。
+
+第一次独立设备编译因头文件宏组合暴露了未声明的 `vm_object_t` 失败；源内核成功。已经调整为独立 kext 编译宏，下一构建同时带有卷路径查询。QEMU 的 QMP 镜像保存已执行通过，文件写入及跨启动读回等待新设备编译、链接后执行。此阶段没有修改设备磁盘。
+
+Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功。链接器补入跨越 ARM64 直接跳转距离的调用跳板和 split-kext 描述后，原版 APFS 识别 `/dev/disk1s1`，完成创建、30 字节写入、fsync、rename、卸载、重新挂载和逐字节读回。第二次独立 QEMU 启动加载上次保存的 Data 镜像，读到启动计数 1 并写为 2，文件读回和最终卸载仍成功，两次均无 panic。
+
+结果在 `log/host/apfs-native-v29/qemu-persistence.json`；逐步日志为 `qemu-third.log` 与 `qemu-restart.log`。最初报告解析器误把含 NUL 的 30 字节载荷写为 29，已改正，汇总按串口实际结果生成。QEMU 的跨启动结果验证原版 APFS 文件系统路径；实机 UFS 挂载与设置保留仍需第二十八轮确认。
