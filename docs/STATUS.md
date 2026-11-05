@@ -2,7 +2,7 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
-当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。第三十轮的 AES 与 libignition 已通过，但 bootstrap v8 把 387 个服务文件的权限打包成 0777，launchd 拒绝加载，SpringBoard 未启动。与可进入桌面的第二十六轮对比后已修正；bootstrap v9 实际镜像的服务权限已全部恢复 0644，并加入完整媒体刷新与 Data 写入统计。第三十一轮已于 `2026-11-05T15:49:15.186531+08:00` 成功执行 `fastboot boot`，等待桌面与计数读回结果。详见 [第二十六／三十轮对比](RUN26-RUN30-COMPARISON.md)。
+当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。第三十一轮用户已确认进入桌面并改为中文；实机日志读回计数 1 并写为 2，F_FULLFSYNC 成功，真实 APFS 跨启动计数已通过。“设置 → 通用 → 关于本机”会卡住，Preferences 两次 watchdog 超时，根因待其线程栈定位。第三十二轮沿用同一内核／bootstrap／Data，验证中文保留并采样 Preferences。详见 [设置关于本机](SETTINGS-ABOUT-HANG.md)。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 

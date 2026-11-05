@@ -111,3 +111,7 @@ Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功�
 第三十轮已于 `2026-11-05T15:28:33.923176+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `d733bfd913899ff812c8993de8dfecb5ac5e9308`。使用 `nabu-data-v31b` 和 bootstrap v8，仍未运行 QEMU；运行效果待用户观察及日志回收。确切输入和源代码保存在 `log/device/nabu-boot-20261105-30/`，接续记录为 `log/host/apfs-native-v31/continuation.json`。
 
 第三十一轮已于 `2026-11-05T15:49:15.186531+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `1c8e56adcca6f0e03fa5c4a783ab5aa124a3290a`。输入为 nabu-data-v32 + bootstrap v9，仍跳过 QEMU；桌面和跨启动记录等待实机结果。确切输入保存在 `log/device/nabu-boot-20261105-31/`，接续记录在 `log/host/apfs-native-v32/continuation.json`。
+
+## 第三十一轮实机读回与桌面
+
+用户确认恢复桌面并把语言改为中文。实际日志记录 `previous=1 current=2 fullfsync=ok`，证明第三十轮计数被真实 UFS APFS 读回。后续同步均未记录错误，已完成物理文件计数的跨启动验证；中文偏好是否保留等待第三十二轮。新增“关于本机”页面卡住的问题，见 [设置关于本机](SETTINGS-ABOUT-HANG.md)。
