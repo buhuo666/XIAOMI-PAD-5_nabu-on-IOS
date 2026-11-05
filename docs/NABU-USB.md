@@ -3,6 +3,29 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十三轮：普通 USBMux 接口出现，修复数据缓冲区准备
+
+实机已选择配置2，启用OUT 0x01和IN 0x81两个512字节bulk端点，原版Mux收到
+InterfaceWasActivated。Windows父设备与普通MI_01接口均为OK；Reserved/MI_00没有
+匹配驱动。用户报告停机，AMDS设备列表仍为空，原生配对和同步尚未通过。
+
+照片最后是BOS描述符的5字节及12字节请求，不能仅凭末行认定12字节复制失败。
+其前面的vendor 40/40、wValue=100是电流限制请求。原日志全局只记录前16次提交，
+被EP0枚举耗尽，因此首次Mux数据请求没有输出；第五十四轮增加独立bulk边界记录。
+
+发现适配层缺少bulk描述符的prepare/complete。原版Mux的startUSBRead通过
+withAddressRanges(options=1)创建未自动准备的虚拟描述符；Pipe/Controller提交链
+没有替硬件准备它。XNU的writeBytes/getPhysicalSegment在未固定内存页时会触发
+“IOGMD: not wired for the IODMACommand”。第五十四轮在提交前prepare，跨所有
+分块保留，完成、取消或提交失败时complete；原版完成回调前已释放这次准备。
+EP0使用既有IOBuffer路径。主机ASan/UBSan回归在旧实现首次OUT写入失败，修复后
+通过，并覆盖分块、回调重入、取消、reset和失败释放。实际停机归因仍待实机验证。
+
+本轮54,487字节连续日志和完整64MiB槽已备份清空。照片内存日志58,422字节，
+末尾3,935字节未落盘，没有捕获panic正文。APFS计数23→24、fullfsync成功，
+GPT/引导分区一致，已回Android。FairPlay尚无观察器输出，不能验收其新包装器。
+证据与第五十四轮主机回归在 ignored `log/host/native-usb-v53/`。
+
 ## 第五十二轮：桌面恢复，Windows Apple USB 驱动已绑定
 
 用户确认正常进入桌面。82字节字符串、配置0的18字节和配置1的41字节描述符均已

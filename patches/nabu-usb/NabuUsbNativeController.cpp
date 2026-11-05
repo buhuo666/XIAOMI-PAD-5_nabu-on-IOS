@@ -138,6 +138,7 @@ class NabuUsbNativeController : public IOUSBDeviceController {
         Pending *next;
         uint64_t deadline;
         bool timedOut;
+        bool trace;
     };
     struct Endpoint {
         Pending *head = nullptr;
@@ -146,6 +147,7 @@ class NabuUsbNativeController : public IOUSBDeviceController {
         bool dispatching = false;
         bool aborting = false;
         bool active = false;
+        unsigned submissions = 0;
     } endpoints[32];
     IOWorkLoop *loop = nullptr;
     bool connected = false;
@@ -154,6 +156,7 @@ class NabuUsbNativeController : public IOUSBDeviceController {
     uint16_t appliedAddress = 0;
     IOReturn configurationError = kIOReturnSuccess;
     unsigned submissions = 0;
+    unsigned bulkEntries = 0;
 
     IOReturn submitHead(unsigned index);
     void startNext(unsigned index);
@@ -211,7 +214,12 @@ public:
     IOReturn activateEndpoint(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) override;
     IOReturn deactivateEndpoint(uint32_t address) override;
     IOBufferMemoryDescriptor *abiSlot189AllocateBuffer(uint32_t options, uint64_t length) override
-        { return IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, options, length, 64); }
+    {
+        IOLog("NABU NATIVE USB: allocate buffer options=%x length=%llu begin\n", options, length);
+        auto *buffer = IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, options, length, 64);
+        IOLog("NABU NATIVE USB: allocate buffer length=%llu returned=%u\n", length, buffer != nullptr);
+        return buffer;
+    }
     bool isEndpointStalled(uint32_t address) override
         { return nabu_dwc3_endpoint_stalled(address); }
     void resetEndpointDataToggle(uint32_t address) override
@@ -384,6 +392,8 @@ IOReturn NabuUsbNativeController::submitHead(unsigned index)
     endpoint.submitted = true;
     IOReturn result = nabu_dwc3_submit(pending->request->endpoint,
         pending->request->buffer, static_cast<uint32_t>(pending->request->lengthOrFrameCount), pending);
+    if (pending->trace)
+        IOLog("NABU NATIVE USB: transport submit ep=%x returned=%x\n", pending->request->endpoint, result);
     if (result) endpoint.submitted = false;
     return result;
 }
@@ -391,19 +401,27 @@ IOReturn NabuUsbNativeController::submitHead(unsigned index)
 IOReturn NabuUsbNativeController::abiSlot223Io(uint32_t endpoint, IOMemoryDescriptor *buffer,
     uint64_t length, NativeUSBCompletion *completion, uint64_t reserved, uint32_t timeoutMs)
 {
-    if (!(endpoint & 15) || submissions < 16)
+    // Descriptor enumeration exhausts the old global limit before Mux starts.
+    // Keep the first bulk calls visible independently of control traffic.
+    const bool trace = (endpoint & 15) ?
+        __atomic_fetch_add(&bulkEntries, 1, __ATOMIC_RELAXED) < 8 : length == 12;
+    if (!(endpoint & 15) || trace)
         IOLog("NABU NATIVE USB: native io ep=%x length=%llu bufferLength=%llu direction=%u completion=%u timeout=%u\n",
             endpoint,length,buffer ? buffer->getLength() : 0,
             buffer ? static_cast<unsigned>(buffer->getDirection()) : 0,
             completion && completion->action,timeoutMs);
     IOReturn result = IOUSBDeviceController::abiSlot223Io(endpoint,buffer,length,completion,reserved,timeoutMs);
+    if (trace)
+        IOLog("NABU NATIVE USB: native io returned ep=%x length=%llu status=%x\n", endpoint, length, result);
     if (result) IOLog("NABU NATIVE USB: native io rejected ep=%x status=%x\n",endpoint,result);
     return result;
 }
 
 IOReturn NabuUsbNativeController::ioGated(NativeUSBIORequest *request)
 {
-    if (submissions++ < 16)
+    Endpoint &endpoint = endpoints[endpointIndex(request->endpoint)];
+    const bool trace = (request->endpoint & 15) ? endpoint.submissions++ < 8 : request->lengthOrFrameCount == 12;
+    if (submissions++ < 16 || trace)
         IOLog("NABU NATIVE USB: submit ep=%x length=%llu timeout=%u iso=%u draining=%u onBus=%u active=%u\n",
             request->endpoint,request->lengthOrFrameCount,request->options,request->isIsochronous,
             draining,onBus,endpoints[endpointIndex(request->endpoint)].active);
@@ -411,11 +429,10 @@ IOReturn NabuUsbNativeController::ioGated(NativeUSBIORequest *request)
     if (request->isIsochronous) return kIOReturnUnsupported;
     if ((request->endpoint & ~0x8fU) || request->lengthOrFrameCount > UINT32_MAX)
         return kIOReturnBadArgument;
-    Endpoint &endpoint = endpoints[endpointIndex(request->endpoint)];
     if (!endpoint.active || endpoint.aborting) return kIOReturnNotReady;
     Pending *pending = static_cast<Pending *>(IOMalloc(sizeof(Pending)));
     if (!pending) return kIOReturnNoMemory;
-    *pending = {request, nullptr, 0, false};
+    *pending = {request, nullptr, 0, false, trace};
     bool wasEmpty = !endpoint.head;
     if (endpoint.tail) endpoint.tail->next = pending;
     else endpoint.head = pending;
@@ -455,6 +472,11 @@ void NabuUsbNativeController::complete(void *cookie, IOReturn status, uint32_t r
     Pending *pending = static_cast<Pending *>(cookie);
     NativeUSBIORequest *request = pending->request;
     unsigned index = endpointIndex(request->endpoint);
+    const uint32_t address = request->endpoint;
+    const bool trace = pending->trace;
+    if (trace)
+        IOLog("NABU NATIVE USB: complete ep=%x length=%llu remaining=%u status=%x begin\n",
+            address, request->lengthOrFrameCount, remaining, status);
     Endpoint &endpoint = endpoints[index];
     endpoint.head = pending->next;
     if (!endpoint.head) endpoint.tail = nullptr;
@@ -466,6 +488,8 @@ void NabuUsbNativeController::complete(void *cookie, IOReturn status, uint32_t r
     // consumes actual bytes transferred (dataStageWriteCompletion adds them).
     request->transferredOrFrameList = request->lengthOrFrameCount - remaining;
     native_usb_complete_io(this, request);
+    // The native completion can free request and submit its successor.
+    if (trace) IOLog("NABU NATIVE USB: complete ep=%x native callback returned\n", address);
     startNext(index);
 }
 
@@ -516,6 +540,8 @@ void NabuUsbNativeController::setup(const void *setup8)
         traceConfigurations("getConfigDescriptor");
     native_usb_control_input_setup(control(), setup8);
     IOReturn result = native_usb_control_process_setup(control());
+    if (bytes[6] == 12 && bytes[7] == 0)
+        IOLog("NABU NATIVE USB: setup length=12 processed status=%x\n", result);
     if (result) {
         IOLog("NABU NATIVE USB: setup processing returned %#x\n", result);
         nabu_dwc3_stall_endpoint(0, true);

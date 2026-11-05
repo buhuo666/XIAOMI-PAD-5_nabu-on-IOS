@@ -2,6 +2,11 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
+最新实机：第五十三轮已选择配置2并启用USBMux数据端点，Windows普通MI_01状态OK，
+但系统停机、AMDS为空，配对/同步未通过。已发现bulk虚拟缓冲区漏prepare的契约缺陷，
+第五十四轮修复及旧代码失败/新代码通过的主机回归已完成，实机待验证。APFS计数
+23→24，完整日志槽已备份清空，设备在Android。见 [USB连接](NABU-USB.md)。
+
 最新实机：第五十二轮桌面正常，82字节USB回复停机已修复；Windows首次以OK状态绑定
 Apple USB父设备和子接口。子接口仍为RESTORE_MODE/MI_00，电脑选择配置1，USBMux
 未启用，AMDS为空，配对/同步未完成。继续核对模式与配置选择及FairPlay退出。

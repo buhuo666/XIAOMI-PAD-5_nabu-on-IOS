@@ -7,15 +7,23 @@ static void *IOMallocAligned(unsigned n, unsigned alignment) { return aligned_al
 using IOReturn = int;
 constexpr int kIOReturnSuccess=0, kIOReturnIOError=-1, kIOReturnUnderrun=-2,
     kIOReturnOverrun=-3, kIOReturnAborted=-4, kIOReturnBadArgument=-5,
-    kIOReturnUnsupported=-6, kIOReturnNotReady=-7;
+    kIOReturnUnsupported=-6, kIOReturnNotReady=-7, kIOReturnNoMemory=-8;
 static bool ordinary_buffer(const void *, unsigned);
 class IOMemoryDescriptor {
 public:
     uint8_t data[65536] = {};
+    unsigned wireCount = 0, prepares = 0, completes = 0;
+    bool requiresPreparation = false, failRead = false;
+    IOReturn prepareResult = kIOReturnSuccess;
+    IOReturn prepare()
+    { ++prepares; if (!prepareResult) ++wireCount; return prepareResult; }
+    IOReturn complete()
+    { assert(wireCount); --wireCount; ++completes; return kIOReturnSuccess; }
     unsigned readBytes(unsigned off, void *dst, unsigned n)
-    { assert(off+n<=sizeof(data) && ordinary_buffer(dst,n)); memcpy(dst,data+off,n); return n; }
+    { assert(!requiresPreparation || wireCount); assert(off+n<=sizeof(data) && ordinary_buffer(dst,n));
+      if (failRead) { failRead=false; return 0; } memcpy(dst,data+off,n); return n; }
     unsigned writeBytes(unsigned off, const void *src, unsigned n)
-    { assert(off+n<=sizeof(data) && ordinary_buffer(src,n)); memcpy(data+off,src,n); return n; }
+    { assert(!requiresPreparation || wireCount); assert(off+n<=sizeof(data) && ordinary_buffer(src,n)); memcpy(data+off,src,n); return n; }
 };
 #define NABU_USB_NATIVE_SERVICE 1
 #define main cdc_regression_main
@@ -73,7 +81,7 @@ extern "C" void nabu_native_usb_disconnected() { ++cableDisconnects; }
 extern "C" void nabu_native_usb_transfer_done(void *cookie,IOReturn status,uint32_t remaining)
 {
     assert(completed<64);completions[completed++]={cookie,status,remaining};
-    if (reenter) { reenter=false; assert(nabu_dwc3_submit(0x81,&payload,17,(void*)77)==0); }
+    if (reenter) { reenter=false; assert(!payload.wireCount); assert(nabu_dwc3_submit(0x81,&payload,17,(void*)77)==0); }
 }
 static void finish(unsigned dep,unsigned remaining)
 {
@@ -93,6 +101,9 @@ int main()
     assert(nabu_dwc3_connection_speed()==2);
     assert(nabu_dwc3_activate_endpoint(1,kEpTypeBulk,512,0)==0);
     assert(nabu_dwc3_activate_endpoint(0x81,kEpTypeBulk,512,0)==0);
+    // Match Mux's initially unwired withAddressRanges descriptor. Reading or
+    // writing it before prepare models XNU's "not wired" contract violation.
+    payload.requiresPreparation = true;
     for(unsigned i=0;i<sizeof(payload.data);++i) payload.data[i]=(uint8_t)(i*17);
     // An OUT request's rounded DMA tail must never leak into the descriptor.
     assert(nabu_dwc3_submit(1,&payload,513,(void*)1)==0);
@@ -100,16 +111,19 @@ int main()
     memset((uint8_t*)g_native_eps[2].dma+kNativeStage,0x5a,513);
     const auto sentinel=payload.data[513]; finish(2,511);
     assert(completed==1 && !completions[0].remaining && completions[0].status==0);
+    assert(payload.prepares==1 && payload.completes==1 && !payload.wireCount);
     assert(payload.data[512]==0x5a && payload.data[513]==sentinel);
     // One logical IN transfer spans multiple DMA pages and ends with a ZLP.
     assert(nabu_dwc3_submit(0x81,&payload,32768,(void*)2)==0);
     unsigned offset=0;
     while(g_native_eps[3].cookie) {
+        assert(payload.wireCount==1);
         const unsigned n=g_native_eps[3].chunk;
         assert(!memcmp((uint8_t*)g_native_eps[3].dma+kNativeStage,payload.data+offset,n));
         offset+=n;finish(3,0);
     }
     assert(offset==32768 && completed==2 && completions[1].remaining==0);
+    assert(payload.prepares==2 && payload.completes==2 && !payload.wireCount);
     // A short OUT packet ends the request, preserving the unreceived count.
     assert(nabu_dwc3_submit(1,&payload,32768,(void*)3)==0);
     finish(2,0);finish(2,kNativeChunk-7);
@@ -121,6 +135,7 @@ int main()
     assert(nabu_dwc3_submit(1,&payload,1000,(void*)5)==0);
     nabu_dwc3_deactivate_endpoint(1);
     assert(completed==6 && completions[5].status==kIOReturnAborted && completions[5].remaining==1000);
+    assert(payload.prepares==payload.completes && !payload.wireCount);
     assert(!(core[kDwc3Dalepena/4]&(1u<<2)));
     assert(nabu_dwc3_submit(1,&payload,1,(void*)6)==kIOReturnNotReady);
     // Native GET_DESCRIPTOR: family owns content; transport owns DATA/STATUS.
@@ -200,5 +215,19 @@ int main()
     handle_dep_event((kDepevtXferNotReady<<6)|(kDepevtStatusControlStatus<<12));
     handle_dep_event(kDepevtXferComplete<<6);
     assert(g_ep0_state==kEp0Setup && !g_faulted);
+    // Failed preparation creates neither a transfer nor a completion, and a
+    // later staging failure must release the successfully prepared descriptor.
+    assert(nabu_dwc3_activate_endpoint(0x81,kEpTypeBulk,512,0)==0);
+    const unsigned beforeFailures=completed, priorPrepares=payload.prepares,
+        priorCompletes=payload.completes, priorStarts=starts[3];
+    payload.prepareResult=kIOReturnNoMemory;
+    assert(nabu_dwc3_submit(0x81,&payload,17,(void*)88)==kIOReturnNoMemory);
+    assert(!payload.wireCount && payload.prepares==priorPrepares+1 && payload.completes==priorCompletes);
+    assert(!g_native_eps[3].cookie && !g_native_eps[3].buffer && starts[3]==priorStarts);
+    payload.prepareResult=kIOReturnSuccess;payload.failRead=true;
+    assert(nabu_dwc3_submit(0x81,&payload,17,(void*)89)==kIOReturnUnderrun);
+    assert(!payload.wireCount && payload.prepares==priorPrepares+2 && payload.completes==priorCompletes+1);
+    assert(!g_native_eps[3].cookie && !g_native_eps[3].buffer && completed==beforeFailures);
+    assert(!controlReply.prepares && !controlReply.completes);
     puts("Native DWC3 checks passed: bidirectional DMA, short packets, ZLP, completion reentry, abort, native control stages and reset.");
 }

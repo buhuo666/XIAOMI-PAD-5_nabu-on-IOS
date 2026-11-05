@@ -61,9 +61,14 @@ static void native_finish(unsigned dep, IOReturn status)
 {
     NativeEndpoint &ep = g_native_eps[dep];
     void *cookie = ep.cookie;
+    IOMemoryDescriptor *buffer = ep.buffer;
     const uint32_t remaining = ep.total - ep.done;
     // The stock completion can immediately submit the next request.
     ep.cookie = nullptr; ep.buffer = nullptr;
+    if (buffer) {
+        const IOReturn completed = buffer->complete();
+        if (!status) status = completed;
+    }
     if (cookie) nabu_native_usb_transfer_done(cookie, status, remaining);
 }
 
@@ -368,20 +373,31 @@ extern "C" IOReturn nabu_dwc3_submit(uint32_t address, IOMemoryDescriptor *buffe
     if (dep < 2) {
         if (dep != 1 || length > kEp0StageBytes || g_native_control_cookie) return kIOReturnBadArgument;
         if (length) {
+            if (length == 12) IOLog("NABU USB NATIVE: control12 readBytes begin\n");
             if (buffer->readBytes(0, g_native_copy, length) != length) return kIOReturnUnderrun;
             native_copy_to_dma(ep0_stage(), length);
+            if (length == 12) IOLog("NABU USB NATIVE: control12 DMA staged\n");
         }
         g_native_control_cookie = cookie; g_native_control_length = length;
         if (!length && (!g_ep0_three || !g_ep0_in)) g_ep0_state = kEp0WaitStatus;
         else ep0_data(1, kEp0Stage, length);
+        if (length == 12) IOLog("NABU USB NATIVE: control12 TRB submitted faulted=%u\n", g_faulted);
         if (g_faulted) { g_native_control_cookie = nullptr; return kIOReturnIOError; }
         return kIOReturnSuccess;
     }
     NativeEndpoint &ep = g_native_eps[dep];
     if (!ep.enabled || ep.cookie) return kIOReturnNotReady;
+    // Mux supplies virtual address-range descriptors without AutoPrepare.
+    // readBytes/writeBytes require wired pages even with our staging DMA.
+    // Hold that preparation through all chunks and retire it before callback.
+    IOReturn status = buffer->prepare();
+    if (status) return status;
     ep.cookie = cookie; ep.buffer = buffer; ep.total = length; ep.done = 0; ep.zlp = false;
-    const IOReturn status = native_start_chunk(dep);
-    if (status) { ep.cookie = nullptr; ep.buffer = nullptr; }
+    status = native_start_chunk(dep);
+    if (status) {
+        ep.cookie = nullptr; ep.buffer = nullptr;
+        buffer->complete();
+    }
     return status;
 }
 } // namespace nabu_usb_capture
