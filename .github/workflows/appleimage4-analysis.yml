@@ -31,14 +31,14 @@ jobs:
         run: |
           gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/image4-analysis/ghidra-release.json
           python3 - <<'PY'
-          import hashlib,json,pathlib,urllib.request,zipfile
+          import hashlib,json,pathlib,subprocess,urllib.request
           release=json.loads(pathlib.Path('log/ci/image4-analysis/ghidra-release.json').read_text())
           asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
           archive=pathlib.Path('build/ghidra.zip')
           urllib.request.urlretrieve(asset['browser_download_url'],archive)
           actual='sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()
           if actual != asset['digest']: raise RuntimeError('Ghidra download digest mismatch')
-          with zipfile.ZipFile(archive) as package: package.extractall('build')
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
           PY
       - name: Decompile original Image4 on Linux
         run: |
