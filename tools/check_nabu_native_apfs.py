@@ -33,7 +33,8 @@ static struct vfstable *vfsconf=tables;
 static const int maxvfsslots=3;
 static int enabled,loads,result,install;
 static int PE_parse_boot_argn(const char *key,void *p,int size) {assert(!strcmp(key,"nabu-native-apfs")&&size==4);memcpy(p,&enabled,4);return enabled!=0;}
-static size_t strlcpy(char *d,const char *s,size_t n){snprintf(d,n,"%s",s);return strlen(s);}
+static size_t fixture_strlcpy(char *d,const char *s,size_t n){snprintf(d,n,"%s",s);return strlen(s);}
+#define strlcpy fixture_strlcpy
 static void mount_list_lock(void){}
 static void mount_list_unlock(void){}
 static kern_return_t OSKextLoadKextWithIdentifier(const char *id) {
