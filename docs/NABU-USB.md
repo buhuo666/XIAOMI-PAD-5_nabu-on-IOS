@@ -29,6 +29,21 @@ Ctrl+C结束。工具自动寻找开发VID/PID对应的COM口；端口号以后�
 
 本阶段为设备到电脑的日志通道；电脑命令、文件传输、USB网络和Apple配对服务尚未接入。
 
+## 原生 Apple 连接开发：第四十四轮
+
+用户选择 Apple Devices／iTunes 的原生配对与同步作为下一阶段验收目标。
+Windows 已安装 Apple Mobile Device Support 和 Apple USB 驱动；20F66 镜像包含
+IOUSBDeviceFamily、AppleUSBDeviceMux 和原版 lockdownd，当前预链接内核尚未包含前两者。
+
+第四十四轮先沿用已验证的 v43 CDC 内核，单独启用原版 lockdownd，并加入一次性本地
+查询程序 `userland/nabu/src/lockdown_probe.c`。启动后等待35秒，通过本机62078端口发送
+QueryType，以及 ProductType、DeviceName、ActivationState 的 GetValue，只将原始
+响应写入日志。本轮不执行配对、修改信任记录或激活状态。
+
+`tools/package_nabu_userland.py --lockdown-probe` 生成该诊断镜像；与bootstrap v10相比
+只增加两个启动plist和查询程序，已有文件内容一致。两个APFS容器通过apfsck，新增
+文件经7-Zip独立读取一致。实际服务响应尚待实机验证，不能据此声称原生USB连接完成。
+
 ## 第一阶段：Windows CDC 日志口
 
 采用 `src/nabu/usb/` 的源码参考，来源为 UniXNU-nabu `54b4f984`，BSD-2-Clause-Patent。

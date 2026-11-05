@@ -69,6 +69,7 @@ def main():
     ap.add_argument('--input-bridge', type=Path, help='Source-built backboardd input library directory')
     ap.add_argument('--power-trace', type=Path, help='Read-only IOKit/IOPS timing diagnostic executable')
     ap.add_argument('--capability-scan', type=Path, help='One-shot MobileGestalt/IOKit diagnostic executable')
+    ap.add_argument('--lockdown-probe', type=Path, help='Enable stock lockdownd and a one-shot local query probe')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
@@ -82,17 +83,19 @@ def main():
     shutil.copy2(a.programs/'stage0',boot/'sbin/launchd');(boot/'sbin/launchd').chmod(0o755)
     shutil.copy2(a.programs/'init',root/'sbin/init');(root/'sbin/init').chmod(0o755)
     jobs=json.loads((ROOT/'userland/nabu/jobs.json').read_text())
-    for label in jobs['run_at_boot']:
+    boot_labels=list(jobs['run_at_boot'])
+    if a.lockdown_probe: boot_labels.append('com.apple.mobile.lockdown')
+    for label in boot_labels:
         assert (a.inputs/'rootfs/System/Library/LaunchDaemons'/(label+'.plist')).is_file(),label
     script=(source/'userland/mkjobs.py').read_text()
     assert script.count("DENY = ('watchdog'")==1
     extra=''.join(repr(x)+', ' for x in jobs['additional_deny'])
     script=script.replace("DENY = ('watchdog'","DENY = ("+extra+"'watchdog'",1)
     mkjobs=a.work/'mkjobs.py';mkjobs.write_text(script)
-    env=dict(os.environ,ALLOW='',OSLOG='com.apple.backboardd com.apple.SpringBoard')
+    env=dict(os.environ,ALLOW='lockdown' if a.lockdown_probe else '',OSLOG='com.apple.backboardd com.apple.SpringBoard'+(' com.apple.mobile.lockdown' if a.lockdown_probe else ''))
     with (a.output/'jobs.log').open('w') as log:
         subprocess.run([sys.executable,str(mkjobs),'--rest','--root-volume',str(a.inputs/'rootfs.slt'),
-            str(a.inputs/'rootfs'),str(root/'LaunchDaemons'),*jobs['run_at_boot']],env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
+            str(a.inputs/'rootfs'),str(root/'LaunchDaemons'),*boot_labels],env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
     for p in (root/'LaunchDaemons').glob('*.plist'):
         assert not any(x in p.name for x in jobs['additional_deny'])
         plistlib.loads(p.read_bytes())
@@ -116,6 +119,11 @@ def main():
                'RunAtLoad': True, 'UserName': 'root',
                'StandardOutPath': '/dev/console', 'StandardErrorPath': '/dev/console'}
         (root/'LaunchDaemons/org.nabu.capability-scan.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
+    if a.lockdown_probe:
+        shutil.copy2(a.lockdown_probe, root/'sbin/lockdown-probe')
+        job={'Label':'org.nabu.lockdown-probe','Program':'/redwood/sbin/lockdown-probe',
+             'RunAtLoad':True,'UserName':'root','StandardOutPath':'/dev/console','StandardErrorPath':'/dev/console'}
+        (root/'LaunchDaemons/org.nabu.lockdown-probe.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -185,6 +193,7 @@ def main():
             'private_address_injections_enabled':setup_report is not None or input_report is not None,
             'input_bridge':input_report, 'power_trace_enabled': a.power_trace is not None,
             'capability_scan_enabled': a.capability_scan is not None,
+            'stock_lockdown_probe_enabled': a.lockdown_probe is not None,
             'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}
