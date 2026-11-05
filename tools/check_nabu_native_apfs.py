@@ -48,9 +48,13 @@ int main(void){
  nabu_apfs_prepare_vfs();nabu_apfs_load();assert(!loads&&!nabu_apfs_legacy_renamed);
  enabled=1;nabu_apfs_prepare_vfs();assert(!strcmp(tables[0].vfc_name,"apfsro")&&tables[0].vfc_typenum==63);
  result=5;nabu_apfs_load();assert(loads==1&&nabu_apfs_load_status==5&&!nabu_apfs_registered);
- result=0;install=1;nabu_apfs_load();assert(loads==2&&!nabu_apfs_load_status&&nabu_apfs_registered);
+ result=0;nabu_apfs_load();assert(loads==2&&!nabu_apfs_load_status&&!nabu_apfs_registered);
+ // Actual APFS registration is asynchronous: kext start success is insufficient.
+ nabu_apfs_vfs_registered(&tables[0]);assert(!nabu_apfs_registered);
+ tables[1]=(struct vfstable){&original,"apfs",24,1,NULL};tables[0].vfc_next=&tables[1];
+ nabu_apfs_vfs_registered(&tables[1]);assert(nabu_apfs_registered);
  assert(tables[0].vfc_vfsops!=tables[1].vfc_vfsops&&strcmp(tables[0].vfc_name,tables[1].vfc_name));
- puts("PASS: disabled path, distinct legacy/native VFS owner, missing driver failure, real registration required");
+ puts("PASS: disabled path, distinct legacy/native VFS owner, missing driver failure, deferred real registration required");
 }
 '''
     c=a.output/'NativeApfs.c';c.write_text(code);exe=a.output/'NativeApfs'

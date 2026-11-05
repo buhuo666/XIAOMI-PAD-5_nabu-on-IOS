@@ -54,3 +54,21 @@ PID1 在复制初始种子前挂载该卷。已有偏好文件保留，仅补充
 主机检查覆盖关闭路径、加载失败、两套操作表区分；下一步原生构建及QEMU执行原版加载，
 然后接入IOStorageFamily设备并验证实际创建/写入/fsync/重启读回。
 不将取消MNT_RDONLY或“挂载返回成功”当成完整写入实现。
+
+
+## QEMU 原版加载核对（2026-11-05）
+
+`__PRELINK_INFO` 已放到所有静态组件末端，修复8796滑动地址范围未覆盖kext的问题。
+原版corecrypto执行全部FIPS自检成功；并没有发现minicrypto抢先注册的证据。
+AppleImage4的 `failed to get crypto algorithm: 2` 来自读取 `/chosen/crypto-hash-method`
+失败，2为缺失属性错误码。补齐QEMU启动树的hash方法、mix-n-match策略和manifest节点后，
+原版AppleImage4及APFS初始化均可执行，无内核panic。
+
+APFS在异步线程中注册，kext启动返回0时立刻扫描会误报registered=0。
+实际PID1查询得到原版`apfs` type24与内建`apfsro` type63并存；新增vfs_fsadd完成回调更新诊断。
+QEMU独立3MiB Data的md1节点已被原版APFS接受，并读取NXSB、checkpoint和spaceman。
+正确mount参数与旧驱动的路径字符串接口不同。当前普通挂载停在`invalid fsindex: -1`，
+尚无文件创建/写入成功证据。继续核对卷索引和块设备接口，不直接进入实机测试。
+
+证据：`log/host/apfs-native-v28/qemu-f-serial.log`、`qemu-h-serial.log`。
+另纠正接口审计范围：旧190-slot/176-binding报告来自iOS17参考，不能作为20F66/8796已验证依据。

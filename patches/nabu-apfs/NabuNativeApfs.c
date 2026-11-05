@@ -41,6 +41,18 @@ void nabu_apfs_prepare_vfs(void)
     panic("NABU APFS: bootstrap reader missing");
 }
 
+// APFS registers from its deferred initialization thread, after kext start has
+// returned. Called by vfs_fsadd only after the new VFS has finished vfs_init.
+void nabu_apfs_vfs_registered(struct vfstable *entry)
+{
+    if (nabu_apfs_legacy_renamed && !nabu_apfs_registered && entry &&
+        !strcmp(entry->vfc_name,"apfs") && entry->vfc_vfsops!=&apfs_vfsops) {
+        nabu_apfs_registered=1;
+        printf("NABU APFS: original VFS registered type=%d flags=%#x\n",
+            entry->vfc_typenum,entry->vfc_vfsflags);
+    }
+}
+
 void nabu_apfs_load(void)
 {
     if (!nabu_apfs_legacy_renamed) return;
@@ -48,13 +60,9 @@ void nabu_apfs_load(void)
     nabu_apfs_load_status=OSKextLoadKextWithIdentifier("com.apple.filesystems.apfs");
     mount_list_lock();
     for (struct vfstable *entry=vfsconf;entry;entry=entry->vfc_next) {
-        if (!strcmp(entry->vfc_name,"apfs") && entry->vfc_vfsops!=&apfs_vfsops) {
-            nabu_apfs_registered=1;
-            printf("NABU APFS: original VFS registered type=%d flags=%#x\n",
-                entry->vfc_typenum,entry->vfc_vfsflags);
-            break;
-        }
+        nabu_apfs_vfs_registered(entry);
     }
     mount_list_unlock();
-    printf("NABU APFS: load-status=%#x registered=%d\n",nabu_apfs_load_status,nabu_apfs_registered);
+    printf("NABU APFS: load-status=%#x registered=%d (registration may be deferred)\n",
+        nabu_apfs_load_status,nabu_apfs_registered);
 }
