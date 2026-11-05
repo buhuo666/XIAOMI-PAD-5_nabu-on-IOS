@@ -61,7 +61,7 @@ def validate_userland_serial(value):
 
 
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
-              userland_model=None, userland_serial=None, touch_firmware=None):
+              userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -98,6 +98,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.
         chosen.props['mac-address-wifi0'] = validate_wifi_mac(wifi_mac)
+    if image4_nonce_key is not None:
+        if len(image4_nonce_key) != 16:
+            raise ValueError('Image4 software nonce key must be 16 bytes')
+        chosen.props['nabu-image4-nonce-key'] = image4_nonce_key
     tree = Node('device-tree', {
         # hw.product feeds MobileGestalt's device-class selection. Keep board
         # routing and the displayed hardware name separate from this opt-in

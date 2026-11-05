@@ -95,7 +95,10 @@ def main():
                     help='Explicit local compatibility serial, independent of the Android device identity')
     ap.add_argument('--log-preparation', type=Path, help='Verified fresh runtime-log slot preparation receipt')
     ap.add_argument('--touch-firmware-dir', type=Path, help='Local NT36523 firmware, partitions and CRC bank')
+    ap.add_argument('--image4-nonce-key-file', type=Path,
+                    help='Persistent 16-byte software key for Image4 nonce selector 2212')
     a = ap.parse_args()
+    image4_nonce_key = a.image4_nonce_key_file.read_bytes() if a.image4_nonce_key_file else None
     kernel_sha = sha(a.kernel)
     touch_firmware = None
     if a.touch_firmware_dir:
@@ -159,11 +162,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -181,6 +184,7 @@ def main():
     receipt['setup_compat_enabled'] = setup_compat_enabled
     receipt['input_bridge_enabled'] = bootstrap_mode and bool(boot_report.get('input_bridge'))
     receipt['touch_firmware_in_adt'] = touch_firmware is not None
+    receipt['image4_software_nonce_key_supplied'] = image4_nonce_key is not None
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

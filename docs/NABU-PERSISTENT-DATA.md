@@ -103,3 +103,7 @@ Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功�
 沿用现有 49 GiB APFS Data 和 slot14 日志区，部署只更新现有 ESP 文件。实机需要确认 AES 错误参数、启动是否前进，以及若能继续到 PID1 挂载阶段，能否读回上一轮计数 1。主机记录位于 `log/host/apfs-native-v30/`。
 
 第二十九轮已于 `2026-11-05T15:10:25.138671+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `61bb3168e1a19795708c83f3b12d0a79842aea21`。本轮跳过 QEMU，待用户观察及恢复 Android 后回收日志。确切启动包、源码、对象文件、部署记录保存在 `log/device/nabu-boot-20261105-29/`；接续记录为 `log/host/apfs-native-v30/continuation.json`。启动命令成功不代表进入桌面或持久化验收通过。
+
+## 第二十九轮回收与第三十轮修正
+
+用户确认第二十九轮停在 HALTED，已手动返回 Android。完整 slot14 只有 BEGIN，没有运行正文；已完整备份后清空。Actions 41986602232 的原版反编译确认 Image4 需要 selector 2212 的 AES-128，而现有驱动只接受普通软件密钥。第三十轮接入固定的设备软件 nonce key、延后 defaults 发布并保存失败诊断，仍直接真机测试。接口依据、密钥保存位置及实际限制见 [Image4 AES 初始化](NABU-IMAGE4-AES.md)。
