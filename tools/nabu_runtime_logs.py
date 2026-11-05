@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Prepare a new append-only log slot, or recover its verified prefix in Android.
 
-Preparation writes exactly one manifest block in a freshly verified all-zero
-slot. Collection and inspection are read-only. Existing nonzero slots are never
-cleared, retried as fresh, or recycled by this tool.
+Preparation writes one manifest block in a verified all-zero slot. Collection
+retains the full snapshot and recovered prefix, then clears its exact extent
+after the device bytes match the saved backup. Offline inspection is read-only.
 """
 import argparse
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -341,6 +342,41 @@ def recover(raw_path, output, slot=None, receipt=None, span=None):
     return result
 
 
+def clear_collected(device, collection, output):
+    """Recycle only an exact, fully backed-up extent (user policy: 2026-11-05)."""
+    captured=json.loads((collection/'collection.json').read_text())
+    recovered=json.loads((collection/'report.json').read_text())
+    slot,span=captured['slot'],captured.get('span',1)
+    offset,size=slot_offset(slot),extent_bytes(slot,span)
+    raw=collection/f'slot-{slot:02d}.bin'
+    require(captured['status']=='snapshot-collected' and captured['bytes_read']==size and
+        captured['slot_offset']==offset and captured['slot_bytes']==size and
+        captured['device_serial_sha256']==device.serial_hash and captured['partition']==device.partition,
+        'collection is not a complete backup of this device extent')
+    require(raw.is_file() and not raw.is_symlink() and raw.stat().st_size==size,'missing complete raw backup')
+    digest=file_sha256(raw)
+    require(digest==recovered['raw_snapshot_sha256'],'raw backup changed since collection')
+    with raw.open('rb') as stream:
+        manifest=parse_manifest(stream.read(BLOCK_BYTES),expected_slot=slot,expected_span=span)
+    require(manifest==recovered['manifest'],'saved manifest differs from recovery report')
+    require(device.range_sha256(offset,size)==digest,'device log changed after collection; not cleared')
+    report={'timestamp':now(),'status':'backup-verified','slot':slot,'span':span,'offset':offset,'bytes':size,
+        'backup':str(raw.resolve()),'backup_sha256':digest,'device_serial_sha256':device.serial_hash,
+        'device_writes':False}
+    path=output/'clearing.json';write_json(path,report)
+    # Recompare in the same guarded operation immediately before zeroing.
+    device.shell(device.guard+
+        f'nabu_saved_hash=$(dd if={TARGET} bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} count={size//BLOCK_BYTES} status=none | sha256sum); '
+        f'test "${{nabu_saved_hash%% *}}" = {digest}; '
+        f'dd if=/dev/zero of={TARGET} bs={BLOCK_BYTES} seek={offset//BLOCK_BYTES} count={size//BLOCK_BYTES} conv=notrunc,fsync status=none; sync',180)
+    report.update(status='cleared-readback-pending',device_writes=True);write_json(path,report)
+    zero=zero_suffix_sha256(b'',size)
+    require(device.range_sha256(offset,size)==zero,'cleared extent is not all zero')
+    report.update(status='cleared-and-readback-verified',zero_sha256=zero,gpt_after_verified=device.verify_gpt())
+    write_json(path,report)
+    return report
+
+
 def collect(args, output, receipt):
     slot = args.slot if args.slot is not None else receipt['slot'] if receipt is not None else None
     require(slot is not None, 'collect requires --slot or --receipt')
@@ -372,13 +408,19 @@ def collect(args, output, receipt):
                 chunk = device.read_range(offset + relative, min(READ_CHUNK, size - relative))
                 destination.write(chunk)
                 capture['bytes_read'] += len(chunk)
+            destination.flush()
+            os.fsync(destination.fileno())
         capture.update(status='snapshot-collected', gpt_after_verified=device.verify_gpt())
         write_json(capture_path, capture)
         report = recover(raw, output, slot, receipt, span)
         report.update(device_serial_sha256=device.serial_hash, collection_receipt=str(capture_path))
         write_json(output / 'report.json', report)
+        cleared=clear_collected(device,output,output)
+        capture.update(device_writes=True,extent_cleared=True,clearing_receipt=str(output/'clearing.json'))
+        write_json(capture_path,capture)
         return {'state': report['state'], 'complete': report['complete'], 'slot': slot,
                 'data_bytes': report['data_bytes'], 'reason': report['reason'],
+                'clearing_status':cleared['status'],
                 'report': str(output / 'report.json'), 'runtime_log': str(output / 'runtime.log')}
     except Exception as error:
         capture.update(status='failed', error=str(error))
@@ -392,6 +434,7 @@ def main():
     action.add_argument('--prepare', action='store_true')
     action.add_argument('--collect', action='store_true')
     action.add_argument('--inspect', type=Path, metavar='RAW_SLOT')
+    action.add_argument('--clear-collected',type=Path,metavar='COLLECTION_DIR',help='Clear a previously collected extent after exact backup/device verification')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--slot', type=int)
     parser.add_argument('--span', type=int, help='Explicit count of adjacent 64 MiB allocation units')
@@ -417,6 +460,8 @@ def main():
         result = prepare(args, output)
     elif args.collect:
         result = collect(args, output, receipt)
+    elif args.clear_collected:
+        result = clear_collected(Device(args),args.clear_collected,output)
     else:
         require(args.inspect.is_file(), 'raw snapshot is not a file')
         result = recover(args.inspect, output, args.slot, receipt, args.span)

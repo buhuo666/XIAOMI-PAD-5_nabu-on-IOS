@@ -103,3 +103,7 @@ MiCode nabu-r-oss 的 NT36523 使用上升沿 IRQ；SM8150 GPIO39 位于 NORTH t
 
 实际 packet/contact 与 GPIO 锁存辅助代码通过 ASan/UBSan 检查。
 参考源码、哈希和主机结果在 `log/host/stability-v27/`；实际 GPIO 和触摸效果待新内核实机确认。
+
+用户于 2026-11-05 要求每次读取日志后清空该单元。回收工具现在在完整原始备份落盘、
+解析并确认设备范围与备份 SHA-256 相同后，清零该范围并复核零摘要与 GPT。
+第二十六轮 slot14 的 64 MiB 已依此清空，本地主机快照和有效日志保持完整。
