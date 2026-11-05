@@ -2,7 +2,9 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
-当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。第三十一轮用户已确认进入桌面并改为中文；实机日志读回计数 1 并写为 2，F_FULLFSYNC 成功，真实 APFS 跨启动计数已通过。“设置 → 通用 → 关于本机”会卡住，Preferences 两次 watchdog 超时，根因待其线程栈定位。第三十二轮沿用同一内核／bootstrap／Data，已于 `2026-11-05T16:02:19.134818+08:00` 成功执行临时启动，等待确认中文保留及回收 Preferences 栈。详见 [设置关于本机](SETTINGS-ABOUT-HANG.md)。
+当前任务：按用户最新要求，优先修复电池、电量计、PMIC 和 RTC 等基础服务。第三十二轮用户确认中文仍保留，实机日志记录 APFS 启动计数 `2→3` 且 F_FULLFSYNC 成功，持久化已完成本轮验收，继续限定在原有 64 GiB。第三十三轮电源候选已编译、链接并通过主机读数测试，待实机验证；见 [电源与时钟](NABU-POWER.md)。
+
+“关于本机”尚未修复。第三十二轮栈确认其 MAC 地址查询等待 SystemConfiguration 的 IOKit quiet 通知；第二十六轮 registry busy=0，持久化版本为 1，具体 busy 服务仍待定位。按用户调整后的优先级保存证据，见 [设置关于本机](SETTINGS-ABOUT-HANG.md)。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 

@@ -97,7 +97,12 @@ def main():
     ap.add_argument('--touch-firmware-dir', type=Path, help='Local NT36523 firmware, partitions and CRC bank')
     ap.add_argument('--image4-nonce-key-file', type=Path,
                     help='Persistent 16-byte software key for Image4 nonce selector 2212')
+    ap.add_argument('--rtc-calibration', type=Path, help='Android time / PM8150 RTC capture from capture_nabu_power.py')
     a = ap.parse_args()
+    rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
+    rtc_offset = rtc_calibration['rtc_offset_seconds'] if rtc_calibration else None
+    if rtc_calibration:
+        assert rtc_calibration['device'] == 'nabu' and rtc_offset > 0
     image4_nonce_key = a.image4_nonce_key_file.read_bytes() if a.image4_nonce_key_file else None
     kernel_sha = sha(a.kernel)
     touch_firmware = None
@@ -162,11 +167,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -185,6 +190,7 @@ def main():
     receipt['input_bridge_enabled'] = bootstrap_mode and bool(boot_report.get('input_bridge'))
     receipt['touch_firmware_in_adt'] = touch_firmware is not None
     receipt['image4_software_nonce_key_supplied'] = image4_nonce_key is not None
+    receipt['rtc_calibration'] = rtc_calibration
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

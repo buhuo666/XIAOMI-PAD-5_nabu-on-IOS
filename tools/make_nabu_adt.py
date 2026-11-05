@@ -61,7 +61,8 @@ def validate_userland_serial(value):
 
 
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
-              userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None):
+              userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None,
+              rtc_offset=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -94,6 +95,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         'nvram-proxy-data': nvram(),
     }, [Node('manifest-properties', {'BNCH': hashlib.sha384(b'nabu-20F66').digest()}),
         Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
+    if rtc_offset is not None:
+        chosen.props['nabu-rtc-offset'] = U64(rtc_offset)
     if wifi_mac is not None:
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.

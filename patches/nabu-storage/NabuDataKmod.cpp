@@ -4,10 +4,17 @@
 
 extern "C" {
 int nabu_aes_start(void);
+#ifdef NABU_POWER_SERVICE
+void nabu_power_start(void);
+#endif
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
     if (nabu_aes_start()) return KERN_FAILURE;
-    return nabu_data_block_start() ? KERN_FAILURE : KERN_SUCCESS;
+    if (nabu_data_block_start()) return KERN_FAILURE;
+#ifdef NABU_POWER_SERVICE
+    nabu_power_start();
+#endif
+    return KERN_SUCCESS;
 }
 
 static kern_return_t nabu_data_module_stop(kmod_info_t *, void *)

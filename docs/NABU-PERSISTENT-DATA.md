@@ -4,6 +4,10 @@
 
 2026-11-05：用户选择优先处理启动、触摸稳定和设置保存。
 
+第三十二轮验收：用户确认第三十一轮设置的中文保留；日志记录
+`boot record previous=2 current=3 fullfsync=ok`。真实 UFS APFS 文件计数和
+语言设置跨启动均已验证。当前继续保留该 Data，优先修复底层电源与时钟服务。
+
 第二十七轮结果：启动约 25 秒时创建 `/private/var/Keychains` 返回 EROFS，
 初始化主动停止，SpringBoard 没有启动。这不是数据库初始化耗时。
 根因是当前编入内核的 HakiOS APFS 驱动强制 `MNT_RDONLY`，不是 Apple 的完整 APFS 驱动。

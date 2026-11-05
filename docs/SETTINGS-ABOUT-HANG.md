@@ -1,5 +1,23 @@
 # 设置“关于本机”卡住
 
+## 第三十二轮结论
+
+用户确认中文保留，但“关于本机”仍卡住。日志已完整回收，slot14 已于
+16:06 备份后清空。持久化计数 `2→3`，F_FULLFSYNC 成功。
+
+Preferences PID157 的主线程在 99–161 秒的 32 次样本中停在：
+`PSGAboutDataSource::_macAddress → SCNetworkInterfaceCopyAllWithPreferences → dispatch_once_wait`。
+另一个线程在 95–161 秒的 34 次样本中停在
+`_wait_for_IOKit_to_quiesce → SCDynamicStoreNotifyWait → mach_msg`，调用者为设置的以太网检测。
+这是网络接口枚举等待初始化完成，当前栈不支持存储容量查询的猜测。
+
+MiniIONetworkStack 被 configd 打开时，第二十六轮报告 registry busy=0，
+第三十一／三十二轮均为 1。具体 busy 持有者尚未确认，也未伪造 quiet 通知。
+符号化结果保存在 `log/host/settings-about-v33/run32-stacks.json`。
+按用户新优先级，先处理电池、PMIC、RTC，保留该问题的定位记录。
+
+以下为第三十一轮及第三十二轮启动前的历史记录。
+
 2026-11-05，第三十一轮用户确认可进入桌面，已将语言改为中文；
 点击“设置 → 通用 → 关于本机”后设置无响应，随后手动恢复 Android。
 
