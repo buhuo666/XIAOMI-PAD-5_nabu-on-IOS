@@ -41,9 +41,14 @@ def main():
               'rtc_name': shell('cat /sys/class/rtc/rtc0/name'), 'rtc_offset_seconds': offset,
               'calibration_resolution_seconds': 1, 'samples': samples, 'power_supplies': supplies,
               'bms_driver': shell('readlink -f /sys/class/power_supply/bms/device/driver')}
+    report['soc_identity'] = {'soc_id': int(shell('cat /sys/devices/soc0/soc_id')),
+                              'serial_number': int(shell('cat /sys/devices/soc0/serial_number')),
+                              'source': 'Android /sys/devices/soc0'}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
-    print(json.dumps(report, indent=2))
+    display = dict(report)
+    display['soc_identity'] = {'soc_id': report['soc_identity']['soc_id'], 'serial_number': 'saved locally'}
+    print(json.dumps(display, indent=2))
 
 
 if __name__ == '__main__':

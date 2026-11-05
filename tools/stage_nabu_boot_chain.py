@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 import tomllib
-from make_nabu_adt import make_tree, parse, validate_wifi_mac, validate_userland_serial, CHECKPOINTS, DEFAULT_CHECKPOINT
+from make_nabu_adt import make_tree, parse, validate_wifi_mac, validate_userland_serial, platform_uuid_from_soc, CHECKPOINTS, DEFAULT_CHECKPOINT
 from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 
@@ -98,7 +98,10 @@ def main():
     ap.add_argument('--image4-nonce-key-file', type=Path,
                     help='Persistent 16-byte software key for Image4 nonce selector 2212')
     ap.add_argument('--rtc-calibration', type=Path, help='Android time / PM8150 RTC capture from capture_nabu_power.py')
+    ap.add_argument('--platform-identity', type=Path, help='Local capture containing the real Qualcomm SoC identity')
     a = ap.parse_args()
+    platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
+    platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
     rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
     rtc_offset = rtc_calibration['rtc_offset_seconds'] if rtc_calibration else None
     if rtc_calibration:
@@ -167,11 +170,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -191,6 +194,7 @@ def main():
     receipt['touch_firmware_in_adt'] = touch_firmware is not None
     receipt['image4_software_nonce_key_supplied'] = image4_nonce_key is not None
     receipt['rtc_calibration'] = rtc_calibration
+    receipt['platform_uuid_from_soc'] = platform_identity is not None
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

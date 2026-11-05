@@ -5,6 +5,33 @@
 US/Pacific 初始时区；第三十四轮用户已确认时间正确，USB 图标仍约 5 秒更新。
 第三十五轮继续修复充电阶段检测，并记录通知链路的实际时间。
 
+## 第三十五轮定位与第三十六轮平台 UUID 修复
+
+第三十五轮用户仍报告两种图标延迟均未改善，已手动回 Android。
+日志确认充电阶段在插入后约 0.5 秒就被读取并发布；断开时 IOKit 回调也及时进入。
+诊断进程在 74.314 秒进入断开回调，80.330 秒才继续处理 IOPS 回调；
+插入时对应 86.184→92.201 秒，均约 6 秒。旧诊断在回调内同步调用
+IOPSCopyPowerSourcesInfo，会阻塞自己的事件循环，因此不能直接把后一个时间
+当作 IOPS 通知的发送时刻。内核 PMRD 也在切换电源后停顿约 6 秒才更新偏好。
+
+IOKitUser 2022.120.2 的 `copyActivePreferences` 读取 AC/Battery/UPS 三组偏好。
+每组 `copyPreferencesForSrc` 调用 `getHostPrefsPath`；平台 UUID 缺失时，
+`gethostuuid` 等 1 秒并失败，随后 `IOPMCopyFromPrefs(NULL, ...)` 再等一次。
+三组共六次 1 秒等待，与日志的固定停顿吻合。
+当前通用 ARM 平台只根据 Apple unique-chip-id/chip-id 生成 UUID，而本机 ADT
+没有这些字段，也没有发布 IOBSDGetPlatformUUID 所等待的 IOPlatformUUID 资源。
+
+第三十六轮从 Android 的真实 Qualcomm SoC id/serial 派生稳定的端口 UUID，
+以 `/chosen/nabu-platform-uuid` 传入，在平台 provider 上设置标准 IOPlatformUUID
+属性并发布同名 IOKit 资源，接通原版 gethostuuid。SoC 为 SM8150/id 339，序列值
+仅保存在本地采集记录。该 UUID 用于本机偏好命名空间，不冒充 Apple ECID；
+没有填写 Apple unique-chip-id/chip-id 字段，也不更改现有 Image4 nonce key。
+
+诊断程序改为分别记录 IOKit 与 IOPS 回调，移除回调中的同步快照请求，
+并直接记录 gethostuuid 的返回码与耗时。powerd 栈采样改为每 500 ms，
+用于候选未解决时捕获实际等待调用。稳定 UUID/不同设备区分/ADT 回读测试通过，
+内核与诊断程序已编译链接。是否消除等待仍需第三十六轮实机确认。
+
 ## 第三十四轮结果与第三十五轮候选
 
 第三十四轮确认上海时区修正有效，APFS 计数 `4→5` 且 F_FULLFSYNC 成功。

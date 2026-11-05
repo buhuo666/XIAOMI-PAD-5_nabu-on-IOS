@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import secrets
 import struct
+import uuid
 import zlib
 
 U32 = lambda x: struct.pack('<I', x)
@@ -13,6 +14,14 @@ U64 = lambda x: struct.pack('<Q', x)
 STR = lambda x: x.encode('ascii') + b'\0'
 CHECKPOINTS = (0, *range(1, 6), *range(10, 22), *range(30, 36), *range(40, 45))
 DEFAULT_CHECKPOINT = 12
+
+
+def platform_uuid_from_soc(identity):
+    """Stable port UUID derived from this board's real Qualcomm identity."""
+    soc_id, serial = identity['soc_id'], identity['serial_number']
+    if not isinstance(soc_id, int) or not isinstance(serial, int) or soc_id <= 0 or serial <= 0:
+        raise ValueError('A nonzero SoC id and serial from Android are required')
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f'nabu-platform://soc/{soc_id}/serial/{serial}'))
 
 
 class Node:
@@ -62,7 +71,7 @@ def validate_userland_serial(value):
 
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
               userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None,
-              rtc_offset=None):
+              rtc_offset=None, platform_uuid=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -97,6 +106,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         Node('memory-map', {'RAMDisk': bytes(16)} if bootstrap else None)])
     if rtc_offset is not None:
         chosen.props['nabu-rtc-offset'] = U64(rtc_offset)
+    if platform_uuid is not None:
+        chosen.props['nabu-platform-uuid'] = STR(str(uuid.UUID(platform_uuid)))
     if wifi_mac is not None:
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.

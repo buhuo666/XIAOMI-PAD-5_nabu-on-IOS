@@ -10,6 +10,7 @@
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSNumber.h>
 #include <libkern/c++/OSSymbol.h>
+#include <libkern/c++/OSString.h>
 #include "NabuPowerReadings.h"
 
 extern "C" {
@@ -177,6 +178,17 @@ extern "C" void nabu_power_start(void)
     }
 
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
+    OSData *identity = chosen ? OSDynamicCast(OSData, chosen->getProperty("nabu-platform-uuid")) : nullptr;
+    if (identity && identity->getLength() == 37) {
+        // The generic ARM platform only derives UUIDs from Apple chip fields.
+        // Use this port's UUID, derived from the actual Qualcomm SoC identity,
+        // for the standard property and resource consumed by gethostuuid().
+        OSString *uuid = OSString::withCString((const char *)identity->getBytesNoCopy());
+        IOService::getPlatform()->getProvider()->setProperty("IOPlatformUUID", uuid);
+        IOService::publishResource("IOPlatformUUID", uuid);
+        uuid->release();
+        IOLog("NABU PLATFORM: host UUID published from Qualcomm SoC identity\n");
+    }
     OSData *offset = chosen ? OSDynamicCast(OSData, chosen->getProperty("nabu-rtc-offset")) : nullptr;
     uint32_t raw;
     if (offset && offset->getLength() == sizeof(rtc_offset) && nabu_read_rtc(read_registers, &raw)) {

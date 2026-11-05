@@ -10,15 +10,14 @@ from check_darwinboot_8796 import host_command, host_path
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARIES = {
-    '/usr/lib/libSystem.B.dylib': ['printf', 'fflush', 'mach_absolute_time', 'mach_timebase_info', 'dyld_stub_binder'],
+    '/usr/lib/libSystem.B.dylib': ['printf', 'fflush', 'mach_absolute_time', 'mach_timebase_info', 'gethostuuid', 'dyld_stub_binder'],
     '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation': [
-        'CFStringCreateWithCString', 'CFStringGetCString', 'CFBooleanGetValue', 'CFRelease',
+        'CFStringCreateWithCString', 'CFBooleanGetValue', 'CFRelease',
         'CFRunLoopGetCurrent', 'CFRunLoopAddSource', 'CFRunLoopRun', 'kCFRunLoopDefaultMode'],
     '/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit': [
         'IOServiceMatching', 'IOServiceGetMatchingService', 'IORegistryEntryCreateCFProperty',
         'IONotificationPortCreate', 'IONotificationPortGetRunLoopSource', 'IOServiceAddInterestNotification',
-        'IOPSNotificationCreateRunLoopSource', 'IOPSCopyPowerSourcesInfo',
-        'IOPSGetProvidingPowerSourceType', 'IOPSGetPercentRemaining'],
+        'IOPSNotificationCreateRunLoopSource', 'IOPSGetPercentRemaining'],
 }
 
 
