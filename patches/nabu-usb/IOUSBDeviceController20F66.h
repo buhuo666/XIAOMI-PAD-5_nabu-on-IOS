@@ -60,7 +60,7 @@ public:
     virtual void abiSlot176(); // 176: 0x580; inherit only, signature not recovered
     virtual IOReturn goOnBus(bool activate) = 0; // 177: 0x588
     virtual void abiSlot178(); // 178: 0x590; inherit only, signature not recovered
-    virtual bool abiSlot179CableConnected() = 0; // 179: 0x598
+    virtual bool abiSlot179AccessoryResistorSwap() = 0; // 179: 0x598
     virtual void handleStallEndpoint(uint32_t endpoint, bool stall) = 0; // 180: 0x5a0
     virtual void handleAbortEndpoint(uint32_t endpoint) = 0; // 181: 0x5a8
     virtual IOReturn handleSetAddressPreStatusPhase(uint16_t address) = 0; // 182: 0x5b0

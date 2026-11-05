@@ -15,6 +15,7 @@ struct NativeEndpoint {
 };
 NativeEndpoint g_native_eps[32];
 bool g_native_active, g_native_connected;
+bool g_native_needs_restart;
 bool g_native_control_stalling;
 int g_native_vbus = -1;
 void *g_native_control_cookie;
@@ -230,6 +231,33 @@ extern "C" bool nabu_dwc3_set_active(bool active)
 {
     if (active == g_native_active) return true;
     if (active) {
+        if (g_native_needs_restart) {
+            // DWC_usb31 needs CSftRst after a device-initiated disconnect.
+            // Run 49 restarted without it and EP0 returned NO_RESOURCE.
+            // Linux dwc3_gadget_soft_connect resets and rebuilds the event
+            // ring and endpoint resources before receiving a new SETUP.
+            const uint32_t dctl = mrd(g_regs, kDwc3Dctl) & ~kDctlRunStop;
+            mwr(g_regs, kDwc3Dctl, dctl | kDctlCsftrst);
+            if (!wait_mask(g_regs, kDwc3Dctl, kDctlCsftrst, 0, 2000000)) {
+                IOLog("NABU USB NATIVE: reconnect device reset timed out\n");
+                g_faulted = true;
+                return false;
+            }
+            for (unsigned dep = 0; dep < g_native_endpoint_count; ++dep) {
+                g_resources[dep] = 0;
+                g_native_eps[dep].enabled = false;
+                g_native_eps[dep].configured = false;
+                g_native_eps[dep].stalled = false;
+            }
+            uint32_t dcfg = mrd(g_regs, kDwc3Dcfg);
+            dcfg &= ~(kDcfgSpeedMask | kDcfgDevaddrMask);
+            mwr(g_regs, kDwc3Dcfg, dcfg | kDcfgHighSpeed);
+            event_program();
+            ep0_program();
+            if (g_faulted) return false;
+            g_native_needs_restart = false;
+            IOLog("NABU USB NATIVE: reconnect device reset and endpoint resources ready\n");
+        }
         ep0_arm_setup();
         uint32_t value = mrd(g_regs, kDwc3Dctl) | kDctlRunStop;
         mwr(g_regs, kDwc3Dctl, (value & ~kDctlHirdThresMask) | kDctlHirdThres);
@@ -237,6 +265,8 @@ extern "C" bool nabu_dwc3_set_active(bool active)
         for (unsigned dep = 0; dep < g_native_endpoint_count; ++dep)
             nabu_dwc3_abort_endpoint((dep >> 1) | ((dep & 1) << 7));
         mwr(g_regs, kDwc3Dctl, mrd(g_regs, kDwc3Dctl) & ~kDctlRunStop);
+        g_native_connected = false;
+        g_native_needs_restart = true;
     }
     g_native_active = active;
     return !g_faulted;

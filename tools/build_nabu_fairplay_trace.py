@@ -14,8 +14,9 @@ LIBRARIES = {
         '_dyld_get_image_header', 'backtrace', 'dladdr', 'pthread_create', 'pthread_detach',
         'nanosleep', 'mach_absolute_time', 'mach_timebase_info', 'mach_thread_self',
         'mach_task_self', 'thread_get_state', 'mach_vm_read_overwrite', 'mach_port_deallocate',
-        'exit', '_exit', 'gethostuuid', 'dyld_stub_binder'],
-    '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation': ['CFStringGetCString'],
+        'exit', '_exit', 'gethostuuid', 'bootstrap_check_in', 'dyld_stub_binder'],
+    '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation': [
+        'CFStringGetCString', 'CFMachPortCreateWithPort'],
     '/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit': ['IOServiceMatching',
         'IOServiceGetMatchingServices', 'IOServiceOpen', 'IOConnectCallStructMethod'],
     '/usr/lib/libMobileGestalt.dylib': ['MGCopyAnswer'],
@@ -59,12 +60,12 @@ def main():
                 section_size = struct.unpack_from('<Q', data, offset + 40)[0]
                 sections.append((name, section_size))
         at += size
-    assert ('__interpose', 8 * 16) in sections
+    assert ('__interpose', 10 * 16) in sections
     assert any(name in ('__mod_init_func', '__init_offsets') for name, _ in sections)
     assert 0x1d in commands
     report = {'source': str(source), 'binary': str(binary), 'install_name': install_name,
         'bytes': len(data), 'architecture': 'arm64', 'target_os': 'iOS 16.5', 'filetype': 'MH_DYLIB',
-        'interpose_entries': 8, 'constructor_present': True, 'adhoc_code_signature': True,
+        'interpose_entries': 10, 'constructor_present': True, 'adhoc_code_signature': True,
         'scope': 'Original calls and arguments, results and errno preserved; stderr metadata only',
         'process': 'fairplayd.A2 only', 'imports': LIBRARIES, 'runtime_verified': False,
         'main_image_selection': 'Enumerate images and match exact /usr/sbin/fairplayd.A2 path',

@@ -441,8 +441,6 @@ ep0_program(void)
 	g_ep0_zlp = false;
 	g_ep0_trbs = 0;
 	g_ep0_armed = 0;
-	g_setups = 0;
-	g_events = 0;
 	g_data_eps_programmed = false;
 	puts_cdc("NABU USB CDCLOG ep0=programmed\n");
 }

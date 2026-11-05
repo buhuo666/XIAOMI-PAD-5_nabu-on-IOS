@@ -9,18 +9,37 @@ static uint32_t core[0x100000/4], ep0[0x4000/4], bulk[0x4000/4];
 static unsigned log_count;
 static unsigned starts[32];
 static bool ending[32];
+static bool reconnectNeedsReset, resourcesLost, resourceAllocated[32];
+static unsigned deviceSoftResets;
 static const char capture[] = "immutable boot log\n";
 extern "C" uint32_t nabu_usb_test_mmio_read(volatile uint32_t *base, uint32_t off) { assert(off % 4 == 0); return base[off/4]; }
 extern "C" void nabu_usb_test_mmio_write(volatile uint32_t *base, uint32_t off, uint32_t value)
 {
     assert(off % 4 == 0);
+    if (base == core && off == kDwc3Dctl) {
+        if ((base[off/4] & kDctlRunStop) && !(value & kDctlRunStop))
+            reconnectNeedsReset = true;
+        if (value & kDctlCsftrst) {
+            ++deviceSoftResets;
+            reconnectNeedsReset = false;
+            resourcesLost = true;
+            memset(resourceAllocated, 0, sizeof(resourceAllocated));
+            value &= ~kDctlCsftrst;
+        }
+    }
+    if (base == core && off == kDwc3Gevntcount) {
+        base[off/4] -= value & kGevntcountMask;
+        return;
+    }
     if (base == core && off >= 0xc80c && off <= 0xc9fc && (off-0xc80c)%16 == 0) {
         unsigned dep=(off-0xc80c)/16;
         value &= ~kDepcmdCmdact;
         if ((value & 15) == kDepcmdEndTransfer) ending[dep]=true;
+        if ((value & 15) == kDepcmdSetTransferResource) resourceAllocated[dep]=true;
         if ((value & 15) == kDepcmdStartTransfer) {
             starts[dep]++;
-            if (ending[dep]) value |= 1u << 12;
+            if (ending[dep] || reconnectNeedsReset || (resourcesLost && !resourceAllocated[dep]))
+                value |= 1u << 12;
             else value |= 1u << 16;
         }
     }

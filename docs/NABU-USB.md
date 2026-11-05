@@ -3,6 +3,33 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 原生 Apple 连接最新进展：第四十九轮
+
+第四十七轮定位到完成回调计数错误：原版 DeviceFamily 要求已传输字节数，适配层
+传入了剩余字节数。第四十八轮修正后，Windows 已完成设备描述符、地址分配及第二次
+设备描述符请求，随后在配置描述符请求处被原版协议栈 STALL。
+
+第四十九轮用户确认桌面正常。日志明确记录两个配置已创建，二者 extended/locked
+均为 0，但公开配置数组为空。原版 `startUSBStack` 已调用。后续反汇编确认适配层把
+vtable slot179 误命名为线缆连接状态；实际它选择 `AccessoryResistorSwap` 配置。
+返回 true 使原版线缆连接回调清空普通配置。第五十轮将其更正为特殊附件状态，并对
+nabu 的普通 USB 连接返回 false。Windows 报“配置描述符请求失败”，AMDS 未发现 Apple 设备。
+原生枚举、配对和同步均未通过。
+
+本轮连续四次配置请求均到达，先前 STALL 重复挂 SETUP 导致立即停止的问题已消失。
+但约 62 秒 PMIC 报 USB 断开、约 65 秒恢复后，EP0 START_TRANSFER 再次返回
+NO_RESOURCE。Linux v6.17 `dwc3_gadget_soft_connect` 明确要求 DWC_usb31 重新连接前
+执行 DCTL.CSftRst，并重新配置事件环和端点资源。第五十轮候选补上该流程；主机
+ASan/UBSan 检查覆盖软复位、资源重建、旧事件清除和保留累计计数，实机待验证。
+
+第四十九轮完整 64 MiB 日志槽已备份、清空并回读确认；恢复日志 1,246,010 字节，
+APFS 持久化计数 19→20、fullfsync 成功，GPT/引导分区检查通过。设备已回 Android。
+证据在 ignored `log/host/native-usb-v49/` 和 `log/device/nabu-boot-20261105-49/`。
+
+原版 fairplayd 的退出仍在独立排查。第四十八轮退出栈对应 dyld 调用 main 后返回，
+更深层原因尚未确定；下一轮透明记录其 Mach 服务注册结果。离线模拟输入只能帮助
+选择观测位置，不能视作真机服务注册失败、FairPlay 通过或配对通过的证据。
+
 ## 当前结果：USB日志通道已验证
 
 第四十三轮已通过Windows内置usbser驱动识别为COM5，在iPadOS运行期间直接接收内核

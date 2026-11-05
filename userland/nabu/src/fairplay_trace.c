@@ -8,6 +8,10 @@
 
 typedef const void *CFStringRef;
 typedef const void *CFTypeRef;
+typedef const void *CFAllocatorRef;
+typedef struct __CFMachPort *CFMachPortRef;
+typedef struct CFMachPortContext CFMachPortContext;
+typedef void (*CFMachPortCallBack)(CFMachPortRef, void *, long, void *);
 typedef void *CFMutableDictionaryRef;
 typedef uint32_t io_object_t;
 typedef uint32_t mach_port_t;
@@ -45,6 +49,9 @@ extern kern_return_t mach_port_deallocate(mach_port_t, mach_port_t);
 extern _Noreturn void exit(int);
 extern _Noreturn void _exit(int);
 extern int gethostuuid(unsigned char[16], const struct timespec_abi *);
+extern kern_return_t bootstrap_check_in(mach_port_t, const char *, mach_port_t *);
+extern CFMachPortRef CFMachPortCreateWithPort(CFAllocatorRef, mach_port_t,
+    CFMachPortCallBack, CFMachPortContext *, unsigned char *);
 extern unsigned char CFStringGetCString(CFStringRef, char *, long, uint32_t);
 extern CFTypeRef MGCopyAnswer(CFStringRef);
 extern CFMutableDictionaryRef IOServiceMatching(const char *);
@@ -206,6 +213,27 @@ __attribute__((constructor)) static void begin_trace(void)
     *__error() = saved_errno;
 }
 
+static kern_return_t traced_bootstrap_check_in(mach_port_t bootstrap,
+    const char *service, mach_port_t *port)
+{
+    trace("NABU FAIRPLAY TRACE: BEGIN bootstrap_check_in service=%.160s\n",
+          service ? service : "(null)");
+    kern_return_t result = bootstrap_check_in(bootstrap, service, port);
+    trace("NABU FAIRPLAY TRACE: END bootstrap_check_in service=%.160s kr=%d port_nonnull=%d\n",
+          service ? service : "(null)", result, !result && port && *port != 0);
+    return result;
+}
+
+static CFMachPortRef traced_cf_mach_port(CFAllocatorRef allocator, mach_port_t port,
+    CFMachPortCallBack callback, CFMachPortContext *context, unsigned char *should_free_info)
+{
+    trace("NABU FAIRPLAY TRACE: BEGIN CFMachPortCreateWithPort\n");
+    CFMachPortRef result = CFMachPortCreateWithPort(allocator, port, callback,
+                                                  context, should_free_info);
+    trace("NABU FAIRPLAY TRACE: END CFMachPortCreateWithPort nonnull=%d\n", result != 0);
+    return result;
+}
+
 static CFMutableDictionaryRef traced_matching(const char *name)
 {
     unsigned long long caller = (unsigned long long)(uintptr_t)__builtin_return_address(0);
@@ -291,6 +319,8 @@ static _Noreturn void traced__exit(int status)
  */
 __attribute__((used, section("__DATA,__interpose")))
 static const struct { const void *replacement, *original; } interposers[] = {
+    {(const void *)traced_bootstrap_check_in, (const void *)bootstrap_check_in},
+    {(const void *)traced_cf_mach_port, (const void *)CFMachPortCreateWithPort},
     {(const void *)traced_matching, (const void *)IOServiceMatching},
     {(const void *)traced_matching_services, (const void *)IOServiceGetMatchingServices},
     {(const void *)traced_open, (const void *)IOServiceOpen},

@@ -182,7 +182,9 @@ public:
     IOWorkLoop *getWorkLoop() const override { return loop; }
     void abiSlot175PlatformAction(uint32_t) override { (void)goOnBus(false); }
     IOReturn goOnBus(bool activate) override;
-    bool abiSlot179CableConnected() override { return connected; }
+    // The stock caller uses this flag to select AccessoryResistorSwap configs.
+    // Nabu exposes an ordinary USB cable, without Apple's resistor-swap mode.
+    bool abiSlot179AccessoryResistorSwap() override { return false; }
     void handleStallEndpoint(uint32_t address, bool stall) override
         { nabu_dwc3_stall_endpoint(address, stall); }
     void handleAbortEndpoint(uint32_t address) override { cancel(endpointIndex(address)); }
@@ -296,8 +298,8 @@ void NabuUsbNativeController::traceConfigurations(const char *phase)
     if (!all) return;
     for (unsigned i = 0; i < all->getCount(); ++i) {
         const auto *configuration = reinterpret_cast<const uint8_t *>(all->getObject(i));
-        IOLog("NABU NATIVE USB: configuration index=%u extended=%u locked=%u\n",
-              i, configuration[0x31], configuration[0x32]);
+        IOLog("NABU NATIVE USB: configuration index=%u accessorySwap=%u extended=%u locked=%u\n",
+              i, configuration[0x30], configuration[0x31], configuration[0x32]);
     }
 }
 

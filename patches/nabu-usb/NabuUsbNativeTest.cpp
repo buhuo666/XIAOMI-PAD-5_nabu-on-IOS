@@ -148,12 +148,24 @@ int main()
     assert(starts[0]==beforeDirections+1 && !g_faulted);
     // The stock vendor 0xc0/0x52 status callback can synchronously re-enumerate.
     // Preserve the SETUP transfer armed by goOnBus(true) inside that callback.
-    g_native_active=true;setupMode=1;setup(0xc0,0x52,3,67);
+    g_native_active=true;core[kDwc3Dctl/4]|=kDctlRunStop;
+    setupMode=1;setup(0xc0,0x52,3,67);
     ep0[2]=0;ep0[6]=0;handle_dep_event((1<<1)|(kDepevtXferComplete<<6));
     handle_dep_event((kDepevtXferNotReady<<6)|(kDepevtStatusControlStatus<<12));
     const unsigned beforeReenumeration=starts[0];reenumerateOnStatus=true;
     handle_dep_event(kDepevtXferComplete<<6);
     assert(starts[0]==beforeReenumeration+1 && g_ep0_state==kEp0Setup && !g_faulted);
+    assert(deviceSoftResets==1 && resourceAllocated[0] && resourceAllocated[1]);
+    // A later cable reconnect must reset the stopped DWC_usb31, acknowledge
+    // stale events and rebuild resources without losing diagnostic counters.
+    const unsigned beforeReconnect=starts[0], savedSetups=g_setups, savedEvents=g_events;
+    assert(nabu_dwc3_set_active(false) && reconnectNeedsReset);
+    assert(!g_native_connected);
+    core[kDwc3Gevntcount/4]=8;g_evt_cursor=8;
+    assert(nabu_dwc3_set_active(true));
+    assert(deviceSoftResets==2 && !reconnectNeedsReset && !g_faulted);
+    assert(starts[0]==beforeReconnect+1 && !core[kDwc3Gevntcount/4] && !g_evt_cursor);
+    assert(g_setups==savedSetups && g_events==savedEvents);
     powerPresent=1;native_poll_events();native_poll_events();assert(cableConnects==1 && !cableDisconnects);
     handle_device_event(1|(kDevEventDisconnect<<8));native_poll_events();
     assert(cableConnects==1 && !cableDisconnects); // Link state is not cable state.

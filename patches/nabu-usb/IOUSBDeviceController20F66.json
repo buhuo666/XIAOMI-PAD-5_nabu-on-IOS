@@ -1528,10 +1528,10 @@
       "exported_names": [
         "___cxa_pure_virtual"
       ],
-      "alias": "abiSlot179CableConnected",
-      "declaration": "virtual bool abiSlot179CableConnected() = 0; // 179: 0x598",
+      "alias": "abiSlot179AccessoryResistorSwap",
+      "declaration": "virtual bool abiSlot179AccessoryResistorSwap() = 0; // 179: 0x598",
       "pure_virtual": true,
-      "abi_evidence": "True when the AppleEmbeddedUSBNub state is one of two connected states; name is reconstructed."
+      "abi_evidence": "Reconstructed accessory-resistor-swap state, not physical cable presence. At original 0xfffffff005ef4d64, true selects the 0xfffffff005ef4fd4 branch: flush advertised configurations and retain only configurations with AccessoryResistorSwap (+0x30) true. False selects ordinary configurations. Run49 had two ordinary configurations but the incorrect cable-connected return erased their advertised list. Evidence: log/host/native-usb-v49/config-abi-analysis/cable-filter.txt."
     },
     {
       "slot": 180,
