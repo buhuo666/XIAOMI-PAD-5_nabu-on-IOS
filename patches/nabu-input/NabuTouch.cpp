@@ -301,11 +301,14 @@ bool ntDownload(const Firmware &fw)
         sram += chunk; bin += chunk; left -= chunk;
       }
     }
+    if (!sent) { TLOG("firmware transfer failed; retrying"); continue; }
     uint8_t dma = 0xee;
-    for (int i = 0; i < 200 && sent; i++) {
-      if (ntReadAddr(0x3f7f1, &dma) && dma == 0) { break; }
+    bool dmaComplete = false;
+    for (int i = 0; i < 200; i++) {
+      if (ntReadAddr(0x3f7f1, &dma) && dma == 0) { dmaComplete = true; break; }
       IOSleep(1);
     }
+    if (!dmaComplete) { TLOG("cascade copy did not complete; retrying"); continue; }
     uint8_t crcEn = 0;
     ntReadAddr(0x3f30e, &crcEn);
     ntWriteAddr(0x3f30e, crcEn | 0x80);
