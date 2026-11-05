@@ -193,3 +193,6 @@ QuartzCore 完整函数与 UIKit 动画循环另用 LLVM18 独立解码并与原
 第二十四轮运行中，用户报告先出现苹果 Logo，等待时短暂黑屏，再次亮屏后 Logo 变扁；这是用户口述的实机显示观察，尚未提供本阶段照片或回收日志，未确认桌面。观察保存在 `log/device/nabu-boot-20261104-24/user-observation-logo.json`，本轮保持运行，不因该现象提前重启。
 
 比例调查发现当前 MiniIOMobileFramebuffer 的默认逻辑尺寸为 1125×2436，默认 fbscale=0，本轮没有 fbwidth／fbheight／fbscale 覆盖；三个实际变量在未剥离和确切启动内核中的字节都已核对。第二十三轮日志曾实测该逻辑尺寸映射到 1600×2560、rowbytes=6400 的物理缓冲。drawLayer 分别以面板宽／逻辑宽和面板高／逻辑高缩放，预测横向相对纵向扩大约 35.3%，与本次扁 Logo 现象相符。尚不能把该静态路径当成第二十四轮当前帧的实测尺寸，也不能仅据黑屏认定 backboardd 重启；待本轮日志核对进程生命周期、framebuffer 尺寸、surface／swap 和线程采样。证据见 `log/host/display-v24/logo-aspect-analysis.json`。
+
+
+第二十五轮于 `2026-11-05T09:54:47.136894+08:00` 执行 `fastboot boot`，发送与 Booting 均成功。源提交 `23871271b636c575d1a1f52026722a8d90940fb1`；六个 ESP 文件已回读一致，启动前 30 份 GPT 元数据一致并记录 14 个引导分区哈希。新日志区域为单元 12..13，旧 0、1、2..11 的总计 768 MiB 完整哈希在部署后仍与历史回收一致。227 份输入与验收文件，以及确切 boot.img，保存在 `log/device/nabu-boot-20261105-25/`。当前只确认启动命令成功，桌面、显示比例、Setup 安装日志和完整日志 END 待真机观察／恢复 Android 后回收。
