@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Check generated PID1 Data selection, failure handling and cross-start boot records."""
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -33,13 +32,27 @@ def main():
 #include <sys/stat.h>
 static const char *arg;
 static int mount_error, mounts, ram_mounts, failures, cleanups, var_kept;
+static int lookup_waits, sleeps;
 static char directory[]="/tmp/nabu-data-check-XXXXXX";
 static const char *boot_arg(const char *name) {assert(!strcmp(name,"nabu-data"));return arg;}
 static void nabu_failure(const char *what,unsigned e) {(void)what;assert(e==(unsigned)mount_error);}
+static int mock_sysctlbyname(const char *name,void *out,size_t *size,const void *input,size_t input_size) {
+    assert(!strcmp(name,"kern.nabu_data_device") && !input && !input_size);
+    if(lookup_waits){--lookup_waits;errno=ENXIO;return -1;}
+    const char path[]="/dev/disk1s1";
+    assert(*size>=sizeof(path));memcpy(out,path,sizeof(path));*size=sizeof(path);return 0;
+}
+static int mock_stat(const char *path,struct stat *disk) {
+    (void)disk;assert(!strcmp(path,"/dev/disk1s1"));return 0;
+}
+static int mock_usleep(unsigned usec) {assert(usec==100000);++sleeps;return 0;}
 static int mock_mount(const char *type,const char *path,int flags,void *dev) {
     assert(!strcmp(path,"/private/var") && !flags);
     if (!strcmp(type,"ramfs")) {++ram_mounts;assert(!dev);return 0;}
-    assert(!strcmp(type,"apfs") && !strcmp(dev,"/dev/nabu_data"));
+    const unsigned char *args=dev;const char *device;uint16_t mode;uint32_t uid,gid;
+    memcpy(&device,args,sizeof(device));memcpy(&mode,args+0x10,sizeof(mode));
+    memcpy(&uid,args+0x144,sizeof(uid));memcpy(&gid,args+0x148,sizeof(gid));
+    assert(!strcmp(type,"apfs") && !strcmp(device,"/dev/disk1s1") && mode==1 && uid==99 && gid==99);
     ++mounts;if(mount_error){errno=mount_error;return -1;}return 0;
 }
 static const char *mapped(const char *p,char out[256]) {
@@ -57,6 +70,9 @@ static void check(int ok,const char *what){(void)what;if(!ok)++failures;}
 #define open mapped_open
 #define rename mapped_rename
 #define mount mock_mount
+#define sysctlbyname mock_sysctlbyname
+#define stat(path,disk) mock_stat(path,disk)
+#define usleep mock_usleep
 '''+functions+r'''
 static void select_data(void) {int ok;
 '''+selection+r'''
@@ -66,7 +82,8 @@ int main(void) {
     arg=NULL;select_data();assert(!var_kept && ram_mounts==1 && !mounts);
     arg="1";mount_error=5;ram_mounts=failures=0;select_data();
     assert(var_kept==-1 && !ram_mounts && failures==1 && !cleanups);
-    mount_error=0;failures=0;select_data();assert(var_kept==1 && !ram_mounts && !failures && cleanups==3);
+    mount_error=0;failures=0;lookup_waits=2;select_data();
+    assert(var_kept==1 && !ram_mounts && !failures && cleanups==3 && sleeps==2);
     assert(nabu_data_boot_record());
     // A second PID1 invocation reads the committed count, then increments it.
     assert(nabu_data_boot_record());
@@ -75,7 +92,7 @@ int main(void) {
     assert(data[0]==0x3144424e && data[1]==2);
     char path[256];mapped("/private/var/db/nabu-boot-count",path);assert(unlink(path)==0);
     assert(rmdir(directory)==0);
-    puts("PASS: explicit APFS selection, mount failure blocks RAM fallback, transient-only cleanup, atomic/fsynced boot record survives two starts");
+    puts("PASS: APFS volume lookup, asynchronous publication, native mount arguments, mount failure handling, transient-only cleanup and boot record across two starts");
 }
 '''
     source=a.output/'DataMount.c';source.write_text(code)
@@ -83,8 +100,8 @@ int main(void) {
     subprocess.run(host_command(['clang','-std=c11','-Wall','-Wextra','-Werror',
         '-fsanitize=address,undefined',host_path(source),'-o',host_path(binary)]),check=True)
     result=subprocess.check_output(host_command([host_path(binary)]),text=True)
-    report={'passed':True,'init_sha256_lf':hashlib.sha256(init.encode()).hexdigest(),
-        'output':result,'scope':'Actual generated PID1 code; mock mount and real host file persistence; Apple APFS/device acceptance pending'}
+    report={'passed':True,'output':result,
+        'scope':'Actual generated PID1 code; mock mount and real host file persistence; Apple APFS/device acceptance pending'}
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
 

@@ -42,10 +42,16 @@ def main():
     sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
     shutil.copyfile(sdk / 'usr/include/TargetConditionals.h', include / 'TargetConditionals.h')
     hdrs = a.tree / 'BUILD/obj/EXPORT_HDRS'
+    # Retain the exported build headers so driver-only edits can be compiled
+    # locally without rebuilding the complete source kernel.
+    with tarfile.open(a.output / 'kernel-headers.tar.gz', 'w:gz', dereference=True) as archive:
+        archive.add(hdrs, arcname='EXPORT_HDRS')
+        archive.add(a.tree / 'EXTERNAL_HEADERS', arcname='EXTERNAL_HEADERS')
+        archive.add(ROOT / 'src/hakios-8796/xnu-deps/sdk/iPhoneOS16.5.xnu.sdk/usr/local/include/kernel', arcname='sdk-kernel')
     command = ['xcrun', 'clang++', '-target', 'arm64-apple-ios16.5', '-std=gnu++17', '-Os', '-g',
         '-mkernel', '-fapple-kext', '-fno-exceptions', '-fno-rtti', '-fno-builtin', '-fno-stack-protector',
         '-fno-unwind-tables', '-fno-asynchronous-unwind-tables',
-        '-nostdinc', '-nostdinc++', '-DKERNEL=1', '-DPRIVATE=1', '-D__DARWIN_64_BIT_INO_T=1',
+        '-nostdinc', '-nostdinc++', '-DKERNEL=1', '-D__DARWIN_64_BIT_INO_T=1',
         '-DARM64_BOARD_CONFIG_BCM2837', '-DXNU_TARGET_OS_IOS=1',
         '-Wno-deprecated-declarations', '-Wno-inconsistent-missing-override',
         '-I' + str(include.resolve()), '-I' + str((ROOT / 'patches/nabu-storage').resolve())]

@@ -11,6 +11,18 @@
 
 extern kern_return_t OSKextLoadKextWithIdentifier(const char *);
 extern struct vfsops apfs_vfsops; // HakiOS reader, kept for the existing bootstrap.
+extern int nabu_data_device_path(char *, unsigned);
+
+static int nabu_data_device_sysctl SYSCTL_HANDLER_ARGS
+{
+    char path[64];
+    int error=nabu_data_device_path(path,sizeof(path));
+    if (error) return error;
+    return sysctl_handle_string(oidp,path,sizeof(path),req);
+}
+SYSCTL_PROC(_kern,OID_AUTO,nabu_data_device,CTLTYPE_STRING|CTLFLAG_RD|CTLFLAG_LOCKED,
+    0,0,nabu_data_device_sysctl,"A","BSD path of the persistent APFS Data volume");
+
 static int nabu_apfs_legacy_renamed;
 static int nabu_apfs_load_status=-1;
 static int nabu_apfs_registered;

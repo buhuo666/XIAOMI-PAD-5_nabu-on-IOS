@@ -4,12 +4,36 @@ mount_data_volume(void)
 {
     const char *enabled=boot_arg("nabu-data");
     if (!enabled || strcmp(enabled,"1")) return 0;
-    if (mount("apfs","/private/var",0,(void *)"/dev/nabu_data")!=0) {
-        nabu_failure("mount persistent APFS Data",(unsigned)errno);
-        printf("NABU DATA: APFS mount failed errno=%d; launchd will not start\n",errno);
+    char device[64];
+    struct stat disk;
+    int attempt;
+    for (attempt=0;attempt<50;attempt++) {
+        size_t length=sizeof(device);
+        if (sysctlbyname("kern.nabu_data_device",device,&length,0,0)==0 &&
+            stat(device,&disk)==0) break;
+        usleep(100000);
+    }
+    if (attempt==50) {
+        int error=errno;
+        nabu_failure("find persistent APFS Data",(unsigned)error);
+        printf("NABU DATA: volume device unavailable errno=%d\n",error);
         return -1;
     }
-    printf("NABU DATA: /private/var mounted from /dev/nabu_data; existing settings kept\n");
+    unsigned char args[0x160]={0};
+    const char *path=device;
+    uint16_t mode=1;
+    uint32_t owner=99;
+    memcpy(args,&path,sizeof(path));
+    memcpy(args+0x10,&mode,sizeof(mode));
+    memcpy(args+0x144,&owner,sizeof(owner));
+    memcpy(args+0x148,&owner,sizeof(owner));
+    if (mount("apfs","/private/var",0,args)!=0) {
+        int error=errno;
+        nabu_failure("mount persistent APFS Data",(unsigned)error);
+        printf("NABU DATA: APFS mount failed errno=%d; launchd will not start\n",error);
+        return -1;
+    }
+    printf("NABU DATA: /private/var mounted from %s; existing settings kept\n",device);
     return 1;
 }
 
