@@ -3,6 +3,23 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十六轮：完整后续日志确认 UID 请求失败与服务退出
+
+用户确认桌面正常，AMDS发现设备，62078端口可连接，QueryType仍超时。日志提前
+封存问题已修复，回收1,528,582字节持续记录；完整64MiB槽备份后清空。APFS计数
+26→27、fullfsync成功，GPT/引导分区一致，设备在Android。当前基线v56/bootstrap v53。
+
+14次FairPlay启动均成功打开原版用户客户端并查询版本，随后selector21调用AES2201
+得到kIOReturnUnsupported，打印FairPlayCryptoUtilities.cpp:233的status == -22断言，
+外层IOConnect返回kr=0、552字节后进程exit(0)。外层传输成功不代表内部操作成功。
+Lockdown继续等待FairPlay，因此原生配对/同步仍未通过。
+
+原版静态证据确认2201是UID派生逻辑密钥：S8000模板2201→根选择器2000，原版
+驱动映射到硬件槽1，成功派生后才登记逻辑密钥。现有软件CBC只处理调用者提供的
+密钥，当前没有真实兼容的UID根服务或已验证的原版替代路径。不能把本地Image4
+nonce2212适配当成FairPlay2201支持。完整证据和后续边界保存在 ignored
+`log/host/native-usb-v56/`、`log/host/native-usb-v55/fairplay-aes-analysis/`。
+
 ## 第五十五轮：原版 FairPlayIOKit 已打开，AES 错误触发旧日志封存
 
 用户确认桌面正常，AMDS发现设备且Lockdown端口连接成功，QueryType仍超时。

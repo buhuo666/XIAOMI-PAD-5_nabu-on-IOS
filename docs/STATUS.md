@@ -2,6 +2,11 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
+最新实机：第五十六轮桌面、原生USBMux双向传输与原版FairPlayIOKit服务均可用。
+14次FairPlay启动均在UID派生AES2201不支持后退出，Lockdown仍超时；配对/同步
+尚未完成。日志提前封存已修复，回收1,528,582字节，完整槽备份清空。APFS计数
+26→27、fullfsync成功，设备在Android。基线v56/bootstrap v53，见 [USB连接](NABU-USB.md)。
+
 最新实机：第五十五轮桌面正常，原版FairPlayIOKit服务打开和版本查询成功；后续
 AES selector2201返回不支持，旧AES诊断提前封存日志。第五十六轮仅修正此采集问题，
 继续观察真实失败路径；Lockdown仍超时，配对/同步未通过。APFS计数25→26，完整
