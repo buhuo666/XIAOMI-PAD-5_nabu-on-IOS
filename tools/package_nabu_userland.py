@@ -70,6 +70,7 @@ def main():
     ap.add_argument('--power-trace', type=Path, help='Read-only IOKit/IOPS timing diagnostic executable')
     ap.add_argument('--capability-scan', type=Path, help='One-shot MobileGestalt/IOKit diagnostic executable')
     ap.add_argument('--lockdown-probe', type=Path, help='Enable stock lockdownd and a one-shot local query probe')
+    ap.add_argument('--lockdown-stack-sample', type=Path, help='Read-only thread sampler for a stalled stock lockdownd')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
@@ -124,6 +125,12 @@ def main():
         job={'Label':'org.nabu.lockdown-probe','Program':'/redwood/sbin/lockdown-probe',
              'RunAtLoad':True,'UserName':'root','StandardOutPath':'/dev/console','StandardErrorPath':'/dev/console'}
         (root/'LaunchDaemons/org.nabu.lockdown-probe.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
+    if a.lockdown_stack_sample:
+        assert a.lockdown_probe, 'The sampler requires stock lockdownd to be enabled'
+        shutil.copy2(a.lockdown_stack_sample, root/'sbin/lockdown-stack-sample')
+        job={'Label':'org.nabu.lockdown-stack-sample','Program':'/redwood/sbin/lockdown-stack-sample',
+             'RunAtLoad':True,'UserName':'root','StandardOutPath':'/dev/console','StandardErrorPath':'/dev/console'}
+        (root/'LaunchDaemons/org.nabu.lockdown-stack-sample.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -194,6 +201,7 @@ def main():
             'input_bridge':input_report, 'power_trace_enabled': a.power_trace is not None,
             'capability_scan_enabled': a.capability_scan is not None,
             'stock_lockdown_probe_enabled': a.lockdown_probe is not None,
+            'stock_lockdown_stack_sample_enabled': a.lockdown_stack_sample is not None,
             'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}
