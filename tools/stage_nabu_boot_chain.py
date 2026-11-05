@@ -99,6 +99,7 @@ def main():
                     help='Persistent 16-byte software key for Image4 nonce selector 2212')
     ap.add_argument('--rtc-calibration', type=Path, help='Android time / PM8150 RTC capture from capture_nabu_power.py')
     ap.add_argument('--platform-identity', type=Path, help='Local capture containing the real Qualcomm SoC identity')
+    ap.add_argument('--native-usb', action='store_true', help='Select the experimental native Apple USB controller for this staged boot')
     a = ap.parse_args()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
@@ -122,6 +123,16 @@ def main():
     config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
+    if a.native_usb:
+        kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
+        assert kernel_report['stock_apple_usb_included'] and kernel_report['data_block']['usb_class']
+        assert platform_uuid, 'Native USB uses this board-derived identity'
+        old_args=entry['args']
+        args=[x for x in old_args.split() if not x.startswith('nabu-usb-cdc-log')]
+        args.append('nabu-usb-native=1')
+        entry['args']=' '.join(args)
+        assert config_bytes.count(old_args.encode())==1
+        config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     data_enabled='nabu-data=1' in entry['args'].split()
     bootstrap_mode='initrd' in entry
     setup_compat_enabled = False
@@ -195,6 +206,7 @@ def main():
     receipt['image4_software_nonce_key_supplied'] = image4_nonce_key is not None
     receipt['rtc_calibration'] = rtc_calibration
     receipt['platform_uuid_from_soc'] = platform_identity is not None
+    receipt['native_usb_selected'] = a.native_usb
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

@@ -225,13 +225,19 @@ def relocate_object(obj, output, image, definitions, got, stubs):
     return pointers, counts
 
 
-def link(kernel, report, reference, objects, aes_reference=None):
+def link(kernel, report, reference, objects, aes_reference=None, usb_reference=None):
     output = bytearray(kernel)
     image = macho(output)
     by_segment = {s['name']: s for s in image['segments']}
     info = by_segment['__PRELINK_INFO']
     metadata = unserialize_xml(output[info['fileoff']:info['fileoff'] + info['filesize']])
     bindings, storage = storage_symbols(output, image, report, reference)
+    usb = None
+    if usb_reference:
+        from nabu_native_usb_abi import controller_symbols
+        usb_bindings, usb = controller_symbols(output, image, report,
+            reference_vtable(usb_reference, 'IOUSBDeviceController'))
+        bindings.update(usb_bindings)
     aes = None
     if aes_reference:
         aes_bindings, aes = storage_symbols(output, image, report, aes_reference, "IOAESAccelerator", "com.apple.iokit.IOCryptoAcceleratorFamily")
@@ -362,6 +368,8 @@ def link(kernel, report, reference, objects, aes_reference=None):
         '_PrelinkKmodInfo': kmod, 'OSBundleLibraries': {'com.apple.iokit.IOStorageFamily': '2.1',
             'com.apple.kpi.iokit': '8.0', 'com.apple.kpi.libkern': '8.0', 'com.apple.kpi.mach': '8.0',
             'com.apple.kpi.bsd': '8.0', 'com.apple.kpi.private': '8.0', 'com.apple.iokit.IOCryptoAcceleratorFamily': '1.0'}})
+    if usb:
+        metadata['_PrelinkInfoDictionary'][-1]['OSBundleLibraries']['com.apple.iokit.IOUSBDeviceFamily'] = '2.0'
     prelink = by_segment['__PRELINK_TEXT']
     old_offsets = struct.unpack('<' + 'I' * (len(metadata['_PrelinkLinkKASLROffsets']) // 4), metadata['_PrelinkLinkKASLROffsets'])[1:]
     offsets = sorted(set(old_offsets) | {site - prelink['va'] for site in pointer_sites})
@@ -380,7 +388,7 @@ def link(kernel, report, reference, objects, aes_reference=None):
     output.extend(bytes(info_at - len(output)) + xml + bytes(info_size - len(xml)))
     struct.pack_into('<4Q', output, info['command_offset'] + 24, info['va'], info_size, info_at, info_size)
     struct.pack_into('<QQI', output, info['sections'][0]['command_offset'] + 32, info['va'], info_size, info_at)
-    detail = {'bundle': BUNDLE, 'storage_class': storage, 'aes_class': aes, 'segments': layouts, 'kmod_info': kmod,
+    detail = {'bundle': BUNDLE, 'storage_class': storage, 'aes_class': aes, 'usb_class': usb, 'segments': layouts, 'kmod_info': kmod,
               'start': definitions.get('_nabu_data_block_start'), 'relocations': relocation_counts,
               'pointer_sites_added': len(pointer_sites), 'sparse_headers': headers,
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
@@ -395,6 +403,7 @@ def main():
     parser.add_argument('--prelink-report', type=Path)
     parser.add_argument('--reference-object', type=Path, required=True)
     parser.add_argument('--aes-reference-object', type=Path)
+    parser.add_argument('--usb-reference-object', type=Path)
     parser.add_argument('--object', type=Path, action='append', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -402,7 +411,8 @@ def main():
     prelink_report = json.loads(report_path.read_text())
     result, report = link(args.kernel.read_bytes(), prelink_report,
                           Object(args.reference_object), [Object(p) for p in args.object],
-                          Object(args.aes_reference_object) if args.aes_reference_object else None)
+                          Object(args.aes_reference_object) if args.aes_reference_object else None,
+                          Object(args.usb_reference_object) if args.usb_reference_object else None)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / 'kernel.native-apfs.macho').write_bytes(result)
     (args.output / 'data-block-link.json').write_text(json.dumps(report, indent=2) + '\n')

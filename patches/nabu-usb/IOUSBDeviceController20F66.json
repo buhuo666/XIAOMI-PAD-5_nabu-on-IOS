@@ -1,0 +1,2125 @@
+{
+  "source": "OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.arm64.macho",
+  "class": "IOUSBDeviceController",
+  "sizeof": 504,
+  "ioservice_sizeof": 136,
+  "ioservice_slot_count": 168,
+  "slot_count": 232,
+  "vtable_symbol_original_va": "0xfffffff006e45e80",
+  "vtable_address_point_original_va": "0xfffffff006e45e90",
+  "metaclass_original_va": "0xfffffff007a9f288",
+  "constructor_original_va": "0xfffffff005eee598",
+  "destructor_original_va": "0xfffffff005eee5b8",
+  "metaclass_getter_original_va": "0xfffffff005eee5c4",
+  "ioservice_override_slots": [
+    0,
+    1,
+    7,
+    14,
+    44,
+    86,
+    87,
+    117
+  ],
+  "constructor_symbol": "__ZN21IOUSBDeviceControllerC2EPK11OSMetaClass",
+  "destructor_symbol": "__ZN21IOUSBDeviceControllerD2Ev",
+  "metaclass_symbol": "__ZN21IOUSBDeviceController10gMetaClassE",
+  "helper_bindings": {
+    "native_usb_finish_initialization": {
+      "original_va": "0xfffffff005ef05d8",
+      "signature": "void (IOUSBDeviceController *)"
+    },
+    "native_usb_create_device": {
+      "original_va": "0xfffffff005ef54c0",
+      "signature": "IOReturn (IOUSBDeviceController *, OSDictionary *)"
+    },
+    "native_usb_complete_io": {
+      "original_va": "0xfffffff005ef069c",
+      "signature": "void (IOUSBDeviceController *, NativeUSBIORequest *)"
+    },
+    "native_usb_control_input_setup": {
+      "original_va": "0xfffffff005ee8854",
+      "signature": "void (IOUSBDeviceControlRequest *, const void *setup8)",
+      "status": "confirmed: some paths return without assigning a result; tail branch to void trace slot213"
+    },
+    "native_usb_control_process_setup": {
+      "original_va": "0xfffffff005ee8fb4",
+      "signature": "IOReturn (IOUSBDeviceControlRequest *)",
+      "evidence": "processSetupPacket log; success path explicitly returns zero at 0xfffffff005ee91dc"
+    },
+    "native_usb_control_input_data": {
+      "original_va": "0xfffffff005ee94e4",
+      "signature": "void (IOUSBDeviceControlRequest *, const void *data, uint32_t length)",
+      "evidence": "AppleSynopsysOTGDevice caller 0xfffffff0062571d0 supplies DMA buffer address and uint32 received length"
+    },
+    "native_usb_control_reset": {
+      "original_va": "0xfffffff005ee83d0",
+      "signature": "void (IOUSBDeviceControlRequest *)",
+      "evidence": "stock USB reset caller 0xfffffff006250640 and cable-disconnect caller0xfffffff005ef469c"
+    },
+    "native_usb_interface_alternate_count": {
+      "original_va": "0xfffffff005ee29a4",
+      "signature": "int32_t (IOUSBDeviceInterface *)"
+    },
+    "native_usb_interface_pipe_count": {
+      "original_va": "0xfffffff005ee29f0",
+      "signature": "int32_t (IOUSBDeviceInterface *, uint8_t alternate)"
+    },
+    "native_usb_interface_get_pipe": {
+      "original_va": "0xfffffff005ee2a40",
+      "signature": "IOUSBDevicePipe * (IOUSBDeviceInterface *, int32_t index, uint8_t alternate)"
+    },
+    "native_usb_pipe_direction": {
+      "original_va": "0xfffffff005ee69cc",
+      "signature": "uint32_t (IOUSBDevicePipe *)",
+      "returns": {
+        "0": "OUT",
+        "1": "IN"
+      }
+    }
+  },
+  "slots": [
+    {
+      "slot": 0,
+      "byte_offset": 0,
+      "original_va": "0xfffffff005eee5bc",
+      "exported_names": []
+    },
+    {
+      "slot": 1,
+      "byte_offset": 8,
+      "original_va": "0xfffffff005eee5c0",
+      "exported_names": []
+    },
+    {
+      "slot": 2,
+      "byte_offset": 16,
+      "original_va": "0xfffffff007715374",
+      "exported_names": [
+        "__ZNK8OSObject7releaseEi"
+      ]
+    },
+    {
+      "slot": 3,
+      "byte_offset": 24,
+      "original_va": "0xfffffff007715388",
+      "exported_names": [
+        "__ZNK8OSObject14getRetainCountEv"
+      ]
+    },
+    {
+      "slot": 4,
+      "byte_offset": 32,
+      "original_va": "0xfffffff007715390",
+      "exported_names": [
+        "__ZNK8OSObject6retainEv"
+      ]
+    },
+    {
+      "slot": 5,
+      "byte_offset": 40,
+      "original_va": "0xfffffff0077153a0",
+      "exported_names": [
+        "__ZNK8OSObject7releaseEv"
+      ]
+    },
+    {
+      "slot": 6,
+      "byte_offset": 48,
+      "original_va": "0xfffffff0077153b0",
+      "exported_names": [
+        "__ZNK8OSObject9serializeEP11OSSerialize"
+      ]
+    },
+    {
+      "slot": 7,
+      "byte_offset": 56,
+      "original_va": "0xfffffff005eee5c4",
+      "exported_names": []
+    },
+    {
+      "slot": 8,
+      "byte_offset": 64,
+      "original_va": "0xfffffff007712864",
+      "exported_names": [
+        "__ZNK15OSMetaClassBase9isEqualToEPKS_"
+      ]
+    },
+    {
+      "slot": 9,
+      "byte_offset": 72,
+      "original_va": "0xfffffff0077154dc",
+      "exported_names": [
+        "__ZNK8OSObject12taggedRetainEPKv"
+      ]
+    },
+    {
+      "slot": 10,
+      "byte_offset": 80,
+      "original_va": "0xfffffff007715560",
+      "exported_names": [
+        "__ZNK8OSObject13taggedReleaseEPKv"
+      ]
+    },
+    {
+      "slot": 11,
+      "byte_offset": 88,
+      "original_va": "0xfffffff007715570",
+      "exported_names": [
+        "__ZNK8OSObject13taggedReleaseEPKvi"
+      ]
+    },
+    {
+      "slot": 12,
+      "byte_offset": 96,
+      "original_va": "0xfffffff00775b8fc",
+      "exported_names": [
+        "__ZN9IOService8DispatchE5IORPC"
+      ]
+    },
+    {
+      "slot": 13,
+      "byte_offset": 104,
+      "original_va": "0xfffffff007715630",
+      "exported_names": [
+        "__ZN8OSObject4initEv"
+      ]
+    },
+    {
+      "slot": 14,
+      "byte_offset": 112,
+      "original_va": "0xfffffff005ef02ac",
+      "exported_names": []
+    },
+    {
+      "slot": 15,
+      "byte_offset": 120,
+      "original_va": "0xfffffff007771dcc",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPKcPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 16,
+      "byte_offset": 128,
+      "original_va": "0xfffffff007771efc",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPK8OSStringPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 17,
+      "byte_offset": 136,
+      "original_va": "0xfffffff00777202c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPK8OSSymbolPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 18,
+      "byte_offset": 144,
+      "original_va": "0xfffffff00777215c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry15copyParentEntryEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 19,
+      "byte_offset": 152,
+      "original_va": "0xfffffff0077721dc",
+      "exported_names": [
+        "__ZNK15IORegistryEntry14copyChildEntryEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 20,
+      "byte_offset": 160,
+      "original_va": "0xfffffff00777225c",
+      "exported_names": [
+        "__ZN15IORegistryEntry17runPropertyActionEPFiP8OSObjectPvS2_S2_S2_ES1_S2_S2_S2_S2_"
+      ]
+    },
+    {
+      "slot": 21,
+      "byte_offset": 168,
+      "original_va": "0xfffffff007779348",
+      "exported_names": [
+        "__ZN9IOService4initEP12OSDictionary"
+      ]
+    },
+    {
+      "slot": 22,
+      "byte_offset": 176,
+      "original_va": "0xfffffff0077725b8",
+      "exported_names": [
+        "__ZN15IORegistryEntry16setPropertyTableEP12OSDictionary"
+      ]
+    },
+    {
+      "slot": 23,
+      "byte_offset": 184,
+      "original_va": "0xfffffff0077726d4",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPK8OSSymbolP8OSObject"
+      ]
+    },
+    {
+      "slot": 24,
+      "byte_offset": 192,
+      "original_va": "0xfffffff0077728b4",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPK8OSStringP8OSObject"
+      ]
+    },
+    {
+      "slot": 25,
+      "byte_offset": 200,
+      "original_va": "0xfffffff007772918",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPKcP8OSObject"
+      ]
+    },
+    {
+      "slot": 26,
+      "byte_offset": 208,
+      "original_va": "0xfffffff00777297c",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPKcS1_"
+      ]
+    },
+    {
+      "slot": 27,
+      "byte_offset": 216,
+      "original_va": "0xfffffff007772a00",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPKcb"
+      ]
+    },
+    {
+      "slot": 28,
+      "byte_offset": 224,
+      "original_va": "0xfffffff007772a8c",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPKcyj"
+      ]
+    },
+    {
+      "slot": 29,
+      "byte_offset": 232,
+      "original_va": "0xfffffff007772b5c",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setPropertyEPKcPvj"
+      ]
+    },
+    {
+      "slot": 30,
+      "byte_offset": 240,
+      "original_va": "0xfffffff007772c2c",
+      "exported_names": [
+        "__ZN15IORegistryEntry14removePropertyEPK8OSSymbol"
+      ]
+    },
+    {
+      "slot": 31,
+      "byte_offset": 248,
+      "original_va": "0xfffffff007772d28",
+      "exported_names": [
+        "__ZN15IORegistryEntry14removePropertyEPK8OSString"
+      ]
+    },
+    {
+      "slot": 32,
+      "byte_offset": 256,
+      "original_va": "0xfffffff007772d70",
+      "exported_names": [
+        "__ZN15IORegistryEntry14removePropertyEPKc"
+      ]
+    },
+    {
+      "slot": 33,
+      "byte_offset": 264,
+      "original_va": "0xfffffff007772db8",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPK8OSSymbol"
+      ]
+    },
+    {
+      "slot": 34,
+      "byte_offset": 272,
+      "original_va": "0xfffffff007772eb4",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPK8OSString"
+      ]
+    },
+    {
+      "slot": 35,
+      "byte_offset": 280,
+      "original_va": "0xfffffff007772f08",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPKc"
+      ]
+    },
+    {
+      "slot": 36,
+      "byte_offset": 288,
+      "original_va": "0xfffffff007772f5c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPK8OSSymbolPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 37,
+      "byte_offset": 296,
+      "original_va": "0xfffffff00777308c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPK8OSStringPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 38,
+      "byte_offset": 304,
+      "original_va": "0xfffffff0077731bc",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getPropertyEPKcPK15IORegistryPlanej"
+      ]
+    },
+    {
+      "slot": 39,
+      "byte_offset": 312,
+      "original_va": "0xfffffff0077732ec",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPK8OSSymbol"
+      ]
+    },
+    {
+      "slot": 40,
+      "byte_offset": 320,
+      "original_va": "0xfffffff0077733fc",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPK8OSString"
+      ]
+    },
+    {
+      "slot": 41,
+      "byte_offset": 328,
+      "original_va": "0xfffffff00777350c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyPropertyEPKc"
+      ]
+    },
+    {
+      "slot": 42,
+      "byte_offset": 336,
+      "original_va": "0xfffffff00777361c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry24dictionaryWithPropertiesEv"
+      ]
+    },
+    {
+      "slot": 43,
+      "byte_offset": 344,
+      "original_va": "0xfffffff0077793fc",
+      "exported_names": [
+        "__ZNK9IOService19serializePropertiesEP11OSSerialize"
+      ]
+    },
+    {
+      "slot": 44,
+      "byte_offset": 352,
+      "original_va": "0xfffffff005ef79e4",
+      "exported_names": []
+    },
+    {
+      "slot": 45,
+      "byte_offset": 360,
+      "original_va": "0xfffffff0077738a4",
+      "exported_names": [
+        "__ZNK15IORegistryEntry17getParentIteratorEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 46,
+      "byte_offset": 368,
+      "original_va": "0xfffffff007773a00",
+      "exported_names": [
+        "__ZNK15IORegistryEntry14applyToParentsEPFvPS_PvES1_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 47,
+      "byte_offset": 376,
+      "original_va": "0xfffffff007773b1c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry14getParentEntryEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 48,
+      "byte_offset": 384,
+      "original_va": "0xfffffff007773b5c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry16getChildIteratorEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 49,
+      "byte_offset": 392,
+      "original_va": "0xfffffff007773cb8",
+      "exported_names": [
+        "__ZNK15IORegistryEntry15applyToChildrenEPFvPS_PvES1_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 50,
+      "byte_offset": 400,
+      "original_va": "0xfffffff007773dd4",
+      "exported_names": [
+        "__ZNK15IORegistryEntry13getChildEntryEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 51,
+      "byte_offset": 408,
+      "original_va": "0xfffffff007773e14",
+      "exported_names": [
+        "__ZNK15IORegistryEntry7isChildEPS_PK15IORegistryPlaneb"
+      ]
+    },
+    {
+      "slot": 52,
+      "byte_offset": 416,
+      "original_va": "0xfffffff007773f54",
+      "exported_names": [
+        "__ZNK15IORegistryEntry8isParentEPS_PK15IORegistryPlaneb"
+      ]
+    },
+    {
+      "slot": 53,
+      "byte_offset": 424,
+      "original_va": "0xfffffff007774094",
+      "exported_names": [
+        "__ZNK15IORegistryEntry7inPlaneEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 54,
+      "byte_offset": 432,
+      "original_va": "0xfffffff0077741ec",
+      "exported_names": [
+        "__ZNK15IORegistryEntry8getDepthEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 55,
+      "byte_offset": 440,
+      "original_va": "0xfffffff007774310",
+      "exported_names": [
+        "__ZN15IORegistryEntry14attachToParentEPS_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 56,
+      "byte_offset": 448,
+      "original_va": "0xfffffff007774648",
+      "exported_names": [
+        "__ZN15IORegistryEntry16detachFromParentEPS_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 57,
+      "byte_offset": 456,
+      "original_va": "0xfffffff0077748a8",
+      "exported_names": [
+        "__ZN15IORegistryEntry13attachToChildEPS_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 58,
+      "byte_offset": 464,
+      "original_va": "0xfffffff0077749d0",
+      "exported_names": [
+        "__ZN15IORegistryEntry15detachFromChildEPS_PK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 59,
+      "byte_offset": 472,
+      "original_va": "0xfffffff007774c30",
+      "exported_names": [
+        "__ZN15IORegistryEntry11detachAboveEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 60,
+      "byte_offset": 480,
+      "original_va": "0xfffffff007774cd0",
+      "exported_names": [
+        "__ZN15IORegistryEntry9detachAllEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 61,
+      "byte_offset": 488,
+      "original_va": "0xfffffff007774e64",
+      "exported_names": [
+        "__ZNK15IORegistryEntry7getNameEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 62,
+      "byte_offset": 496,
+      "original_va": "0xfffffff007774f20",
+      "exported_names": [
+        "__ZNK15IORegistryEntry8copyNameEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 63,
+      "byte_offset": 504,
+      "original_va": "0xfffffff007774fe8",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12compareNamesEP8OSObjectPP8OSString"
+      ]
+    },
+    {
+      "slot": 64,
+      "byte_offset": 512,
+      "original_va": "0xfffffff007775140",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11compareNameEP8OSStringPS1_"
+      ]
+    },
+    {
+      "slot": 65,
+      "byte_offset": 520,
+      "original_va": "0xfffffff0077751cc",
+      "exported_names": [
+        "__ZN15IORegistryEntry7setNameEPK8OSSymbolPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 66,
+      "byte_offset": 528,
+      "original_va": "0xfffffff00777529c",
+      "exported_names": [
+        "__ZN15IORegistryEntry7setNameEPKcPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 67,
+      "byte_offset": 536,
+      "original_va": "0xfffffff007775308",
+      "exported_names": [
+        "__ZNK15IORegistryEntry11getLocationEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 68,
+      "byte_offset": 544,
+      "original_va": "0xfffffff007775358",
+      "exported_names": [
+        "__ZNK15IORegistryEntry12copyLocationEPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 69,
+      "byte_offset": 552,
+      "original_va": "0xfffffff0077753e4",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setLocationEPK8OSSymbolPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 70,
+      "byte_offset": 560,
+      "original_va": "0xfffffff007775468",
+      "exported_names": [
+        "__ZN15IORegistryEntry11setLocationEPKcPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 71,
+      "byte_offset": 568,
+      "original_va": "0xfffffff0077754d4",
+      "exported_names": [
+        "__ZNK15IORegistryEntry7getPathEPcPiPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 72,
+      "byte_offset": 576,
+      "original_va": "0xfffffff007775a1c",
+      "exported_names": [
+        "__ZNK15IORegistryEntry16getPathComponentEPcPiPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 73,
+      "byte_offset": 584,
+      "original_va": "0xfffffff007775b1c",
+      "exported_names": [
+        "__ZN15IORegistryEntry13childFromPathEPKcPK15IORegistryPlanePcPi"
+      ]
+    },
+    {
+      "slot": 74,
+      "byte_offset": 592,
+      "original_va": "0xfffffff007779400",
+      "exported_names": [
+        "__ZN9IOService4initEP15IORegistryEntryPK15IORegistryPlane"
+      ]
+    },
+    {
+      "slot": 75,
+      "byte_offset": 600,
+      "original_va": "0xfffffff0077794b4",
+      "exported_names": [
+        "__ZN9IOService16requestTerminateEPS_j"
+      ]
+    },
+    {
+      "slot": 76,
+      "byte_offset": 608,
+      "original_va": "0xfffffff00777951c",
+      "exported_names": [
+        "__ZN9IOService13willTerminateEPS_j"
+      ]
+    },
+    {
+      "slot": 77,
+      "byte_offset": 616,
+      "original_va": "0xfffffff007779540",
+      "exported_names": [
+        "__ZN9IOService12didTerminateEPS_jPb"
+      ]
+    },
+    {
+      "slot": 78,
+      "byte_offset": 624,
+      "original_va": "0xfffffff0077a31cc",
+      "exported_names": [
+        "__ZN9IOService15nextIdleTimeoutEyyj"
+      ]
+    },
+    {
+      "slot": 79,
+      "byte_offset": 632,
+      "original_va": "0xfffffff0077a4474",
+      "exported_names": [
+        "__ZN9IOService18systemWillShutdownEj"
+      ]
+    },
+    {
+      "slot": 80,
+      "byte_offset": 640,
+      "original_va": "0xfffffff007779618",
+      "exported_names": [
+        "__ZN9IOService22copyClientWithCategoryEPK8OSSymbol"
+      ]
+    },
+    {
+      "slot": 81,
+      "byte_offset": 648,
+      "original_va": "0xfffffff00777971c",
+      "exported_names": [
+        "__ZN9IOService15configureReportEP19IOReportChannelListjPvS2_"
+      ]
+    },
+    {
+      "slot": 82,
+      "byte_offset": 656,
+      "original_va": "0xfffffff0077799d8",
+      "exported_names": [
+        "__ZN9IOService12updateReportEP19IOReportChannelListjPvS2_"
+      ]
+    },
+    {
+      "slot": 83,
+      "byte_offset": 664,
+      "original_va": "0xfffffff007779ca4",
+      "exported_names": [
+        "__ZNK9IOService8getStateEv"
+      ]
+    },
+    {
+      "slot": 84,
+      "byte_offset": 672,
+      "original_va": "0xfffffff007779cac",
+      "exported_names": [
+        "__ZN9IOService15registerServiceEj"
+      ]
+    },
+    {
+      "slot": 85,
+      "byte_offset": 680,
+      "original_va": "0xfffffff007779ee0",
+      "exported_names": [
+        "__ZN9IOService5probeEPS_Pi"
+      ]
+    },
+    {
+      "slot": 86,
+      "byte_offset": 688,
+      "original_va": "0xfffffff005eef59c",
+      "exported_names": []
+    },
+    {
+      "slot": 87,
+      "byte_offset": 696,
+      "original_va": "0xfffffff005ef013c",
+      "exported_names": []
+    },
+    {
+      "slot": 88,
+      "byte_offset": 704,
+      "original_va": "0xfffffff007779f14",
+      "exported_names": [
+        "__ZN9IOService4openEPS_jPv"
+      ]
+    },
+    {
+      "slot": 89,
+      "byte_offset": 712,
+      "original_va": "0xfffffff00777a040",
+      "exported_names": [
+        "__ZN9IOService5closeEPS_j"
+      ]
+    },
+    {
+      "slot": 90,
+      "byte_offset": 720,
+      "original_va": "0xfffffff00777a168",
+      "exported_names": [
+        "__ZNK9IOService6isOpenEPKS_"
+      ]
+    },
+    {
+      "slot": 91,
+      "byte_offset": 728,
+      "original_va": "0xfffffff00777a1c4",
+      "exported_names": [
+        "__ZN9IOService10handleOpenEPS_jPv"
+      ]
+    },
+    {
+      "slot": 92,
+      "byte_offset": 736,
+      "original_va": "0xfffffff00777a230",
+      "exported_names": [
+        "__ZN9IOService11handleCloseEPS_j"
+      ]
+    },
+    {
+      "slot": 93,
+      "byte_offset": 744,
+      "original_va": "0xfffffff00777a248",
+      "exported_names": [
+        "__ZNK9IOService12handleIsOpenEPKS_"
+      ]
+    },
+    {
+      "slot": 94,
+      "byte_offset": 752,
+      "original_va": "0xfffffff00777a268",
+      "exported_names": [
+        "__ZN9IOService9terminateEj"
+      ]
+    },
+    {
+      "slot": 95,
+      "byte_offset": 760,
+      "original_va": "0xfffffff00777a270",
+      "exported_names": [
+        "__ZN9IOService8finalizeEj"
+      ]
+    },
+    {
+      "slot": 96,
+      "byte_offset": 768,
+      "original_va": "0xfffffff00777a454",
+      "exported_names": [
+        "__ZN9IOService18lockForArbitrationEb"
+      ]
+    },
+    {
+      "slot": 97,
+      "byte_offset": 776,
+      "original_va": "0xfffffff00777a838",
+      "exported_names": [
+        "__ZN9IOService20unlockForArbitrationEv"
+      ]
+    },
+    {
+      "slot": 98,
+      "byte_offset": 784,
+      "original_va": "0xfffffff00777a9bc",
+      "exported_names": [
+        "__ZN9IOService15terminateClientEPS_j"
+      ]
+    },
+    {
+      "slot": 99,
+      "byte_offset": 792,
+      "original_va": "0xfffffff00777aa20",
+      "exported_names": [
+        "__ZN9IOService12getBusyStateEv"
+      ]
+    },
+    {
+      "slot": 100,
+      "byte_offset": 800,
+      "original_va": "0xfffffff00777aa2c",
+      "exported_names": [
+        "__ZN9IOService10adjustBusyEi"
+      ]
+    },
+    {
+      "slot": 101,
+      "byte_offset": 808,
+      "original_va": "0xfffffff00777aa74",
+      "exported_names": [
+        "__ZN9IOService18matchPropertyTableEP12OSDictionaryPi"
+      ]
+    },
+    {
+      "slot": 102,
+      "byte_offset": 816,
+      "original_va": "0xfffffff00777aa80",
+      "exported_names": [
+        "__ZN9IOService18matchPropertyTableEP12OSDictionary"
+      ]
+    },
+    {
+      "slot": 103,
+      "byte_offset": 824,
+      "original_va": "0xfffffff00777aa88",
+      "exported_names": [
+        "__ZN9IOService13matchLocationEPS_"
+      ]
+    },
+    {
+      "slot": 104,
+      "byte_offset": 832,
+      "original_va": "0xfffffff00777aacc",
+      "exported_names": [
+        "__ZN9IOService17addNeededResourceEPKc"
+      ]
+    },
+    {
+      "slot": 105,
+      "byte_offset": 840,
+      "original_va": "0xfffffff00777ac6c",
+      "exported_names": [
+        "__ZN9IOService15comparePropertyEP12OSDictionaryPKc"
+      ]
+    },
+    {
+      "slot": 106,
+      "byte_offset": 848,
+      "original_va": "0xfffffff00777ad00",
+      "exported_names": [
+        "__ZN9IOService15comparePropertyEP12OSDictionaryPK8OSString"
+      ]
+    },
+    {
+      "slot": 107,
+      "byte_offset": 856,
+      "original_va": "0xfffffff00777ad94",
+      "exported_names": [
+        "__ZN9IOService17comparePropertiesEP12OSDictionaryP12OSCollection"
+      ]
+    },
+    {
+      "slot": 108,
+      "byte_offset": 864,
+      "original_va": "0xfffffff00777aea8",
+      "exported_names": [
+        "__ZN9IOService6attachEPS_"
+      ]
+    },
+    {
+      "slot": 109,
+      "byte_offset": 872,
+      "original_va": "0xfffffff00777b13c",
+      "exported_names": [
+        "__ZN9IOService6detachEPS_"
+      ]
+    },
+    {
+      "slot": 110,
+      "byte_offset": 880,
+      "original_va": "0xfffffff00777b4f0",
+      "exported_names": [
+        "__ZNK9IOService11getProviderEv"
+      ]
+    },
+    {
+      "slot": 111,
+      "byte_offset": 888,
+      "original_va": "0xfffffff00777b55c",
+      "exported_names": [
+        "__ZNK9IOService11getWorkLoopEv"
+      ]
+    },
+    {
+      "slot": 112,
+      "byte_offset": 896,
+      "original_va": "0xfffffff00777b58c",
+      "exported_names": [
+        "__ZNK9IOService19getProviderIteratorEv"
+      ]
+    },
+    {
+      "slot": 113,
+      "byte_offset": 904,
+      "original_va": "0xfffffff00777b5a0",
+      "exported_names": [
+        "__ZNK9IOService23getOpenProviderIteratorEv"
+      ]
+    },
+    {
+      "slot": 114,
+      "byte_offset": 912,
+      "original_va": "0xfffffff00777b670",
+      "exported_names": [
+        "__ZNK9IOService9getClientEv"
+      ]
+    },
+    {
+      "slot": 115,
+      "byte_offset": 920,
+      "original_va": "0xfffffff00777b684",
+      "exported_names": [
+        "__ZNK9IOService17getClientIteratorEv"
+      ]
+    },
+    {
+      "slot": 116,
+      "byte_offset": 928,
+      "original_va": "0xfffffff00777b698",
+      "exported_names": [
+        "__ZNK9IOService21getOpenClientIteratorEv"
+      ]
+    },
+    {
+      "slot": 117,
+      "byte_offset": 936,
+      "original_va": "0xfffffff005ef0320",
+      "exported_names": []
+    },
+    {
+      "slot": 118,
+      "byte_offset": 944,
+      "original_va": "0xfffffff00777bad0",
+      "exported_names": [
+        "__ZN9IOService20callPlatformFunctionEPKcbPvS2_S2_S2_"
+      ]
+    },
+    {
+      "slot": 119,
+      "byte_offset": 952,
+      "original_va": "0xfffffff00777bb74",
+      "exported_names": [
+        "__ZN9IOService12getResourcesEv"
+      ]
+    },
+    {
+      "slot": 120,
+      "byte_offset": 960,
+      "original_va": "0xfffffff00777bb7c",
+      "exported_names": [
+        "__ZN9IOService20getDeviceMemoryCountEv"
+      ]
+    },
+    {
+      "slot": 121,
+      "byte_offset": 968,
+      "original_va": "0xfffffff00777bbf0",
+      "exported_names": [
+        "__ZN9IOService24getDeviceMemoryWithIndexEj"
+      ]
+    },
+    {
+      "slot": 122,
+      "byte_offset": 976,
+      "original_va": "0xfffffff00777bc6c",
+      "exported_names": [
+        "__ZN9IOService24mapDeviceMemoryWithIndexEjj"
+      ]
+    },
+    {
+      "slot": 123,
+      "byte_offset": 984,
+      "original_va": "0xfffffff00777bcb0",
+      "exported_names": [
+        "__ZN9IOService15getDeviceMemoryEv"
+      ]
+    },
+    {
+      "slot": 124,
+      "byte_offset": 992,
+      "original_va": "0xfffffff00777bd14",
+      "exported_names": [
+        "__ZN9IOService15setDeviceMemoryEP7OSArray"
+      ]
+    },
+    {
+      "slot": 125,
+      "byte_offset": 1000,
+      "original_va": "0xfffffff00777bd2c",
+      "exported_names": [
+        "__ZN9IOService17registerInterruptEiP8OSObjectPFvS1_PvPS_iES2_"
+      ]
+    },
+    {
+      "slot": 126,
+      "byte_offset": 1008,
+      "original_va": "0xfffffff00777bdf8",
+      "exported_names": [
+        "__ZN9IOService19unregisterInterruptEi"
+      ]
+    },
+    {
+      "slot": 127,
+      "byte_offset": 1016,
+      "original_va": "0xfffffff00777bea0",
+      "exported_names": [
+        "__ZN9IOService16getInterruptTypeEiPi"
+      ]
+    },
+    {
+      "slot": 128,
+      "byte_offset": 1024,
+      "original_va": "0xfffffff00777bf50",
+      "exported_names": [
+        "__ZN9IOService15enableInterruptEi"
+      ]
+    },
+    {
+      "slot": 129,
+      "byte_offset": 1032,
+      "original_va": "0xfffffff00777bfd4",
+      "exported_names": [
+        "__ZN9IOService16disableInterruptEi"
+      ]
+    },
+    {
+      "slot": 130,
+      "byte_offset": 1040,
+      "original_va": "0xfffffff00777c058",
+      "exported_names": [
+        "__ZN9IOService14causeInterruptEi"
+      ]
+    },
+    {
+      "slot": 131,
+      "byte_offset": 1048,
+      "original_va": "0xfffffff00777c0dc",
+      "exported_names": [
+        "__ZN9IOService12requestProbeEj"
+      ]
+    },
+    {
+      "slot": 132,
+      "byte_offset": 1056,
+      "original_va": "0xfffffff00777c0e8",
+      "exported_names": [
+        "__ZN9IOService7messageEjPS_Pv"
+      ]
+    },
+    {
+      "slot": 133,
+      "byte_offset": 1064,
+      "original_va": "0xfffffff00777c0f4",
+      "exported_names": [
+        "__ZN9IOService13messageClientEjP8OSObjectPvm"
+      ]
+    },
+    {
+      "slot": 134,
+      "byte_offset": 1072,
+      "original_va": "0xfffffff00777c43c",
+      "exported_names": [
+        "__ZN9IOService14messageClientsEjPvm"
+      ]
+    },
+    {
+      "slot": 135,
+      "byte_offset": 1080,
+      "original_va": "0xfffffff00777c48c",
+      "exported_names": [
+        "__ZN9IOService16registerInterestEPK8OSSymbolPFiPvS3_jPS_S3_mES3_S3_"
+      ]
+    },
+    {
+      "slot": 136,
+      "byte_offset": 1088,
+      "original_va": "0xfffffff00777c564",
+      "exported_names": [
+        "__ZN9IOService16applyToProvidersEPFvPS_PvES1_"
+      ]
+    },
+    {
+      "slot": 137,
+      "byte_offset": 1096,
+      "original_va": "0xfffffff00777c578",
+      "exported_names": [
+        "__ZN9IOService14applyToClientsEPFvPS_PvES1_"
+      ]
+    },
+    {
+      "slot": 138,
+      "byte_offset": 1104,
+      "original_va": "0xfffffff00777c58c",
+      "exported_names": [
+        "__ZN9IOService17applyToInterestedEPK8OSSymbolPFvP8OSObjectPvES5_"
+      ]
+    },
+    {
+      "slot": 139,
+      "byte_offset": 1112,
+      "original_va": "0xfffffff00777c5f4",
+      "exported_names": [
+        "__ZN9IOService23acknowledgeNotificationEPvj"
+      ]
+    },
+    {
+      "slot": 140,
+      "byte_offset": 1120,
+      "original_va": "0xfffffff00777c600",
+      "exported_names": [
+        "__ZN9IOService13newUserClientEP4taskPvjP12OSDictionaryPP12IOUserClient"
+      ]
+    },
+    {
+      "slot": 141,
+      "byte_offset": 1128,
+      "original_va": "0xfffffff00777c880",
+      "exported_names": [
+        "__ZN9IOService13newUserClientEP4taskPvjPP12IOUserClient"
+      ]
+    },
+    {
+      "slot": 142,
+      "byte_offset": 1136,
+      "original_va": "0xfffffff00777c88c",
+      "exported_names": [
+        "__ZN9IOService16stringFromReturnEi"
+      ]
+    },
+    {
+      "slot": 143,
+      "byte_offset": 1144,
+      "original_va": "0xfffffff00777c904",
+      "exported_names": [
+        "__ZN9IOService15errnoFromReturnEi"
+      ]
+    },
+    {
+      "slot": 144,
+      "byte_offset": 1152,
+      "original_va": "0xfffffff007793628",
+      "exported_names": [
+        "__ZN9IOService6PMinitEv"
+      ]
+    },
+    {
+      "slot": 145,
+      "byte_offset": 1160,
+      "original_va": "0xfffffff0077a0e80",
+      "exported_names": [
+        "__ZN9IOService6PMstopEv"
+      ]
+    },
+    {
+      "slot": 146,
+      "byte_offset": 1168,
+      "original_va": "0xfffffff0077a0e64",
+      "exported_names": [
+        "__ZN9IOService10joinPMtreeEPS_"
+      ]
+    },
+    {
+      "slot": 147,
+      "byte_offset": 1176,
+      "original_va": "0xfffffff0077a19a4",
+      "exported_names": [
+        "__ZN9IOService19registerPowerDriverEPS_P14IOPMPowerStatem"
+      ]
+    },
+    {
+      "slot": 148,
+      "byte_offset": 1184,
+      "original_va": "0xfffffff0077a23d4",
+      "exported_names": [
+        "__ZN9IOService23requestPowerDomainStateEmP17IOPowerConnectionm"
+      ]
+    },
+    {
+      "slot": 149,
+      "byte_offset": 1192,
+      "original_va": "0xfffffff0077a2fbc",
+      "exported_names": [
+        "__ZN9IOService14activityTickleEmm"
+      ]
+    },
+    {
+      "slot": 150,
+      "byte_offset": 1200,
+      "original_va": "0xfffffff0077a322c",
+      "exported_names": [
+        "__ZN9IOService17setAggressivenessEmm"
+      ]
+    },
+    {
+      "slot": 151,
+      "byte_offset": 1208,
+      "original_va": "0xfffffff0077a3234",
+      "exported_names": [
+        "__ZN9IOService17getAggressivenessEmPm"
+      ]
+    },
+    {
+      "slot": 152,
+      "byte_offset": 1216,
+      "original_va": "0xfffffff0077a116c",
+      "exported_names": [
+        "__ZN9IOService13addPowerChildEPS_"
+      ]
+    },
+    {
+      "slot": 153,
+      "byte_offset": 1224,
+      "original_va": "0xfffffff0077a17ec",
+      "exported_names": [
+        "__ZN9IOService16removePowerChildEP17IOPowerConnection"
+      ]
+    },
+    {
+      "slot": 154,
+      "byte_offset": 1232,
+      "original_va": "0xfffffff0077a3028",
+      "exported_names": [
+        "__ZN9IOService18setIdleTimerPeriodEm"
+      ]
+    },
+    {
+      "slot": 155,
+      "byte_offset": 1240,
+      "original_va": "0xfffffff0077a4374",
+      "exported_names": [
+        "__ZN9IOService13setPowerStateEmPS_"
+      ]
+    },
+    {
+      "slot": 156,
+      "byte_offset": 1248,
+      "original_va": "0xfffffff0077a437c",
+      "exported_names": [
+        "__ZN9IOService27maxCapabilityForDomainStateEm"
+      ]
+    },
+    {
+      "slot": 157,
+      "byte_offset": 1256,
+      "original_va": "0xfffffff0077a43c4",
+      "exported_names": [
+        "__ZN9IOService31initialPowerStateForDomainStateEm"
+      ]
+    },
+    {
+      "slot": 158,
+      "byte_offset": 1264,
+      "original_va": "0xfffffff0077a4418",
+      "exported_names": [
+        "__ZN9IOService24powerStateForDomainStateEm"
+      ]
+    },
+    {
+      "slot": 159,
+      "byte_offset": 1272,
+      "original_va": "0xfffffff0077a4460",
+      "exported_names": [
+        "__ZN9IOService22powerStateWillChangeToEmmPS_"
+      ]
+    },
+    {
+      "slot": 160,
+      "byte_offset": 1280,
+      "original_va": "0xfffffff0077a4468",
+      "exported_names": [
+        "__ZN9IOService21powerStateDidChangeToEmmPS_"
+      ]
+    },
+    {
+      "slot": 161,
+      "byte_offset": 1288,
+      "original_va": "0xfffffff0077a3368",
+      "exported_names": [
+        "__ZN9IOService13askChangeDownEm"
+      ]
+    },
+    {
+      "slot": 162,
+      "byte_offset": 1296,
+      "original_va": "0xfffffff0077a3374",
+      "exported_names": [
+        "__ZN9IOService14tellChangeDownEm"
+      ]
+    },
+    {
+      "slot": 163,
+      "byte_offset": 1304,
+      "original_va": "0xfffffff0077a3380",
+      "exported_names": [
+        "__ZN9IOService16tellNoChangeDownEm"
+      ]
+    },
+    {
+      "slot": 164,
+      "byte_offset": 1312,
+      "original_va": "0xfffffff0077a3834",
+      "exported_names": [
+        "__ZN9IOService12tellChangeUpEm"
+      ]
+    },
+    {
+      "slot": 165,
+      "byte_offset": 1320,
+      "original_va": "0xfffffff0077a3840",
+      "exported_names": [
+        "__ZN9IOService16allowPowerChangeEm"
+      ]
+    },
+    {
+      "slot": 166,
+      "byte_offset": 1328,
+      "original_va": "0xfffffff0077a38c4",
+      "exported_names": [
+        "__ZN9IOService17cancelPowerChangeEm"
+      ]
+    },
+    {
+      "slot": 167,
+      "byte_offset": 1336,
+      "original_va": "0xfffffff0077a4470",
+      "exported_names": [
+        "__ZN9IOService15powerChangeDoneEm"
+      ]
+    },
+    {
+      "slot": 168,
+      "byte_offset": 1344,
+      "original_va": "0xfffffff005ef03e8",
+      "exported_names": [],
+      "alias": "abiSlot168",
+      "declaration": "virtual void abiSlot168(); // 168: 0x540; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 169,
+      "byte_offset": 1352,
+      "original_va": "0xfffffff005ef047c",
+      "exported_names": [],
+      "alias": "abiSlot169",
+      "declaration": "virtual void abiSlot169(); // 169: 0x548; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 170,
+      "byte_offset": 1360,
+      "original_va": "0xfffffff005ef054c",
+      "exported_names": [],
+      "alias": "abiSlot170",
+      "declaration": "virtual void abiSlot170(); // 170: 0x550; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 171,
+      "byte_offset": 1368,
+      "original_va": "0xfffffff005ef05d0",
+      "exported_names": [],
+      "alias": "abiSlot171",
+      "declaration": "virtual void abiSlot171(); // 171: 0x558; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 172,
+      "byte_offset": 1376,
+      "original_va": "0xfffffff005ef0438",
+      "exported_names": [],
+      "alias": "abiSlot172",
+      "declaration": "virtual void abiSlot172(); // 172: 0x560; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 173,
+      "byte_offset": 1384,
+      "original_va": "0xfffffff005ef04c4",
+      "exported_names": [],
+      "alias": "abiSlot173",
+      "declaration": "virtual void abiSlot173(); // 173: 0x568; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 174,
+      "byte_offset": 1392,
+      "original_va": "0xfffffff005ef0594",
+      "exported_names": [],
+      "alias": "abiSlot174",
+      "declaration": "virtual void abiSlot174(); // 174: 0x570; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 175,
+      "byte_offset": 1400,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "abiSlot175PlatformAction",
+      "declaration": "virtual void abiSlot175PlatformAction(uint32_t action) = 0; // 175: 0x578",
+      "pure_virtual": true,
+      "abi_evidence": "The family passes 3 for the platform halt/panic path; OTG ignores the argument."
+    },
+    {
+      "slot": 176,
+      "byte_offset": 1408,
+      "original_va": "0xfffffff005ef1804",
+      "exported_names": [],
+      "alias": "abiSlot176",
+      "declaration": "virtual void abiSlot176(); // 176: 0x580; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 177,
+      "byte_offset": 1416,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "goOnBus",
+      "declaration": "virtual IOReturn goOnBus(bool activate) = 0; // 177: 0x588",
+      "pure_virtual": true,
+      "abi_evidence": "x1 controls whether inactive hardware is activated."
+    },
+    {
+      "slot": 178,
+      "byte_offset": 1424,
+      "original_va": "0xfffffff005eee630",
+      "exported_names": [],
+      "alias": "abiSlot178",
+      "declaration": "virtual void abiSlot178(); // 178: 0x590; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 179,
+      "byte_offset": 1432,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "abiSlot179CableConnected",
+      "declaration": "virtual bool abiSlot179CableConnected() = 0; // 179: 0x598",
+      "pure_virtual": true,
+      "abi_evidence": "True when the AppleEmbeddedUSBNub state is one of two connected states; name is reconstructed."
+    },
+    {
+      "slot": 180,
+      "byte_offset": 1440,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "handleStallEndpoint",
+      "declaration": "virtual void handleStallEndpoint(uint32_t endpoint, bool stall) = 0; // 180: 0x5a0",
+      "pure_virtual": true,
+      "abi_evidence": "x1 endpoint address, x2 selects setting/clearing STALL."
+    },
+    {
+      "slot": 181,
+      "byte_offset": 1448,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "handleAbortEndpoint",
+      "declaration": "virtual void handleAbortEndpoint(uint32_t endpoint) = 0; // 181: 0x5a8",
+      "pure_virtual": true,
+      "abi_evidence": "x1 endpoint address; native controller wrapper sign extends w1."
+    },
+    {
+      "slot": 182,
+      "byte_offset": 1456,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "handleSetAddressPreStatusPhase",
+      "declaration": "virtual IOReturn handleSetAddressPreStatusPhase(uint16_t address) = 0; // 182: 0x5b0",
+      "pure_virtual": true,
+      "abi_evidence": "Callers load a halfword address; result controls stalling the setup request."
+    },
+    {
+      "slot": 183,
+      "byte_offset": 1464,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "abiSlot183SetAddressPostStatusPhase",
+      "declaration": "virtual IOReturn abiSlot183SetAddressPostStatusPhase(uint16_t address) = 0; // 183: 0x5b8",
+      "pure_virtual": true,
+      "abi_evidence": "Used after the SET_ADDRESS status phase; OTG returns zero."
+    },
+    {
+      "slot": 184,
+      "byte_offset": 1472,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "getConnectionSpeed",
+      "declaration": "virtual int32_t getConnectionSpeed() = 0; // 184: 0x5c0",
+      "pure_virtual": true,
+      "abi_evidence": "DWC2 returns 1 for full speed and 2 for high speed; disconnected paths include negative values."
+    },
+    {
+      "slot": 185,
+      "byte_offset": 1480,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "provideEndpointIDsForConfiguration",
+      "declaration": "virtual IOReturn provideEndpointIDsForConfiguration(OSArray *interfaces, uint8_t *endpointIDs) = 0; // 185: 0x5c8",
+      "pure_virtual": true,
+      "abi_evidence": "Iterates interfaces and their alternate settings and fills a flat byte array of endpoint addresses."
+    },
+    {
+      "slot": 186,
+      "byte_offset": 1488,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "prepareConfiguration",
+      "declaration": "virtual void prepareConfiguration(OSArray *interfaces) = 0; // 186: 0x5d0",
+      "pure_virtual": true,
+      "abi_evidence": "Argument is the active interface array; OTG uses its count only for logging."
+    },
+    {
+      "slot": 187,
+      "byte_offset": 1496,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "activateEndpoint",
+      "declaration": "virtual IOReturn activateEndpoint(uint32_t endpoint, uint32_t type, uint32_t maxPacketSize, uint32_t interval, uint32_t pipeProperties) = 0; // 187: 0x5d8",
+      "pure_virtual": true,
+      "abi_evidence": "All five scalar arguments are forwarded by family slot 173; OTG ignores x5."
+    },
+    {
+      "slot": 188,
+      "byte_offset": 1504,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "deactivateEndpoint",
+      "declaration": "virtual IOReturn deactivateEndpoint(uint32_t endpoint) = 0; // 188: 0x5e0",
+      "pure_virtual": true,
+      "abi_evidence": "Native OTG returns zero after releasing endpoint storage."
+    },
+    {
+      "slot": 189,
+      "byte_offset": 1512,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "abiSlot189AllocateBuffer",
+      "declaration": "virtual IOBufferMemoryDescriptor * abiSlot189AllocateBuffer(uint32_t options, uint64_t length) = 0; // 189: 0x5e8",
+      "pure_virtual": true,
+      "abi_evidence": "OTG passes kernel_task, options | 0x20, length, -cacheLineSize to IOBufferMemoryDescriptor::inTaskWithPhysicalMask."
+    },
+    {
+      "slot": 190,
+      "byte_offset": 1520,
+      "original_va": "0xfffffff005ef2ec4",
+      "exported_names": [],
+      "alias": "abiSlot190",
+      "declaration": "virtual void abiSlot190(); // 190: 0x5f0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 191,
+      "byte_offset": 1528,
+      "original_va": "0xfffffff005ef3074",
+      "exported_names": [],
+      "alias": "abiSlot191",
+      "declaration": "virtual void abiSlot191(); // 191: 0x5f8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 192,
+      "byte_offset": 1536,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "isEndpointStalled",
+      "declaration": "virtual bool isEndpointStalled(uint32_t endpoint) = 0; // 192: 0x600",
+      "pure_virtual": true,
+      "abi_evidence": "Returns the endpoint STALL bit."
+    },
+    {
+      "slot": 193,
+      "byte_offset": 1544,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "resetEndpointDataToggle",
+      "declaration": "virtual void resetEndpointDataToggle(uint32_t endpoint) = 0; // 193: 0x608",
+      "pure_virtual": true,
+      "abi_evidence": "No defined result; sets DWC2 SETD0PID."
+    },
+    {
+      "slot": 194,
+      "byte_offset": 1552,
+      "original_va": "0xfffffff005ef0914",
+      "exported_names": [],
+      "alias": "abiSlot194",
+      "declaration": "virtual void abiSlot194(); // 194: 0x610; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 195,
+      "byte_offset": 1560,
+      "original_va": "0xfffffff005ef44d8",
+      "exported_names": [],
+      "alias": "handleUSBSuspend",
+      "declaration": "virtual void handleUSBSuspend(); // 195: 0x618",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 196,
+      "byte_offset": 1568,
+      "original_va": "0xfffffff005ef46d4",
+      "exported_names": [],
+      "alias": "handleUSBReset",
+      "declaration": "virtual void handleUSBReset(); // 196: 0x620",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 197,
+      "byte_offset": 1576,
+      "original_va": "0xfffffff005ef494c",
+      "exported_names": [],
+      "alias": "handleUSBResume",
+      "declaration": "virtual void handleUSBResume(); // 197: 0x628",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 198,
+      "byte_offset": 1584,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "abiSlot198ScheduleReenumeration",
+      "declaration": "virtual void abiSlot198ScheduleReenumeration() = 0; // 198: 0x630",
+      "pure_virtual": true,
+      "abi_evidence": "Native callers pass only this after changing the pending configuration; name is reconstructed."
+    },
+    {
+      "slot": 199,
+      "byte_offset": 1592,
+      "original_va": "0xfffffff005ef0d58",
+      "exported_names": [],
+      "alias": "abiSlot199",
+      "declaration": "virtual void abiSlot199(); // 199: 0x638; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 200,
+      "byte_offset": 1600,
+      "original_va": "0xfffffff005efa48c",
+      "exported_names": [],
+      "alias": "abiSlot200",
+      "declaration": "virtual void abiSlot200(); // 200: 0x640; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 201,
+      "byte_offset": 1608,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "doRemoteWakeGated",
+      "declaration": "virtual IOReturn doRemoteWakeGated() = 0; // 201: 0x648",
+      "pure_virtual": true,
+      "abi_evidence": "Family tests zero as success."
+    },
+    {
+      "slot": 202,
+      "byte_offset": 1616,
+      "original_va": "0xfffffff005efacc8",
+      "exported_names": [],
+      "alias": "abiSlot202",
+      "declaration": "virtual void abiSlot202(); // 202: 0x650; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 203,
+      "byte_offset": 1624,
+      "original_va": "0xfffffff005ef4a74",
+      "exported_names": [],
+      "alias": "handleUSBCableConnect",
+      "declaration": "virtual void handleUSBCableConnect(); // 203: 0x658",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 204,
+      "byte_offset": 1632,
+      "original_va": "0xfffffff005ef4658",
+      "exported_names": [],
+      "alias": "handleUSBCableDisconnect",
+      "declaration": "virtual void handleUSBCableDisconnect(); // 204: 0x660",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 205,
+      "byte_offset": 1640,
+      "original_va": "0xfffffff005ef45a4",
+      "exported_names": [],
+      "alias": "abiSlot205GoOffAndOnBus",
+      "declaration": "virtual void abiSlot205GoOffAndOnBus(); // 205: 0x668",
+      "pure_virtual": false,
+      "signature_status": "ABI recovered from stock callers"
+    },
+    {
+      "slot": 206,
+      "byte_offset": 1648,
+      "original_va": "0xfffffff005ef093c",
+      "exported_names": [],
+      "alias": "abiSlot206",
+      "declaration": "virtual void abiSlot206(); // 206: 0x670; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 207,
+      "byte_offset": 1656,
+      "original_va": "0xfffffff005ef0ef8",
+      "exported_names": [],
+      "alias": "abiSlot207",
+      "declaration": "virtual void abiSlot207(); // 207: 0x678; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 208,
+      "byte_offset": 1664,
+      "original_va": "0xfffffff005ef0f00",
+      "exported_names": [],
+      "alias": "abiSlot208",
+      "declaration": "virtual void abiSlot208(); // 208: 0x680; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 209,
+      "byte_offset": 1672,
+      "original_va": "0xfffffff005ef0f40",
+      "exported_names": [],
+      "alias": "abiSlot209",
+      "declaration": "virtual void abiSlot209(); // 209: 0x688; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 210,
+      "byte_offset": 1680,
+      "original_va": "0xfffffff005ef0f74",
+      "exported_names": [],
+      "alias": "abiSlot210",
+      "declaration": "virtual void abiSlot210(); // 210: 0x690; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 211,
+      "byte_offset": 1688,
+      "original_va": "0xfffffff005ef0944",
+      "exported_names": [],
+      "alias": "abiSlot211",
+      "declaration": "virtual void abiSlot211(); // 211: 0x698; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 212,
+      "byte_offset": 1696,
+      "original_va": "0xfffffff005ef0eb8",
+      "exported_names": [],
+      "alias": "abiSlot212",
+      "declaration": "virtual void abiSlot212(); // 212: 0x6a0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 213,
+      "byte_offset": 1704,
+      "original_va": "0xfffffff005ef0ef4",
+      "exported_names": [],
+      "alias": "abiSlot213",
+      "declaration": "virtual void abiSlot213(); // 213: 0x6a8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 214,
+      "byte_offset": 1712,
+      "original_va": "0xfffffff005ef3260",
+      "exported_names": [],
+      "alias": "abiSlot214",
+      "declaration": "virtual void abiSlot214(); // 214: 0x6b0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 215,
+      "byte_offset": 1720,
+      "original_va": "0xfffffff005ef32b0",
+      "exported_names": [],
+      "alias": "abiSlot215",
+      "declaration": "virtual void abiSlot215(); // 215: 0x6b8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 216,
+      "byte_offset": 1728,
+      "original_va": "0xfffffff005ef3528",
+      "exported_names": [],
+      "alias": "abiSlot216",
+      "declaration": "virtual void abiSlot216(); // 216: 0x6c0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 217,
+      "byte_offset": 1736,
+      "original_va": "0xfffffff005ef3428",
+      "exported_names": [],
+      "alias": "abiSlot217",
+      "declaration": "virtual void abiSlot217(); // 217: 0x6c8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 218,
+      "byte_offset": 1744,
+      "original_va": "0xfffffff005ef36b4",
+      "exported_names": [],
+      "alias": "abiSlot218",
+      "declaration": "virtual void abiSlot218(); // 218: 0x6d0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 219,
+      "byte_offset": 1752,
+      "original_va": "0xfffffff005ef3df8",
+      "exported_names": [],
+      "alias": "abiSlot219",
+      "declaration": "virtual void abiSlot219(); // 219: 0x6d8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 220,
+      "byte_offset": 1760,
+      "original_va": "0xfffffff005ef8190",
+      "exported_names": [],
+      "alias": "abiSlot220",
+      "declaration": "virtual void abiSlot220(); // 220: 0x6e0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 221,
+      "byte_offset": 1768,
+      "original_va": "0xfffffff005ef0ff8",
+      "exported_names": [],
+      "alias": "abiSlot221CreateControlRequest",
+      "declaration": "virtual IOUSBDeviceControlRequest * abiSlot221CreateControlRequest(); // 221: 0x6e8",
+      "pure_virtual": false
+    },
+    {
+      "slot": 222,
+      "byte_offset": 1776,
+      "original_va": "0xfffffff005eee818",
+      "exported_names": [],
+      "alias": "abiSlot222",
+      "declaration": "virtual void abiSlot222(); // 222: 0x6f0; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 223,
+      "byte_offset": 1784,
+      "original_va": "0xfffffff005ef1008",
+      "exported_names": [],
+      "alias": "abiSlot223",
+      "declaration": "virtual void abiSlot223(); // 223: 0x6f8; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 224,
+      "byte_offset": 1792,
+      "original_va": "0xfffffff005ef137c",
+      "exported_names": [],
+      "alias": "abiSlot224",
+      "declaration": "virtual void abiSlot224(); // 224: 0x700; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 225,
+      "byte_offset": 1800,
+      "original_va": "0xfffffff00773ed20",
+      "exported_names": [
+        "___cxa_pure_virtual"
+      ],
+      "alias": "ioGated",
+      "declaration": "virtual IOReturn ioGated(NativeUSBIORequest *request) = 0; // 225: 0x708",
+      "pure_virtual": true,
+      "abi_evidence": "Called under IOCommandGate with this in x0 and request in x1."
+    },
+    {
+      "slot": 226,
+      "byte_offset": 1808,
+      "original_va": "0xfffffff005ef15d4",
+      "exported_names": [],
+      "alias": "abiSlot226AllocateIORequest",
+      "declaration": "virtual NativeUSBIORequest * abiSlot226AllocateIORequest(); // 226: 0x710",
+      "pure_virtual": false
+    },
+    {
+      "slot": 227,
+      "byte_offset": 1816,
+      "original_va": "0xfffffff005ef1604",
+      "exported_names": [],
+      "alias": "abiSlot227FreeIORequest",
+      "declaration": "virtual void abiSlot227FreeIORequest(NativeUSBIORequest *request); // 227: 0x718",
+      "pure_virtual": false
+    },
+    {
+      "slot": 228,
+      "byte_offset": 1824,
+      "original_va": "0xfffffff005ef1610",
+      "exported_names": [],
+      "alias": "abiSlot228",
+      "declaration": "virtual void abiSlot228(); // 228: 0x720; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 229,
+      "byte_offset": 1832,
+      "original_va": "0xfffffff005efa174",
+      "exported_names": [],
+      "alias": "abiSlot229",
+      "declaration": "virtual void abiSlot229(); // 229: 0x728; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 230,
+      "byte_offset": 1840,
+      "original_va": "0xfffffff005efacbc",
+      "exported_names": [],
+      "alias": "abiSlot230",
+      "declaration": "virtual void abiSlot230(); // 230: 0x730; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    },
+    {
+      "slot": 231,
+      "byte_offset": 1848,
+      "original_va": "0xfffffff005ef17f0",
+      "exported_names": [],
+      "alias": "abiSlot231",
+      "declaration": "virtual void abiSlot231(); // 231: 0x738; inherit only, signature not recovered",
+      "pure_virtual": false,
+      "signature_status": "unrecovered; inherit original target only"
+    }
+  ],
+  "limitations": [
+    "Header not compiled or deployed.",
+    "Scalar types represent the observed ARM64 calling ABI; original typedef names and some method names are unrecoverable from stripped symbols.",
+    "Slot 175 action width has one observed family caller; native OTG ignores the action.",
+    "Do not call unrecovered abiSlot functions through their placeholder C++ signatures.",
+    "Original addresses must be transformed using emitted module extents.",
+    "DWC3 TRB ownership, short packets, cancellation and setup/status phase transitions still require a real hardware adapter and device validation."
+  ],
+  "controller_fields": {
+    "0x88": "IOCommandGate *",
+    "0x130": "USB string dictionary/list created by finishInitialization",
+    "0x150": "OSDictionary * default device description",
+    "0x1b8": "IOUSBDeviceControlRequest *",
+    "0x1c0": "cache line size (uint32)",
+    "0x1d8": "IOCommandPool *",
+    "0x1e0": "IOMapper * (may be null)"
+  },
+  "ep0_sequence": [
+    "In controller workloop/gate: native_usb_control_input_setup(control, setup8). This method returns void.",
+    "Then native_usb_control_process_setup(control). DWC2 separates packet receipt from setup phase complete; DWC3 should run both when its 8-byte SETUP TRB completes.",
+    "OUT data packets and the host OUT status ZLP are submitted as native_usb_control_input_data(control, bytes, receivedLength).",
+    "IN data/status writes arrive at hardware through ioGated with endpoint=0x80; complete them through native_usb_complete_io to run the original status/data callback.",
+    "On USB bus reset, native_usb_control_reset(control) then inherited handleUSBReset() (slot196). The original DWC2 performs exactly this before rearming EP0.",
+    "Cable connect and disconnect notifications use inherited slots203 and204. These methods internally run on the native gate.",
+    "Suspend/resume notifications use slots195/197, while already in the native workloop."
+  ],
+  "header_status": "frozen after adding interface/pipe helper declarations; base class size compilation confirmed by parent",
+  "speed_values": {
+    "disconnected": -1,
+    "full_speed": 1,
+    "high_speed": 2,
+    "other_speeds": "not used by stock DWC2; do not infer DWC3 code equivalence"
+  },
+  "endpoint_assignment": {
+    "array_element_class": "IOUSBDeviceInterface",
+    "output": "flat byte array in interface, alternate-setting, pipe order",
+    "direction": "0 OUT, 1 IN",
+    "reuse_rule": "Each alternate setting starts at the same per-interface IN/OUT base; next interface advances each base by maximum endpoint count of that direction across all settings.",
+    "endpoint_zero": "reserved for control; allocate function endpoints from 1",
+    "ownership": "The interface_get_pipe wrapper returns existing object; no retain observed in its direct wrapper."
+  }
+}

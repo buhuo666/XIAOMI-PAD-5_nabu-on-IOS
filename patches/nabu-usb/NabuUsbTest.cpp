@@ -132,4 +132,5 @@ int main()
     smmu[context_offset(info.global_pages,p.bank)/4]|=1;
     assert(!plan_bypass(read,info,0x140).valid);
     puts("USB host checks passed: Windows class, EP0 DMA separation, 67-byte descriptor chain, setup-pending, CDC control, log transfer, reset and isolated SMMU route.");
+    return 0;
 }

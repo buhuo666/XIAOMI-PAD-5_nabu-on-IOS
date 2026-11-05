@@ -44,6 +44,43 @@ QueryType，以及 ProductType、DeviceName、ActivationState 的 GetValue，只
 只增加两个启动plist和查询程序，已有文件内容一致。两个APFS容器通过apfsck，新增
 文件经7-Zip独立读取一致。实际服务响应尚待实机验证，不能据此声称原生USB连接完成。
 
+### 第四十四、四十五轮：原版配对服务的阻塞点
+
+两轮用户均确认桌面正常。第四十四轮原版lockdownd已启动，本地62078端口连接成功，
+但QueryType和三个GetValue读取均超时。USB收到1,358,510字节，与磁盘日志从偏移0
+逐字节一致；完整64 MiB日志槽已备份、清空，APFS计数14→15且fullfsync成功。
+这里的磁盘日志是手动重启前的检查点快照，不宣称包含停机前最后一条输出。
+
+第四十五轮的只读线程采样成功：三轮主线程调用栈相同，均在FairPlayGetHWInfo中等待
+`com.apple.fairplayd.versioned`／`com.apple.fairplayd`的1203号RPC响应。该轮原版
+fairplayd.A2反复exit(0)，具体退出原因待查，不能仅由内核缺少FairPlayIOKit推断原因。
+采样没有暂停或修改进程。证据位于ignored `log/host/native-usb-v44/lockdown-abi/`。
+
+### 第四十六轮候选：原生USB硬件适配
+
+`tools/build_nabu_apfs_prelink.py --apple-usb`加入原版IOUSBDeviceFamily、AppleUSBCommon
+和AppleUSBDeviceMux闭包。原生控制器使用20F66的0x1F8对象布局和232槽vtable；编译及
+已预链接指针比对通过。原版Mux位于DATA段更后的位置，故额外保留128 KiB用于自编译
+驱动，保持原组件虚拟地址，PRELINK_INFO仍置于整个映像末尾。
+
+`NabuUsbNativeController.cpp`连接原版配置、控制请求及Mux，DWC3后端负责双向DMA。
+端点FIFO、超时、取消、EP0数据与状态阶段、整包结束、短包、reset和PMIC插拔事件均
+接入同一workloop gate。主机ASan/UBSan检查通过，原生ARM64构建及预链接通过；这些
+检查不等于实机枚举、配对或同步通过。
+
+候选提供两个配置：Reserved，以及Reserved+AppleUSBMux，使配置2的mux位于接口1，
+匹配本机Apple驱动。VID/PID为原iPad7,11设备树的05AC:12AB，bcdDevice为0711。
+USB序列来自本机SoC派生UUID，用途是标识这台开发板，不能当成原版Lockdown UDID或
+配对证明。PTP照片接口、等时传输和远程唤醒尚未实现。
+
+`tools/stage_nabu_boot_chain.py --native-usb`只选择本次暂存配置的原生模式，默认配置
+仍保留已验证的CDC日志口。原生模式的日志先保留到现有磁盘日志槽。Windows端使用
+`tools/probe_apple_mobile_device.py`观测原版AMDS通知和设备属性；它不会执行配对。
+
+本轮bootstrap另为原版fairplayd.A2加载透明调用观察库，仅记录调用名、返回码和调用
+位置，保持原参数及结果。带addend的导入是否被观察到需实机检查，不能将未命中解释为
+没有调用。FairPlay、信任、配对和同步结果都不做伪造。
+
 ## 第一阶段：Windows CDC 日志口
 
 采用 `src/nabu/usb/` 的源码参考，来源为 UniXNU-nabu `54b4f984`，BSD-2-Clause-Patent。

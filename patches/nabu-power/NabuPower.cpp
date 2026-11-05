@@ -207,6 +207,9 @@ static thread_call_t poll_call;
 static unsigned samples;
 static unsigned polls;
 static bool have_sample;
+static int usb_present = -1;
+extern "C" int nabu_power_usb_present(void)
+{ return __atomic_load_n(&usb_present, __ATOMIC_ACQUIRE); }
 static int reported_temperature = INT32_MIN;
 static NabuChargeStatus previous_status;
 static uint32_t previous_rtc;
@@ -221,10 +224,13 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
     int temperature = __atomic_load_n(&temperature_centic, __ATOMIC_ACQUIRE);
     bool refresh = !have_sample || polls % 20 == 0 || temperature != reported_temperature;
     NabuChargeStatus status;
-    if (!refresh && nabu_read_charge_status(read_registers, &status))
+    if (!refresh && nabu_read_charge_status(read_registers, &status)) {
+        __atomic_store_n(&usb_present, status.external ? 1 : 0, __ATOMIC_RELEASE);
         refresh = nabu_charge_status_changed(status, previous_status);
+    }
     NabuPowerSample sample;
     if (refresh && nabu_read_power(read_registers, &sample)) {
+        __atomic_store_n(&usb_present, sample.external ? 1 : 0, __ATOMIC_RELEASE);
         NabuGaugeHistory history;
         bool history_valid = nabu_read_gauge_history(read_registers, &history);
         NabuChargeStatus next_status = {sample.external, sample.charger_state};

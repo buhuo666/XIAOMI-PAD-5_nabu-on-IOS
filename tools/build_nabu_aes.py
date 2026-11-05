@@ -16,7 +16,10 @@ def main():
     ap.add_argument('--output',type=Path,required=True)
     ap.add_argument('--power',action='store_true',help='Include the Pad 5 PMIC, battery and RTC service')
     ap.add_argument('--usb',action='store_true',help='Include the DWC3 CDC runtime-log channel')
+    ap.add_argument('--usb-reference',action='store_true',help='Compile the recovered stock controller ABI reference (not linked)')
+    ap.add_argument('--native-usb',action='store_true',help='Include the stock USB family adapter and DWC3 bidirectional transport')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
+    assert not a.native_usb or a.power, 'Native USB reconnect uses the PMIC power sampler'
     headers=ROOT/'build/nabu-kernel-headers-v29'
     if not headers.exists():
         headers.mkdir()
@@ -32,13 +35,16 @@ def main():
     include += [headers/'EXPORT_HDRS'/directory for directory in ('osfmk','bsd','libkern','pexpert','iokit','security')]
     flags += ['-I'+host_path(p) for p in include]
     if a.power: flags += ['-DNABU_POWER_SERVICE=1']
-    if a.usb: flags += ['-DNABU_USB_SERVICE=1']
+    if a.usb or a.native_usb: flags += ['-DNABU_USB_SERVICE=1']
+    if a.native_usb: flags += ['-DNABU_USB_NATIVE_SERVICE=1']
     sources = [('NabuAES',ROOT/'patches/nabu-apfs/NabuAES.cpp'),
                         ('NabuDataBlock',ROOT/'patches/nabu-storage/NabuDataBlock.cpp'),
                         ('AESReference',ROOT/'patches/nabu-apfs/AESReference.cpp'),
                         ('NabuDataKmod',ROOT/'patches/nabu-storage/NabuDataKmod.cpp')]
     if a.power: sources.append(('NabuPower',ROOT/'patches/nabu-power/NabuPower.cpp'))
-    if a.usb: sources.append(('NabuUsbCaptureCdc',ROOT/'patches/nabu-usb/NabuUsbCaptureCdc.cpp'))
+    if a.usb or a.native_usb: sources.append(('NabuUsbCaptureCdc',ROOT/'patches/nabu-usb/NabuUsbCaptureCdc.cpp'))
+    if a.native_usb: sources.append(('NabuUsbNativeController',ROOT/'patches/nabu-usb/NabuUsbNativeController.cpp'))
+    if a.usb_reference or a.native_usb: sources.append(('NativeUsbReference',ROOT/'patches/nabu-usb/NativeUsbReference.cpp'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

@@ -20,6 +20,12 @@
 #include <kern/thread.h>
 #endif
 #include <stdarg.h>
+#ifdef NABU_USB_NATIVE_SERVICE
+#include "NabuUsbNative.h"
+#if !defined(NABU_USB_HOST_TEST)
+#include <IOKit/IOMemoryDescriptor.h>
+#endif
+#endif
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t pa, vm_size_t size);
 extern "C" vm_offset_t ml_vtophys(vm_offset_t va);
@@ -35,6 +41,15 @@ extern "C" void nabu_usb_test_mmio_write(volatile uint32_t *base, uint32_t offse
 
 namespace nabu_usb_capture {
 namespace {
+#ifdef NABU_USB_NATIVE_SERVICE
+bool g_native_mode;
+unsigned g_native_endpoint_count;
+static bool native_dma_setup(uint64_t limit);
+static void native_ep0_setup();
+static void native_dep_event(uint32_t event);
+static void native_device_event(uint32_t event);
+static void native_poll_events();
+#endif
 
 /* ------------------------------------------------------------------------- */
 /* MMIO and bounded waits                                                    */
@@ -402,7 +417,15 @@ ep0_program(void)
 {
 	(void)ep_cmd(0, kDepcmdDepStartCfg, 0, 0, 0, nullptr);
 	static const unsigned endpoints[] = {0u, 1u, 2u, 3u, 5u};
-	for (unsigned dep : endpoints) {
+	unsigned count = sizeof(endpoints) / sizeof(endpoints[0]);
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) count = g_native_endpoint_count;
+#endif
+	for (unsigned i = 0; i < count; ++i) {
+		unsigned dep = endpoints[i % (sizeof(endpoints) / sizeof(endpoints[0]))];
+#ifdef NABU_USB_NATIVE_SERVICE
+		if (g_native_mode) dep = i;
+#endif
 		if (ep_cmd(dep, kDepcmdSetTransferResource,
 		    1u, 0, 0, nullptr) != 0) {
 			return;
@@ -646,6 +669,9 @@ disable_data_endpoints(void)
 static void
 ep0_setup(void)
 {
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) { native_ep0_setup(); return; }
+#endif
 	const uint32_t w0 = mrd(g_ep0, kEp0SetupBuffer);
 	const uint32_t w1 = mrd(g_ep0, kEp0SetupBuffer + 4);
 	const uint8_t rt = w0 & 0xffu;
@@ -856,6 +882,9 @@ bulk_complete(void)
 static void
 handle_dep_event(uint32_t ev)
 {
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) { native_dep_event(ev); return; }
+#endif
 	const unsigned dep = (ev >> 1) & 0x1fu;
 	const unsigned kind = (ev >> 6) & 0xfu;
 	const unsigned status = (ev >> 12) & 0xfu;
@@ -915,6 +944,9 @@ handle_dep_event(uint32_t ev)
 static void
 handle_device_event(uint32_t ev)
 {
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) { native_device_event(ev); return; }
+#endif
 	const unsigned type = (ev >> 8) & 0xfu;
 	const unsigned info = (ev >> 16) & 0x1ffu;
 	log_cdc("NABU USB CDCLOG devt type=%u info=%03x\n", type, info);
@@ -1088,6 +1120,9 @@ dma_setup(void)
 		puts_cdc("NABU USB CDCLOG dma=above-awidth\n");
 		return false;
 	}
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) return native_dma_setup(limit);
+#endif
 	return true;
 }
 
@@ -1118,8 +1153,14 @@ pump(unsigned rounds)
 {
 	for (uint64_t round = 0; !g_faulted && (rounds == 0 || round < rounds); ++round) {
 		IOSleep(2);
+#ifdef NABU_USB_NATIVE_SERVICE
+		if (g_native_mode) nabu_native_usb_poll(native_poll_events);
+		else
+#endif
+		{
 		poll_events();
 		bulk_pump();
+		}
 		if ((round % 10000u) == 0) {
 			log_cdc("NABU USB CDCLOG round=%llu events=%u setups=%u sent=%llu\n",
 			    static_cast<unsigned long long>(round), g_events, g_setups, g_log_sent);
@@ -1134,8 +1175,14 @@ static void
 usb_run(void)
 {
 	int enabled = 0;
-	if (!PE_parse_boot_argn("nabu-usb-cdc-log", &enabled, sizeof(enabled)) ||
-	    enabled != 1) {
+	(void)PE_parse_boot_argn("nabu-usb-cdc-log", &enabled, sizeof(enabled));
+#ifdef NABU_USB_NATIVE_SERVICE
+	int native = 0;
+	(void)PE_parse_boot_argn("nabu-usb-native", &native, sizeof(native));
+	g_native_mode = native == 1;
+	if (g_native_mode) enabled = 1;
+#endif
+	if (enabled != 1) {
 		return;
 	}
 	puts_cdc("NABU USB CDCLOG 8796-v43 start\n");
@@ -1146,6 +1193,9 @@ usb_run(void)
 	(void)PE_parse_boot_argn("nabu-usb-cdc-log-init", &init, sizeof(init));
 	(void)PE_parse_boot_argn("nabu-usb-cdc-log-smmu", &allow_smmu,
 	    sizeof(allow_smmu));
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) { init = 1; allow_smmu = 1; }
+#endif
 	if (!PE_parse_boot_argn("nabu-usb-cdc-log-rounds", &rounds,
 	    sizeof(rounds)) || rounds > 60000u) {
 		rounds = 0;
@@ -1206,6 +1256,14 @@ usb_run(void)
 	}
 	event_program();
 	ep0_program();
+#ifdef NABU_USB_NATIVE_SERVICE
+	if (g_native_mode) {
+		qscratch_vbus();
+		if (!g_faulted && nabu_native_usb_create_controller()) pump(0);
+		usb_stop();
+		return;
+	}
+#endif
 	ep0_arm_setup();
 	if (g_faulted) {
 		usb_stop();
@@ -1237,8 +1295,13 @@ extern "C" void
 nabu_usb_cdc_log_start(void)
 {
 	int enabled = 0;
-	if (!PE_parse_boot_argn("nabu-usb-cdc-log", &enabled, sizeof(enabled)) ||
-	    enabled != 1) {
+	(void)PE_parse_boot_argn("nabu-usb-cdc-log", &enabled, sizeof(enabled));
+#ifdef NABU_USB_NATIVE_SERVICE
+	int native = 0;
+	(void)PE_parse_boot_argn("nabu-usb-native", &native, sizeof(native));
+	if (native == 1) enabled = 1;
+#endif
+	if (enabled != 1) {
 		return;
 	}
 	bool expected = false;
@@ -1256,3 +1319,6 @@ nabu_usb_cdc_log_start(void)
 }
 
 } // namespace nabu_usb_capture
+#ifdef NABU_USB_NATIVE_SERVICE
+#include "NabuUsbNativeDwc3.inc"
+#endif
