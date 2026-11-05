@@ -41,6 +41,18 @@ def qualified_setup_compat(directory):
     }
 
 
+def qualified_input_bridge(directory):
+    from build_nabu_setup_compat import verify, sha256_lf
+    library = directory/'libnabu.input.dylib'
+    build = json.loads((directory/'build-report.json').read_text())
+    assert build['binary'] == verify(library)
+    assert build['source_sha256_lf'] == sha256_lf(ROOT/'userland/nabu/src/input_bridge.c')
+    assert build['input_header_sha256_lf'] == sha256_lf(ROOT/build['input_header'])
+    return library, {'library': '/redwood/lib/libnabu.input.dylib', 'process': 'backboardd',
+                     'required_bootarg': 'nabu-input=1', 'binary_sha256': build['binary']['sha256'],
+                     'source_sha256_lf': build['source_sha256_lf'], 'build_report': build}
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--programs',type=Path,required=True)
@@ -50,8 +62,10 @@ def main():
     ap.add_argument('--apfsck',type=Path,required=True)
     ap.add_argument('--setup-compat',type=Path,
                     help='Explicit qualified source-built setup library directory, including host-check.json')
+    ap.add_argument('--input-bridge', type=Path, help='Source-built backboardd input library directory')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
+    input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
     assert not a.work.exists() and not a.output.exists()
     a.work.mkdir(parents=True);a.output.mkdir(parents=True)
     source=ROOT/'src/hakios-8796';build=json.loads((a.programs/'build-report.json').read_text())
@@ -119,6 +133,10 @@ def main():
         shutil.copy2(setup_library,target);target.chmod(0o755)
         assert digest(target)==setup_report['binary_sha256']
         injection=setup_report['library']+' '+setup_report['process']+'\n'
+    if input_library:
+        target=root/'lib/libnabu.input.dylib'
+        shutil.copy2(input_library,target);target.chmod(0o755)
+        injection+=input_report['library']+' '+input_report['process']+'\n'
     (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; temporary Data bootstrap\n')
@@ -142,7 +160,8 @@ def main():
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
             'temporary_data':True,'setup_assistant_skipped_in_seed':True,
-            'private_address_injections_enabled':setup_report is not None,
+            'private_address_injections_enabled':setup_report is not None or input_report is not None,
+            'input_bridge':input_report,
             'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}

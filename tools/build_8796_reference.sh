@@ -5,6 +5,7 @@ PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
 python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot ShengUfs nabu --report log/ci/source-checkouts.json
+python3 tools/build_nabu_input_bridge.py --output artifacts/nabu-input-bridge
 python3 tools/build_nabu_userland.py --work build/nabu-userland --output artifacts/nabu-userland
 python3 tools/check_nabu_userland.py --output log/ci/nabu-userland-check
 python3 tools/prepare_8796_loader.py --output build/darwinboot8796-capacity/tree
@@ -57,6 +58,8 @@ for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.pat
 done
 cd "$PROJECT_ROOT"
 python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
+python3 tools/prepare_nabu_input.py --tree "$XNU_SRC" --output log/ci/nabu-input/source.json
+python3 tools/check_nabu_input.py --output log/ci/nabu-input/checks
 python3 tools/check_nabu_storage.py --tree "$XNU_SRC" --output log/ci/nabu-storage/host
 python3 tools/check_nabu_log_writer.py --tree "$XNU_SRC" --output log/ci/nabu-log-writer
 python3 tools/check_nabu_log_capture.py --tree "$XNU_SRC" --output log/ci/nabu-log-capture

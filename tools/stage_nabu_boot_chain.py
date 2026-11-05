@@ -27,7 +27,7 @@ def check_setup_compat_boot_policy(args, boot_report):
     switches = [x for x in args if x.startswith('nabu-setup-compat')]
     compat = boot_report.get('setup_compat')
     if compat is None:
-        assert not switches and not boot_report.get('private_address_injections_enabled'), \
+        assert not switches, \
             'Setup compatibility requires a qualified library in the bootstrap image'
         return False
     assert switches == ['nabu-setup-compat=1'], 'Qualified setup library requires one exact boot switch'
@@ -97,7 +97,16 @@ def main():
     ap.add_argument('--userland-serial-file', type=Path,
                     help='Explicit local compatibility serial, independent of the Android device identity')
     ap.add_argument('--log-preparation', type=Path, help='Verified fresh runtime-log slot preparation receipt')
+    ap.add_argument('--touch-firmware-dir', type=Path, help='Local NT36523 firmware, partitions and CRC bank')
     a = ap.parse_args()
+    touch_firmware = None
+    if a.touch_firmware_dir:
+        meta = json.loads((a.touch_firmware_dir/'firmware.json').read_text())
+        firmware = a.touch_firmware_dir/meta['firmware']['path']
+        assert sha(firmware) == meta['firmware']['sha256']
+        touch_firmware = {'firmware': firmware.read_bytes(),
+                          'partitions': (a.touch_firmware_dir/'partitions.bin').read_bytes(),
+                          'crc-bank': (a.touch_firmware_dir/'crc-bank.bin').read_bytes()}
     wifi_mac = validate_wifi_mac(a.wifi_mac_file.read_bytes()) if a.wifi_mac_file else None
     userland_serial = (validate_userland_serial(a.userland_serial_file.read_text(encoding='ascii').strip())
                        if a.userland_serial_file else None)
@@ -128,6 +137,15 @@ def main():
         assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024
         assert sha(a.bootstrap)==boot_report['sha256'] and len(boot_report['containers'])==2
         setup_compat_enabled = check_setup_compat_boot_policy(args, boot_report)
+        input_bridge = boot_report.get('input_bridge')
+        if input_bridge:
+            assert input_bridge['process'] == 'backboardd'
+            assert input_bridge['library'] == '/redwood/lib/libnabu.input.dylib'
+            assert hashlib.sha256((ROOT/'userland/nabu/src/input_bridge.c').read_text().encode()).hexdigest() == input_bridge['source_sha256_lf']
+            assert all(x in args for x in ['nabu-input=1', 'nabu-touch=1', 'nabu-buttons=1'])
+            assert touch_firmware is not None
+        else:
+            assert 'nabu-input=1' not in args and touch_firmware is None
     else:
         assert a.bootstrap is None, 'Config has no initrd'
         assert not any(x.startswith('nabu-setup-compat') for x in entry['args'].split())
@@ -144,11 +162,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial).encode()
+                         a.userland_model, userland_serial, touch_firmware).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():
@@ -163,6 +181,8 @@ def main():
                'runtime_log_preparation': log_prepared, 'deployment_scope': 'nabu_esp files only'}
     receipt.update(bootstrap_ramdisk_used=bootstrap_mode,temporary_data=bootstrap_mode)
     receipt['setup_compat_enabled'] = setup_compat_enabled
+    receipt['input_bridge_enabled'] = bootstrap_mode and bool(boot_report.get('input_bridge'))
+    receipt['touch_firmware_in_adt'] = touch_firmware is not None
     receipt['wifi_mac_supplied'] = wifi_mac is not None
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model

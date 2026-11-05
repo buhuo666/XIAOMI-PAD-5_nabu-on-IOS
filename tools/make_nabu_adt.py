@@ -61,7 +61,7 @@ def validate_userland_serial(value):
 
 
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
-              userland_model=None, userland_serial=None):
+              userland_model=None, userland_serial=None, touch_firmware=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -117,6 +117,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         # fails, the inherited IODT fallback reads legacy offsets 13..20;
         # keep that read within this property without changing the C string.
         tree.props['serial-number'] = STR(validate_userland_serial(userland_serial)).ljust(32, b'\0')
+    if touch_firmware is not None:
+        tree.children.append(Node('nabu-touch', touch_firmware))
     return tree
 
 

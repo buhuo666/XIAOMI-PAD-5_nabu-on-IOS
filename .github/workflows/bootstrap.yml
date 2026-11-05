@@ -10,6 +10,7 @@ on:
       - 'patches/8796/**'
       - 'patches/darwinboot/**'
       - 'patches/nabu-storage/**'
+      - 'patches/nabu-input/**'
       - 'patches/nabu-userland/**'
       - 'userland/nabu/**'
   workflow_dispatch:
@@ -81,6 +82,7 @@ jobs:
             artifacts/8796-reference/
             artifacts/nabu-userland/
             artifacts/nabu-setup-compat/
+            artifacts/nabu-input-bridge/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14
