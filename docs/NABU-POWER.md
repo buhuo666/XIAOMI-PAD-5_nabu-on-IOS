@@ -79,3 +79,6 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 
 第三十三轮已于 `2026-11-05T16:26:37.887161+08:00` 成功发送 `fastboot boot`，源提交 `86ed211`。
 电源与 RTC 实机结果等待用户操作及日志回收，确切输入在 `log/device/nabu-boot-20261105-33/`，接续在 `log/host/power-v33/continuation.json`。
+
+第三十四轮已于 `2026-11-05T16:42:03.571381+08:00` 成功发送 `fastboot boot`，源提交 `555dd73`。
+时间与 USB 图标响应的实测结果待用户确认；输入在 `log/device/nabu-boot-20261105-34/`，接续在 `log/host/power-v34/continuation.json`。
