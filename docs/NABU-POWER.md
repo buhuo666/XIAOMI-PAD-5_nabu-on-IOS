@@ -2,7 +2,37 @@
 
 2026-11-05，用户要求优先修复电池、电量计、PMIC、RTC。第三十三轮已确认
 进入桌面，电量显示及 USB 插拔状态有效，RTC 正常走时。显示时间错误来自
-US/Pacific 初始时区；USB 图标延迟与 5 秒轮询一致。第三十四轮针对这两项修正。
+US/Pacific 初始时区；第三十四轮用户已确认时间正确，USB 图标仍约 5 秒更新。
+第三十五轮继续修复充电阶段检测，并记录通知链路的实际时间。
+
+## 第三十四轮结果与第三十五轮候选
+
+第三十四轮确认上海时区修正有效，APFS 计数 `4→5` 且 F_FULLFSYNC 成功。
+日志完整回收后已于 16:45:33 清空 slot14。
+
+日志中 `USB poll=250ms` 生效，88.252 和 110.681 秒的断开发布均落在完整
+电量采样的间隔内。99.084 秒插入时 USB=1、charging=0、SMB5 state=7；
+到 102.617 秒的完整采样才发布 charging=1、state=4。
+上一版快速检查了插线标志，却没有同样检查充电阶段，这是一个已确认的遗漏。
+它不能单独解释用户观察到的断开图标延迟。
+
+第三十五轮将 USBIN 和 SMB5 阶段一起纳入 250 ms 轮询，任一变化立即刷新并发布。
+针对 USB 不变但充电阶段改变的回归测试已通过，原有电量换算、失败处理和 RTC
+进位测试也通过。
+
+同时放入只读 `org.nabu.power-trace` 诊断进程，订阅 IOPMPowerSource 的
+IOGeneralInterest 和 IOPS 电源变化回调；每次记录同一开机时间轴上的回调时间、
+IORegistry 的 ExternalConnected/IsCharging、IOPS 的状态。它不写电源状态。
+工具用 LLVM 18 构建 ARM64 动态可执行文件，23 个导入均已在本机原版 20F66
+dyld 导出树（含 libSystem 转出）找到。实际运行及回调是否到达仍需实机确认。
+
+公开 PowerManagement 1436.120.6 中的 BatteryTimeRemaining.m 也使用该
+IOKit interest 通知，并发布 IOPS 通知；本轮使用源码理解接口，未据此假定
+设备上闭源程序的具体延迟。下载记录在 `log/host/power-v35/PowerManagement/`。
+
+候选为 `artifacts/nabu-power-v35/kernel.native-apfs.macho` 和 bootstrap v11；
+保留第三十四轮的 PID1 时区修正。两个 APFS 容器检查通过，7-Zip 独立读回
+388 个启动任务（原有 387 + 临时诊断 1），权限均为 0644，诊断程序为 0755。
 
 ## 第三十三轮结果与第三十四轮修正
 

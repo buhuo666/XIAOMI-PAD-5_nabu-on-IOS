@@ -33,6 +33,17 @@ int main()
     word(0x241a2, 0xfc00); word(0x241a8, 0xfc00); // -1024 counts: +499 mA into pack
     registers[0x21310] = 0x10;
     registers[0x21006] = 3;
+    NabuChargeStatus before, after;
+    assert(nabu_read_charge_status(read_fixture, &before));
+    registers[0x21006] = 7;
+    assert(nabu_read_charge_status(read_fixture, &after));
+    assert(before.external == after.external && nabu_charge_status_changed(before, after));
+    registers[0x21006] = 3;
+    assert(nabu_read_charge_status(read_fixture, &after));
+    assert(!nabu_charge_status_changed(before, after));
+    registers[0x21310] = 0;
+    assert(nabu_read_charge_status(read_fixture, &after) && nabu_charge_status_changed(before, after));
+    registers[0x21310] = 0x10;
     NabuPowerSample sample = {};
     assert(nabu_read_power(read_fixture, &sample));
     assert(sample.percent == 100 && sample.voltage_mv == 4399 && sample.current_ma == 499);

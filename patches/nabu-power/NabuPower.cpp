@@ -98,21 +98,25 @@ static NabuBattery *battery;
 static thread_call_t poll_call;
 static unsigned samples;
 static unsigned polls;
-static bool have_sample, previous_external;
+static bool have_sample;
+static NabuChargeStatus previous_status;
 static uint32_t previous_rtc;
 static uint64_t rtc_offset;
 
 static void poll_power(thread_call_param_t, thread_call_param_t)
 {
-    // Check only USB insertion at 4 Hz. Read the gauge on a transition or
+    // Check USB insertion and the SMB5 charging phase at 4 Hz. The charger
+    // can stay disabled briefly after USB insertion before starting charge.
+    // Read the gauge on either transition or
     // every 5 seconds, so the faster icon response does not poll all ADCs.
     bool refresh = !have_sample || polls % 20 == 0;
-    uint8_t usb;
-    if (!refresh && read_registers(0x21310, &usb, 1))
-        refresh = ((usb & 0x10) != 0) != previous_external;
+    NabuChargeStatus status;
+    if (!refresh && nabu_read_charge_status(read_registers, &status))
+        refresh = nabu_charge_status_changed(status, previous_status);
     NabuPowerSample sample;
     if (refresh && nabu_read_power(read_registers, &sample)) {
-        bool transition = have_sample && sample.external != previous_external;
+        NabuChargeStatus next_status = {sample.external, sample.charger_state};
+        bool transition = have_sample && nabu_charge_status_changed(next_status, previous_status);
         if (!battery) {
             NabuBattery *made = new NabuBattery;
             IOService *platform = IOService::getPlatform();
@@ -131,12 +135,13 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
             }
         } else battery->report(sample);
         if (transition)
-            IOLog("NABU BATTERY: USB %s; power-source status updated\n", sample.external ? "connected" : "disconnected");
+            IOLog("NABU BATTERY: transition USB=%u->%u charger=%u->%u; power-source status updated\n",
+                  previous_status.external, sample.external, previous_status.charger_state, sample.charger_state);
         if (samples++ % 6 == 0 || transition)
             IOLog("NABU BATTERY: sample=%u MSOC=%u percent=%u voltage=%umV current=%dmA present=%u USB=%u charging=%u full=%u state=%u\n",
                   samples, sample.raw_soc, sample.percent, sample.voltage_mv, sample.current_ma,
                   sample.present, sample.external, sample.charging, sample.full, sample.charger_state);
-        previous_external = sample.external;
+        previous_status = next_status;
         have_sample = true;
     } else if (refresh) IOLog("NABU BATTERY: no coherent hardware sample; no values published\n");
 
@@ -191,6 +196,6 @@ extern "C" void nabu_power_start(void)
         return;
     }
     poll_call = thread_call_allocate_with_priority(poll_power, nullptr, THREAD_CALL_PRIORITY_KERNEL);
-    IOLog("NABU BATTERY: USB poll=250ms; gauge poll=5s or USB transition\n");
+    IOLog("NABU BATTERY: USB+charger poll=250ms; gauge poll=5s or state transition\n");
     thread_call_enter(poll_call);
 }

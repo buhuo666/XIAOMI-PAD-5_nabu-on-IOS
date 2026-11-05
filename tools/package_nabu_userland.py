@@ -67,6 +67,7 @@ def main():
     ap.add_argument('--setup-compat',type=Path,
                     help='Explicit qualified source-built setup library directory, including host-check.json')
     ap.add_argument('--input-bridge', type=Path, help='Source-built backboardd input library directory')
+    ap.add_argument('--power-trace', type=Path, help='Read-only IOKit/IOPS timing diagnostic executable')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
@@ -102,6 +103,12 @@ def main():
         job=plistlib.loads(path.read_bytes())
         job.setdefault('EnvironmentVariables',{}).update(overrides)
         path.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
+    if a.power_trace:
+        shutil.copy2(a.power_trace, root/'sbin/power-trace')
+        job = {'Label': 'org.nabu.power-trace', 'Program': '/redwood/sbin/power-trace',
+               'RunAtLoad': True, 'UserName': 'root',
+               'StandardOutPath': '/dev/console', 'StandardErrorPath': '/dev/console'}
+        (root/'LaunchDaemons/org.nabu.power-trace.plist').write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -169,7 +176,7 @@ def main():
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
             'persistent_data_supported':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':setup_report is not None or input_report is not None,
-            'input_bridge':input_report,
+            'input_bridge':input_report, 'power_trace_enabled': a.power_trace is not None,
             'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}

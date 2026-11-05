@@ -13,6 +13,25 @@ struct NabuPowerSample {
     uint8_t raw_soc, charger_state;
 };
 
+struct NabuChargeStatus {
+    bool external;
+    uint8_t charger_state;
+};
+
+static bool nabu_read_charge_status(NabuRegisterRead read, NabuChargeStatus *out)
+{
+    uint8_t usb, charger;
+    if (!read(0x21310, &usb, 1) || !read(0x21006, &charger, 1)) return false;
+    out->external = (usb & 0x10) != 0;
+    out->charger_state = charger & 7;
+    return true;
+}
+
+static bool nabu_charge_status_changed(const NabuChargeStatus &a, const NabuChargeStatus &b)
+{
+    return a.external != b.external || a.charger_state != b.charger_state;
+}
+
 static uint16_t nabu_le16(const uint8_t *p)
 {
     return p[0] | (uint16_t)p[1] << 8;
