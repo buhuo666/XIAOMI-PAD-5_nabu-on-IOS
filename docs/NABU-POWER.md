@@ -58,6 +58,35 @@ ASan/UBSan；原有电源状态和 RTC 测试也通过。ARM64 对象编译及�
 候选为 `artifacts/nabu-power-v37/kernel.native-apfs.macho`，使用无临时诊断的
 bootstrap v10。温度的 FG SRAM grant 流程仍未实现。
 
+## 第三十八轮：FG SRAM 温度
+
+第三十七轮再次确认 PM8150B 为 v2.0。新增 `NabuFgMemory.h` 按同版
+`fg-memif.c` 的 DMA 流程读取温度：申请 MEM_ARB_REQ，再设置 MEM_ACCESS_REQ，
+等待 40 us 后检查 GEN4_MEM_GNT；未授权时每 10 ms 检查一次，最多 50 次。
+只有收到授权才读取 word 328，对应 slave 2 的 `0x4858`。数据读完后先归还
+接口，再归还仲裁器，并恢复原访问配置；释放失败则停止该温度读取任务。
+
+SPMI v5 写通道从本机 FDT 的 `chnls=0x0c600000` 派生，只映射 EE0 拥有的
+MEMIF 通道。写入限于 MEMIF `0x40`／`0x50` 的访问请求及必要时 `0x71` 的
+DMA 地址模式。SRAM 数据、SDAM 历史、充电参数、稳压器和 RTC 计数均不写。
+已有访问请求不会被接管；已有 DMA 错误只记录，待实机证据决定修复。
+
+温度为有符号 10 位数，每计数 0.25°C。匹配 PowerManagement 1436.120.6
+`AppleSmartBattery.cpp` 的 `kBTemperatureCmd` 分支确认：iOS `Temperature`
+使用百分之一摄氏度，而非 macOS SBS 的 0.1 K。因此 25°C 发布为 2500。
+相应源码摘录在 `log/host/power-v38/source/AppleSmartBattery.cpp`。
+
+温度每约 5 秒由独立 thread call 读取，总线锁仅覆盖单次传输，等待授权时不
+占锁；结果通过原子变量交给现有电源轮询，由同一个发布路径更新 IORegistry。
+温度改变时最多等下个 250 ms 轮询再发布；采集失败则移除旧 Temperature 属性。
+这样温度授权等待不串入现有 USB 状态轮询。
+
+主机 ASan/UBSan 测试覆盖全部 1024 个温度码、立即／延迟／超时授权、禁止
+未授权读取、配置位恢复、7 处读取及 6 处写入失败、已有访问请求和 DMA 错误。
+ARM64 对象及内核链接通过，候选为 `artifacts/nabu-power-v38/kernel.native-apfs.macho`，
+仍使用 bootstrap v10、原有平台 UUID、RTC 校准及 Image4 key。原始温度、实际
+授权耗时及桌面回归待第三十八轮实机验证。
+
 ## 第三十五轮定位与第三十六轮平台 UUID 修复
 
 第三十五轮用户仍报告两种图标延迟均未改善，已手动回 Android。

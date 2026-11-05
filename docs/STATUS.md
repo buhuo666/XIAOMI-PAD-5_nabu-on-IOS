@@ -6,6 +6,8 @@
 
 第三十七轮已实机验收：桌面、电量、时间和 USB 响应均正常，39 次 SDAM 记录均为学习容量 8688 mAh、循环计数 0，与 Android 一致；APFS 计数 `7→8`，fullfsync 成功。日志槽已备份清空，当前继续温度 SRAM 访问。
 
+第三十八轮候选已实现 PM8150B v2 的 FG SRAM 温度申请／授权／读取／释放流程，按 iOS 百分之一摄氏度上报。独立读取任务保留原 USB 轮询响应；主机故障注入与温度换算测试、ARM64 编译链接通过，等待实机温度数据。
+
 “关于本机”尚未修复。第三十二轮栈确认其 MAC 地址查询等待 SystemConfiguration 的 IOKit quiet 通知；第二十六轮 registry busy=0，持久化版本为 1，具体 busy 服务仍待定位。按用户调整后的优先级保存证据，见 [设置关于本机](SETTINGS-ABOUT-HANG.md)。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
