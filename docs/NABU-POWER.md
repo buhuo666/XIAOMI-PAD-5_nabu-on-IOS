@@ -87,6 +87,37 @@ ARM64 对象及内核链接通过，候选为 `artifacts/nabu-power-v38/kernel.n
 仍使用 bootstrap v10、原有平台 UUID、RTC 校准及 Image4 key。原始温度、实际
 授权耗时及桌面回归待第三十八轮实机验证。
 
+## 第三十八轮回收与第三十九轮温度修正
+
+第三十八轮已取得真实温度，92 次属性发布范围为 23.25–27.00°C，但同时出现
+92 次 grant timeout（result=4），与成功读取交替，温度服务尚未验收。成功日志
+中的申请通常需约 0.33–0.37 秒；失败时已进行 50 次检查，实际约 0.58 秒。
+没有 SPMI 读写错误、DMA 错误或归还失败。完整日志槽已于 18:25:14 备份清空，
+恢复 2,556,435 bytes；APFS 计数 `8→9` 且 fullfsync 成功。
+
+对照 `fg_dma_init` 发现第三十八轮遗漏了保持 MEM_ARB_LO_LATENCY_EN、清除
+MEM_CLR_LOG 的初始化，还在每次完成后恢复了旧 DMA 地址模式／IACS 选择。
+第三十九轮改为维持厂商要求的分区地址和低延迟设置，归还时清除
+MEM_ACCESS_REQ、IACS_SLCT、MEM_ARB_REQ，保留其余配置位。等待上限未改变。
+这些是源码确认的流程差异；是否解释全部超时仍以本轮实机日志为准。
+日志增加每次读取前的 ARB、INTF、DMA_CTL 值，以核对实际硬件状态。
+
+主机模型从低延迟未开启、MEM_CLR_LOG 和空闲 IACS 置位的状态开始，验证首次
+初始化、后续连续申请、超时归还及读写失败路径；ASan/UBSan 通过，ARM64
+编译及链接通过。候选为 `artifacts/nabu-power-v39/kernel.native-apfs.macho`，
+bootstrap v10；仍不写 SRAM／SDAM 内容、充电参数、稳压器和 RTC 计数。
+
+用户确认桌面、时间和 USB 响应正常，对电量与 Android 的差异提出疑问，并随后
+更正设计容量为 8720 mAh。该容量与本机配置一致，SDAM 学习容量仍为 8688 mAh。
+本轮百分比并非启动时固定为 100：实测 MSOC 依次为 255、254、253、252，
+当前端点换算为 100、99、99、98%。Android 前测为 100%，后测 battery/bms
+显示 100%、bms REAL_CAPACITY 为 99%；不是同一时刻的对照。
+同版 MiCode `fg_get_msoc` 还有 report_full 的近满电修正，
+`fg_gen4_get_prop_capacity` 有 charge_full 保持逻辑，当前未完整移植。
+第三十九轮保留原始 MSOC 换算，没有为匹配数字而上调电量，也不宣称该差异已修复。
+证据在 `log/host/power-v38/device-results.json` 及
+`log/host/power-v39/stock-display-reference.json`。
+
 ## 第三十五轮定位与第三十六轮平台 UUID 修复
 
 第三十五轮用户仍报告两种图标延迟均未改善，已手动回 Android。

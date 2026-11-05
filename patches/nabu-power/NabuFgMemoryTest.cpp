@@ -12,8 +12,9 @@ static bool dma_error_after_read;
 static void reset_fixture(bool partition_mode = false)
 {
     memset(registers, 0, sizeof(registers));
-    // Keep unrelated bits and an idle IMA selection set to test restoration.
-    registers[0x24340] = 0x0a;
+    // Start without low-latency, with MEM_CLR_LOG and idle IMA selection set.
+    // Preserve bit 3 in ARB and bit 2 in INTF while configuring the DMA path.
+    registers[0x24340] = 0x0c;
     registers[0x24350] = 0x24;
     registers[0x24371] = partition_mode ? 0x82 : 0x80;
     registers[0x24858] = 98; // 24.50 C.
@@ -27,7 +28,7 @@ static bool read_fixture(uint32_t address, uint8_t *data, unsigned size)
     if (++reads == fail_read) return false;
     assert(size <= 4);
     if (address == 0x24310) {
-        assert(registers[0x24340] & 1);
+        assert((registers[0x24340] & 7) == 3);
         assert((registers[0x24350] & 0xa0) == 0x80);
         ++grant_polls;
         *data = grant_polls >= grant_after ? 8 : 0;
@@ -63,11 +64,18 @@ static NabuFgResult sample(uint16_t *raw, NabuFgTransfer *transfer)
     return nabu_read_temperature(read_fixture, write_fixture, delay_fixture, raw, transfer);
 }
 
-static void assert_released(bool partition_mode = false)
+static void assert_released()
 {
     assert(registers[0x24340] == 0x0a);
+    assert(registers[0x24350] == 0x04);
+    assert(registers[0x24371] == 0x82);
+}
+
+static void assert_unmodified()
+{
+    assert(registers[0x24340] == 0x0c);
     assert(registers[0x24350] == 0x24);
-    assert(registers[0x24371] == (partition_mode ? 0x82 : 0x80));
+    assert(registers[0x24371] == 0x80);
 }
 
 int main()
@@ -87,7 +95,12 @@ int main()
         reset_fixture(partition);
         assert(sample(&raw, &transfer) == kNabuFgOK && raw == 98);
         assert(grant_polls == 1 && dma_reads == 1 && slept_us == 40);
-        assert_released(partition);
+        assert_released();
+        // A subsequent read uses the configured idle state.
+        reads = writes = grant_polls = dma_reads = slept_us = 0;
+        assert(sample(&raw, &transfer) == kNabuFgOK);
+        assert(writes == 4 && transfer.arb_before == 0x0a && transfer.interface_before == 4);
+        assert_released();
     }
 
     reset_fixture();
@@ -106,14 +119,16 @@ int main()
     for (unsigned failure = 1; failure <= 7; ++failure) {
         reset_fixture(); fail_read = failure; raw = 0xbeef;
         assert(sample(&raw, &transfer) == kNabuFgReadFailed && raw == 0xbeef);
-        assert_released();
+        if (failure <= 4) { assert(writes == 0); assert_unmodified(); }
+        else assert_released();
     }
     for (unsigned failure = 1; failure <= 6; ++failure) {
         reset_fixture(); fail_write = failure; raw = 0xbeef;
         NabuFgResult result = sample(&raw, &transfer);
-        assert(result == (failure >= 4 ? kNabuFgReleaseFailed : kNabuFgWriteFailed));
+        assert(result == (failure >= 5 ? kNabuFgReleaseFailed : kNabuFgWriteFailed));
         assert(raw == 0xbeef);
-        if (failure < 4) assert_released();
+        if (failure == 1) assert_unmodified();
+        else if (failure < 5) assert_released();
     }
 
     reset_fixture(); registers[0x24340] |= 1;
@@ -125,5 +140,5 @@ int main()
     reset_fixture(); dma_error_after_read = true; raw = 0xbeef;
     assert(sample(&raw, &transfer) == kNabuFgDmaError && raw == 0xbeef);
     assert_released();
-    puts("PASS: signed temperature/iOS units, grant ordering, delayed/timeout grants, configuration restoration, bus failures, busy ownership and DMA errors");
+    puts("PASS: signed temperature/iOS units, low-latency setup, repeated grants, timeout release, idle configuration, bus failures, busy ownership and DMA errors");
 }

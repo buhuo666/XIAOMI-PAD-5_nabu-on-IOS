@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Pad 5 PM8150 RTC and PM8150B FG Gen4, through SPMI v5 EE0.
-// Only FG MEMIF access controls are written, then restored after SRAM reads.
+// Only FG MEMIF access controls are written; every SRAM request is released.
 // No regulator, charger, SRAM data, SDAM or RTC counter is written.
 #include <IOKit/IOLib.h>
 #include <IOKit/IOPlatformExpert.h>
@@ -107,11 +107,13 @@ static void poll_temperature(thread_call_param_t, thread_call_param_t)
     __atomic_store_n(&temperature_centic, temperature, __ATOMIC_RELEASE);
     if (result == kNabuFgOK) {
         if (temperature_reads++ % 6 == 0)
-            IOLog("NABU FG: temperature raw=%#x centiC=%d grant-polls=%u elapsed-us=%llu; MEMIF released\n",
-                  raw, temperature, transfer.grant_polls, elapsed / 1000);
+            IOLog("NABU FG: temperature raw=%#x centiC=%d grant-polls=%u elapsed-us=%llu arb-before=%#x intf-before=%#x dma-ctl-before=%#x; MEMIF released\n",
+                  raw, temperature, transfer.grant_polls, elapsed / 1000,
+                  transfer.arb_before, transfer.interface_before, transfer.dma_control_before);
     } else {
-        IOLog("NABU FG: temperature unavailable result=%u grant-polls=%u irq=%#x dma=%#x elapsed-us=%llu\n",
-              result, transfer.grant_polls, transfer.interrupt_status, transfer.dma_status, elapsed / 1000);
+        IOLog("NABU FG: temperature unavailable result=%u grant-polls=%u irq=%#x dma=%#x elapsed-us=%llu arb-before=%#x intf-before=%#x dma-ctl-before=%#x\n",
+              result, transfer.grant_polls, transfer.interrupt_status, transfer.dma_status, elapsed / 1000,
+              transfer.arb_before, transfer.interface_before, transfer.dma_control_before);
         if (result == kNabuFgReleaseFailed) {
             IOLog("NABU FG: temperature reader stopped after MEMIF release failure\n");
             return;

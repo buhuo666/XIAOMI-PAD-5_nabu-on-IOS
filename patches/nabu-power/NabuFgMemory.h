@@ -15,6 +15,7 @@ enum NabuFgResult {
 struct NabuFgTransfer {
     unsigned grant_polls;
     uint8_t interrupt_status, dma_status;
+    uint8_t arb_before, interface_before, dma_control_before;
 };
 
 static int nabu_temperature_centic(uint16_t raw)
@@ -37,17 +38,24 @@ static NabuFgResult nabu_read_temperature(NabuRegisterRead read,
     if (!read(0x24340, &arb, 1) || !read(0x24350, &interface, 1) ||
         !read(0x24371, &dma_control, 1) ||
         !read(0x24370, &transfer->dma_status, 1)) return kNabuFgReadFailed;
+    transfer->arb_before = arb;
+    transfer->interface_before = interface;
+    transfer->dma_control_before = dma_control;
     // An existing memory request is not ours to release.
     if ((arb & 1) || (interface & 0x80)) return kNabuFgBusy;
     if (transfer->dma_status & 6) return kNabuFgDmaError;
 
-    bool changed_address_mode = !(dma_control & 2);
+    // fg_dma_init requires partition addressing and low-latency arbitration,
+    // with MEM_CLR_LOG clear. Keep those settings between reads as it does.
+    uint8_t idle_arb = (arb & ~7) | 2;
+    uint8_t idle_interface = interface & ~0xa0;
     NabuFgResult result = kNabuFgWriteFailed;
-    bool mode_ready = !changed_address_mode || write(0x71, dma_control | 2);
+    bool mode_ready = (dma_control & 2) || write(0x71, dma_control | 2);
     if (mode_ready) {
         // fg-memif.c: request arbiter, select DMA, wait 40 us, then poll the
         // Gen4 grant bit at 10 ms intervals (50 attempts maximum).
-        if (write(0x40, arb | 1) && write(0x50, (interface & ~0xa0) | 0x80)) {
+        bool arb_ready = arb == idle_arb || write(0x40, idle_arb);
+        if (arb_ready && write(0x40, idle_arb | 1) && write(0x50, idle_interface | 0x80)) {
             delay(40);
             result = kNabuFgGrantTimeout;
             for (unsigned attempt = 0; attempt < 50; ++attempt) {
@@ -69,12 +77,12 @@ static NabuFgResult nabu_read_temperature(NabuRegisterRead read,
             }
         }
         // Release the interface before the arbiter, including failed requests.
-        // Restore the saved idle settings without changing other configuration.
-        bool interface_released = write(0x50, interface);
-        bool arbiter_released = write(0x40, arb);
+        // fg_direct_mem_release clears both MEM_ACCESS_REQ and IACS_SLCT.
+        // Leave low-latency enabled; preserve unrelated configuration bits.
+        bool interface_released = write(0x50, idle_interface);
+        bool arbiter_released = write(0x40, idle_arb);
         if (!interface_released || !arbiter_released) result = kNabuFgReleaseFailed;
     }
-    if (changed_address_mode && !write(0x71, dma_control)) result = kNabuFgReleaseFailed;
     // A sample is usable only after its memory access has been released.
     if (result == kNabuFgOK) *raw = nabu_le16(bytes);
     return result;
