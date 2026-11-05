@@ -169,7 +169,9 @@ static void native_dep_event(uint32_t event)
     if (g_ep0_state == kEp0Status) {
         if (dep == 1) native_control_complete(kIOReturnSuccess, 0);
         else nabu_native_usb_out_data(nullptr, 0);
-        ep0_arm_setup();
+        // A stock vendor-status callback can take the bus off and on, which
+        // already arms SETUP. Do not replace that live transfer on return.
+        if (g_ep0_state == kEp0Status) ep0_arm_setup();
     }
 }
 
@@ -280,7 +282,10 @@ extern "C" void nabu_dwc3_stall_endpoint(uint32_t address, bool stalled)
     if (dep <= 1 && stalled) {
         // The stock control reset can invoke the controller's stall hook again
         // while the first hook is retiring its queued request.
-        if (g_native_control_stalling) return;
+        // DeviceFamily also invokes the two direction hooks sequentially.
+        // DWC3 stalls the shared control endpoint with one restart.
+        if (g_native_control_stalling ||
+            (g_native_eps[0].stalled && g_native_eps[1].stalled)) return;
         g_native_control_stalling = true;
         ep_end_transfer(0, 0); ep_end_transfer(1, 0);
         nabu_native_usb_abort_control();

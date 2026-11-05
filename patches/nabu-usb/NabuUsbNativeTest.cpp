@@ -28,6 +28,7 @@ static IOMemoryDescriptor payload, controlReply;
 static unsigned setupMode;
 static bool reenter;
 static bool reenterStall;
+static bool reenumerateOnStatus;
 static int powerPresent=-1;
 extern "C" int nabu_power_usb_present() { return powerPresent; }
 extern "C" bool nabu_native_usb_create_controller() { return true; }
@@ -41,6 +42,11 @@ extern "C" void nabu_native_usb_out_data(const void *p,uint32_t n)
 {
     ++controlOut;controlOutLength=n;
     if (n) { assert(p && !memcmp(p,"1234567",n)); assert(nabu_dwc3_submit(0x80,&controlReply,0,(void*)103)==0); }
+    if (!n && reenumerateOnStatus) {
+        reenumerateOnStatus=false;
+        assert(nabu_dwc3_set_active(false));
+        assert(nabu_dwc3_set_active(true));
+    }
 }
 extern "C" void nabu_native_usb_bus_reset() { ++resetCount; }
 extern "C" void nabu_native_usb_abort_control() {
@@ -133,6 +139,21 @@ int main()
     handle_dep_event((1<<1)|(kDepevtXferComplete<<6));
     assert(completed==11 && completions[10].status==kIOReturnAborted && g_ep0_state==kEp0Setup);
     assert(starts[0]==beforeStall+1 && !g_faulted);
+    // DeviceFamily stalls both directions; the second hook must not restart
+    // the shared EP0 a second time before the next SETUP arrives.
+    setupMode=0;setup(0x80,6,0x200,255);
+    const unsigned beforeDirections=starts[0];
+    nabu_dwc3_stall_endpoint(0x80,true);
+    nabu_dwc3_stall_endpoint(0,true);
+    assert(starts[0]==beforeDirections+1 && !g_faulted);
+    // The stock vendor 0xc0/0x52 status callback can synchronously re-enumerate.
+    // Preserve the SETUP transfer armed by goOnBus(true) inside that callback.
+    g_native_active=true;setupMode=1;setup(0xc0,0x52,3,67);
+    ep0[2]=0;ep0[6]=0;handle_dep_event((1<<1)|(kDepevtXferComplete<<6));
+    handle_dep_event((kDepevtXferNotReady<<6)|(kDepevtStatusControlStatus<<12));
+    const unsigned beforeReenumeration=starts[0];reenumerateOnStatus=true;
+    handle_dep_event(kDepevtXferComplete<<6);
+    assert(starts[0]==beforeReenumeration+1 && g_ep0_state==kEp0Setup && !g_faulted);
     powerPresent=1;native_poll_events();native_poll_events();assert(cableConnects==1 && !cableDisconnects);
     handle_device_event(1|(kDevEventDisconnect<<8));native_poll_events();
     assert(cableConnects==1 && !cableDisconnects); // Link state is not cable state.

@@ -155,6 +155,7 @@ class NabuUsbNativeController : public IOUSBDeviceController {
     void startNext(unsigned index);
     void cancel(unsigned index);
     void cancelAll();
+    void traceConfigurations(const char *phase);
     IOUSBDeviceControlRequest *control() const
     {
         // Exact native object field, recovered from the original controller.
@@ -270,6 +271,7 @@ void NabuUsbNativeController::free()
 IOReturn NabuUsbNativeController::goOnBus(bool activate)
 {
     IOLog("NABU NATIVE USB: goOnBus activate=%u was=%u\n",activate,onBus);
+    if (activate) traceConfigurations("goOnBus");
     if (!activate) {
         draining = true;
         cancelAll();
@@ -281,6 +283,22 @@ IOReturn NabuUsbNativeController::goOnBus(bool activate)
     }
     if (activate && ok) draining = false;
     return ok ? kIOReturnSuccess : kIOReturnIOError;
+}
+
+void NabuUsbNativeController::traceConfigurations(const char *phase)
+{
+    const auto *state = reinterpret_cast<const uint8_t *>(this);
+    auto *all = *reinterpret_cast<OSArray *const *>(state + 0x158);
+    auto *advertised = *reinterpret_cast<OSArray *const *>(state + 0x160);
+    IOLog("NABU NATIVE USB: configurations phase=%s all=%u advertised=%u speed=%d\n",
+          phase, all ? all->getCount() : 0, advertised ? advertised->getCount() : 0,
+          getConnectionSpeed());
+    if (!all) return;
+    for (unsigned i = 0; i < all->getCount(); ++i) {
+        const auto *configuration = reinterpret_cast<const uint8_t *>(all->getObject(i));
+        IOLog("NABU NATIVE USB: configuration index=%u extended=%u locked=%u\n",
+              i, configuration[0x31], configuration[0x32]);
+    }
 }
 
 IOReturn NabuUsbNativeController::provideEndpointIDsForConfiguration(OSArray *interfaces,
@@ -487,6 +505,9 @@ void NabuUsbNativeController::poll(void (*callback)())
 
 void NabuUsbNativeController::setup(const void *setup8)
 {
+    const auto *bytes = static_cast<const uint8_t *>(setup8);
+    if (bytes[0] == 0x80 && bytes[1] == 6 && bytes[3] == 2)
+        traceConfigurations("getConfigDescriptor");
     native_usb_control_input_setup(control(), setup8);
     IOReturn result = native_usb_control_process_setup(control());
     if (result) {
