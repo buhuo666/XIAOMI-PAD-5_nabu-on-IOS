@@ -58,6 +58,7 @@ def main():
     ap.add_argument('--original',type=Path,default=ROOT/'OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.arm64.macho')
     ap.add_argument('--output',type=Path,required=True)
     ap.add_argument('--apple-usb',action='store_true',help='Include the stock USB device family and AppleUSBDeviceMux dependency closure')
+    ap.add_argument('--fairplay',action='store_true',help='Include the stock FairPlayIOKit service required by fairplayd.A2')
     a=ap.parse_args()
     original=a.original.read_bytes();native=a.kernel.read_bytes()
     n,o=macho(native),macho(original)
@@ -66,13 +67,18 @@ def main():
     slide=((end+0x400000+0x3fff)&~0x3fff)-base
     roots=['com.apple.filesystems.apfs']
     if a.apple_usb: roots.append('com.apple.driver.AppleUSBDeviceMux')
-    image,report=emit(native,original,roots,slide)
+    if a.fairplay: roots.append('com.apple.driver.FairPlayIOKit')
+    if a.fairplay:
+        from nabu_fairplay_bindings import emit_with_fairplay
+        image,report=emit_with_fairplay(native,original,roots,slide)
+    else:
+        image,report=emit(native,original,roots,slide)
     if a.apple_usb: image=reserve_usb_driver_data(image,report)
     image=place_prelink_info_last(image,report)
     assert not a.output.exists();a.output.mkdir(parents=True)
     target=a.output/'kernel.native-apfs.macho';target.write_bytes(image)
     report.update(kernel_source_path=str(a.kernel.resolve()),original_path=str(a.original.resolve()),
-        requested_roots=roots,stock_apple_usb_included=a.apple_usb,
+        requested_roots=roots,stock_apple_usb_included=a.apple_usb,stock_fairplay_included=a.fairplay,
         bootarg='nabu-native-apfs=1',candidate_bytes=len(image),runtime_qualified=False,
         scope='Original executable bytes retained; explicit relocations and closure checks only; no APFS write or device claim')
     (a.output/'prelink-report.json').write_text(json.dumps(report,indent=2)+'\n')

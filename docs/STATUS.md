@@ -2,6 +2,11 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
+最新实机：第五十四轮桌面正常，原生USBMux双向传输成功，AMDS首次发现设备；
+Lockdown端口可连接但QueryType超时，配对/同步未通过。FairPlay的真实调用确认
+缺少FairPlayIOKit服务，正在处理原版组件带偏移的导入重绑定。APFS计数24→25，
+日志槽已完整备份清空，设备在Android。见 [USB连接](NABU-USB.md)。
+
 最新实机：第五十三轮已选择配置2并启用USBMux数据端点，Windows普通MI_01状态OK，
 但系统停机、AMDS为空，配对/同步未通过。已发现bulk虚拟缓冲区漏prepare的契约缺陷，
 第五十四轮修复及旧代码失败/新代码通过的主机回归已完成，实机待验证。APFS计数
