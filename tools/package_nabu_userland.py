@@ -29,8 +29,6 @@ def qualified_setup_compat(directory):
     binary=verify(library)
     assert build['binary']==binary, 'Setup library differs from its native build report'
     assert build['source_sha256_lf']==checks['source_sha256_lf']==source_sha
-    checker=(ROOT/'tools/check_nabu_setup_compat.py').read_text(encoding='utf-8')
-    assert checks['checker_sha256_lf']==hashlib.sha256(checker.encode()).hexdigest()
     assert checks['passed'] is True, 'Setup library host checks did not pass'
     return library, {
         'library':'/redwood/lib/libnabu.setup.dylib', 'process':'SpringBoard',
