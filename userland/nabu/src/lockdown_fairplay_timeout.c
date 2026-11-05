@@ -22,6 +22,7 @@ extern const char *_dyld_get_image_name(uint32_t);
 
 static int enabled;
 static uintptr_t hwinfo_call_return;
+static uintptr_t hwinfo_fallback_return;
 enum { RECEIVE_TIMEOUT = 0x100, HWINFO_TIMEOUT_MS = 5000 };
 
 static int equal(const char *a, const char *b)
@@ -50,6 +51,7 @@ __attribute__((constructor)) static void setup(void)
         for (uint32_t i=0;i<_dyld_image_count();++i) {
             if (!equal(_dyld_get_image_name(i),"/usr/libexec/lockdownd")) continue;
             hwinfo_call_return=(uintptr_t)(0x10002bdd8ULL+_dyld_get_image_vmaddr_slide(i));
+            hwinfo_fallback_return=(uintptr_t)(0x10002b844ULL+_dyld_get_image_vmaddr_slide(i));
             enabled=1;
             trace("NABU LOCKDOWN TIMEOUT: original HWInfo RPC receive deadline=%u ms enabled\n",HWINFO_TIMEOUT_MS);
             break;
@@ -62,16 +64,18 @@ static int32_t call_with_deadline(nabu_mach_header *message, uint32_t options,
     uint32_t send_size, uint32_t receive_size, uint32_t receive_name,
     uint32_t timeout, uint32_t notify, uintptr_t caller)
 {
-    const int selected=enabled && caller==hwinfo_call_return && message &&
-        message->id==1203 && options==3 && send_size==24 && receive_size==60 && timeout==0;
+    const int selected=enabled && message && options==3 && timeout==0 &&
+        ((caller==hwinfo_call_return && message->id==1203 && send_size==24 && receive_size==60) ||
+         (caller==hwinfo_fallback_return && message->id==1200 && send_size==64 && receive_size==220));
+    const int32_t message_id=selected ? message->id : 0;
     if (selected) {
         options|=RECEIVE_TIMEOUT;
         timeout=HWINFO_TIMEOUT_MS;
-        trace("NABU LOCKDOWN TIMEOUT: HWInfo request sent with bounded receive\n");
+        trace("NABU LOCKDOWN TIMEOUT: HWInfo request=%d sent with bounded receive\n",message_id);
     }
     int32_t result=mach_msg(message,options,send_size,receive_size,receive_name,timeout,notify);
     if (selected)
-        trace("NABU LOCKDOWN TIMEOUT: original mach_msg result=%#x\n",(uint32_t)result);
+        trace("NABU LOCKDOWN TIMEOUT: request=%d original mach_msg result=%#x\n",message_id,(uint32_t)result);
     return result;
 }
 

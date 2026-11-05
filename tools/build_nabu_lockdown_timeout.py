@@ -28,8 +28,10 @@ def main():
     subprocess.run(host_command(['ld64.lld-18','-arch','arm64','-platform_version','ios','16.5','16.5',
         '-dylib','-install_name','/redwood/lib/libnabu.lockdown-timeout.dylib','-adhoc_codesign',
         '-o',host_path(binary),host_path(obj),host_path(stub)]),check=True)
-    report={'binary':str(binary),'target':'arm64-ios16.5','original_caller':'0x10002bdd8',
-        'request_id':1203,'send_bytes':24,'receive_bytes':60,'receive_timeout_ms':5000,
+    report={'binary':str(binary),'target':'arm64-ios16.5',
+        'calls':[{'original_caller':'0x10002bdd8','request_id':1203,'send_bytes':24,'receive_bytes':60},
+                 {'original_caller':'0x10002b844','request_id':1200,'send_bytes':64,'receive_bytes':220}],
+        'receive_timeout_ms':5000,
         'target_process':'/usr/libexec/lockdownd','original_return_preserved':True,
         'scope':'Only matching original HWInfo receive wait; no generated replies or authentication bypass',
         'runtime_verified':False}
