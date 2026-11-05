@@ -57,3 +57,5 @@ SIGALRM 超时、缺失数据片段及中断日志。真机扫描及跨系统对
 恢复 Android 后使用既有 `run_nabu_temporary_boot.py --collect` 回收日志，完整备份后清空
 对应日志单元，再运行 `tools/decode_nabu_capabilities.py`。接续状态在
 `log/host/mg-scan-v40/continuation.json`，结果应区分预期型号差异、驱动缺口和待解释答案。
+
+第四十轮已于 `2026-11-05T19:12:26.235505+08:00` 成功发送 `fastboot boot`，源提交 `51ba037`。启动包只新增采集程序与 job，APFS 独立回读一致。当前只确认临时启动命令成功，扫描完成及所有查询结果仍待恢复 Android 后回收。用户已收到运行至北京时间 19:25 后再手动回 Android 的提示。

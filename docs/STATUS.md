@@ -2,7 +2,7 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
-当前新增任务：按用户要求进行 Android／iPadOS 能力对照。Android 13 组采集完成；第四十轮候选沿用 v39 内核，在 v10 bootstrap 中加入一次性 71 项 MG／IOKit／sysctl 扫描。主机编译、解码检查、APFS 打包及回读通过，准备真机采集。见 [能力对照](NABU-CAPABILITY-SCAN.md)。
+当前新增任务：按用户要求进行 Android／iPadOS 能力对照。Android 13 组采集完成；第四十轮候选沿用 v39 内核，在 v10 bootstrap 中加入一次性 71 项 MG／IOKit／sysctl 扫描。主机编译、解码检查、APFS 打包及回读通过；19:12 临时启动命令成功，等待运行至 19:25 后手动回 Android 回收扫描。见 [能力对照](NABU-CAPABILITY-SCAN.md)。
 
 当前任务：优先修复电池、电量计、PMIC 和 RTC 等基础服务。第三十九轮已实机验收：桌面与 USB 响应正常，温度 24.75–25.00°C、授权超时为 0，启动后的周期读取约 4.6 ms；学习容量 8688 mAh、循环计数 0，设计容量为 8720 mAh。RTC 连续走时，APFS 计数 `9→10` 且 fullfsync 成功。当前可用基线为 v39 内核／bootstrap v10，日志已完整备份并清空对应槽，设备已回 Android。见 [电源与时钟](NABU-POWER.md)。持久化中文已在第三十二轮验收，仍限定在原有 64 GiB。
 
