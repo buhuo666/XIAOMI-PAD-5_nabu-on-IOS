@@ -3,6 +3,25 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十二轮：桌面恢复，Windows Apple USB 驱动已绑定
+
+用户确认正常进入桌面。82字节字符串、配置0的18字节和配置1的41字节描述符均已
+传完，未出现USB命令失败；普通RAM中转修复已通过这条实机传输路径。Windows状态
+为OK，父设备为Apple Mobile Device USB Composite Device，子接口为Apple Mobile
+Device USB Device，但其硬件ID包含 `RESTORE_MODE&MI_00`，还不是预期的普通MI_01。
+
+日志仅观察到SET_CONFIGURATION=1，没有启用USBMux bulk端点；Windows随后每5秒
+查询vendor C0/45。AMDS设备列表为空，原生配对/同步仍未通过。已核对AppleLowerFilter：
+它通过C0/45获取首选配置，首选为1时标记Restore模式。原版createUSBDevice在未设置
+DefaultConfiguration时默认首选1；第五十三轮把包含Mux的配置2标为默认，由原版逻辑
+返回首选2。没有更改Windows注册表或设备类别。FairPlay观察到三次CFMachPort创建
+均成功后进程仍退出；bootstrap
+导入含非零addend，本轮没有命中对应观察器，不能由无日志认定没有调用。
+
+本轮1,298,898字节磁盘日志及完整64MiB日志槽已备份，槽已清空；APFS计数22→23，
+fullfsync成功，GPT/引导分区一致，设备已回Android。可用原生USB当前基线是v52内核、
+bootstrap v50、原始末尾日志版EFI；记录在 ignored `log/host/native-usb-v52/`。
+
 ## 第五十一轮：配置公开已修复，82 字节字符串复制停机
 
 原始日志照片确认 `all=2 advertised=2`，两个配置的 accessorySwap/extended/locked

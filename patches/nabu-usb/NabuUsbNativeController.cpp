@@ -8,6 +8,7 @@
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <libkern/c++/OSArray.h>
+#include <libkern/c++/OSBoolean.h>
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSDictionary.h>
 #include <libkern/c++/OSNumber.h>
@@ -59,7 +60,10 @@ OSDictionary *configuration(bool mux)
         result->setObject("Interfaces", interfaces) &&
         putNumber(result, "Attributes", 0x80) &&
         putNumber(result, "MaxPower", 250) &&
-        putString(result, "Description", mux ? "AppleUSBMux" : "Reserved");
+        putString(result, "Description", mux ? "AppleUSBMux" : "Reserved") &&
+        // Stock vendor request 0x45 reports this preferred configuration.
+        // AppleLowerFilter treats preferred value 1 as Restore mode.
+        (!mux || result->setObject("DefaultConfiguration", kOSBooleanTrue));
     interfaces->release();
     if (!ok) { result->release(); return nullptr; }
     return result;
