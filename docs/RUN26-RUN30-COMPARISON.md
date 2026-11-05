@@ -53,3 +53,5 @@ Data 的 checkpoint 描述区，发现有效的 xid=1 和 xid=2，校验和均�
 `log/host/apfs-native-v32/data-checkpoints-before31.*`。
 
 继续使用已有 64 GiB 区域、已有 APFS Data 与固定软件 nonce key。
+
+第三十一轮已于 `2026-11-05T15:49:15.186531+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `1c8e56adcca6f0e03fa5c4a783ab5aa124a3290a`。输入为 nabu-data-v32 + bootstrap v9，仍跳过 QEMU；桌面和跨启动记录等待实机结果。确切输入保存在 `log/device/nabu-boot-20261105-31/`，接续记录在 `log/host/apfs-native-v32/continuation.json`。

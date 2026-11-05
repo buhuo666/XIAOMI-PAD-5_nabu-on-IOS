@@ -109,3 +109,5 @@ Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功�
 用户确认第二十九轮停在 HALTED，已手动返回 Android。完整 slot14 只有 BEGIN，没有运行正文；已完整备份后清空。Actions 41986602232 的原版反编译确认 Image4 需要 selector 2212 的 AES-128，而现有驱动只接受普通软件密钥。第三十轮接入固定的设备软件 nonce key、延后 defaults 发布并保存失败诊断，仍直接真机测试。接口依据、密钥保存位置及实际限制见 [Image4 AES 初始化](NABU-IMAGE4-AES.md)。
 
 第三十轮已于 `2026-11-05T15:28:33.923176+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `d733bfd913899ff812c8993de8dfecb5ac5e9308`。使用 `nabu-data-v31b` 和 bootstrap v8，仍未运行 QEMU；运行效果待用户观察及日志回收。确切输入和源代码保存在 `log/device/nabu-boot-20261105-30/`，接续记录为 `log/host/apfs-native-v31/continuation.json`。
+
+第三十一轮已于 `2026-11-05T15:49:15.186531+08:00` 执行 `fastboot boot`，发送与 Booting 均成功，源提交 `1c8e56adcca6f0e03fa5c4a783ab5aa124a3290a`。输入为 nabu-data-v32 + bootstrap v9，仍跳过 QEMU；桌面和跨启动记录等待实机结果。确切输入保存在 `log/device/nabu-boot-20261105-31/`，接续记录在 `log/host/apfs-native-v32/continuation.json`。
