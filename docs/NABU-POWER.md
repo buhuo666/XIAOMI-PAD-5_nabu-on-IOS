@@ -48,3 +48,6 @@ bootstrap v9、原有 APFS Data、原有 nonce key。自动终止关闭，跳过
 
 实机应检查桌面日期、电量显示，以及拔插 USB 后充电图标是否变化；随后手动
 回 Android 回收日志，对比真实电量计读数、RTC 增量及系统日历。
+
+第三十三轮已于 `2026-11-05T16:26:37.887161+08:00` 成功发送 `fastboot boot`，源提交 `86ed211`。
+电源与 RTC 实机结果等待用户操作及日志回收，确切输入在 `log/device/nabu-boot-20261105-33/`，接续在 `log/host/power-v33/continuation.json`。

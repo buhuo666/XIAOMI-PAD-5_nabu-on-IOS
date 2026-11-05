@@ -115,3 +115,6 @@ v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长�
 5. 将已选择的 OS／SystemOS／磁盘 Data 窗口接入 20F66 存储 ABI、nabu UFS 有界写入及 `/private/var` 挂载。参考 nabu 补丁当前禁用 UFS 写入，不能直接使用其 RAM Data 路径实现用户要求的状态保存。
 
 当前启动链已接通只读原生 UFS、OS／SystemOS 挂载和静态 RAM bootstrap；磁盘 Data 挂载、状态持久化与桌面仍未完成，不能称为可用 iPadOS 系统。设备写入包括另文记录的 `nabu_system` 安装和 ESP 文件部署，启动只允许 `fastboot boot`，不得修改 GPT、Android 引导分区或活动槽。
+
+第三十三轮已于 `2026-11-05T16:26:37.887161+08:00` 成功发送 `fastboot boot`，源提交 `86ed211`。
+电源与 RTC 实机结果等待用户操作及日志回收，确切输入在 `log/device/nabu-boot-20261105-33/`，接续在 `log/host/power-v33/continuation.json`。
