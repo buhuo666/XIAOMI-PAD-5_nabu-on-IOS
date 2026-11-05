@@ -18,6 +18,11 @@ struct NabuChargeStatus {
     uint8_t charger_state;
 };
 
+struct NabuGaugeHistory {
+    unsigned learned_capacity_mah, cycle_count;
+    uint16_t cycle_buckets[8];
+};
+
 static bool nabu_read_charge_status(NabuRegisterRead read, NabuChargeStatus *out)
 {
     uint8_t usb, charger;
@@ -35,6 +40,28 @@ static bool nabu_charge_status_changed(const NabuChargeStatus &a, const NabuChar
 static uint16_t nabu_le16(const uint8_t *p)
 {
     return p[0] | (uint16_t)p[1] << 8;
+}
+
+static bool nabu_read_gauge_history(NabuRegisterRead read, NabuGaugeHistory *out)
+{
+    // This board's fg_sdam phandle points to PM8150 slave 0, SDAM@b100.
+    // qpnp-fg-gen4 stores the cookie at +0x80, eight little-endian cycle
+    // buckets at +0x81, and learned capacity (mAh) at +0x91.
+    uint8_t cookie, buckets[16], capacity[2];
+    if (!read(0x0b180, &cookie, 1) || cookie != 0xa5) return false;
+    for (unsigned i = 0; i < sizeof(buckets); i += 4)
+        if (!read(0x0b181 + i, buckets + i, 4)) return false;
+    if (!read(0x0b191, capacity, 2)) return false;
+    NabuGaugeHistory history = {};
+    history.learned_capacity_mah = nabu_le16(capacity);
+    for (unsigned i = 0; i < 8; ++i) {
+        history.cycle_buckets[i] = nabu_le16(buckets + i * 2);
+        history.cycle_count += history.cycle_buckets[i];
+    }
+    // fg-alg.c get_cycle_count() normalizes the eight SOC buckets.
+    history.cycle_count /= 8;
+    *out = history;
+    return true;
 }
 
 static bool nabu_read_rtc(NabuRegisterRead read, uint32_t *seconds)

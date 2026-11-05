@@ -64,11 +64,11 @@ static bool read_registers(uint32_t address, uint8_t *bytes, unsigned count)
 class NabuBattery : public IOPMPowerSource {
     OSDeclareDefaultStructors(NabuBattery);
 public:
-    void report(const NabuPowerSample &sample);
+    void report(const NabuPowerSample &sample, const NabuGaugeHistory *history);
 };
 OSDefineMetaClassAndStructors(NabuBattery, IOPMPowerSource);
 
-void NabuBattery::report(const NabuPowerSample &s)
+void NabuBattery::report(const NabuPowerSample &s, const NabuGaugeHistory *history)
 {
     setBatteryInstalled(s.present);
     setExternalConnected(s.external);
@@ -85,13 +85,21 @@ void NabuBattery::report(const NabuPowerSample &s)
     key = OSSymbol::withCString("AppleRawExternalConnected");
     setPSProperty(key, s.external ? kOSBooleanTrue : kOSBooleanFalse);
     key->release();
-    // The board's battery profile specifies 8720 mAh. Learned capacity and
-    // temperature require FG SRAM access; do not manufacture those values.
+    // The board's battery profile specifies 8720 mAh. Keep MSOC-based display
+    // capacity normalized to 100 and publish stored learned mAh separately.
     key = OSSymbol::withCString("DesignCapacity");
     OSNumber *capacity = OSNumber::withNumber(8720, 32);
     setPSProperty(key, capacity);
     key->release();
     capacity->release();
+    if (history) {
+        setCycleCount(history->cycle_count);
+        key = OSSymbol::withCString("AppleRawMaxCapacity");
+        capacity = OSNumber::withNumber(history->learned_capacity_mah, 32);
+        setPSProperty(key, capacity);
+        key->release();
+        capacity->release();
+    }
     updateStatus();
 }
 
@@ -116,6 +124,8 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
         refresh = nabu_charge_status_changed(status, previous_status);
     NabuPowerSample sample;
     if (refresh && nabu_read_power(read_registers, &sample)) {
+        NabuGaugeHistory history;
+        bool history_valid = nabu_read_gauge_history(read_registers, &history);
         NabuChargeStatus next_status = {sample.external, sample.charger_state};
         bool transition = have_sample && nabu_charge_status_changed(next_status, previous_status);
         if (!battery) {
@@ -123,7 +133,7 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
             IOService *platform = IOService::getPlatform();
             if (made && made->init() && made->attach(platform) && made->start(platform)) {
                 made->setName("NabuBattery");
-                made->report(sample);
+                made->report(sample, history_valid ? &history : nullptr);
                 made->registerService();
                 battery = made;
                 IOLog("NABU BATTERY: IOPMPowerSource published from FG Gen4\n");
@@ -134,14 +144,21 @@ static void poll_power(thread_call_param_t, thread_call_param_t)
                     made->release();
                 }
             }
-        } else battery->report(sample);
+        } else battery->report(sample, history_valid ? &history : nullptr);
         if (transition)
             IOLog("NABU BATTERY: transition USB=%u->%u charger=%u->%u; power-source status updated\n",
                   previous_status.external, sample.external, previous_status.charger_state, sample.charger_state);
-        if (samples++ % 6 == 0 || transition)
+        if (samples++ % 6 == 0 || transition) {
             IOLog("NABU BATTERY: sample=%u MSOC=%u percent=%u voltage=%umV current=%dmA present=%u USB=%u charging=%u full=%u state=%u\n",
                   samples, sample.raw_soc, sample.percent, sample.voltage_mv, sample.current_ma,
                   sample.present, sample.external, sample.charging, sample.full, sample.charger_state);
+            if (history_valid)
+                IOLog("NABU FG: SDAM learned=%umAh cycles=%u buckets=%u,%u,%u,%u,%u,%u,%u,%u; power-source history published\n",
+                      history.learned_capacity_mah, history.cycle_count,
+                      history.cycle_buckets[0], history.cycle_buckets[1], history.cycle_buckets[2], history.cycle_buckets[3],
+                      history.cycle_buckets[4], history.cycle_buckets[5], history.cycle_buckets[6], history.cycle_buckets[7]);
+            else IOLog("NABU FG: SDAM read failed or initialization cookie absent; history not updated\n");
+        }
         previous_status = next_status;
         have_sample = true;
     } else if (refresh) IOLog("NABU BATTERY: no coherent hardware sample; no values published\n");

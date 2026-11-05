@@ -85,5 +85,27 @@ int main()
     assert(nabu_read_rtc(read_fixture, &seconds) && seconds == 0x20000 && rtc_reads == 3);
     fail_address = 0x6048;
     assert(!nabu_read_rtc(read_fixture, &seconds) && seconds == 0x20000);
-    puts("PASS: FG scaling/endpoints, current polarity, charger state, shadow mismatch, bus failure and RTC rollover");
+    fail_address = 0;
+    NabuGaugeHistory history = {}, saved_history;
+    registers[0xb180] = 0xa5;
+    word(0xb191, 8688); // Android bms CHARGE_FULL=8688000 uAh on this device.
+    assert(nabu_read_gauge_history(read_fixture, &history));
+    assert(history.learned_capacity_mah == 8688 && history.cycle_count == 0);
+    const uint16_t counts[] = {255, 256, 257, 258, 259, 260, 261, 263};
+    for (unsigned i = 0; i < 8; ++i) word(0xb181 + i * 2, counts[i]);
+    assert(nabu_read_gauge_history(read_fixture, &history));
+    assert(history.cycle_count == 258);
+    assert(memcmp(history.cycle_buckets, counts, sizeof(counts)) == 0);
+    saved_history = history;
+    registers[0xb180] = 0;
+    assert(!nabu_read_gauge_history(read_fixture, &history));
+    assert(memcmp(&history, &saved_history, sizeof(history)) == 0);
+    registers[0xb180] = 0xa5;
+    const uint32_t failed_reads[] = {0xb180u, 0xb181u, 0xb185u, 0xb189u, 0xb18du, 0xb191u};
+    for (uint32_t address : failed_reads) {
+        fail_address = address;
+        assert(!nabu_read_gauge_history(read_fixture, &history));
+        assert(memcmp(&history, &saved_history, sizeof(history)) == 0);
+    }
+    puts("PASS: FG scaling/endpoints, current polarity, charger state, shadow mismatch, bus failure, RTC rollover and SDAM capacity/cycles");
 }

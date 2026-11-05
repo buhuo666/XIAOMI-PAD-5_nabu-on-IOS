@@ -29,6 +29,28 @@ power-trace 任务）。诊断工具源码保留供后续按需使用。
 “关于本机”修复的证据。下一项基础工作为真实 FG 温度、学习容量及循环次数读取；
 完整充电／温控策略、RTC 告警和手动校时偏移持久化尚未实现。
 
+## 第三十七轮：读取 SDAM 中的电量计历史
+
+本机 Android 活设备树的 `qpnp,fg/nvmem` 为 phandle `0x610`，实际指向
+PM8150 slave 0 的 `sdam@b100`，名称为 `fg_sdam`。此前列出的 FG SRAM
+学习容量地址只是厂商驱动没有 SDAM 时的路径，不是这台设备使用的路径。
+
+第三十七轮沿用 observer 只读命令，从 `0xb180` 检查 `0xa5` 初始化标记，
+从 `0xb181` 读取八个 16 位循环桶，从 `0xb191` 读取学习容量 mAh。
+按同版本 `fg-alg.c::get_cycle_count` 将八桶求和后整除 8。只在标记有效且
+数据读完后更新 `CycleCount` 和 `AppleRawMaxCapacity`，电量百分比继续使用
+现有硬件 MSOC。没有写入 SDAM，也没有实现新的容量学习或循环累计算法。
+
+Android 对照为学习容量 8688 mAh、设计容量 8720 mAh、八桶及循环计数均为 0。
+其 nvmem 驱动没有填写 sysfs size，直接读 nvmem 文件得到零字节，因此不能把
+该文件当作原始数据验证；物理地址由活设备树与同版 `qcom-spmi-sdam.c` 对齐，
+原始 observer 读取仍待本轮 XNU 日志确认。采集与源码位于 `log/host/power-v37/`。
+
+容量字节序、跨字节循环桶、八桶归一化、未初始化标记及各次读失败的测试通过
+ASan/UBSan；原有电源状态和 RTC 测试也通过。ARM64 对象编译及预链接完成。
+候选为 `artifacts/nabu-power-v37/kernel.native-apfs.macho`，使用无临时诊断的
+bootstrap v10。温度的 FG SRAM grant 流程仍未实现。
+
 ## 第三十五轮定位与第三十六轮平台 UUID 修复
 
 第三十五轮用户仍报告两种图标延迟均未改善，已手动回 Android。
