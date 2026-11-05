@@ -50,9 +50,10 @@ def static_entry(binary):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--output', type=Path, required=True)
+    ap.add_argument('--source', type=Path, default=ROOT / 'patches/nabu-apfs/ApfsProbe.c')
     a = ap.parse_args(); a.output.mkdir(parents=True, exist_ok=False)
     mini = ROOT / 'src/hakios-8796/userland/libmini'; objects = []
-    for p in (ROOT / 'patches/nabu-apfs/ApfsProbe.c', mini / 'mini.c', mini / 'start.S'):
+    for p in (a.source, mini / 'mini.c', mini / 'start.S'):
         o = a.output / (p.name + '.o')
         subprocess.run(host_command(['clang-18', '-target', 'arm64-apple-ios16.5', '-Os', '-ffreestanding',
             '-fno-stack-protector', '-fno-builtin', '-I' + host_path(mini), '-c', host_path(p), '-o', host_path(o)]), check=True)

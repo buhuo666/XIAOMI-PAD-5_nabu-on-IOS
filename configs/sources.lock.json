@@ -162,6 +162,13 @@
       "commit": "cd2dd1bd0d79a441424f2bd014144bd719ba56f7",
       "path": "src/unixnu-turnip",
       "purpose": "nabu 19-patch Turnip/Metal reference pipeline; separate from 245aca1a kernel core"
+    },
+    {
+      "name": "NativeAES",
+      "repository": "https://github.com/UniXNU/NativeAES.git",
+      "commit": "a34964b8c2fec2e83c8e4f68fb7d6fb7e4b2227b",
+      "path": "src/NativeAES",
+      "purpose": "Software AES provider source; adapt the API to original 20F66 IOCryptoAcceleratorFamily"
     }
   ]
 }

@@ -3,8 +3,10 @@
 #include "NabuDataBlock.h"
 
 extern "C" {
+int nabu_aes_start(void);
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
+    if (nabu_aes_start()) return KERN_FAILURE;
     return nabu_data_block_start() ? KERN_FAILURE : KERN_SUCCESS;
 }
 

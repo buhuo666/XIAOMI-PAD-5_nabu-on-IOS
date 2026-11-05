@@ -91,3 +91,13 @@ Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功�
 
 `2026-11-05T14:35:29.489120+08:00` 已执行 `fastboot boot`，发送与 Booting 均成功，源提交 `b942eb7b5f3510b27c9cbab9ddfd0b3c50342de1`。
 启动链采用原版 APFS + NabuDataBlock、bootstrap v8、`nabu-native-apfs=1 nabu-data=1`。日志使用已准备的 slot14（64 MiB），自动终止保持关闭。实机桌面、Data 挂载和设置跨启动结果等待用户操作及日志回收；当前只确认临时启动命令成功。启动输入和部署记录保存在 `log/device/nabu-boot-20261105-28/`。
+
+## 第二十八轮回收与第二十九轮候选（2026-11-05）
+
+第二十八轮未进入桌面。已回收完整 64 MiB slot14 快照，恢复 37,008 bytes 连续运行日志；手动重启没有 END 记录。日志明确记录 `/private/var mounted from /dev/disk1s1` 和 `boot record previous=0 current=1 fsync=ok`。launchd 输出 libignition 参数后停止前进，SpringBoard 尚未创建。对应日志单元已于 14:43 完成备份后清空。
+
+先前 QEMU 诊断已把等待点收敛到 `security.mac.img4.ignition_blob`。软件 AES 已注册且自检通过；补发 `/defaults` 的 IOPlatformDevice 后，原版 AppleImage4 继续执行但出现 `performAES: 0xe00002c7`（不支持）。这仍是待修复错误，不能据此声称启动恢复。
+
+第二十九轮采用 `artifacts/nabu-data-v30c/kernel.native-apfs.macho` 和现有 bootstrap v8。新加 NabuAES 诊断类记录请求长度、操作、密钥选择器、位数及返回码，不输出密钥内容，也未替换硬件密钥。launchd 线程采样安排在 60/90/120 秒；自动终止保持关闭。编译及预链接已成功，按用户要求不再运行 QEMU，直接进行真机测试。
+
+沿用现有 49 GiB APFS Data 和 slot14 日志区，部署只更新现有 ESP 文件。实机需要确认 AES 错误参数、启动是否前进，以及若能继续到 PID1 挂载阶段，能否读回上一轮计数 1。主机记录位于 `log/host/apfs-native-v30/`。

@@ -69,8 +69,9 @@ class Object:
         return definitions[symbol['name']]
 
 
-def reference_vtable(reference):
-    symbol = next(s for s in reference.symbols if s['name'] == '__ZTV20IOBlockStorageDevice')
+def reference_vtable(reference, class_name='IOBlockStorageDevice'):
+    mangled = str(len(class_name)) + class_name
+    symbol = next(s for s in reference.symbols if s['name'] == '__ZTV' + mangled)
     section = reference.sections[symbol['section'] - 1]
     names = {}
     for address, word in section['relocations']:
@@ -84,11 +85,12 @@ def reference_vtable(reference):
     return methods
 
 
-def storage_symbols(kernel, image, report, reference):
+def storage_symbols(kernel, image, report, reference, class_name="IOBlockStorageDevice", module="com.apple.iokit.IOStorageFamily"):
     """Use the newly compiled 16.5 class's slots to name the original methods."""
     native = {name: va for va, names in exports(kernel, image).items() for name in names}
-    methods = reference_vtable(reference)
-    extents = [e for e in report['extents'] if e['module'] == 'com.apple.iokit.IOStorageFamily']
+    methods = reference_vtable(reference, class_name)
+    mangled = str(len(class_name)) + class_name
+    extents = [e for e in report['extents'] if e['module'] == module]
     const = next(e for e in extents if e['segment'] == '__DATA_CONST')
     text = next(e for e in extents if e['segment'] == '__TEXT_EXEC')
 
@@ -102,17 +104,32 @@ def storage_symbols(kernel, image, report, reference):
     for at in range(0, len(blob) - (len(methods) + 2) * 8 + 1, 8):
         if blob[at:at + 16] == bytes(16) and all(struct.unpack_from('<Q', blob, at + 16 + i * 8)[0] == value for i, value in inherited):
             candidates.append(at)
+    if class_name == 'IOAESAccelerator':
+        # The original base and its queued implementation share inherited
+        # slots. The base's algorithm getter returns its AES-CBC string.
+        slot = methods.index('__ZN16IOAESAccelerator16getAlgorithmNameEv')
+        selected = []
+        for at in candidates:
+            function = struct.unpack_from('<Q', blob, at + 16 + slot * 8)[0]
+            page, add, ret = struct.unpack('<3I', read(function, 12))
+            if page & 0x9f00001f != 0x90000000 or add & 0xffc003ff != 0x91000000 or ret != 0xd65f03c0:
+                continue
+            delta = signed(((page >> 5 & 0x7ffff) << 2) | (page >> 29 & 3), 21)
+            name = (function & ~4095) + delta * 4096 + (add >> 10 & 4095)
+            if read(name, 8) == b'AES-CBC\0':
+                selected.append(at)
+        candidates = selected
     if len(candidates) != 1:
-        raise ValueError(f'IOBlockStorageDevice vtable match count: {len(candidates)}')
+        raise ValueError(f'{class_name} vtable match count: {len(candidates)}')
     table = const['va'] + candidates[0]
     pointers = struct.unpack('<' + 'Q' * len(methods), read(table + 16, len(methods) * 8))
     bindings = dict(zip(methods, pointers))
     bindings.update(native)
-    bindings['__ZTV20IOBlockStorageDevice'] = table
-    getter = next(p for name, p in zip(methods, pointers) if name == '__ZNK20IOBlockStorageDevice12getMetaClassEv')
+    bindings['__ZTV' + mangled] = table
+    getter = next(p for name, p in zip(methods, pointers) if name == '__ZNK' + mangled + '12getMetaClassEv')
     adrp, add = struct.unpack('<II', read(getter, 8))
     immediate = signed(((adrp >> 5 & 0x7ffff) << 2) | (adrp >> 29 & 3), 21)
-    bindings['__ZN20IOBlockStorageDevice10gMetaClassE'] = (getter & ~4095) + immediate * 4096 + (add >> 10 & 4095)
+    bindings['__ZN' + mangled + '10gMetaClassE'] = (getter & ~4095) + immediate * 4096 + (add >> 10 & 4095)
     code = read(text['va'], text['size'])
     constructors = []
     for at in range(0, len(code) - 32, 4):
@@ -125,17 +142,17 @@ def storage_symbols(kernel, image, report, reference):
             stored = ((pc + 12) & ~4095) + imm * 4096 + (words[4] >> 10 & 4095)
             if stored == table + 16:
                 constructors.append(pc)
-    if len(constructors) != 1:
-        raise ValueError(f'IOBlockStorageDevice constructor match count: {len(constructors)}')
+    if not constructors:
+        raise ValueError(f'{class_name} constructor not found')
     destructor = pointers[0] - 4
     branch, = struct.unpack('<I', read(destructor, 4))
     if branch & 0xfc000000 != 0x14000000:
         raise ValueError('IOBlockStorageDevice base destructor requires native analysis')
-    bindings['__ZN20IOBlockStorageDeviceC2EPK11OSMetaClass'] = constructors[0]
-    bindings['__ZN20IOBlockStorageDeviceD2Ev'] = destructor
+    bindings['__ZN' + mangled + 'C2EPK11OSMetaClass'] = constructors[0]
+    bindings['__ZN' + mangled + 'D2Ev'] = destructor
     return bindings, {'method_count': len(methods), 'vtable': table, 'constructor': constructors[0],
                       'base_destructor': destructor,
-                      'metaclass': bindings['__ZN20IOBlockStorageDevice10gMetaClassE']}
+                      'metaclass': bindings['__ZN' + mangled + '10gMetaClassE']}
 
 
 def relocate_object(obj, output, image, definitions, got, stubs):
@@ -208,13 +225,17 @@ def relocate_object(obj, output, image, definitions, got, stubs):
     return pointers, counts
 
 
-def link(kernel, report, reference, objects):
+def link(kernel, report, reference, objects, aes_reference=None):
     output = bytearray(kernel)
     image = macho(output)
     by_segment = {s['name']: s for s in image['segments']}
     info = by_segment['__PRELINK_INFO']
     metadata = unserialize_xml(output[info['fileoff']:info['fileoff'] + info['filesize']])
     bindings, storage = storage_symbols(output, image, report, reference)
+    aes = None
+    if aes_reference:
+        aes_bindings, aes = storage_symbols(output, image, report, aes_reference, "IOAESAccelerator", "com.apple.iokit.IOCryptoAcceleratorFamily")
+        bindings.update(aes_bindings)
     merged = OrderedDict()
     for obj in objects:
         for section in obj.sections:
@@ -340,7 +361,7 @@ def link(kernel, report, reference, objects):
         '_PrelinkExecutableSourceAddr': text_layout['va'], '_PrelinkExecutableSize': text_layout['size'],
         '_PrelinkKmodInfo': kmod, 'OSBundleLibraries': {'com.apple.iokit.IOStorageFamily': '2.1',
             'com.apple.kpi.iokit': '8.0', 'com.apple.kpi.libkern': '8.0', 'com.apple.kpi.mach': '8.0',
-            'com.apple.kpi.bsd': '8.0', 'com.apple.kpi.private': '8.0'}})
+            'com.apple.kpi.bsd': '8.0', 'com.apple.kpi.private': '8.0', 'com.apple.iokit.IOCryptoAcceleratorFamily': '1.0'}})
     prelink = by_segment['__PRELINK_TEXT']
     old_offsets = struct.unpack('<' + 'I' * (len(metadata['_PrelinkLinkKASLROffsets']) // 4), metadata['_PrelinkLinkKASLROffsets'])[1:]
     offsets = sorted(set(old_offsets) | {site - prelink['va'] for site in pointer_sites})
@@ -359,7 +380,7 @@ def link(kernel, report, reference, objects):
     output.extend(bytes(info_at - len(output)) + xml + bytes(info_size - len(xml)))
     struct.pack_into('<4Q', output, info['command_offset'] + 24, info['va'], info_size, info_at, info_size)
     struct.pack_into('<QQI', output, info['sections'][0]['command_offset'] + 32, info['va'], info_size, info_at)
-    detail = {'bundle': BUNDLE, 'storage_class': storage, 'segments': layouts, 'kmod_info': kmod,
+    detail = {'bundle': BUNDLE, 'storage_class': storage, 'aes_class': aes, 'segments': layouts, 'kmod_info': kmod,
               'start': definitions.get('_nabu_data_block_start'), 'relocations': relocation_counts,
               'pointer_sites_added': len(pointer_sites), 'sparse_headers': headers,
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
@@ -373,13 +394,15 @@ def main():
     parser.add_argument('--kernel', type=Path, required=True)
     parser.add_argument('--prelink-report', type=Path)
     parser.add_argument('--reference-object', type=Path, required=True)
+    parser.add_argument('--aes-reference-object', type=Path)
     parser.add_argument('--object', type=Path, action='append', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     report_path = args.prelink_report or args.kernel.with_name('prelink-report.json')
     prelink_report = json.loads(report_path.read_text())
     result, report = link(args.kernel.read_bytes(), prelink_report,
-                          Object(args.reference_object), [Object(p) for p in args.object])
+                          Object(args.reference_object), [Object(p) for p in args.object],
+                          Object(args.aes_reference_object) if args.aes_reference_object else None)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / 'kernel.native-apfs.macho').write_bytes(result)
     (args.output / 'data-block-link.json').write_text(json.dumps(report, indent=2) + '\n')
