@@ -2,7 +2,7 @@
 
 更新：2026-11-05，Asia/Shanghai。
 
-当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。原版 APFS 与新的 IOStorage Data 设备已在 QEMU 完成实际文件写入、fsync、重挂载读回和两次独立启动计数 0→1→2。Actions `41978509370` 全部成功，正准备第二十八轮实机验收。详见 [持久 Data](NABU-PERSISTENT-DATA.md)。
+当前任务：实现 OS 持久化，仅接管已分配给 iPadOS 的 64 GiB。原版 APFS 与新的 IOStorage Data 设备已在 QEMU 完成实际文件写入、fsync、重挂载读回和两次独立启动计数 0→1→2。Actions `41978509370` 全部成功，第二十八轮临时启动命令已成功，等待实机桌面与设置跨启动验收。详见 [持久 Data](NABU-PERSISTENT-DATA.md)。
 
 目标：小米平板 5（nabu），XNU 开源基线 8796.121.2，iPadOS 16.5／20F66，普通 arm64。
 

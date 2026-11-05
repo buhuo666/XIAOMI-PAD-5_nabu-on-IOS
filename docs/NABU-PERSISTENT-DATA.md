@@ -86,3 +86,8 @@ QEMU独立3MiB Data的md1节点已被原版APFS接受，并读取NXSB、checkpoi
 Actions `41978509370` 的内核、独立 Data 驱动及全部构建步骤成功。链接器补入跨越 ARM64 直接跳转距离的调用跳板和 split-kext 描述后，原版 APFS 识别 `/dev/disk1s1`，完成创建、30 字节写入、fsync、rename、卸载、重新挂载和逐字节读回。第二次独立 QEMU 启动加载上次保存的 Data 镜像，读到启动计数 1 并写为 2，文件读回和最终卸载仍成功，两次均无 panic。
 
 结果在 `log/host/apfs-native-v29/qemu-persistence.json`；逐步日志为 `qemu-third.log` 与 `qemu-restart.log`。最初报告解析器误把含 NUL 的 30 字节载荷写为 29，已改正，汇总按串口实际结果生成。QEMU 的跨启动结果验证原版 APFS 文件系统路径；实机 UFS 挂载与设置保留仍需第二十八轮确认。
+
+## 第二十八轮实机启动
+
+`2026-11-05T14:35:29.489120+08:00` 已执行 `fastboot boot`，发送与 Booting 均成功，源提交 `b942eb7b5f3510b27c9cbab9ddfd0b3c50342de1`。
+启动链采用原版 APFS + NabuDataBlock、bootstrap v8、`nabu-native-apfs=1 nabu-data=1`。日志使用已准备的 slot14（64 MiB），自动终止保持关闭。实机桌面、Data 挂载和设置跨启动结果等待用户操作及日志回收；当前只确认临时启动命令成功。启动输入和部署记录保存在 `log/device/nabu-boot-20261105-28/`。
