@@ -42,3 +42,5 @@ ignored `build/python-usb/`。该VID/PID沿用参考原型，仅作本地开发�
 本轮继续用bootstrap v10、已验证电源实现和原有持久Data。磁盘日志仍作为首次USB
 连接失败时的回收路径，日志槽需重新准备。仅通过既有ESP与fastboot boot临时测试。
 主机记录在 `log/host/usb-v41/`。
+
+第四十一轮已于 `2026-11-05T19:41:41.061301+08:00` 发送 `fastboot boot` 成功，源提交 `57cc470`。电脑接收器已先行启动，Windows枚举及实时日志待验证。确切输入保存在 `log/device/nabu-boot-20261105-41/`，接续在 `log/host/usb-v41/continuation.json`。
