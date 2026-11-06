@@ -37,6 +37,7 @@
 static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuServices";
 extern NSDictionary *nabuWallpaperSnapshot(void);
 extern void nabuStartSQLiteVnodeWatch(void);
+extern NSDictionary *nabuExperienceSnapshot(void);
 
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
@@ -383,6 +384,10 @@ int main(void) {
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
+                        else if ([action isEqual:@"ExperienceInventory"]) {
+                            result[@"read_only"] = @YES;
+                            result[@"experience"] = nabuExperienceSnapshot();
+                        }
                         else if ([action isEqual:@"WallpaperInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"wallpaper"] = nabuWallpaperSnapshot();

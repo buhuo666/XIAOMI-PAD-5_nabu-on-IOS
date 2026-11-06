@@ -27,9 +27,7 @@
     "mobileactivation"
   ],
   "on_demand_allow": [
-    "com.apple.dmd",
-    "com.apple.duetexpertd",
-    "com.apple.photoanalysisd"
+    "com.apple.dmd"
   ],
   "environment_overrides": {
     "com.apple.backboardd": {

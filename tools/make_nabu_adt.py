@@ -127,6 +127,9 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         # routing and the displayed hardware name separate from this opt-in
         # compatibility model for the supplied iPadOS userland.
         'model': STR(userland_model or 'Xiaomi Pad 5'), 'compatible': STR('xiaomi,nabu'),
+        # Android reports this board as 21051182C. 20F66 ModelNumber reads
+        # model-number from IODeviceTree:/; this is the Xiaomi model label.
+        'model-number': STR('21051182C'),
         'platform-name': STR('nabu'), '#address-cells': U32(2), '#size-cells': U32(2),
     }, [chosen, Node('cpus', children=cpus),
         Node('arm-io', {'device_type': STR('qcom,sm8150'), '#address-cells': U32(2),
@@ -137,6 +140,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         Node('psci', {'compatible': STR('arm,psci-1.0'), 'method': STR('smc')}),
         Node('defaults', {'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
         Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5'),
+                                        # About reads ArtworkTraits' product description;
+                                        # CoreUI uses the tablet resource idiom.
+                                        'product-description': STR('Xiaomi Pad 5'),
+                                        'artwork-device-idiom': STR('pad'),
                                         'artwork-scale-factor': U32(2)})])
     if userland_serial is not None:
         # IOPlatformExpertDevice publishes this NUL-terminated ADT data as

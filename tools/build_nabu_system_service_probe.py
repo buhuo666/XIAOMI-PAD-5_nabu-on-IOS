@@ -18,12 +18,13 @@ def main():
     source = ROOT / 'userland/nabu/src/system_service_probe.m'
     wallpaper_source = ROOT / 'userland/nabu/src/wallpaper_probe.m'
     sqlite_watch_source = ROOT / 'userland/nabu/src/sqlite_vnode_watch.m'
+    experience_source = ROOT / 'userland/nabu/src/experience_probe.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source),
                '-framework', 'Foundation', '-framework', 'ImageIO',
-               '-framework', 'CoreGraphics', '-o', str(binary)]
+               '-framework', 'CoreGraphics', '-framework', 'UIKit', '-o', str(binary)]
     subprocess.run(command, check=True)
     entitlements = ROOT / 'userland/nabu/system-service-probe.entitlements.plist'
     subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none',
