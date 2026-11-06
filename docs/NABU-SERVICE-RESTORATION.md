@@ -71,3 +71,15 @@ APFS计数40→41。实时复现日志另存`log/host/services-v70/keyboard-abou
 原版汇编与调用证据在`log/host/services-v70/about-analysis`和`keyboard-analysis`，
 来自本机20F66缓存的Capstone反汇编，不是REA反编译结果。第71轮探针编译和签名检查
 Actions42197727993通过，设备树编码/解码字段检查通过；界面修复仍待实机。
+
+第71轮已临时启动，原生USB/本地激活/155项总登记保持。ExperienceInventory确认
+MG ModelNumber=21051182C，ArtworkTraits含Xiaomi Pad 5及pad。用户先报告关于本机
+没反应，后澄清首次加载很久，之后可快速打开；尚未明确确认显示字段。
+原版默认壁纸筛选返回false，WKLogicalScreenClassString=800w-1280h@2x~ipad。
+KBLayouts_iPad.dat/KBLayouts_Dynamic.dat可读，800和1280均找到原版布局前缀，
+但原版keyboardSizeForInputMode在两种方向、英文与拼音均返回0高度。
+
+Nabu Test更新经原版installation_proxy安装成功（Actions42199589019）。在这个应用的
+768x1024兼容画布中，原版英文/拼音布局返回768x258或1024x343，用户确认可显示但比例
+不对。实验对比的零高度拦截没有触发，不能声称它修好了键盘；已安排真实屏幕规格
+与兼容规格的应用内对照。原版方法在诊断结束后恢复。证据在services-v71/keyboard-app。
