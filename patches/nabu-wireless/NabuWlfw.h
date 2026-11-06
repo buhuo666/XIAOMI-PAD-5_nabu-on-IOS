@@ -66,7 +66,12 @@ struct NabuWlfw {
             memcpy(request+bytes,board_data+board_sent,chunk);bytes+=chunk;value(0x14,board_sent+chunk==board_bytes,1);
             value(0x15,0,1); // Original Xiaomi daemon explicitly selects BIN board-data type.
         }
-        if(step==7)value(1,0,1); // No saved calibration IDs; request firmware calibration.
+        if(step==7){
+            value(1,0,1); // Report no saved calibration IDs; this is not a calibration-complete result.
+            // Official Xiaomi cnss-daemon: builder 0xf4c0, QMI descriptor 0x7623.
+            // Optional TLV 0x11 is u8(0); its field semantics are still unknown.
+            value(0x11,0,1);
+        }
         if(step==8){
             request[bytes++]=0x10;request[bytes++]=6;request[bytes++]=0;
             memcpy(request+bytes,mac_address,6);bytes+=6;

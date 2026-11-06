@@ -71,8 +71,12 @@ int main(){
     }
     assert(copied==board&&w.board_sent==board.size()&&w.board_segment==5);
     const uint8_t mac[]={2,0x11,0x22,0x33,0x44,0x55};w.mac_available=true;memcpy(w.mac_address,mac,6);
-    w.prepare();assert(w.message==0x26&&w.bytes==11&&w.request[7]==1&&w.request[10]==0);w.sent();
-    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==8);
+    // Official Xiaomi V14.0.7.0 CAL_REPORT builder + native QMI descriptor: empty IDs and optional tag 0x11=u8(0).
+    const uint8_t official_cal_report_tlvs[]={1,1,0,0,0x11,1,0,0};
+    w.prepare();assert(w.message==0x26&&w.local_port()==0x4004&&w.bytes==7+sizeof(official_cal_report_tlvs));
+    assert(w.request[5]==sizeof(official_cal_report_tlvs)&&w.request[6]==0);
+    assert(!memcmp(w.request+7,official_cal_report_tlvs,sizeof(official_cal_report_tlvs)));w.sent();
+    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==8&&!w.fw_ready&&!w.init_done);
     w.prepare();assert(w.message==0x33&&w.bytes==16&&w.request[7]==0x10&&w.request[8]==6&&!memcmp(w.request+10,mac,6));
     w.sent();response[1]=w.transaction;response[3]=0x33;assert(w.receive(response,sizeof(response))&&w.mac_set&&w.complete);
     w.prepare();assert(w.bytes==0); // Wait for indications without registering the live daemon again.
@@ -115,7 +119,7 @@ int main(){
     assert(ack_error.receive(response,sizeof(response))&&ack_error.rejuvenate_ack_finished&&!ack_error.rejuvenate_ack_success&&ack_error.failed);
     NabuWlfw ack_timeout{};ack_timeout.receive(empty_rejuvenate,sizeof(empty_rejuvenate));ack_timeout.prepare();ack_timeout.sent();
     for(unsigned i=0;i<10000;++i)ack_timeout.tick();assert(ack_timeout.failed&&!ack_timeout.waiting&&!ack_timeout.rejuvenate_ack_success);
-    puts("WLFW: Android feature-mask ordering and 64-bit fields, KNEL notifications and one-shot rejuvenate ACK, stale-response rejection, BDF/MSA/MAC, errors and timeout passed");
+    puts("WLFW: official Xiaomi CAL_REPORT bytes, Android feature-mask ordering and 64-bit fields, KNEL notifications and one-shot rejuvenate ACK, stale-response rejection, BDF/MSA/MAC, errors and timeout passed");
 }
 '''
 
@@ -127,7 +131,9 @@ def main():
         '-I'+host_path(ROOT/'patches/nabu-wireless'),host_path(source),'-o',host_path(binary)]),check=True)
     result=subprocess.run(host_command([host_path(binary)]),capture_output=True)
     (a.output/'test.log').write_bytes(result.stdout);(a.output/'test.stderr').write_bytes(result.stderr);result.check_returncode()
-    report={'production_wlfw_tested':True,'sanitizers':['address','undefined'],'result':result.stdout.decode().strip()}
+    report={'production_wlfw_tested':True,'sanitizers':['address','undefined'],
+            'cal_report_tlv_body':'0101000011010000','cal_report_optional_tlv11_semantics':'unknown; matches official Xiaomi native encoding',
+            'result':result.stdout.decode().strip()}
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 
 

@@ -486,6 +486,22 @@ WLFW/TFTP状态污染。BlueTool未见spawn、control socket未打开，A/B/C诊
 故障记录见`log/host/wireless-v102/halt-wlan-analysis.md`和`bluetooth-halted-review.md`。
 第103轮计划复用相同内核/bootstrap，桌面确认后才启动USB服务探针，检查停机重现性。
 
+第103轮同镜像桌面正常，第102轮HALTED未重现但原因未确定。首次完整HCI诊断确认
+Reset(status0/len1)→200b(A,status0)→Reset(status0/len1)→204a(B,status0/len2)→
+200b(C,status12)→Reset(status0/len1)；随后Version/BDADDR均通过、boot errno/status0。
+这已支持标准命令族冲突，不等于扫描或配对修复。15,234,415字节有效日志及完整槽
+已回收清空回读，APFS计数72→73。WLAN仍同PC异常，DIAG控制包2、数据包0。
+用户提供的Android boot为含twrp_nabu的定制镜像，已提取内核配置与ramdisk清单；
+“QCA6391/RISC-V/GLINK未起/已证实BDF校验失败/0c03是私有命令”等外部路线前提与
+当前证据不符或缺乏支持，详见`analysis/nabu-android-boot-reference-20261107.md`。
+v104原生host slot18策略候选属于上层函数槽兼容，不能称作无拦截；与DIAG
+feature/diag_id候选一起另存`wireless-v104/parked-*.patch`，从本轮工作树撤出。
+用户随后提供官方V14.0.7.0线刷包；已提取真正NABU overlay、vendor服务及原始固件。
+官方BDF/BT/servreg与现用相同，WLAN可加载段相同但认证元数据不同，MPSS另有真实
+版本差异。官方cnss-daemon与读机版全文相同；CAL_REPORT的原生编码表确认应在
+空ID清单后增加optional TLV0x11=u8(0)，完整body为`0101000011010000`。字段语义
+未知，不称作OTP开关。第104轮仅补这一请求缺项，协议ASan/UBSan通过，实机待验。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

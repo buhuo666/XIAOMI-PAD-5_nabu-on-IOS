@@ -142,6 +142,20 @@ MODEM↔TZ公共目录entry10、offset0x163000、size0x2000。蓝牙生命周期
 没有A/B/C结果。现场包ASan/UBSan回放通过，停机根因仍未知；准备第103轮复用同一
 内核/bootstrap，等用户确认桌面后再开启USB服务探针，对照启动早期请求这一变量。
 
+第103轮复用同镜像，用户确认桌面正常；这次未重现HALTED，仍未确定第102轮原因。
+首次蓝牙完整诊断A/B/C=0/0/12，三次Reset的status/长度及最终版本/地址核对均通过，
+确认204a之后相同legacy扫描参数被拒绝。原生栈旧策略仍712循环。Wi-Fi同PC异常，
+DIAG重复收到FEATURE与NUM_PRESETS，数据通道0包。15,234,415字节有效日志及64MiB槽
+已备份清空回读，APFS计数72→73、fullfsync成功；当前设备在Android。
+用户新增Android boot镜像已离线解包，内含MJW-Uotan内核与twrp_nabu/eng/test-keys
+ramdisk，没有所需DTB或无线固件/BDF；不能当作已确认的原厂镜像或OTP来源。路线核对见
+[Android镜像与无线路线](../analysis/nabu-android-boot-reference-20261107.md)。
+后续官方V14.0.7.0线刷包已离线提取vendor、DTB/DTBO及无线固件。K82C BDF、原始BT
+输入和servreg与现用相同，WLAN可加载代码/数据相同、认证元数据不同；MPSS存在
+真实构建差异，尚不能归因为PFR。官方cnss-daemon与读机版全文一致，确认当前
+CAL_REPORT缺少TLV0x11=u8(0)。第104轮只补此四字节，ASan/UBSan通过，正在编译。
+DIAG协商与BT slot18候选已另存patch并从本轮工作树撤出；当前Android、计数73。
+
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。
 原生USB、本地激活和155项应用总登记保持。当前使用v66内核/bootstrap v75，
