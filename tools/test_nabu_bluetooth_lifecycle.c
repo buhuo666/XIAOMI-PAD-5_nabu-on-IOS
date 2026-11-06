@@ -26,7 +26,14 @@ static void expect_command(int fd, uint16_t opcode) {
 
 static void *peer_main(void *context) {
     struct Peer *peer = context;
-    if (peer->mode <= 2) {
+    if (peer->mode == 7) {
+        const uint8_t expected[] = {1, 0x0b, 0x20, 7, 0, 0xe0, 1, 0x30, 0, 0, 0};
+        uint8_t command[sizeof(expected)];
+        assert(transfer(peer->fd, command, sizeof(command), false, seconds_now()+2) == 0);
+        assert(memcmp(command, expected, sizeof(command)) == 0);
+        const uint8_t complete[] = {4, 0x0e, 4, 1, 0x0b, 0x20, 0};
+        send_event(peer->fd, complete, sizeof(complete));
+    } else if (peer->mode <= 2) {
         expect_command(peer->fd, 0x1001);
         const uint8_t unrelated[] = {4,0xff,3,0xfd,0xfc,0xfe};
         send_event(peer->fd, unrelated, sizeof(unrelated));
@@ -57,7 +64,7 @@ static void *peer_main(void *context) {
 }
 
 int main(void) {
-    for (unsigned mode = 0; mode < 7; ++mode) {
+    for (unsigned mode = 0; mode < 8; ++mode) {
         int pair[2];
         assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
         assert(fcntl(pair[0], F_SETFL, O_NONBLOCK) == 0);
@@ -66,7 +73,12 @@ int main(void) {
         assert(pthread_create(&thread, NULL, peer_main, &peer) == 0);
         struct LifecycleResult result = {0};
         int error;
-        if (mode <= 2) {
+        if (mode == 7) {
+            const uint8_t parameters[] = {0, 0xe0, 1, 0x30, 0, 0, 0};
+            uint8_t response[8]; size_t size = sizeof(response);
+            error = hci_command_data(pair[0], 0x200b, parameters, sizeof(parameters), response, &size, &result);
+            assert(error == 0 && size == 1 && response[0] == 0);
+        } else if (mode <= 2) {
             error = verify_controller(pair[0], mode == 1 ? "02:13:24:35:46:58" : "02:13:24:35:46:57", &result);
             assert(error == (mode == 0 ? 0 : mode == 1 ? ENXIO : ENODEV));
             assert(result.address_checked == (mode == 0));

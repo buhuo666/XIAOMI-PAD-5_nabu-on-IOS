@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--lifecycle', type=Path, help='Source-owned QCA implementation of the BlueTool lifecycle service')
     parser.add_argument('--lifecycle-ci-run', type=int)
     parser.add_argument('--compatibility', type=Path, help='20F66 bluetoothd optional-HCI initializer adapter')
+    parser.add_argument('--diagnose-le-family', action='store_true', help='One first-boot Reset/legacy/query/legacy/Reset controller diagnostic; never enables scanning')
     args = parser.parse_args()
     jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     baseline = ROOT / 'artifacts/nabu-bootstrap-v77'
@@ -61,6 +62,7 @@ def main():
         filename = 'com.apple.BlueTool'
         job = plistlib.loads((destination / (filename + '.plist')).read_bytes())
         job['ProgramArguments'] = ['/redwood/sbin/nabu-bluetooth-lifecycle']
+        if args.diagnose_le_family: job['ProgramArguments'].append('--diagnose-le-family')
         (destination / (filename + '.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
         changed.extend(['sbin/nabu-bluetooth-lifecycle', 'LaunchDaemons/' + filename + '.plist'])
         policies[filename] = job
@@ -103,6 +105,7 @@ def main():
             'boot_init': 'Real HCI Reset (boot), QCA LocalVersion and requested BD_ADDR verification',
             'deepsleep': 'Real HCI Reset then confirmed IBS transport idle; shared supplies retained',
             'donor_firmware_scripts_used': False, 'runtime_verified': False}
+        report['bluetooth_lifecycle']['le_family_diagnostic'] = args.diagnose_le_family
     if args.compatibility:
         report['bluetooth_optional_reporting'] = {
             'ci_run': args.lifecycle_ci_run, 'source': str(args.compatibility),

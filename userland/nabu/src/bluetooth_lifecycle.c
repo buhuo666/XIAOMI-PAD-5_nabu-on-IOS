@@ -40,6 +40,8 @@ struct LifecycleResult {
     NabuBluetoothIbsState idle_state;
     char firmware[96];
 };
+static bool diagnose_le_family;
+static bool le_family_diagnostic_done;
 
 static void report(const char *format, ...) {
     char message[320];
@@ -78,11 +80,12 @@ static int transfer(int fd, void *buffer, size_t bytes, bool sending, double dea
     return 0;
 }
 
-static int hci_command(int fd, uint16_t opcode, uint8_t *parameters,
-                       size_t *parameter_bytes, struct LifecycleResult *result) {
-    uint8_t command[] = {1, (uint8_t)opcode, (uint8_t)(opcode >> 8), 0};
+static int hci_command_data(int fd, uint16_t opcode, const uint8_t *arguments, uint8_t argument_bytes,
+                           uint8_t *parameters, size_t *parameter_bytes, struct LifecycleResult *result) {
+    uint8_t command[259] = {1, (uint8_t)opcode, (uint8_t)(opcode >> 8), argument_bytes};
+    if (argument_bytes) memcpy(command + 4, arguments, argument_bytes);
     double deadline = seconds_now() + 3.0;
-    int error = transfer(fd, command, sizeof(command), true, deadline);
+    int error = transfer(fd, command, 4u + argument_bytes, true, deadline);
     while (!error) {
         uint8_t event[258];
         error = transfer(fd, event, 1, false, deadline);
@@ -112,6 +115,35 @@ static int hci_command(int fd, uint16_t opcode, uint8_t *parameters,
     }
     report("opcode=%#x errno=%d hci-status=%u", opcode, error, result->hci_status);
     return error;
+}
+
+static int hci_command(int fd, uint16_t opcode, uint8_t *parameters,
+                       size_t *parameter_bytes, struct LifecycleResult *result) {
+    return hci_command_data(fd, opcode, NULL, 0, parameters, parameter_bytes, result);
+}
+
+static int diagnose_command_family(int fd) {
+    /* No scan-enable or advertising-enable command is issued. Reuse exactly
+     * the same passive scan parameters before and after the capacity query.
+     */
+    const uint8_t scan[] = {0, 0xe0, 1, 0x30, 0, 0, 0}; // 300ms interval, 30ms window, public address.
+    const char *names[] = {"legacy-before", "periodic-list-size", "legacy-after"};
+    for (unsigned step = 0; step < 3; ++step) {
+        uint8_t response[32]; size_t size = sizeof(response);
+        struct LifecycleResult observed = {0};
+        int error = step == 1 ? hci_command(fd, 0x204a, response, &size, &observed) :
+            hci_command_data(fd, 0x200b, scan, sizeof(scan), response, &size, &observed);
+        report("LE family diagnostic phase=%s errno=%d hci-status=%u", names[step], error, observed.hci_status);
+        /* A command-status failure still leaves a synchronized event stream.
+         * Other I/O failures stop the experiment before its reset/revalidation.
+         */
+        if (error && error != EIO) break;
+    }
+    uint8_t response[8]; size_t size = sizeof(response);
+    struct LifecycleResult reset = {0};
+    int error = hci_command(fd, 0x0c03, response, &size, &reset);
+    report("LE family diagnostic final-reset errno=%d hci-status=%u", error, reset.hci_status);
+    return error ? error : size == 1 ? 0 : EPROTO;
 }
 
 static int connect_controller(void) {
@@ -190,6 +222,10 @@ static struct LifecycleResult run_lifecycle(const char *stage, const char *addre
         result.error = hci_command(fd, 0x0c03, response, &size, &result);
         if (!result.error && size != 1) result.error = EPROTO;
     }
+    if (!result.error && boot && diagnose_le_family && !le_family_diagnostic_done) {
+        le_family_diagnostic_done = true;
+        result.error = diagnose_command_family(fd);
+    }
     if (!result.error && !sleep) result.error = verify_controller(fd, address, &result);
     if (!result.error && sleep) {
         /* Implemented by the Nabu backend: drain, TX FE, actual RX asleep. */
@@ -243,7 +279,8 @@ static void handle_message(xpc_connection_t peer, xpc_object_t message) {
     xpc_release(reply);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    diagnose_le_family = argc == 2 && !strcmp(argv[1], "--diagnose-le-family");
     openlog("nabu-bluetooth-lifecycle", LOG_PID, LOG_DAEMON);
     dispatch_queue_t queue = dispatch_queue_create("nabu.bluetooth.lifecycle", DISPATCH_QUEUE_SERIAL);
     /* Present in the original 20F66 BlueTool, but unavailable to SDK iOS apps. */
