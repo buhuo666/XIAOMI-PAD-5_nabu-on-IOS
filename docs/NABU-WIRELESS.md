@@ -171,6 +171,13 @@ instance180，提供`kernel/elf_loader`、`tms/servreg`、`wlan/fw`。
 查询响应。WLAN和ELF加载器均对应`msm/modem/wlan_pd`实例180；生产查询与GLINK主机
 ASan/UBSan通过，编译链接通过。是否收到查询、随后触发固件传输仍待实测。
 
+第85轮桌面/USB正常，注册表收到tms/pdr_enabled、tms/pddump_disabled、kernel/elf_loader
+真实查询。随后modem反复TFTP写`/readwrite/server_check.txt`，只读服务拒绝，自检无法
+继续；共5,085次请求、0次完成。重复日志占满32KiB实时报告，完整磁盘日志确认正常
+关闭和权限收回。3,031,139字节日志及完整槽已回收清空，APFS计数54→55。
+第86轮候选只允许该自检文件在4KiB RAM缓冲中写入/读回，固件保持只读，并限制前40次
+请求明细以保留结尾报告。主机生产TFTP读写/重传与GLINK测试通过，编译链接通过。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。

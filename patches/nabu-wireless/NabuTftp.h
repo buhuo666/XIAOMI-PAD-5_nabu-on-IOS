@@ -16,6 +16,9 @@ struct NabuTftp {
     uint8_t payload[4004]{};
     bool active = false, pending = false, options = false, last = false, complete = false;
     bool started = false;
+    bool writing = false;
+    uint8_t *write_buffer = nullptr;
+    unsigned write_capacity = 0, written = 0;
     unsigned retries = 0, since_send = 0;
     char name[160]{};
 
@@ -46,7 +49,10 @@ struct NabuTftp {
         unsigned at = 2; const char *path = field(data, bytes, at), *mode = field(data, bytes, at);
         if (!path || !mode || strlen(path) >= sizeof(name)) return false;
         memcpy(name, path, strlen(path) + 1); active = true;
-        if (data[1] == 2) { error(2); return true; }
+        if (data[1] == 2) {
+            if (strcmp(name,"/readwrite/server_check.txt") || !write_buffer) { error(2); return true; }
+            writing = true;
+        }
         bool size_option = false, seek_option = false, range_option = false;
         while (at < bytes) {
             const char *key = field(data, bytes, at), *value = field(data, bytes, at);
@@ -58,7 +64,7 @@ struct NabuTftp {
             else if (!strcmp(key, "rsize")) { requested = n; range_option = true; }
             else if (!strcmp(key, "tsize")) size_option = true;
         }
-        if (strcmp(name, "/readonly/firmware/image/wlanmdsp.mbn") || !firmware || seek > firmware_bytes) { error(1); return true; }
+        if (!writing && ((strcmp(name, "/readonly/firmware/image/wlanmdsp.mbn") && strcmp(name,"/readwrite/server_check.txt")) || !firmware || seek > firmware_bytes)) { error(1); return true; }
         file = firmware; size = firmware_bytes - seek;
         if (requested && requested < size) size = requested;
         if (options) {
@@ -68,7 +74,8 @@ struct NabuTftp {
             if (seek_option) option("seek", seek);
             if (range_option) option("rsize", requested);
             pending = true;
-        } else next();
+        } else if(writing) {payload[0]=0;payload[1]=4;payload[2]=payload[3]=0;payload_bytes=4;pending=true;}
+        else next();
         return true;
     }
     void next() {
@@ -83,6 +90,14 @@ struct NabuTftp {
         if (!active || bytes < 4 || data[0]) return;
         unsigned op = data[1], value = (unsigned)data[2] << 8 | data[3];
         if (op == 5) { active = false; pending = false; return; }
+        if(writing) {
+            if(op!=3 || pending)return;
+            if(value==block) {pending=true;return;}
+            if(value!=block+1 || bytes-4>write_capacity-written) {error(2);return;}
+            memcpy(write_buffer+written,data+4,bytes-4);written+=bytes-4;block=value;
+            payload[0]=0;payload[1]=4;payload[2]=value>>8;payload[3]=value;payload_bytes=4;
+            last=bytes-4<block_size;pending=true;retries=since_send=0;started=false;return;
+        }
         if (op != 4 || value != block || pending) return;
         if (block) delivered += payload_bytes - 4;
         if (last) { complete = true; active = false; return; }
@@ -91,6 +106,7 @@ struct NabuTftp {
     void sent() {
         pending = false; started = true; since_send = 0;
         if (payload[1] == 5) active = false;
+        if(writing && last && payload[1]==4) {complete=true;active=false;delivered=written;}
     }
     void tick() {
         if (!active || pending || !started) return;

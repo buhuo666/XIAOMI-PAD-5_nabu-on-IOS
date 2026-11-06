@@ -44,6 +44,13 @@ int main() {
     auto missing=request("/readonly/firmware/image/missing.bin",false);t=NabuTftp{};
     assert(t.begin(missing.data(),missing.size(),file.data(),file.size())&&t.payload[1]==5&&t.payload[3]==1);
     p[1]=2;t=NabuTftp{};assert(t.begin(p.data(),p.size(),file.data(),file.size())&&t.payload[3]==2);
+    uint8_t memory[4096]{};auto check=request("/readwrite/server_check.txt",false);check[1]=2;
+    t=NabuTftp{};t.write_buffer=memory;t.write_capacity=sizeof(memory);
+    assert(t.begin(check.data(),check.size(),nullptr,0)&&t.writing&&t.payload[1]==4);t.sent();
+    uint8_t contents[]={0,3,0,1,'o','k','!'};t.acknowledge(contents,sizeof(contents));
+    assert(t.pending&&t.payload[1]==4&&!t.complete);t.sent();assert(t.complete&&t.written==3&&!memcmp(memory,"ok!",3));
+    check[1]=1;t=NabuTftp{};assert(t.begin(check.data(),check.size(),memory,3));
+    assert(t.payload_bytes==7&&!memcmp(t.payload+4,"ok!",3));t.sent();uint8_t ack[]={0,4,0,1};t.acknowledge(ack,4);assert(t.complete);
     puts("TFTP: full/ranged bytes, option negotiation, ACK progression, retries and read-only errors passed");
 }
 '''

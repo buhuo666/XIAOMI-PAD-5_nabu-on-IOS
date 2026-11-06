@@ -32,6 +32,9 @@ struct NabuGlink {
     unsigned wlan_bytes = 0, tftp_requests = 0, tftp_completed = 0;
     NabuTftp transfers[2]{};
     NabuServreg registry;
+    uint8_t server_check[4096]{};
+    unsigned server_check_size = 0;
+    bool server_check_valid = false;
     uint8_t transmit[4096]{};
     struct RemoteIntent { uint32_t id, size; bool present, used; } remote[64]{};
     struct LocalIntent { uint8_t *data; uint32_t size, fill; } local[16]{};
@@ -69,9 +72,13 @@ struct NabuGlink {
             for (unsigned i = 0; i < 2; ++i) if (!transfers[i].active && !transfers[i].pending) {
                 NabuTftp &t = transfers[i]; t = NabuTftp{};
                 t.node = node; t.peer_port = from; t.local_port = 0x4010 + i;
-                if (t.begin(data, bytes, wlan_firmware, wlan_bytes)) {
+                t.write_buffer=server_check;t.write_capacity=sizeof(server_check);
+                bool check=bytes>2+strlen("/readwrite/server_check.txt") && !memcmp(data+2,"/readwrite/server_check.txt",strlen("/readwrite/server_check.txt")+1);
+                const uint8_t *file=check?(server_check_valid?server_check:nullptr):wlan_firmware;
+                unsigned file_bytes=check?server_check_size:wlan_bytes;
+                if (t.begin(data, bytes, file, file_bytes)) {
                     ++tftp_requests;
-                    nabu_wireless_log("NABU TFTP: request file=%s opcode=%u seek=%u rsize=%u block=%u offered=%u\n", t.name, data[1], t.seek, t.requested, t.block_size, t.file != nullptr);
+                    if(tftp_requests<=40)nabu_wireless_log("NABU TFTP: request file=%s opcode=%u seek=%u rsize=%u block=%u offered=%u\n", t.name, data[1], t.seek, t.requested, t.block_size, t.file != nullptr || t.writing);
                 }
                 return;
             }
@@ -91,7 +98,13 @@ struct NabuGlink {
             response_head = (response_head+1)%8; --response_count;
         }
         for (auto &t : transfers) {
-            if (t.pending && datagram(1, t.local_port, t.node, t.peer_port, t.payload, t.payload_bytes)) t.sent();
+            if (t.pending && datagram(1, t.local_port, t.node, t.peer_port, t.payload, t.payload_bytes)) {
+                bool complete=t.complete;t.sent();
+                if(t.writing && t.complete && !complete) {
+                    server_check_size=t.written;server_check_valid=true;++tftp_completed;
+                    nabu_wireless_log("NABU TFTP: server_check saved in RAM bytes=%u\n",server_check_size);
+                }
+            }
         }
     }
 
