@@ -252,6 +252,12 @@ KNEL端点0x4003的MSA/能力流程，主机能力声明daemon_support=1，随�
 链接通过，实机仍待验证。另将IOMalloc+bzero后的wlfw状态显式初始化，确保字段默认
 值生效；第92轮board_id默认0xff未生效正是因为未执行C++成员初始化。
 
+第93轮用户确认桌面正常，USB报告确认KNEL/DMON两个端点请求均成功。DMON首次
+注册返回fw_status=0x4（MSA_READY），五段Xiaomi BDF及校准全部应答，但未收到
+FW_READY/FW_INIT_DONE，随后DMON状态刷新值为0。board-id-valid=0且默认0xff生效。
+modem停止与MSA/RMTFS回收正常；实时报告已保存，完整槽等待Android回收。下一步
+核对原机显式BDF type字段和MAC请求；不能把MSA_READY当作WLAN可用。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。
@@ -260,6 +266,12 @@ KNEL端点0x4003的MSA/能力流程，主机能力声明daemon_support=1，随�
 能力false且HCI服务匹配数0；服务清单还明确排除bluetoothd及两个相关用户服务。
 因此蓝牙菜单/服务接入、持续HCI收发和共存应与WLAN数据路径共同推进，最终必须
 验证Wi-Fi联网期间蓝牙发现、配对和目标外设操作，不能用HCI版本成功替代。
+
+原版20F66内核元数据确定AppleBluetooth的匹配类为BTReset，并包含IOSerialFamily/
+AppleOnboardSerial；未据macOS的IOBluetoothHCI类名猜测iPadOS接口。已从现有原版
+OS镜像提取bluetoothd和BlueTool作静态调查：前者含cu.bluetooth、uart.bluetooth、
+btwake设备路径，后者含btpoweroff、btwake、btreset。路径目前仅为静态字符串线索，
+尚需追踪调用与ioctl契约，不能宣称这些接口或系统蓝牙已经实现。
 
 本机Android设备树Wi-Fi为`/soc/qcom,icnss@18800000`，蓝牙供电节点为
 `/vendor/bt_wcn3990`，引用了相同的部分供电phandle。公开Nabu树为SNOC Wi-Fi及
