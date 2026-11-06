@@ -47,6 +47,7 @@ NSDictionary *nabuBluetoothTransportTrial(void) {
     NSMutableArray *queries = [NSMutableArray array];
     const uint16_t opcodes[] = {0x1001, 0x1003, 0x1005, 0x2003, 0x1001, 0x1003, 0x1005, 0x2003};
     const unsigned chunks[] = {1, 2, 7, 31};
+    uint8_t stream[1024]; size_t used = 0;
     for (unsigned query = 0; query < sizeof(opcodes) / sizeof(opcodes[0]); ++query) {
         uint16_t opcode = opcodes[query];
         uint8_t command[] = {1, (uint8_t)opcode, (uint8_t)(opcode >> 8), 0};
@@ -54,7 +55,6 @@ NSDictionary *nabuBluetoothTransportTrial(void) {
         ssize_t sent = write(fd, command, sizeof(command));
         item[@"written"] = @(sent);
         if (sent != (ssize_t)sizeof(command)) { item[@"write_errno"] = @(sent < 0 ? errno : 0); [queries addObject:item]; break; }
-        uint8_t stream[1024]; size_t used = 0;
         BOOL matched = NO;
         double deadline = monotonicSeconds() + 3.0;
         while (monotonicSeconds() < deadline && !matched) {
