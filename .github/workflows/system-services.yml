@@ -9,6 +9,7 @@ on:
       - 'userland/nabu/src/wallpaper_probe.m'
       - 'userland/nabu/src/sqlite_vnode_watch.m'
       - 'userland/nabu/src/experience_probe.m'
+      - 'userland/nabu/src/experience_compat.m'
       - 'userland/nabu/system-service-probe.entitlements.plist'
   workflow_dispatch:
 permissions:

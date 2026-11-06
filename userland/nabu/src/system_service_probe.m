@@ -38,6 +38,7 @@ static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuService
 extern NSDictionary *nabuWallpaperSnapshot(void);
 extern void nabuStartSQLiteVnodeWatch(void);
 extern NSDictionary *nabuExperienceSnapshot(void);
+extern void nabuInstallExperienceCompatibility(void);
 
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
@@ -387,6 +388,13 @@ int main(void) {
                         else if ([action isEqual:@"ExperienceInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"experience"] = nabuExperienceSnapshot();
+                        }
+                        else if ([action isEqual:@"ExperienceCompatibilityTrial"]) {
+                            result[@"scope"] = @"Process-local method changes after paired host request; no other process or preferences changed";
+                            result[@"experience_original"] = nabuExperienceSnapshot();
+                            saveReport(result, @"experience-original.json");
+                            nabuInstallExperienceCompatibility();
+                            result[@"experience_candidate"] = nabuExperienceSnapshot();
                         }
                         else if ([action isEqual:@"WallpaperInventory"]) {
                             result[@"read_only"] = @YES;

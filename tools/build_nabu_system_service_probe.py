@@ -19,10 +19,11 @@ def main():
     wallpaper_source = ROOT / 'userland/nabu/src/wallpaper_probe.m'
     sqlite_watch_source = ROOT / 'userland/nabu/src/sqlite_vnode_watch.m'
     experience_source = ROOT / 'userland/nabu/src/experience_probe.m'
+    experience_compat = ROOT / 'userland/nabu/src/experience_compat.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat),
                '-framework', 'Foundation', '-framework', 'ImageIO',
                '-framework', 'CoreGraphics', '-framework', 'UIKit', '-o', str(binary)]
     subprocess.run(command, check=True)
@@ -41,6 +42,7 @@ def main():
               'daemon_container_query_diagnostic': True,
               'wallpaper_source': str(wallpaper_source.relative_to(ROOT)),
               'sqlite_vnode_observer': str(sqlite_watch_source.relative_to(ROOT)),
+              'experience_compatibility': 'Compiled without constructor; explicit ExperienceCompatibilityTrial after paired request',
               'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request'}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
