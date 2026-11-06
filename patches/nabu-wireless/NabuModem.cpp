@@ -8,17 +8,27 @@
 #include <IOKit/IORegistryEntry.h>
 #include <libkern/c++/OSData.h>
 #include <kern/locks.h>
+#include <mach/vm_param.h>
+#include <vm/memory_types.h>
 #include "NabuSmem.h"
 #include "NabuWirelessLog.h"
 
-extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
-extern "C" vm_offset_t ml_io_map_wcomb(vm_offset_t, vm_size_t);
+extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
+extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock;
 extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
 
 static vm_offset_t aop, ipc, rsc, smem_va;
 static uint32_t mailbox, our_item;
+static vm_offset_t map_region(const char *name, vm_offset_t pa, vm_size_t size, unsigned flags) {
+    nabu_wireless_log("NABU MODEM: map %s physical=%#llx bytes=%#llx\n", name, (uint64_t)pa, (uint64_t)size);
+    // ml_io_map and ml_io_map_wcomb share an 8 MiB permanent submap.
+    // The modem image alone has a 15 MiB segment; use kernel_map instead.
+    vm_offset_t address = ml_io_map_unmappable(pa, size, flags);
+    nabu_wireless_log("NABU MODEM: map %s complete=%u\n", name, address != 0);
+    return address;
+}
 static uint32_t rd(vm_offset_t at) { return *(volatile uint32_t *)at; }
 static void wr(vm_offset_t at, uint32_t value) {
     *(volatile uint32_t *)at = value;
@@ -80,7 +90,7 @@ static bool qmp_send(bool on) {
 }
 
 static bool proxy_power() {
-    NabuSmem db{(const volatile uint8_t *)ml_io_map(0x85f20000, 0x20000), 0x20000};
+    NabuSmem db{(const volatile uint8_t *)map_region("command-db", 0x85f20000, 0x20000, VM_WIMG_IO), 0x20000};
     if (!db.data || db.u32(4) != 0x0c0330db) return false;
     const char *names[] = {"cx.lvl", "mss.lvl"};
     uint32_t addresses[2] = {}, positions[2] = {};
@@ -127,7 +137,7 @@ static bool make_smp2p(NabuSmem &smem) {
     if (smem.find(435, &existing) || smem.find(428, &existing)) {
         nabu_wireless_log("NABU MODEM: modem items already exist; cold-boot trial stops\n"); return false;
     }
-    vm_offset_t lock = ml_io_map(0x01f43000, 0x1000);
+    vm_offset_t lock = map_region("SMEM-lock3", 0x01f43000, 0x1000, VM_WIMG_IO);
     if (!lock) return false;
     lck_mtx_lock(&hakios_smem_alloc_lock);
     bool held = false;
@@ -173,17 +183,23 @@ static uint32_t modem_state(NabuSmem &smem, bool announce) {
 }
 
 extern "C" void nabu_modem_start_trial() {
+    nabu_wireless_log("NABU MODEM: trial entry; resolve firmware node\n");
     IORegistryEntry *entry = IORegistryEntry::fromPath("/nabu-modem", gIODTPlane);
     if (!entry) return;
     OSData *metadata = OSDynamicCast(OSData, entry->getProperty("metadata"));
     if (!metadata || metadata->getLength() > 16384 || metadata->getLength() < 52) { entry->release(); return; }
-    aop = ml_io_map(0x0c300000, 0x1000); ipc = ml_io_map(0x17c0000c, 4); rsc = ml_io_map(0x18220000, 0x4000);
-    smem_va = ml_io_map(0x86000000, 0x200000);
+    nabu_wireless_log("NABU MODEM: metadata bytes=%u; map control and shared memory\n", metadata->getLength());
+    aop = map_region("AOP", 0x0c300000, 0x1000, VM_WIMG_IO);
+    ipc = map_region("APCS", 0x17c0000c, 4, VM_WIMG_IO);
+    rsc = map_region("RPMh", 0x18220000, 0x4000, VM_WIMG_IO);
+    // Keep the survey's existing SMEM memory attributes for this alias.
+    smem_va = map_region("SMEM", 0x86000000, 0x200000, VM_WIMG_IO);
     if (!aop || !ipc || !rsc || !smem_va) { entry->release(); return; }
     NabuSmem smem{(const volatile uint8_t *)smem_va, 0x200000};
     nabu_wireless_log("NABU MODEM: signed image PAS4 trial begin; reserved=0x8e000000+0x9600000\n");
     if (!make_smp2p(smem) || !proxy_power()) { entry->release(); return; }
     IOPhysicalAddress physical = 0;
+    nabu_wireless_log("NABU MODEM: allocate PAS metadata buffer\n");
     void *header = IOMallocContiguous(16384, 16384, &physical);
     if (!header) { entry->release(); return; }
     bzero(header, 16384); memcpy(header, metadata->getBytesNoCopy(), metadata->getLength());
@@ -204,11 +220,15 @@ extern "C" void nabu_modem_start_trial() {
         char name[20]; snprintf(name, sizeof(name), "segment-%02u", i);
         OSData *segment = OSDynamicCast(OSData, entry->getProperty(name));
         if (bytes && (!segment || segment->getLength() != bytes)) { copied = false; break; }
-        vm_offset_t target = ml_io_map_wcomb(pa, mem);
-        if (!target) { copied = false; break; }
+        vm_offset_t page = trunc_page(pa);
+        vm_size_t mapping_bytes = round_page(pa - page + mem);
+        vm_offset_t mapping = map_region(name, page, mapping_bytes, VM_WIMG_WCOMB);
+        if (!mapping) { copied = false; break; }
+        vm_offset_t target = mapping + pa - page;
         if (bytes) memcpy((void *)target, segment->getBytesNoCopy(), bytes);
         bzero((void *)(target + bytes), mem - bytes);
         __asm__ volatile("dsb sy" ::: "memory");
+        ml_io_unmap(mapping, mapping_bytes);
         file_bytes += bytes; memory_bytes += mem; loaded++;
     }
     nabu_wireless_log("NABU MODEM: copied=%u segments=%u file-bytes=%llu memory-bytes=%llu\n", copied, loaded, file_bytes, memory_bytes);

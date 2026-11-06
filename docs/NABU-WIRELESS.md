@@ -94,7 +94,23 @@ APPS CX请求暂保留到重启，未实现通用电源消费者计数。
 原有段地址不变、原代码/数据内容相同且新段无重叠；当前总附加驱动DATA空间192KiB。
 最终候选为`artifacts/nabu-wireless-v79a`，bootstrap v77，Bluetooth固件沿用v78。
 未使用的早期v79日志准备槽已按prepared-not-started备份清空，重新绑定最终候选；
-没有产生额外实机轮次。第79轮尚待启动验收。
+没有产生额外实机轮次。
+
+第79轮用户报告HALTED，画面保存于`log/host/wireless-v79/halted-screen.jpg`。
+画面显示蓝牙固件与HCI初始化成功，随后进入KERNEL RETURN；reason/ESR为0，
+没有panic buffer，也没有modem首条日志。USB探针超时，不能据USB枚举声明系统正常。
+回到Android后已回收完整64MiB槽和338,201字节有效前缀，并清空读回；没有终止提交
+记录，持久化日志比画面少最后约0.41秒。APFS计数49→50，fullfsync成功。
+
+第80轮候选修正modem映射方式，并在固件节点读取、各映射、PAS元数据分配前后记录
+诊断。当前XNU的`ml_io_map`和`ml_io_map_wcomb`使用固定8MiB永久I/O虚拟地址子图；
+新增代码重复映射2MiB SMEM，随后还会映射15,056,896字节固件段，不能用整机12GiB
+物理内存容量证明该子图足够。改为`ml_io_map_unmappable`使用kernel_map；固件段按页
+对齐映射，复制和BSS清零后解除映射。SMEM/cmd-db保持调查阶段已用的内存属性。
+这修正了确定存在的容量错误，但第79轮停机原因尚无明确panic证据，需第80轮实测。
+第80轮编译链接通过。`tools/check_nabu_modem_mapping.py`直接执行生产代码的固件
+复制循环，在4KiB和16KiB页模型下通过全部22段的文件数据、BSS清零和段间空隙保留
+检查，ASan/UBSan通过；最大单次映射约15.9MiB，复制后立即解除。
 
 ## 后续验收
 
