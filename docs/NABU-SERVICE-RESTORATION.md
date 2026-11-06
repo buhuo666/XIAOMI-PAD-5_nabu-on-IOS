@@ -94,3 +94,8 @@ Nabu Test更新经原版installation_proxy安装成功（Actions42199589019）�
 apfsck通过，未部署。当前设备仍在第71轮iPadOS，日志槽14尚待回收清空。
 下一步打开最新Nabu Test，通过tools/read_nabu_test_documents.py回收新版结果，
 核对physical_screen、compatibility_queries和wallpaper_accepted_with_compatibility。
+
+随后已取回1.3(4)结果：screen与nativeBounds/scale均仍为768x1024，零高度拦截未触发，
+屏幕条件使candidate安装函数未启用；wallpaper_accepted_with_compatibility=false。
+因此该应用结果不构成真实屏幕修复验证。下一步回收第71轮日志后，以现有第72轮候选
+在设置、桌面和系统探针的800x1280画布上直接验证；不将当前应用显示正常算为系统通过。
