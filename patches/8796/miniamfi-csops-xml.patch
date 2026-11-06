@@ -1,0 +1,25 @@
+diff --git a/bsd/kern/kern_proc.c b/bsd/kern/kern_proc.c
+--- a/bsd/kern/kern_proc.c
++++ b/bsd/kern/kern_proc.c
+@@ -3326,6 +3326,21 @@ csops_internal(pid_t pid, int ops, user_addr_t uaddr, user_size_t usersize, user_addr_t uaudittoken)
+ 
+ 		void* osent = csblob_os_entitlements_get(blob);
+ 		if (!osent) {
++			/*
++			 * miniamfi has no OSEntitlements object. Read the original
++			 * XML slot with its CodeDirectory hash checks, as its in-kernel
++			 * entitlement queries already do. This storage is borrowed.
++			 */
++			error = csblob_get_entitlements(blob, &start, &length);
++			if (error == 0) {
++				error = csops_copy_token(start, length, usize, uaddr);
++			}
++			if (strcmp(pt->p_comm, "lockdownd") == 0) {
++				printf("NABU CSOPS: XML target=%d caller=%d bytes=%lu buffer=%lu error=%d\n",
++				    proc_getpid(pt), proc_selfpid(), (unsigned long)length,
++				    (unsigned long)usize, error);
++			}
++			/* Only the XML copy from OSEntitlements below is allocated. */
+ 			goto out;
+ 		}
+ 		CS_GenericBlob* xmlblob = NULL;

@@ -52,12 +52,13 @@ cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 : > "$PROJECT_ROOT/log/ci/project-patches.sha256"
-for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch loader-return-diagnostics.patch nabu-log-capture.patch nabu-native-display.patch nabu-export-contract.patch; do
+for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch loader-return-diagnostics.patch nabu-log-capture.patch nabu-native-display.patch nabu-export-contract.patch miniamfi-csops-xml.patch; do
   git -C "$XNU_SRC" apply --check "$PROJECT_ROOT/patches/8796/$patch"
   git -C "$XNU_SRC" apply "$PROJECT_ROOT/patches/8796/$patch"
   shasum -a 256 "$PROJECT_ROOT/patches/8796/$patch" >> "$PROJECT_ROOT/log/ci/project-patches.sha256"
 done
 cd "$PROJECT_ROOT"
+python3 tools/check_nabu_csops_xml.py --tree "$XNU_SRC" --output log/ci/nabu-csops-xml
 python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
 python3 tools/prepare_nabu_input.py --tree "$XNU_SRC" --output log/ci/nabu-input/source.json
 python3 tools/prepare_nabu_native_apfs.py --tree "$XNU_SRC" --output log/ci/nabu-native-apfs/source.json
@@ -93,7 +94,7 @@ report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device ima
           'sha256':hashlib.sha256((root/'patches/8796'/name).read_bytes()).hexdigest()}
           for name in ('pmap-nonmonitor-queries.patch','bcm2837-apple-iommu-query-returns.patch',
                        'bcm2837-bootstrap-capacity.patch','generic-smp-diagnostics.patch','loader-return-diagnostics.patch','nabu-log-capture.patch',
-                       'nabu-native-display.patch','nabu-export-contract.patch')],
+                       'nabu-native-display.patch','nabu-export-contract.patch','miniamfi-csops-xml.patch')],
         'export_contract':json.loads((root/'log/ci/nabu-export-contract.json').read_text())}
 generated=[]
 for p in sorted((tree/'BUILD').rglob('*.iig.cpp')):

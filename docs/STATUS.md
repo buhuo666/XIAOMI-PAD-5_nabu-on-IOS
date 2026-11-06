@@ -1,6 +1,13 @@
 # 项目进展
 
-更新：2026-11-05，Asia/Shanghai。
+更新：2026-11-06，Asia/Shanghai。
+
+最新实机：第五十八轮桌面正常，Lockdown 两条 FairPlay 初始化请求在真实接收超时后
+进入原版错误处理，QueryType、设备信息及 Windows AMDeviceConnect 均正常。未替换
+UID 密钥。原版配对返回 InvalidResponse，日志指向已声明的 pairingmanagement 权限
+无法读取；正在核对 XPC 与内核 XML 权限接口。配对/会话/同步仍未通过。回收
+1,707,875 字节持续日志，完整槽已备份清空；APFS 计数28→29、fullfsync成功，设备
+在 Android。当前可用基线为 v57 内核/bootstrap v58，见 [USB连接](NABU-USB.md)。
 
 最新实机：第五十六轮桌面、原生USBMux双向传输与原版FairPlayIOKit服务均可用。
 14次FairPlay启动均在UID派生AES2201不支持后退出，Lockdown仍超时；配对/同步

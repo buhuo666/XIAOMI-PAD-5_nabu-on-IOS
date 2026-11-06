@@ -3,7 +3,48 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
-## 第五十七轮候选：让 HWInfo 等待进入原版错误处理
+## 第五十九轮候选：读取原版签名的 XML 权限
+
+原版remotepairingdeviced的host-trust处理器通过Mercury.XPCDictionary.entitlements
+取得消息发送者的权限；libxpc使用消息audit token调用csops_audittoken(op7)，不是
+Security的DER查询。原处理器读取pairingmanagement布尔值，空值或false均报本轮
+观察到的错误。完整地址及反汇编保存在v58/pair-entitlements。
+
+当前miniamfi不创建OSEntitlements对象，内核op7在此情况下直接返回0而没有填充
+XML。候选在该分支调用现有csblob_get_entitlements读取原始XML签名槽，保留它的
+CS_VALID、CodeDirectory槽哈希验证及错误返回，再经原csops_copy_token完成长度
+探测和复制；原有pid/audit-token检查不变。借用的签名内存不释放，既有OSEntitlements
+分支仍按原逻辑释放其分配的副本。没有添加权限或将缺失权限改为允许。
+
+实际op7分支及copy helper的主机ASan/UBSan检查通过：8字节长度探测返回ERANGE、
+完整数据原样复制、缺失数据、校验失败、进程标志、copyout错误与两种内存所有权。
+此检查不替代内核构建、实机权限查询及正常配对验收；第五十九轮尚未启动。
+
+## 第五十八轮：Lockdown 响应恢复，配对进入权限查询失败
+
+第五十七轮确认1203请求实际返回 MACH_RCV_TIMED_OUT（0x10004003），随后又等待
+1200号初始化请求。第五十八轮对该实测分支增加相同5秒接收期限：原版返回点
+0x10002b844、消息1200、send64/receive220、options3、timeout0。两个原版MIG辅助
+函数均释放超时reply port并返回真实错误，主机ASan/UBSan契约检查通过。
+
+第五十八轮用户确认桌面正常；两条请求均实际超时，原版记录
+FairPlayGetHWInfo failed: -42600及缺少CESM证书后继续启动。QueryType返回
+com.apple.mobile.lockdown，设备信息返回iPad7,11／16.5／20F66／xiaomi,nabu，
+Windows原版AMDeviceConnect返回0。设备公钥、UDID和WiFiAddress可查询；这些结果
+仅证明连接和查询成功。没有部署dummy UID、伪造FairPlay回复或更改认证结果。
+
+使用 tools/pair_nabu_apple_device.py 调用原版 MobileDevice.dll 的正常配对接口，
+AMDevicePair返回0xe8000013（kAMDInvalidResponseError）。设备允许进入带提示的配对
+流程，但查询远端信任状态时返回RemotePairingError Code=2：缺少
+com.apple.dt.remotepairing.pairingmanagement。原版lockdownd的XML和DER签名均声明
+该权限为true，因此下一步是修复原有权限的读取路径；尚未通过配对、会话或同步。
+
+回收1,707,875字节持续日志；用户手动重启前没有END，完整64MiB槽已备份并清空。
+APFS计数28→29、fullfsync成功，GPT/引导分区一致，设备回到Android。第五十七轮
+同样已回收清空，计数27→28。当前基线为v57内核/bootstrap v58，证据保存在 ignored
+`log/host/native-usb-v58/` 与 `log/device/nabu-boot-20261106-58/`。
+
+## 第五十七轮实现：让 HWInfo 等待进入原版错误处理
 
 继续追踪用途时发现原版Lockdown已有非致命失败路径：bringup_stuff_ok在
 FairPlayGetHWInfo返回非零时记录错误并返回，缺少CESM证书也记录后继续；当前阻塞
@@ -15,7 +56,7 @@ lockdown-identities keychain，不能仅凭静态关系宣称不依赖其余服�
 MACH_RCV_TIMEOUT，保持实际mach_msg结果、消息及errno。其他IPC透传，不生成
 FairPlay回复、不替换UID/AES密钥、不更改认证结果。原MIG已有超时后释放reply port
 并返回错误的路径。ASan/UBSan验证精确请求、真实错误/成功透传及七类非目标请求。
-最终bootstrap两库及inject.conf回读一致。是否能使QueryType/配对响应仍待实机。
+最终bootstrap两库及inject.conf回读一致。后续实机结果见上文第五十八轮。
 
 同时增加前两次AES2201调用栈及公开版本/selector21内部状态观测，仅为定位32字节
 产物用途。静态/合成启动请求的分析在ignored `log/host/native-usb-v56/uid-purpose-analysis/`。
