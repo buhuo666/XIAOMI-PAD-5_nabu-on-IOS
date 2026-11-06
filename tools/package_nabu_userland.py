@@ -231,7 +231,7 @@ def main():
         target.chmod(0o755)
         injection += ('/redwood/lib/libnabu.experience.dylib SpringBoard Preferences MobileNotes '
                       'Reminders MobileSafari PaperBoard PosterBoard LegacyPoster LocalTest '
-                      'system-service-probe\n')
+                      '\n')
         assert len(injection.encode()) < 512, 'kern.exec_inject has a 512-byte buffer'
     (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
