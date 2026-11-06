@@ -431,6 +431,25 @@ DYNAMIC_FEATURE_MASK 0x3b/TLV0x10/u64=1，分别记录previous/current字段vali
 加入该兼容库；原生BlueTool的源码服务入口保留。准备临时启动验证实际数据页
 注入、可选步骤跳过、后续原生栈进展和WLAN动态配置/新日志请求。
 
+第一百轮桌面正常，WLAN 0x3b成功，previous/current均valid且为1；仍同PC异常，
+无rejuvenate/PIN_CONNECT及新转储请求。5,725,398字节有效日志和完整64MiB槽已
+回收清空，APFS计数69→70、fullfsync成功，当前设备回到Android。
+
+蓝牙兼容库每次启动均记录installed和原保护R，没有VM API失败，但仍报628、没有
+skip。原版序列表和编译STR复核无误，根因是误用了`slide(0)`：该iOS dyld会把注入库
+移到主程序之前，旧macOS x86_64的index0兼容规则不适用于此arm64。原有FairPlay
+日志也实测主程序在index1。此前installed只说明错误基址算出的页面可写，并不表示
+正确蓝牙槽位已改。下一候选按精确`/usr/sbin/bluetoothd`枚举镜像，不固定index1；
+先核对槽原值等于该主程序slide+原initializer地址，再写入并记录恢复保护后的读回。
+该修正的Actions42266638992已经通过编译、签名及两套主机测试，等待第101轮实测。
+
+第101轮WLAN增加既有SMEM条目的只读前缀：602前64字节、618前32字节，分别在
+GLINK前、PFR、结束记录存在性、目录长度、捕获长度及hex；保留611快照，不创建
+条目、不修改内容、不解引用里面的地址。原始固件先检查618起始32字节描述块，
+不满足时检查602+0x20；条件未满足时可能根本不发布`/dev/wlanmd`，因此之前QMI
+成功并不证明区域/回调登记成功。生产GLINK回放及ASan/UBSan通过，详见
+`log/host/wireless-v95/wlan-fault-analysis/v101-minidump-gates.md`。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

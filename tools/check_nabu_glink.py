@@ -14,6 +14,7 @@ PREFIX = r'''
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 #include "NabuSmem.h"
 #include "NabuTftp.h"
@@ -33,8 +34,11 @@ static bool nabu_rmtfs_available() { return false; }
 static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { return 0; }
 static unsigned msa_prepare_calls;
 static bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned) { ++msa_prepare_calls;return true; }
+static std::string captured_log;
 static void nabu_wireless_log(const char *format, ...) {
-    va_list args; va_start(args,format); vprintf(format,args); va_end(args);
+    char line[1024];va_list args,copy;va_start(args,format);va_copy(copy,args);
+    vsnprintf(line,sizeof(line),format,copy);va_end(copy);captured_log+=line;
+    vprintf(format,args);va_end(args);
 }
 static uintptr_t smem_va;
 static uint32_t hardware_lock;
@@ -88,6 +92,30 @@ int main() {
     assert(smem.find(479,&found)&&found.offset==fifo&&found.size==16384);
     unsigned end=smem.u32(0x100c);assert(allocate_item(smem,479,16384,&existing)&&existing==fifo&&smem.u32(0x100c)==end);
     assert(!allocate_item(smem,479,8192,&existing)&&smem.u32(0x100c)==end&&hardware_lock==0);
+    NabuGlink snapshot{};snapshot.memory=smem;
+    std::vector<uint8_t> unchanged(shared,shared+sizeof(shared));
+    captured_log.clear();snapshot.capture_minidump_prefixes("test-absent");
+    assert(captured_log.find("item=602 phase=test-absent present=0 offset=0 directory-bytes=0 captured-prefix-bytes=0 prefix-limit=64")!=std::string::npos);
+    assert(captured_log.find("item=618 phase=test-absent present=0 offset=0 directory-bytes=0 captured-prefix-bytes=0 prefix-limit=32")!=std::string::npos);
+    assert(!memcmp(shared,unchanged.data(),sizeof(shared)));
+    // Fixtures contain non-dereferenceable pointer bytes. Capture is prefix-only and read-only.
+    uint32_t md602,md618;assert(allocate_item(smem,602,304,&md602)&&allocate_item(smem,618,96,&md618));
+    for(unsigned i=0;i<304;++i)shared[md602+i]=i<64?i:0xee;
+    for(unsigned i=0;i<96;++i)shared[md618+i]=i<32?0xff:0xee;
+    put32(md602+0x20,0x454e424c);
+    unchanged.assign(shared,shared+sizeof(shared));captured_log.clear();snapshot.capture_minidump_prefixes("test-prefix");
+    assert(captured_log.find("directory-bytes=304 captured-prefix-bytes=64 prefix-limit=64")!=std::string::npos);
+    assert(captured_log.find("directory-bytes=96 captured-prefix-bytes=32 prefix-limit=32")!=std::string::npos);
+    assert(captured_log.find("item=602 phase=test-prefix prefix+0x20=4c 42 4e 45 24 25 26 27")!=std::string::npos);
+    assert(captured_log.find("item=618 phase=test-prefix prefix+0x10=ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff")!=std::string::npos);
+    assert(captured_log.find("prefix+0x40=")==std::string::npos&&captured_log.find("ee ee")==std::string::npos);
+    assert(!memcmp(shared,unchanged.data(),sizeof(shared)));
+    // A directory entry shorter than the desired prefix reports and reads only its actual bytes.
+    put32(md618-12,8);put32(md618-8,0);put32(0x100c,md618-0x1000+8);
+    unchanged.assign(shared,shared+sizeof(shared));captured_log.clear();snapshot.capture_minidump_prefixes("test-short");
+    assert(captured_log.find("directory-bytes=8 captured-prefix-bytes=8 prefix-limit=32")!=std::string::npos);
+    assert(captured_log.find("item=618 phase=test-short prefix+0x10=")==std::string::npos);
+    assert(!memcmp(shared,unchanged.data(),sizeof(shared)));
     memset(shared,0,sizeof(shared));
     NabuGlink g{};g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
     g.descriptor={0,32};g.tx={0x4000,16384};g.rx={0x8000,16384};
@@ -195,7 +223,7 @@ int main() {
     reset_tx();g.tftp_flush();assert(g.word(4)==0);
     server(4,0,41);g.tftp_flush();assert(g.word(4)==0&&g.wlfw.failed);
     g.release();
-    puts("GLINK: rings/fragments, board data, feature-mask KNEL/DMON routing, rejuvenate ACK/stop, endpoint change/removal and stale response rejection passed");
+    puts("GLINK: read-only bounded minidump prefixes, rings/fragments, board data, KNEL/DMON routing, rejuvenate ACK/stop and stale endpoint rejection passed");
 }
 '''
 

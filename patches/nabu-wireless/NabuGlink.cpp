@@ -49,6 +49,32 @@ struct NabuGlink {
     struct Response { uint32_t node, port, from, bytes; uint8_t data[1024]; } responses[8]{};
     unsigned response_head = 0, response_count = 0;
 
+    void capture_minidump_prefixes(const char *phase) {
+        // Original MPSS checks item618+0, or item602+0x20. Keep their 32-byte
+        // descriptors, including raw pointer bytes; never follow those pointers.
+        const uint16_t ids[] = {602, 618};
+        const unsigned limits[] = {64, 32};
+        static const char hex[] = "0123456789abcdef";
+        for (unsigned which = 0; which < 2; ++which) {
+            NabuSmemItem item{};
+            bool present = memory.find(ids[which], &item);
+            unsigned bytes = present ? (item.size < limits[which] ? item.size : limits[which]) : 0;
+            uint8_t copy[64];
+            glink_barrier();
+            for (unsigned i = 0; i < bytes; ++i) copy[i] = memory.data[item.offset + i];
+            nabu_wireless_log("NABU WLAN MINIDUMP: item=%u phase=%s present=%u offset=%#x directory-bytes=%u captured-prefix-bytes=%u prefix-limit=%u\n",
+                ids[which], phase, present, item.offset, item.size, bytes, limits[which]);
+            for (unsigned at = 0; at < bytes; at += 16) {
+                unsigned count = bytes - at < 16 ? bytes - at : 16;
+                char line[49]{};
+                for (unsigned i = 0; i < count; ++i) {
+                    line[3*i] = hex[copy[at+i] >> 4]; line[3*i+1] = hex[copy[at+i] & 15]; line[3*i+2] = ' ';
+                }
+                nabu_wireless_log("NABU WLAN MINIDUMP: item=%u phase=%s prefix+%#x=%s\n", ids[which], phase, at, line);
+            }
+        }
+    }
+
     void capture_wlan_crash(const char *phase) {
         NabuSmemItem item{};
         // Original MPSS err_smem_log allocates item 611, 4096 bytes, for APPS.
@@ -278,6 +304,7 @@ struct NabuGlink {
                     nabu_wireless_log("NABU SERVREG: PFR from=%u:%u service=%.*s reason=%.*s\n",header.from_node,header.from_port,name?(int)name_bytes:0,name?(const char*)name:"",reason?(int)reason_bytes:0,reason?(const char*)reason:"");
                     if(name && name_bytes == 12 && !memcmp(name, "wlan_process", 12) && !wlan_crash_captured) {
                         wlan_crash_captured = true; capture_wlan_crash("pfr");
+                        capture_minidump_prefixes("pfr");
                     }
                 }
                 return;
@@ -437,6 +464,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
         OSData *board=OSDynamicCast(OSData,firmware_entry->getProperty("wlfw-board"));
         if(board){link->wlfw.board_data=(const uint8_t*)board->getBytesNoCopy();link->wlfw.board_bytes=board->getLength();}
     }
+    if(link->qmi_enabled) link->capture_minidump_prefixes("pre-glink");
     if (!link->memory.find(478, &link->descriptor) || link->descriptor.size != 32 ||
         !link->memory.find(479, &link->tx) || !link->memory.find(480, &link->rx) ||
         link->tx.size != 16384 || link->rx.size != 16384) {
@@ -465,6 +493,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: pin-connect indications=%u last-step=%u\n",link->wlfw.pin_result_count,link->wlfw.pin_result_step);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: dynamic-feature-complete=%u rejuvenate=%u ack-finished=%u ack-success=%u\n",link->wlfw.dynamic_feature_complete,link->wlfw.rejuvenate_count,link->wlfw.rejuvenate_ack_finished,link->wlfw.rejuvenate_ack_success);
     if(link->wlan_crash_captured) link->capture_wlan_crash("end");
+    if(link->qmi_enabled) link->capture_minidump_prefixes("end");
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }

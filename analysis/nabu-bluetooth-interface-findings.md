@@ -698,3 +698,39 @@ transport子任务与父任务已商定一个源码共享`NabuBluetoothControl.h
 - 测试宏明确排除constructor，因此测试通过不证明目标页保护修改、恢复或注入成功。恢复失败会另有诊断，即使随后出现installed日志也不能忽略该失败。实机验收应同时看到安装日志且无query/make/restore错误、缺位skip日志及初始化继续推进。当前审查没有在Windows伪造SDK测试成功，也未重新运行CI。
 
 父任务明确通过既有`etc/inject.conf`只为bluetoothd注入；现有`src/hakios-8796/userland/src/init.c:1450..1481`按库路径/进程名读取配置并送给`kern.exec_inject`。这说明不依赖新猜测的DYLD环境覆盖；实际打包项和目标constructor执行仍由父任务部署验证。本审查只追加分析账本，没有修改已进入CI的实现和测试。
+
+## 第100轮：已装载但槽位未生效，image0假设错误
+
+### 实机结果和审查结论修正
+
+`log/device/nabu-boot-20261107-100/runtime-log/runtime.log`每次bluetoothd启动均有安装日志，保护为`0x1`，没有query/make/restore失败；PID63的安装位于`:3361`，支持掩码位于`:4334`，byte18仍为`0x83`；`:4398..4400`仍为628、HCI失败和108重启。整个捕获没有兼容层skip日志。实际注入已发生，但日志未打印所选镜像、计算地址、原槽值或写后读回，因此“installed”只证明计算出的某个地址可查询和写入，不能证明改到了bluetoothd主镜像的槽。
+
+前节审查中“constructor使用主镜像slide”的判断必须更正：代码实际调用的是`_dyld_get_image_vmaddr_slide(0)`，把image0等同于主程序；当时未验证这个前提。这是本次源码审查遗漏，不应继续视为已确认的正确行为。
+
+同一份v100日志已有直接反例：`:2762`为`NABU FAIRPLAY TRACE: LOADED pid=49 image_index=1 image=/usr/sbin/fairplayd.A2 base=0x100ea8000 slide=0xea8000`。既有`userland/nabu/src/fairplay_trace.c:191..199`通过枚举并精确比较主程序路径取得这个index。该设备的注入环境下，主程序确实不保证在image0。
+
+transport子任务另用代理核对了Apple开源dyld-1066.8固定提交`ce1cc2088ef390df1c48a1648075bbd51c5bbc6a`（`apple-oss-distributions/dyld`）的原始源码：`dyld/dyldMain.cpp:543..560`在装入插入库后将main移到它们之后，`:557`注释为“move inserted libraries ahead of main executable”；`dyld/DyldAPIs.cpp:220..234`的`normalizeImageIndex`只为旧macOS x86_64提供main优先映射，iOS arm64直接返回index；`:264..273`的slide API读取`loaded[normalizeImageIndex(...)]`。该检查取得源码后未另外保存文件，不重复下载。源码与本轮image_index=1日志共同建立了当前index0假设错误的原因；不能简单把常数改成1，插入库数量会影响索引。
+
+### 原版序列及实际产物复核
+
+本子任务复核原版全`__text`中的直接B/BL，未发现直接跳转到`0x10010b970`的站点；静态数据引用仍只有slot`0x1007fbde0`。主表基址`0x1007fbd20`的ADRP+ADD引用是`0x10010970c`，随后直接写入global`0x10084f588`并交给序列启动。`0x1001c1ecc`的内部16字节记录保存表指针，`0x1001c2004`每一步从该表实时LDR下一函数，不复制整表或预缓存slot24。此限定静态扫描未找到改用另一份表或绕过slot24的证据；不能把“未找到”扩大为运行期所有代码都绝不写表。
+
+实际打包产物`build/nabu-bootstrap-v100/root/lib/libnabu.bluetooth.compat.dylib`来自CI`42263427789`。直接解码其ARM64指令确认：
+
+- `0x4014..4028`调用slide(0)，按完整64位常数加`0x1007fbde0`，没有编译器常量截断。
+- 原保护只读分支`0x4180..4188`取得本库`0x41cc`的wrapper地址并执行`str x8,[x20]`，其后才调用恢复保护。不是源码写入被优化掉。
+- wrapper `0x41dc..41e8`读取全局保存的支持位数组，再取`+0x12`并检查bit3；支持位常数和索引没有编译错误。缺位路径`0x4224..4238`对active_sequence解引用一次后调用advance，支持路径`0x423c..4250`保留record并跳原函数。
+- 这些库内地址是dylib首选VA（库首选基址0），不是bluetoothd unslid VA。
+
+额外的独立主镜像定位线索来自PID63的`BT driver=0x100E20138`日志：原版`0x10015627c`的POSIX查找返回静态descriptor`0x100844138`（其+8指向字符串POSIX），`0x100281090`随后记录该指针。两者差值为`0x5dc000`，可用于核对下一轮枚举得到的PID63同类main slide；不能把该次进程的slide固定到别的进程或启动轮次。
+
+### 最小修正与运行期诊断
+
+保留所有已验证的unslid地址、支持位和序列处理，仅按既有fairplay/lockdown方法枚举镜像并精确选择`/usr/sbin/bluetoothd`。该更改修复的是实际镜像选择错误，不需改TEXT、换猜测地址、改变控制器能力或伪造完成。为使下一轮结果可核对，最小诊断为：
+
+1. 安装时记录pid、image0的name/slide、实际选中的index/name/header/slide。找不到目标时明确记录并结束安装，不能退回image0。
+2. 记录slot地址、修改前值、`selected_slide + 0x10010b970`的预期原函数及wrapper地址。原值不匹配时停止该次写入并保留诊断，这直接针对本轮写错镜像的问题。
+3. 对slot在STR后和恢复保护后各执行一次真实读回并打印；读取不能被编译器折叠成刚写入的常量，可使用volatile槽读取。
+4. wrapper入口无条件记录一次record、byte18值及当前表指针，再按既有真实支持位分支。这样可区分wrapper未被调用与进入wrapper后走了原函数。
+
+无需为当前证据增加定时反复覆盖槽、扩大到其他序列表或修改原命令发送器。实际bluetoothd的image0身份、错写地址及slot原值未被v100旧日志记录，不能伪造这些值；新诊断将补齐它们。本轮分析没有修改实现、二进制或设备状态。
