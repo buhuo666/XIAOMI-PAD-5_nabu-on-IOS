@@ -5,6 +5,10 @@
 // Linux hci_qca/btqca. Board pins/resources were read in device run 76.
 #include <IOKit/IOLib.h>
 #include <kern/locks.h>
+#include <pexpert/pexpert.h>
+#include <IOKit/IODeviceTreeSupport.h>
+#include <IOKit/IORegistryEntry.h>
+#include <libkern/c++/OSData.h>
 #include "NabuWirelessLog.h"
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
@@ -110,7 +114,7 @@ static bool configure_uart(vm_offset_t uart, unsigned divisor)
     return true;
 }
 
-static bool transmit(vm_offset_t uart, const uint8_t *bytes, unsigned count)
+static bool transmit(vm_offset_t uart, const uint8_t *bytes, unsigned count, bool quiet = false)
 {
     unsigned depth = (rd(uart + 0xe24) >> 16) & 0x3f;
     if (!depth) return false;
@@ -123,7 +127,7 @@ static bool transmit(vm_offset_t uart, const uint8_t *bytes, unsigned count)
         wr(uart + 0x700, bytes[i]);
     }
     bool done = wait_bit(uart + 0x610, 1, true, 50000);
-    nabu_wireless_log("NABU BT: TX bytes=%u done=%u irq=%#x status=%#x ios=%#x\n",
+    if (!quiet || !done) nabu_wireless_log("NABU BT: TX bytes=%u done=%u irq=%#x status=%#x ios=%#x\n",
         count, done, rd(uart + 0x610), rd(uart + 0x40), rd(uart + 0x908));
     wr(uart + 0x618, rd(uart + 0x610));
     return done;
@@ -151,9 +155,86 @@ static unsigned receive(vm_offset_t uart, uint8_t *bytes, unsigned capacity)
     return size;
 }
 
+static void log_reply(const char *label, const uint8_t *reply, unsigned size)
+{
+    char hex[769]; unsigned at = 0;
+    for (unsigned i = 0; i < size; ++i) at += snprintf(hex + at, sizeof(hex) - at, "%02x ", reply[i]);
+    hex[at] = 0;
+    nabu_wireless_log("NABU BT: %s RX bytes=%u data=%s\n", label, size, hex);
+}
+
+static bool download_tlv(vm_offset_t uart, OSData *blob, const char *name, bool skip_intermediate)
+{
+    const uint8_t *data = (const uint8_t *)blob->getBytesNoCopy();
+    unsigned bytes = blob->getLength();
+    unsigned segment = 0;
+    for (unsigned at = 0; at < bytes; ++segment) {
+        unsigned size = bytes - at < 243 ? bytes - at : 243;
+        uint8_t command[249] = {1, 0, 0xfc, (uint8_t)(size + 2), 0x1e, (uint8_t)size};
+        memcpy(command + 6, data + at, size);
+        if (!transmit(uart, command, size + 6, true)) return false;
+        at += size;
+        if (!skip_intermediate || at == bytes) {
+            uint8_t reply[256];
+            unsigned received = receive(uart, reply, sizeof(reply));
+            // WCN3991 command-complete return payload is only {status, subcommand}.
+            bool ok = received == 8 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 5 &&
+                reply[4] == 0 && reply[5] == 0xfc && reply[6] == 0 && reply[7] == 0x1e;
+            if (!ok || at == bytes) log_reply(name, reply, received);
+            if (!ok) {
+                nabu_wireless_log("NABU BT: %s segment=%u rejected or timed out\n", name, segment); return false;
+            }
+        }
+        if (segment % 128 == 0 || at == bytes)
+            nabu_wireless_log("NABU BT: %s sent=%u/%u segments=%u\n", name, at, bytes, segment + 1);
+    }
+    return true;
+}
+
+extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
+{
+    IORegistryEntry *entry = IORegistryEntry::fromPath("/nabu-bluetooth", gIODTPlane);
+    if (!entry) { nabu_wireless_log("NABU BT: firmware ADT node absent\n"); return false; }
+    OSData *patch = OSDynamicCast(OSData, entry->getProperty("rampatch"));
+    OSData *nvm = OSDynamicCast(OSData, entry->getProperty("nvm"));
+    OSData *address = OSDynamicCast(OSData, entry->getProperty("address-hci"));
+    if (!patch || !nvm || !address || address->getLength() != 6) { entry->release(); return false; }
+    nabu_wireless_log("NABU BT: loading original crbtfw32 at 115200; nvm uses this board address, sleep disabled\n");
+    bool ok = download_tlv(uart, patch, "rampatch", true) && download_tlv(uart, nvm, "nvm", false);
+    uint8_t reply[256];
+    if (ok) {
+        const uint8_t reset[] = {1, 3, 0x0c, 0};
+        ok = transmit(uart, reset, sizeof(reset));
+        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        log_reply("HCI Reset", reply, size);
+        ok = size == 7 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 4 &&
+             reply[4] == 3 && reply[5] == 0x0c && reply[6] == 0;
+    }
+    if (ok) {
+        const uint8_t read_address[] = {1, 9, 0x10, 0};
+        ok = transmit(uart, read_address, sizeof(read_address));
+        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        ok = size == 13 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 9 &&
+             reply[5] == 0x10 && reply[6] == 0 && !memcmp(reply + 7, address->getBytesNoCopy(), 6);
+        nabu_wireless_log("NABU BT: HCI address matches board=%u response-bytes=%u\n", ok, size);
+    }
+    if (ok) {
+        const uint8_t local_version[] = {1, 1, 0x10, 0};
+        ok = transmit(uart, local_version, sizeof(local_version));
+        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        log_reply("HCI Local Version", reply, size);
+        ok = size == 15 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 1 && reply[5] == 0x10 && reply[6] == 0;
+    }
+    entry->release();
+    nabu_wireless_log("NABU BT: firmware initialization result=%u; system Bluetooth stack not attached\n", ok);
+    return ok;
+}
+
 void nabu_bluetooth_version_trial()
 {
-    nabu_wireless_log("NABU BT: powered ROM trial begins; no firmware download or pairing\n");
+    uint32_t level = 0;
+    PE_parse_boot_argn("nabu-wireless", &level, sizeof(level));
+    nabu_wireless_log("NABU BT: powered trial level=%u; no discovery or pairing\n", level);
     vm_offset_t rsc = ml_io_map(0x18220000, 0x4000), gcc = ml_io_map(0x00100000, 0x60000);
     vm_offset_t pins = ml_io_map(0x0352b000, 0x4000);
     if (!rsc || !gcc || !pins) return;
@@ -187,12 +268,9 @@ void nabu_bluetooth_version_trial()
     if (!transmit(uart, version, sizeof(version))) return;
     uint8_t reply[256];
     unsigned size = receive(uart, reply, sizeof(reply));
-    char hex[769]; unsigned at = 0;
-    for (unsigned i = 0; i < size; ++i) at += snprintf(hex + at, sizeof(hex) - at, "%02x ", reply[i]);
-    hex[at] = 0;
-    nabu_wireless_log("NABU BT: RX bytes=%u data=%s\n", size, hex);
+    log_reply("ROM version", reply, size);
     bool version_ok = size >= 21 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 0 && reply[5] == 0xfc &&
-        reply[6] == 0 && reply[7] == 0x19 && reply[8] == 0;
+        reply[6] == 0 && reply[7] == 0x19 && reply[8] == 12; // observed version payload length, not status
     if (version_ok) {
         uint32_t product = 0, soc = 0;
         for (unsigned i = 0; i < 4; ++i) { product |= (uint32_t)reply[9 + i] << (8 * i); soc |= (uint32_t)reply[17 + i] << (8 * i); }
@@ -201,5 +279,6 @@ void nabu_bluetooth_version_trial()
     }
     nabu_wireless_log("NABU BT: trial complete version-response=%u irq=%#x status=%#x ios=%#x\n",
         version_ok, rd(uart + 0x640), rd(uart + 0x40), rd(uart + 0x908));
+    if (version_ok && level == 3) nabu_bluetooth_load_firmware(uart);
     cancel_commands(uart);
 }

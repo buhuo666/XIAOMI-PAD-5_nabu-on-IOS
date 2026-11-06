@@ -63,7 +63,20 @@ GENI UART13的FIFO收发、2400/115200波特率电源脉冲与EDL Get Version。
 驱动把诊断文本发布到`IODeviceTree:/chosen/nabu-wireless-report`，新系统探针的
 `WirelessInventory`可经已有配对USB/AFC通道读取，便于保持iPadOS时查看结果。
 模块已本地编译和链接；探针Actions42214317638成功；bootstrap v77仅在v75基础上
-替换探针，NabuInit重新生成后apfsck通过。第77轮尚待临时启动和实机验收。
+替换探针，NabuInit重新生成后apfsck通过。
+
+第77轮用户确认正常桌面，USB `WirelessInventory`读回完整报告。四路供电的12个
+RPMh命令均完成（status0x10101），UART时钟更新成功。GENI内置UART微码为0x20b，
+三次TX完成，并接收真实21字节版本应答：Product0x0a、ROM0x0302、SoC0x40010320、
+ROM内置Patch0x0de9，与Android一致。原判断把应答第8字节当成零状态，实际为版本
+数据长度12，因此日志误报version-response=0；已根据实测修正，不能把该误判记作
+UART无应答。第77轮2,509,591字节日志及完整槽已回收清空，APFS计数47→48。
+
+第78轮新增本机`crbtfw32.tlv`/`crnv32.bin`的243字节TLV分段加载与完成应答验证，
+随后请求HCI Reset、Read BD_ADDR和Read Local Version。准备脚本保留签名rampatch，
+NVM使用本机Android地址，设置当前已验证的115200波特率并暂时关闭睡眠协议。
+原Android固件文件不修改；数据通过本轮ADT的`nabu-bluetooth`节点供给。
+主机已验证固件版本及ADT属性往返，模块编译链接通过；本轮尚未实机验收。
 
 ## 后续验收
 

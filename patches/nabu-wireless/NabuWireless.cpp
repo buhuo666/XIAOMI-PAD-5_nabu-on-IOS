@@ -179,7 +179,7 @@ static void wireless_survey(thread_call_param_t, thread_call_param_t)
     regulator_survey();
     uart_survey();
     nabu_wireless_log("NABU WIRELESS: survey complete; radios not started\n");
-    if (wireless_level == 2) nabu_bluetooth_version_trial();
+    if (wireless_level >= 2) nabu_bluetooth_version_trial();
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
     if (chosen) {
         chosen->setProperty("nabu-wireless-report", wireless_report);
@@ -190,7 +190,7 @@ static void wireless_survey(thread_call_param_t, thread_call_param_t)
 extern "C" void nabu_wireless_start(void)
 {
     uint32_t level = 0;
-    if (!PE_parse_boot_argn("nabu-wireless", &level, sizeof(level)) || level < 1 || level > 2) return;
+    if (!PE_parse_boot_argn("nabu-wireless", &level, sizeof(level)) || level < 1 || level > 3) return;
     wireless_level = level;
     wireless_call = thread_call_allocate(wireless_survey, nullptr);
     uint64_t deadline;
