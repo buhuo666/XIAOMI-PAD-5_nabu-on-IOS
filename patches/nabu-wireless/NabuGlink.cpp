@@ -19,6 +19,9 @@ struct QrtrHeader { uint32_t version, type, from_node, from_port, confirm, size,
 struct QrtrControl { uint32_t command, words[4]; };
 static constexpr uint32_t control_port = 0xfffffffe;
 static constexpr uint32_t wlfw_service = 0x45;
+static constexpr uint32_t diag_service = 0x1001;
+static constexpr uint32_t diag_ports[] = {0x4005, 0x4006};
+static constexpr unsigned diag_packet_limit = 3, diag_prefix_limit = 32;
 static void glink_barrier() { __asm__ volatile("dsb sy" ::: "memory"); }
 
 struct NabuGlink {
@@ -48,10 +51,39 @@ struct NabuGlink {
     unsigned pending_head = 0, pending_count = 0;
     struct Response { uint32_t node, port, from, bytes; uint8_t data[1024]; } responses[8]{};
     unsigned response_head = 0, response_count = 0;
+    struct DiagObservation {
+        unsigned packets = 0, captured_packets = 0, source_changes = 0;
+        uint32_t source_node = 0, source_port = 0;
+        uint64_t bytes = 0, captured_bytes = 0;
+    } diag[2]{};
+    unsigned diag_servers_queued = 0;
+
+    void capture_minidump_edge(const char *phase) {
+        // Inspect only the public TOC. partition(7) would select APPS/TZ,
+        // whereas the original MPSS minidump query selects MODEM/TZ.
+        if (memory.length < 4096) {
+            nabu_wireless_log("NABU WLAN MINIDUMP TOC: phase=%s edge=1:7 toc-valid=0; metadata only\n", phase); return;
+        }
+        unsigned toc = memory.length - 4096;
+        if (memory.u32(toc) != 0x434f5424 || memory.u32(toc+4) != 1 || memory.u32(toc+8) > (4096-32)/48) {
+            nabu_wireless_log("NABU WLAN MINIDUMP TOC: phase=%s edge=1:7 toc-valid=0; metadata only\n", phase); return;
+        }
+        bool present = false;
+        for (unsigned i = 0; i < memory.u32(toc+8); ++i) {
+            unsigned at = toc + 32 + 48*i;
+            uint16_t first = memory.u16(at+12), second = memory.u16(at+14);
+            if (!((first==1&&second==7)||(first==7&&second==1))) continue;
+            present = true;
+            nabu_wireless_log("NABU WLAN MINIDUMP TOC: phase=%s edge=1:7 toc-valid=1 present=1 entry=%u offset=%#x size=%#x; metadata only\n",
+                phase, i, memory.u32(at), memory.u32(at+4));
+        }
+        if (!present) nabu_wireless_log("NABU WLAN MINIDUMP TOC: phase=%s edge=1:7 toc-valid=1 present=0; metadata only\n", phase);
+    }
 
     void capture_minidump_prefixes(const char *phase) {
-        // Original MPSS checks item618+0, or item602+0x20. Keep their 32-byte
-        // descriptors, including raw pointer bytes; never follow those pointers.
+        capture_minidump_edge(phase);
+        // These are APPS-visible prefixes only. MPSS queries host7 privately;
+        // the metadata above does not authorize following that edge's offset.
         const uint16_t ids[] = {602, 618};
         const unsigned limits[] = {64, 32};
         static const char hex[] = "0123456789abcdef";
@@ -62,7 +94,7 @@ struct NabuGlink {
             uint8_t copy[64];
             glink_barrier();
             for (unsigned i = 0; i < bytes; ++i) copy[i] = memory.data[item.offset + i];
-            nabu_wireless_log("NABU WLAN MINIDUMP: item=%u phase=%s present=%u offset=%#x directory-bytes=%u captured-prefix-bytes=%u prefix-limit=%u\n",
+            nabu_wireless_log("NABU WLAN MINIDUMP: item=%u phase=%s present=%u offset=%#x directory-bytes=%u captured-prefix-bytes=%u prefix-limit=%u search=APPS-MODEM,COMMON\n",
                 ids[which], phase, present, item.offset, item.size, bytes, limits[which]);
             for (unsigned at = 0; at < bytes; at += 16) {
                 unsigned count = bytes - at < 16 ? bytes - at : 16;
@@ -122,6 +154,48 @@ struct NabuGlink {
         if (registry.records) { uint32_t server[4] = {64, 257, 1, 0x4002}; queue_control(4,node,control_port,server); }
         if (!wlan_firmware) return;
         uint32_t server[4] = {4096, 1, 1, 0x4000}; queue_control(4, node, control_port, server);
+    }
+    void announce_diag(unsigned node) {
+        if (!qmi_enabled) return;
+        // MiCode diagfwd_socket: APPS serves MODEM control/data packed instances 0/2.
+        for (unsigned which = 0; which < 2; ++which) {
+            uint32_t server[4] = {diag_service, which * 2, 1, diag_ports[which]};
+            queue_control(4, node, control_port, server);
+            if (broken) return;
+            ++diag_servers_queued;
+        }
+    }
+    void observe_diag(unsigned which, const QrtrHeader &header, const uint8_t *data) {
+        DiagObservation &d = diag[which];
+        if (d.packets && (d.source_node != header.from_node || d.source_port != header.from_port)) ++d.source_changes;
+        d.source_node = header.from_node; d.source_port = header.from_port;
+        ++d.packets; d.bytes += header.size;
+        if (d.captured_packets == diag_packet_limit) return;
+        ++d.captured_packets;
+        unsigned bytes = header.size < diag_prefix_limit ? header.size : diag_prefix_limit;
+        d.captured_bytes += bytes;
+        static const char hex[] = "0123456789abcdef";
+        char raw[2 * diag_prefix_limit + 1]{}, first_header[64]{};
+        for (unsigned i = 0; i < bytes; ++i) { raw[2*i] = hex[data[i] >> 4]; raw[2*i+1] = hex[data[i] & 15]; }
+        if (which == 0) {
+            if (header.size >= 8) {
+                NabuSmem body{data, header.size};
+                snprintf(first_header, sizeof(first_header), "id=%u len=%u fits=%u ", body.u32(0), body.u32(4), body.u32(4) <= header.size - 8);
+            } else snprintf(first_header, sizeof(first_header), "header=short ");
+        }
+        nabu_wireless_log("NABU DIAG: inst=%u packet=%u from=%u:%u bytes=%u %sraw[%u]=%s\n",
+            which * 2, d.packets, header.from_node, header.from_port, header.size, first_header, bytes, raw);
+    }
+    void diag_summary() {
+        nabu_wireless_log("NABU DIAG: service=%u server-queues=%u ports=%#x/%#x packet-limit=%u prefix-limit=%u; observe only\n",
+            diag_service, diag_servers_queued, diag_ports[0], diag_ports[1], diag_packet_limit, diag_prefix_limit);
+        for (unsigned which = 0; which < 2; ++which) {
+            const DiagObservation &d = diag[which];
+            nabu_wireless_log("NABU DIAG: inst=%u packets=%u captured=%u omitted=%u bytes=%llu raw-bytes=%llu omitted-bytes=%llu last=%u:%u changes=%u\n",
+                which * 2, d.packets, d.captured_packets, d.packets - d.captured_packets,
+                (unsigned long long)d.bytes, (unsigned long long)d.captured_bytes, (unsigned long long)(d.bytes - d.captured_bytes),
+                d.source_node, d.source_port, d.source_changes);
+        }
     }
     void tftp(unsigned node, unsigned from, unsigned to, const uint8_t *data, unsigned bytes) {
         if (to == 0x4000) {
@@ -251,12 +325,14 @@ struct NabuGlink {
             if (header.from_port == 0xfffe) header.from_port = control_port;
             if (header.to_port == 0xfffe) header.to_port = control_port;
         } else { nabu_wireless_log("NABU QRTR: unsupported packet bytes=%u\n", size); return; }
-        if (!packet.span(at, header.size) || header.size < 4) return;
+        bool diag_packet = qmi_enabled && header.type == 1 && (header.to_port == diag_ports[0] || header.to_port == diag_ports[1]);
+        if (!packet.span(at, header.size) || (header.size < 4 && !diag_packet)) return;
         if (!peer_seen) { peer = header.from_node; peer_seen = true; }
         if (header.confirm) {
             uint32_t words[4] = {header.to_node, header.to_port, 0, 0};
             queue_control(7, header.from_node, header.from_port, words, header.to_port);
         }
+        if (diag_packet) { observe_diag(header.to_port == diag_ports[1], header, data + at); return; }
         unsigned command = packet.u32(at);
         if (header.to_port != control_port && header.type == 1) {
             if(qmi_enabled&&(header.to_port==0x4003||header.to_port==0x4004)&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
@@ -318,6 +394,7 @@ struct NabuGlink {
         if (command == 2 && !hello_replied) {
             hello_replied = true; queue_control(2, header.from_node, control_port);
             announce_tftp(header.from_node);
+            announce_diag(header.from_node);
             nabu_wireless_log("NABU QRTR: HELLO from node=%u\n", header.from_node);
         } else if ((command == 4 || command == 5) && header.size >= 20) {
             uint32_t service = packet.u32(at + 4), instance = packet.u32(at + 8);
@@ -338,6 +415,7 @@ struct NabuGlink {
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
             if (packet.u32(at+4) == 0 || packet.u32(at+4) == 4096 || packet.u32(at+4) == 14 || packet.u32(at+4)==64) announce_tftp(header.from_node);
+            if (packet.u32(at+4) == 0 || packet.u32(at+4) == diag_service) announce_diag(header.from_node);
             queue_control(4, header.from_node, header.from_port);
         } else if (command == 3) {
             nabu_wireless_log("NABU QRTR: peer BYE\n"); broken = true;
@@ -485,6 +563,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     }
     nabu_wireless_log("NABU GLINK: trial complete agreed=%u open=%u broken=%u tx=%u rx=%u close-ack=%u\n", link->agreed, was_open, link->broken, link->sent, link->received, link->close_ack);
     nabu_wireless_log("NABU QRTR: inventory peer=%u servers=%u WLFW-node=%u WLFW-port=%u; WLAN data path not started\n", link->peer, link->servers, link->wlfw_node, link->wlfw_port);
+    if (link->qmi_enabled) link->diag_summary();
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);

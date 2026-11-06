@@ -30,8 +30,10 @@ struct IORegistryEntry {
     void setProperty(const char *, const void *, unsigned) {}
     void release() {}
 };
-static bool nabu_rmtfs_available() { return false; }
-static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { return 0; }
+static bool rmtfs_available;
+static unsigned rmtfs_request_calls;
+static bool nabu_rmtfs_available() { return rmtfs_available; }
+static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { ++rmtfs_request_calls;return 0; }
 static unsigned msa_prepare_calls;
 static bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned) { ++msa_prepare_calls;return true; }
 static std::string captured_log;
@@ -81,6 +83,96 @@ static unsigned count_command(NabuGlink &g, unsigned wanted) {
     }
     return count;
 }
+static void check_diag_observation() {
+    memset(shared,0,sizeof(shared));
+    NabuGlink g{};g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
+    g.descriptor={0,32};g.tx={0x4000,16384};g.rx={0x8000,16384};
+    uint8_t firmware[4]{};g.wlan_firmware=firmware;g.wlan_bytes=sizeof(firmware);
+    g.registry.records=firmware;rmtfs_available=true;g.qmi_enabled=true;
+    std::vector<uint8_t> packet;
+    auto feed_control=[&](unsigned command,unsigned service){
+        QrtrHeader h{1,command,0,control_port,0,20,1,control_port};
+        QrtrControl c{command,{service,0,0,0}};
+        packet.resize(52);memcpy(packet.data(),&h,32);memcpy(packet.data()+32,&c,20);
+        g.qrtr(packet.data(),packet.size());
+    };
+    auto queued=[&](unsigned i)->const NabuGlink::Pending &{return g.pending[(g.pending_head+i)%16];};
+    auto check_servers=[&](unsigned at){
+        for(unsigned i=0;i<2;++i){
+            const auto &p=queued(at+i);
+            assert(p.header.type==4&&p.header.from_node==1&&p.header.from_port==control_port);
+            assert(p.header.to_node==0&&p.header.to_port==control_port&&p.header.size==20);
+            assert(p.control.command==4&&p.control.words[0]==4097&&p.control.words[1]==2*i);
+            assert(p.control.words[2]==1&&p.control.words[3]==0x4005+i);
+        }
+    };
+    feed_control(2,0);
+    assert(g.pending_count==6&&g.diag_servers_queued==2&&!g.broken);
+    assert(queued(0).control.command==2&&queued(1).control.words[0]==14);
+    assert(queued(2).control.words[0]==64&&queued(3).control.words[0]==4096);
+    check_servers(4);
+    // The new advertisements use existing QRTR control frames and GLINK intents.
+    g.opened=true;for(unsigned i=0;i<6;++i)g.remote[i]={100+i,1024,true,false};
+    g.flush();assert(g.pending_count==0&&count_command(g,9)==6&&!g.broken);
+    for(unsigned i=0;i<6;++i){
+        NabuGlink::Pending p;memcpy(&p,shared+g.tx.offset+72*i+16,sizeof(p));
+        assert(p.header.type==(i?4u:2u));
+        if(i>=4)assert(p.control.words[0]==4097&&p.control.words[1]==2*(i-4)&&p.control.words[3]==0x4005+i-4);
+    }
+    feed_control(10,4097);assert(g.pending_count==3);check_servers(0);
+    assert(queued(2).control.command==4&&queued(2).control.words[0]==0);
+    g.pending_head=g.pending_count=0;
+    feed_control(10,0);assert(g.pending_count==6);check_servers(3);
+    assert(queued(0).control.words[0]==14&&queued(1).control.words[0]==64&&queued(2).control.words[0]==4096);
+    g.pending_head=g.pending_count=0;
+    feed_control(10,0x45);assert(g.pending_count==1&&queued(0).control.words[0]==0);
+    g.pending_head=g.pending_count=0;g.qmi_enabled=false;
+    feed_control(10,4097);assert(g.pending_count==1&&g.diag_servers_queued==6);
+    g.pending_head=g.pending_count=0;g.qmi_enabled=true;
+    g.wlfw.step=6;g.wlfw.waiting=true;g.wlfw_node=0;g.wlfw_port=90;
+    auto feed_diag=[&](unsigned port,const uint8_t *body,unsigned bytes,unsigned node,unsigned source){
+        QrtrHeader h{1,1,node,source,0,bytes,1,port};
+        packet.resize(32+bytes);memcpy(packet.data(),&h,32);if(bytes)memcpy(packet.data()+32,body,bytes);
+        g.qrtr(packet.data(),packet.size());
+    };
+    uint8_t body[80];for(unsigned i=0;i<sizeof(body);++i)body[i]=i;
+    uint32_t id=8,length=72;memcpy(body,&id,4);memcpy(body+4,&length,4);
+    captured_log.clear();feed_diag(0x4005,body,sizeof(body),0,90);
+    assert(captured_log.find("inst=0 packet=1 from=0:90 bytes=80 id=8 len=72 fits=1 raw[32]=0800000048000000")!=std::string::npos);
+    assert(captured_log.find("1c1d1e1f\n")!=std::string::npos&&captured_log.find("20212223")==std::string::npos);
+    length=999;memcpy(body+4,&length,4);feed_diag(0x4005,body,8,0,90);
+    const uint8_t short_header[]={0xff,0xfe,0xfd};feed_diag(0x4005,short_header,sizeof(short_header),0,90);
+    assert(captured_log.find("len=999 fits=0")!=std::string::npos&&captured_log.find("header=short raw[3]=fffefd")!=std::string::npos);
+    size_t log_bytes=captured_log.size();feed_diag(0x4005,body,20,1,91);feed_diag(0x4005,nullptr,0,1,91);
+    assert(captured_log.size()==log_bytes&&g.diag[0].packets==5&&g.diag[0].captured_packets==3);
+    assert(g.diag[0].bytes==111&&g.diag[0].captured_bytes==43&&g.diag[0].source_changes==1);
+    assert(g.diag[0].source_node==1&&g.diag[0].source_port==91);
+    // A truncated transport datagram must not become a captured DIAG packet or ACK.
+    packet.resize(33);QrtrHeader truncated{1,1,0,90,1,8,1,0x4005};memcpy(packet.data(),&truncated,32);
+    g.qrtr(packet.data(),packet.size());assert(g.diag[0].packets==5&&g.pending_count==0);
+    // v2 header with extension and confirm: only the normal QRTR RESUME_TX is queued.
+    packet.assign(20+64,0);packet[0]=3;packet[1]=1;packet[2]=1;packet[3]=4;packet[4]=64;
+    packet[10]=100;packet[12]=1;packet[14]=6;packet[15]=0x40;memcpy(packet.data()+20,body,64);
+    g.qrtr(packet.data(),packet.size());assert(g.diag[1].packets==1&&g.pending_count==1);
+    const auto &ack=queued(0);
+    assert(ack.header.type==7&&ack.header.from_port==0x4006&&ack.header.to_node==0&&ack.header.to_port==100);
+    assert(ack.control.command==7&&ack.control.words[0]==1&&ack.control.words[1]==0x4006);
+    feed_diag(0x4006,body,1,0,100);feed_diag(0x4006,nullptr,0,0,100);
+    log_bytes=captured_log.size();feed_diag(0x4006,body,10,3,101);
+    assert(captured_log.size()==log_bytes&&g.diag[1].packets==4&&g.diag[1].captured_packets==3);
+    assert(g.diag[1].bytes==75&&g.diag[1].captured_bytes==33&&g.diag[1].source_changes==1);
+    assert(g.diag[1].source_node==3&&g.diag[1].source_port==101);
+    assert(g.wlfw.step==6&&g.wlfw.waiting&&!g.wlfw.fw_ready&&g.wlfw_port==90);
+    assert(g.tftp_requests==0&&g.tftp_completed==0&&g.registry.requests==0&&rmtfs_request_calls==0);
+    assert(g.response_count==0&&g.pending_count==1&&!g.broken&&count_command(g,9)==6);
+    g.diag_summary();assert(captured_log.size()<1900);
+    assert(captured_log.find("inst=0 packets=5 captured=3 omitted=2 bytes=111 raw-bytes=43 omitted-bytes=68 last=1:91 changes=1")!=std::string::npos);
+    assert(captured_log.find("inst=2 packets=4 captured=3 omitted=1 bytes=75 raw-bytes=33 omitted-bytes=42 last=3:101 changes=1")!=std::string::npos);
+    NabuGlink empty{};captured_log.clear();empty.diag_summary();
+    assert(captured_log.find("inst=0 packets=0 captured=0 omitted=0 bytes=0 raw-bytes=0 omitted-bytes=0")!=std::string::npos);
+    assert(captured_log.find("inst=2 packets=0 captured=0 omitted=0 bytes=0 raw-bytes=0 omitted-bytes=0")!=std::string::npos);
+    rmtfs_available=false;
+}
 int main() {
     smem_va=(uintptr_t)shared;
     put32(0xf000,0x434f5424);put32(0xf004,1);put32(0xf008,1);
@@ -116,6 +208,20 @@ int main() {
     assert(captured_log.find("directory-bytes=8 captured-prefix-bytes=8 prefix-limit=32")!=std::string::npos);
     assert(captured_log.find("item=618 phase=test-short prefix+0x10=")==std::string::npos);
     assert(!memcmp(shared,unchanged.data(),sizeof(shared)));
+    captured_log.clear();snapshot.capture_minidump_edge("test-no-edge");
+    assert(captured_log.find("edge=1:7 toc-valid=1 present=0; metadata only")!=std::string::npos);
+    // This metadata names unmapped memory; a payload/header dereference would fail.
+    put32(0xf008,2);put32(0xf050,0xfffff000);put32(0xf054,0x40000000);put32(0xf05c,(1u<<16)|7);
+    unchanged.assign(shared,shared+sizeof(shared));captured_log.clear();snapshot.capture_minidump_edge("test-modem-tz");
+    assert(captured_log.find("edge=1:7 toc-valid=1 present=1 entry=1 offset=0xfffff000 size=0x40000000; metadata only")!=std::string::npos);
+    assert(!memcmp(shared,unchanged.data(),sizeof(shared)));
+    put32(0xf05c,(7u<<16)|1);captured_log.clear();snapshot.capture_minidump_edge("test-reversed-edge");
+    assert(captured_log.find("edge=1:7 toc-valid=1 present=1 entry=1")!=std::string::npos);
+    // APPS/TZ is a different edge and must not be mistaken for MODEM/TZ.
+    put32(0xf05c,7u<<16);captured_log.clear();snapshot.capture_minidump_edge("test-apps-tz");
+    assert(captured_log.find("edge=1:7 toc-valid=1 present=0; metadata only")!=std::string::npos);
+    put32(0xf008,85);captured_log.clear();snapshot.capture_minidump_edge("test-invalid-toc");
+    assert(captured_log.find("edge=1:7 toc-valid=0; metadata only")!=std::string::npos);
     memset(shared,0,sizeof(shared));
     NabuGlink g{};g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
     g.descriptor={0,32};g.tx={0x4000,16384};g.rx={0x8000,16384};
@@ -223,7 +329,8 @@ int main() {
     reset_tx();g.tftp_flush();assert(g.word(4)==0);
     server(4,0,41);g.tftp_flush();assert(g.word(4)==0&&g.wlfw.failed);
     g.release();
-    puts("GLINK: read-only bounded minidump prefixes, rings/fragments, board data, KNEL/DMON routing, rejuvenate ACK/stop and stale endpoint rejection passed");
+    check_diag_observation();
+    puts("GLINK: bounded DIAG 4097 control/data observation, public MODEM/TZ TOC metadata without payload reads, APPS-visible prefixes, rings/fragments, KNEL/DMON routing and recovery stop passed");
 }
 '''
 
@@ -248,6 +355,9 @@ def main():
     (args.output/'test.log').write_bytes(result.stdout); (args.output/'test.stderr').write_bytes(result.stderr)
     result.check_returncode()
     report = {'production_protocol_tested':True,'sanitizers':['address','undefined'],
+              'diag_service':4097,'diag_instances':[0,2],'diag_local_ports':[0x4005,0x4006],
+              'diag_packet_limit_per_channel':3,'diag_prefix_limit':32,
+              'diag_payload_responses':False,
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

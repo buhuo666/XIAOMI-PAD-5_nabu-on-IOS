@@ -445,10 +445,34 @@ skip。原版序列表和编译STR复核无误，根因是误用了`slide(0)`：
 
 第101轮WLAN增加既有SMEM条目的只读前缀：602前64字节、618前32字节，分别在
 GLINK前、PFR、结束记录存在性、目录长度、捕获长度及hex；保留611快照，不创建
-条目、不修改内容、不解引用里面的地址。原始固件先检查618起始32字节描述块，
-不满足时检查602+0x20；条件未满足时可能根本不发布`/dev/wlanmd`，因此之前QMI
-成功并不证明区域/回调登记成功。生产GLINK回放及ASan/UBSan通过，详见
+条目、不修改内容、不解引用里面的地址。该搜索仅覆盖APPS↔MODEM及COMMON。
+原始固件对618和602使用remote_host=7，即MODEM↔TZ私有分区，没有COMMON回退；
+因此本轮读到的COMMON602不能用来判断原始固件的门槛。COMMON602的+0x20也不是
+可写的ENBL开关。生产GLINK回放及ASan/UBSan通过，详见
 `log/host/wireless-v95/wlan-fault-analysis/v101-minidump-gates.md`。
+
+第101轮实测蓝牙628解除：兼容库找到真实bluetoothd镜像并执行可选步骤跳过。
+此后首次LE Set Scan Parameters(200b)返回status12，原生以712重启；之前没有启扫
+命令，但204a已成功。第102轮在首次boot独占会话内诊断Reset→200b(A)→Reset→
+204a(B)→同参数200b(C)→Reset，最后核对真实版本/地址；中间Reset用于消除A本身
+选择legacy命令族的混杂。A/B/C和两次额外Reset均记录真实结果，不发送扫描/广播
+enable。此假设尚待实测，不能将诊断候选称为扫描修复。
+
+第101轮Wi-Fi仍在0xb019b9bc异常，没有FW_READY/FW_INIT_DONE。第102轮仅记录公共
+SMEM TOC中host1↔7条目的存在性、索引和原始offset/size，绝不访问所指payload。
+同时依据原机diagfwd_socket发布DIAG4097的packed instance0/2控制/数据服务，使用
+独立APPS端口0x4005/0x4006；每路仅保存前3包的32字节前缀、真实源端点和计数，
+记录截断与省略量，不发送DIAG payload。真实控制能力、WLAN日志与寄存器可得性
+均待实测。公共TOC与DIAG分流回放通过ASan/UBSan，详见
+`log/host/wireless-v95/wlan-fault-analysis/v102-public-toc-and-diag.md`。完整第101轮日志
+13,060,631字节和64MiB槽已备份清空并完成回读；APFS计数70→71、fullfsync成功。
+
+第102轮Reset隔离修正提交8bc9737已由Actions42272292684构建成功，真实iOS服务、
+兼容库及两套ASan/UBSan测试通过；不使用旧提交8bcc6bf对应的42269577654产物。
+DIAG联合内核已重新链接，WSL bootstrap通过apfsck，BlueTool任务确认携带
+`--diagnose-le-family`。两侧独立复核记录在`log/host/wireless-v102/*-review.md`。
+前轮无线属性已有30,470字节，接近32KiB容量；若本轮实时报告缺尾部，以已配置的
+持久化完整IOLog补全，不能以属性缺行断言未收到DIAG包。当前准备联合实机验证。
 
 ### 蓝牙系统界面与联合验收
 

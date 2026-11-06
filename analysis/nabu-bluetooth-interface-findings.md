@@ -734,3 +734,120 @@ transport子任务另用代理核对了Apple开源dyld-1066.8固定提交`ce1cc2
 4. wrapper入口无条件记录一次record、byte18值及当前表指针，再按既有真实支持位分支。这样可区分wrapper未被调用与进入wrapper后走了原函数。
 
 无需为当前证据增加定时反复覆盖槽、扩大到其他序列表或修改原命令发送器。实际bluetoothd的image0身份、错写地址及slot原值未被v100旧日志记录，不能伪造这些值；新诊断将补齐它们。本轮分析没有修改实现、二进制或设备状态。
+
+## 第101轮：712扫描参数失败与legacy/extended族选择
+
+### 真实失败归属
+
+精确镜像选择在第101轮已生效：原生syslog每轮出现skip unsupported optional reporting，原先HCI初始化失败消失。单PID174的1,569行流水已保存到`log/host/wireless-v101/bluetooth-analysis/bluetoothd-174.txt`，行首保留`bluetooth-syslog.txt`原始行号。选定原始汇编及数据保存到同目录`native-scan-family.asm`（534行，每条指令含原文件4字节）；`core-config.asm`保存原版整个initCoreStack的注释汇编。
+
+这次712来自真正的HCI Command Complete status12，即`0x0c`，不是第99轮的本地unsupported gate。原转换函数`0x10014a2f8`以原始status索引`0x100676d6c`的uint32表：entry0为0、entry1为701、entry12（`0x100676d9c`，原字节`c8020000`）为712。名称格式化器的`0x100678184` halfword`0x03b5`跳到`0x1001c6bb8`，返回`0x100710adc`字符串`OI_HCIERR_COMMAND_DISALLOWED`。不要把日志中的十进制12混同为十六进制`0x12`的参数错误。
+
+PID174明确区分了两次标准命令错误与VSC错误：
+
+- 原syslog`:3645..3672`的Broadcom VSC返回内部701（控制器status1），代码继续推进。`:3668`的`Read LE Advertising TX power failed STATUS 712`对应`0x2007`。原回调`0x1001094b8`非零仅记录并return；随后日志继续报告栈On、广播地址更新及开始扫描，不能将其称作当场重启触发点。
+- `wireless-report.txt`的完整原生会话最后发送`0x200b`（11字节H4包），收到status12后关闭transport。原syslog`:4457`为`Could not start LE scan (leScanParamsLPCoreCb): STATUS 712`，`:4458`为`Scan stopped improperly with result 712 -- restart`，`:4460`才是reason712/context空重启。
+- `0x200b`的内部ID为`0xab`，descriptor位于`0x1008458d8`。`0x100199710:0x100199e00..e0c`以回调`0x100199e88`提交该标准命令。回调非零在`0x100199f44..50`将真实status交给保存的停止回调；该回调沿`0x1001902d0`→`0x10057ab68`排队→`0x10057abc8`→`0x100579728`。最后的非零分支`0x100579b7c..bcc`记录失败，以原status、空context及restart=true调用`0x100487c4c`；后者`0x100487d2c`调用`0x1000901f4`退出重启。回调表`0x1008192a0`的slot2确为`0x10057ab68`，并由`0x1005750e0`传入扫描启动入口。
+
+所以当前应保留VSC的真实失败，先处理已经明确的标准命令状态约束。多次硬件匹配规则失败后仍进入标准扫描参数步骤，日志不能支持“任意一个VSC status1直接导致reason712”的说法。仅取消重启或把扫描完成status改成0也不能使扫描真正开始。
+
+### 原版host已选legacy，但初始化仍查询周期广播列表
+
+第101轮原生配置日志已有`enableBTSpecAdvertisingSets=0 enableExtendedAdvertising=0 enableExtendedScanning=0 enableExtendedScanHCI=0`，periodic advertiser/synchronizer也为0。然而原生HCI初始化在第一条legacy扫描/广播配置之前发送了`0x204a`，且真实status0；随后`0x2007`和首条`0x200b`均status12。此前没有`0x200c`或`0x2042`启扫，因此不能凭错误码断言“已在扫描”。legacy/extended命令族状态约束是需要硬件隔离验证的候选。
+
+`0x204a`来自主HCI初始化表的**slot18**：
+
+| 项目 | unslid地址/内容 |
+|---|---|
+| 主表起点 | `0x1007fbd20` |
+| slot18 | `0x1007fbdb0`，已加载后指向`0x10010b3bc` |
+| 原initializer | `0x10010b3bc`，忽略进入时x0，返回值未被序列消费 |
+| descriptor | ID`0xe0`，地址`0x100845dd0`，opcode`0x204a`，支持字段`0x2640` |
+| 完成回调 | `0x10010c404`，status0时经`0x10008f6a4`缓存实际list size，然后推进 |
+| 当前序列表global | `0x10084f588`，64位指针变量，必须解引用一次 |
+| 原序列推进 | `0x1001c204c`，x0=解引用得到的表起点；不可传slot地址、global地址或内部record |
+
+所有运行地址均需加**枚举选中的bluetoothd主镜像slide**。slot18与slot24同属`__DATA_CONST,__const`，沿用已验证的页保护查询、必要的私有可写映射、恢复保护及实际槽值读回契约。这里仅记录可选修复边界，本轮不替换slot18。
+
+`0x10010b3bc`实际只检查两个controller条件：`[0x1008638f9] != 0`，以及`[0x1008638d5] & 0x20`。第一个是原版从Local Supported Features byte4 bit6提取的LE支持标志（`0x10010bcb0..bcb8`）；第二个是原版真实LE Local Supported Features缓存byte1 bit5。8字节LE features在`0x10010beb8..bec4`从完成参数原样复制到`0x1008638d4`，本轮byte1=`0xf9`。查询initializer没有读取任何host periodic/extended选择：
+
+```asm
+10010b3cc  adrp x8, 100863000
+10010b3d0  add  x8, x8, #0x8b0
+10010b3d4  ldrb w9, [x8, #0x49]
+10010b3d8  cbz  w9, 10010b404
+10010b3dc  ldrb w8, [x8, #0x25]
+10010b3e0  tbz  w8, #5, 10010b404
+10010b3e4  adr  x1, 10010c404
+10010b3ec  mov  w0, #0xe0
+10010b3f0  bl   10010c8c4
+; 既有不执行分支：
+10010b404  adrp x8, 10084f000
+10010b408  ldr  x0, [x8, #0x588]
+; 恢复栈后
+10010b418  b    1001c204c
+```
+
+主函数`initCoreStack=0x1003c66e0`在开始原生栈前通过以下**原生host配置入口**写入选择；这些是软件选择，不能与controller supported bitmap混为一谈：
+
+| 日志/host选择含义 | 原生setter | 存储地址（byte） | initCoreStack调用 |
+|---|---|---|---|
+| BT规范广告集 | `0x10017745c` | `0x100854aa9` | `0x1003c6f44` |
+| extended advertising | `0x100177468` | `0x100854ae8`；true还令上项为true | `0x1003c6f3c` |
+| 有效extended scanning路径选择 | `0x10019a614` | `0x10085a636` | `0x1003c6f58`；写入的是原版合并后的选择值 |
+| extended scan HCI选择 | `0x10019a668` | `0x10085a635` | `0x1003c6f60` |
+| periodic advertising advertiser | `0x1001789e8` | `0x100854af0` | `0x1003c6fc4` |
+| periodic advertising synchronizer | `0x10008eaac` | `0x10084b798` | `0x1003c6fcc` |
+
+这些设置发生在`0x1003c7080`的core setup及随后的HCI初始化之前，可在slot18执行时读取。本轮这些选项本来就关闭；再把它们设为0不会阻止只查controller feature的`0x204a`。本次检查未发现一个可以覆盖所有初始化及后续命令的单一family配置开关。强制打开一项extended选择也不能证明所有广告、扫描、连接路径都一起转到同一标准命令族，尤其仍有独立Broadcom VSC选择。
+
+若第102轮验证`0x204a`确实导致legacy命令被拒绝，最窄候选是：在已明确选择完整legacy host路径时，按host策略省略未使用的periodic list-size初始化步骤，调用原版advance；保留原initializer供实际选择periodic/extended路径时使用。这属于host能力降级，不应修改controller的LE features、supported commands或注入VSC/HCI成功。具体条件和改动等第102轮真实诊断后决定。
+
+### 第102轮A/B/C诊断及因果边界（尚未执行）
+
+原提案`Reset→200b(A)→204a(B)→200b(C)`存在混杂：若第一条200b已经选择legacy族，B可能因A而被拒绝，无法复现v101的204a先行。父任务已接受在A与B之间增加独立Reset，并保持B/C相邻：
+
+```text
+Reset(status0) → 相同legacy 200b参数(A)
+Reset(status0) → 204a(B) → 同一份legacy 200b参数(C)
+Reset(status0) → 正常Version/BDADDR验证与会话释放
+```
+
+全部在lifecycle首次boot的同一排他会话执行，不发送扫描enable，不在B/C之间插入其他命令。每个Reset也记录真实完成status；任一Reset失败，则不具备声称各段状态已隔离的前提。A/C必须使用完全相同的7字节参数并记录原始payload、opcode和raw status。当前无线报告只有原生200b的opcode/长度，不能宣称测试payload已逐字匹配原生payload。
+
+| A/B/C真实结果 | 可以支持的结论 |
+|---|---|
+| `0 / 0 / 12` | 同一参数在Reset后可用，204a单独成功后它被Command Disallowed；在受控会话与Reset均成功的前提下，清楚复现v101顺序相关的拒绝，符合命令族状态冲突解释 |
+| `0 / 0 / 0` | 最小序列没有重现；不能凭原生日志直接跳过204a后宣布已修复，需继续检查其他原生前缀动作/状态 |
+| `A != 0 / 任意 / 任意` | 基线200b尚未证明在此Reset默认状态及该参数下可用；不能把C失败归因于204a，也不能仅凭raw12断言参数编码错误 |
+| `0 / B != 0 / 0` | B未成功，随后legacy仍可用；不能声称已经验证“成功204a改变族状态” |
+| `0 / B != 0 / C != 0` | 查询失败后的状态也异常，需保留真实B/C及Reset结果；不能把B改记成功或把它当作与v101相同的序列 |
+| `0 / 0 / C为其他非零` | 记录C的准确含义，不能自动按Command Disallowed/族互斥解释 |
+
+即使得到第一种结果，也只证明这条受控序列的状态效应，尚不等于配对、发现或所有VSC兼容。最后Reset必须真实成功并通过正常版本/地址验证后才交还原生daemon。当前只追加分析与只读提取；兼容库未改，硬件诊断结果待父任务执行。
+
+### 官方HCI测试规范证据（p37，2025-05-06固定版）
+
+父任务提供的官方PDF已经代理下载到`log/host/wireless-v101/bluetooth-analysis/HCI.TS.p37-2025-05-06.pdf`，封面确认revision `HCI.TS.p37`、日期2025-05-06、TCRL.2025-2。来源URL及下载记录见同目录`hci-test-suite-source.json`。默认HTTP请求被403拒绝；一次带常规浏览器User-Agent/Accept/Referer的请求返回200，取得完整409页PDF。此处引用固定版本，不声称它是最新规范。
+
+已用pypdf提取完整相关页1、16、25–29；文件名为`hci-test-suite-page-N.txt`。另以Poppler渲染并目视核对印刷页28和29，图表及页码可读，对应`hci-suite-028.png`与`hci-suite-029.png`。不是仅依据搜索摘要或截断文本。
+
+- **印刷页27–29，HCI/GEV/BV-03-C：**扫描命令组的legacy/extended混用测试。页28的Table 4.4第10行明确列入`LE Read Periodic Advertiser List Size`，其opcode由前述原版descriptor确认为`0x204a`。该表还列入extended scan parameters/enable、extended connection以及其他periodic scan/sync命令。
+- **页28步骤1–3：**先关开电源或Reset，成功提交legacy扫描参数命令，再逐项提交表4.4中的扩展命令，预期对应完成/状态事件返回`0x0c`。因此本项目最初让A紧邻B的诊断确实会有A先选择legacy族的混杂。
+- **页29步骤4–6：**再次关开电源或Reset，先成功提交extended扫描参数，再提交Table 4.5中的legacy扫描参数、扫描enable或create connection，预期`0x0c`。同页Expected Outcome明确概括了扫描两种命令组的双向互斥。反向测试步骤的种子是extended scan parameters，并非204a；第102轮仍需专门验证204a先行对本机QCA的影响，不能冒称PDF已经执行了本机诊断。
+- **页27引用与页16参考表：**该测试依据`[9] 3.19.1`；[9]定义为Core HCI v5.0或以后。PDF本身足以建立测试分类与Reset隔离要求，不需把尚未取得的Core HTML正文称为已经阅读。
+- **页25–27，HCI/GEV/BV-02-C：**另行覆盖广告命令组；页27 Table 4.3第2行列legacy advertising TX power读取（本项目2007）。204a位于扫描组表4.4，不在广告组表4.2。因此这里不把2007的失败归因也说成已被该扫描测试直接证明；真正触发重启的200b和本次受控A/B/C仍是优先验证对象。
+
+上述官方证据支持“204a属于扩展扫描命令组”及“换测试方向要Reset”，但不替代真实硬件返回。仍按父任务要求等待第102轮A/B/C结果后决定是否实施按host legacy选择省略slot18查询的候选。
+
+### Core 5.4 原文进一步确认同一命令族规则
+
+在PDF下载成功后，用同样的正常浏览器请求头经代理获取了官方固定版本Core 5.4 HCI HTML，HTTP200，保存为`log/host/wireless-v101/bluetooth-analysis/core54-hci.html`（4,204,010字节）。来源和版本信息见`core54-hci-source.json`；完整提取文本为`core54-hci.txt`，相关完整段落与表内容为`core54-hci-section-3.1.1.txt`。没有再次下载或哈希审计。HTML的相关section标注publication-date为2023-01-31。
+
+准确定位是**Volume 4, Part E, §3.1.1，Table 3.2**；HTML锚点`UUID-1dc40b31-184c-8d4e-753c-979e2c8f5bd4`。这版重排后的章节号是3.1.1，应与测试规范引用的旧版3.19.1区分。
+
+正文规定：自最近一次power-on或Reset后，先使用表中legacy命令再使用extended命令，或相反次序，controller必须以Command Disallowed（0x0c）拒绝跨族命令。Table 3.2是统一的广告/扫描命令表：legacy列同时包含读取广告物理信道TX功率（本机2007）、设置扫描参数（200b）及扫描enable/create connection；extended列包含Read Periodic Advertiser List Size（204a）以及extended广告、扫描和周期同步命令。因此，上一节只根据测试PDF分组而保留的“2007跨组归因是否有规范依据”问题，在这份Core正文中已有同一命令族规则支持；仍不能将规范要求冒称本机已完成A/B/C实验。
+
+另一个应保留的要求是：正文建议支持Extended Advertising feature的controller应由Host使用extended命令。当前若选择完整legacy路径，只能作为明确记录的临时host能力降级；长期标准HCI适配应统一广告、扫描及连接路径的extended选择。不能仅将200b替换成2041，却继续发送2007等legacy命令；也不能通过改写控制器真实feature/support位来制造“不支持extended”的假象。
+
+本次仍不修改兼容库；官方原文现已支持family分类、两种顺序互斥及Reset边界，第102轮仅需进一步验证该QCA硬件对受控顺序的实际行为。
