@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Request normal Apple pairing, then validate a real Lockdown session."""
+"""Pair normally or validate an existing pairing, then start a real session."""
 import argparse
 import ctypes as C
 import json
@@ -10,14 +10,17 @@ from probe_apple_mobile_device import AppleMobileDevice, NotificationCallback, r
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--pair',action='store_true',required=True)
+    action=ap.add_mutually_exclusive_group(required=True)
+    action.add_argument('--pair',action='store_true')
+    action.add_argument('--validate-existing',action='store_true',help='Validate persisted pairing without sending Pair')
     ap.add_argument('--output',type=Path,required=True)
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     apple=AppleMobileDevice(Path('C:/Program Files/Common Files/Apple/Mobile Device Support'))
     for name in ('AMDevicePair','AMDeviceValidatePairing','AMDeviceStartSession','AMDeviceStopSession'):
         apple.bind(apple.am,name,C.c_int32,C.c_void_p)
     apple.bind(apple.am,'AMDErrorString',C.c_char_p,C.c_int32)
-    report={'started_utc':utc_now(),'state':'waiting-device','pairing_verified':False,'session_verified':False,'sync_verified':False}
+    report={'started_utc':utc_now(),'state':'waiting-device','pair_requested':a.pair,
+            'pairing_verified':False,'session_verified':False,'sync_verified':False}
     def save():
         (a.output/'pairing.json').write_text(json.dumps(report,indent=2)+'\n')
     def result(code):
@@ -35,9 +38,12 @@ def main():
             connected=True
             product=apple.copy_value(device,'ProductType');report['product_type']=product
             if product!='iPad7,11':report['state']='unexpected-product';return
-            report['state']='pair-request';save()
-            code=apple.am.AMDevicePair(device);report['pair']=result(code);save()
-            if code:report['state']='pair-failed';return
+            report['is_paired_before']=apple.am.AMDeviceIsPaired(device)
+            if a.pair:
+                report['state']='pair-request';save()
+                code=apple.am.AMDevicePair(device);report['pair']=result(code);save()
+                if code:report['state']='pair-failed';return
+            report['state']='validate-existing-pairing';save()
             code=apple.am.AMDeviceValidatePairing(device);report['validate']=result(code);save()
             if code:report['state']='validation-failed';return
             report['pairing_verified']=True

@@ -3,6 +3,25 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第五十九轮回收：原版权限读取和用户信任后的配对成功
+
+原版remotepairingdeviced对lockdownd的14次XML查询均先以1032字节缓冲区得到
+ERANGE及5351字节长度，随后完整读取返回0。pairingmanagement权限错误为0。
+日志记录08:59:09用户选择信任，同一连接随后记录`Pair for devinfo succeeded`；
+Windows的Apple Lockdown目录保存了配对记录，包含设备/主机/根证书及主机侧私钥。
+检查只保存字段类型和长度，没有输出私钥内容。
+
+此前本项目一次AMDevicePair在信任确认之前返回PasswordProtected；其他客户端启用
+ExtendedPairingErrors时同时得到PairingDialogResponsePending。原版handle_pair在
+未请求扩展错误时会将该分支映射到通用错误，因此没有依据修改钥匙包锁定状态。
+创建escrow bag失败和USB RM策略错误仍被原版记录，但未阻止该次Pair成功。真正的
+ValidatePairing、StartSession、服务传输以及重启后的配对持久性仍需分别验证。
+
+2,287,000字节日志及完整64MiB槽已回收，备份核对后清空；手动返回前没有END。
+APFS计数29→30、fullfsync成功，GPT/引导分区一致，设备在Android。可用基线为
+v59内核/bootstrap v58。下一轮使用`--validate-existing`只验证已保存的配对，
+不会先发起新Pair来掩盖持久性问题。
+
 ## 第五十九轮候选：读取原版签名的 XML 权限
 
 原版remotepairingdeviced的host-trust处理器通过Mercury.XPCDictionary.entitlements
