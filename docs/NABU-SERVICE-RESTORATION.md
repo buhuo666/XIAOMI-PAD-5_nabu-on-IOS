@@ -46,4 +46,28 @@ Actions42193358350通过。设备运行与功能结果仍待实机。
 mobileassetd尚无已证实的全局仅本地模式；ASAssetQuery的客户端仅本地属性不证明
 守护进程不会下载。当前未将它纳入首批，也没有伪造资源目录或返回成功。
 
-当前日志槽为14，第69轮已回收清空，APFS计数40；第70轮将保留独立源码/产物及日志。
+## 第七十轮实测与第七十一轮候选
+
+第70轮用户确认桌面正常，动态壁纸预览和设置成功，锁屏与主屏可显示，本机提醒可创建。
+28项预装应用登记保留，原生配对会话/AFC/安装代理/桌面图标查询成功。
+静态壁纸不在列表中；输入法不能弹出；关于本机的型号名称空白、型号号码不适用。
+完整64MiB日志槽已备份，回收6,642,872字节有效前缀，无终止记录；槽14已清空并读回确认，
+APFS计数40→41。实时复现日志另存`log/host/services-v70/keyboard-about-live.txt`。
+
+- duetexpertd反复因MobileAsset本地datavault初始化失败而SIGABRT；photoanalysisd三次
+  SIGTRAP。第71轮撤回两项按需入口，保留其余11项本轮配置。不能算全部13项恢复成功。
+- 关于本机原版`PSGAboutDataSource _modelNameString`读取`ArtworkTraits`中的
+  `ArtworkDeviceProductDescription`；MG从`IODeviceTree:/product/product-description`读取。
+  型号号码读取`IODeviceTree:/model-number`，RegionInfo缺失时用空后缀。
+  候选补入真实`Xiaomi Pad 5`/`21051182C`，以及CoreUI已报缺失的`artwork-device-idiom=pad`。
+  保留既有iPad7,11用户态兼容选择，不制造Apple销售型号。
+- 静态默认HEIC均在第70轮完成读取/像素解码。原版WallpaperKit比较logicalScreenClass，
+  资源为810w-1080h@2x~ipad，当前界面800x1280；需实测原版筛选返回值。
+- 实时日志中键盘主体仅800x7，通知最终800x62。原版TextInputUI按阈值选择布局前缀，
+  不能只凭800点宽度判定布局不存在。第71轮读取布局文件信息、原版前缀和键盘尺寸。
+- SQLite观察在17:19:43记录旧inode删除、新inode替换；错误6922更早已出现，
+  不能以这个后续替换事件解释首次错误。保留首次失败与后续数据库恢复行为的区别。
+
+原版汇编与调用证据在`log/host/services-v70/about-analysis`和`keyboard-analysis`，
+来自本机20F66缓存的Capstone反汇编，不是REA反编译结果。第71轮探针编译和签名检查
+Actions42197727993通过，设备树编码/解码字段检查通过；界面修复仍待实机。
