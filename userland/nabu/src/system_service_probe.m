@@ -259,6 +259,7 @@ static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString 
     NSArray<NSDictionary *> *infos = [recordClass bundleRecordArrayToInfoDictionaryArray:records];
     NSMutableArray *summary = [NSMutableArray array];
     NSDictionary *application = nil;
+    NSMutableDictionary *plugins = [NSMutableDictionary dictionary];
     for (NSDictionary *info in infos) {
         NSMutableDictionary *item = [@{@"keys": [info.allKeys sortedArrayUsingSelector:@selector(compare:)]} mutableCopy];
         for (NSString *key in @[@"CFBundleIdentifier", @"ApplicationType", @"Path", @"Container",
@@ -269,11 +270,24 @@ static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString 
         if ([info[@"_LSBundlePlugins"] isKindOfClass:NSDictionary.class])
             item[@"plugin_identifiers"] = [((NSDictionary *)info[@"_LSBundlePlugins"]).allKeys sortedArrayUsingSelector:@selector(compare:)];
         [summary addObject:item];
-        if ([info[@"CFBundleIdentifier"] isEqual:identifier] && [info[@"Path"] isEqual:path]) application = info;
+        if ([info[@"ApplicationType"] isEqual:@"PluginKitPlugin"] &&
+            [info[@"PluginOwnerBundleID"] isEqual:identifier]) {
+            plugins[info[@"CFBundleIdentifier"]] = info;
+        } else if (![info[@"ApplicationType"] isEqual:@"PluginKitPlugin"] &&
+                   [info[@"CFBundleIdentifier"] isEqual:identifier] && [info[@"Path"] isEqual:path]) {
+            application = info;
+        }
     }
     result[@"generated_records"] = summary;
     if (!application) result[@"error"] = @"original factory did not return the requested application";
-    else result[@"register_return"] = @([workspace registerApplicationDictionary:application]);
+    else {
+        // Match the original app-and-contents collapse: retain plugin metadata
+        // verbatim and attach only extensions owned by the selected app.
+        NSMutableDictionary *submission = [application mutableCopy];
+        if (plugins.count) submission[@"_LSBundlePlugins"] = plugins;
+        result[@"plugin_count"] = @(plugins.count);
+        result[@"register_return"] = @([workspace registerApplicationDictionary:submission]);
+    }
     return result;
 }
 
