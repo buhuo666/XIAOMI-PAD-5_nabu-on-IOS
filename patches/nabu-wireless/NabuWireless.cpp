@@ -19,6 +19,7 @@ static thread_call_t wireless_call;
 static uint32_t wireless_level;
 static char wireless_report[32768];
 static unsigned report_length;
+static IOLock *report_lock;
 
 void nabu_wireless_log(const char *format, ...)
 {
@@ -29,10 +30,12 @@ void nabu_wireless_log(const char *format, ...)
     va_end(args);
     IOLog("%s", line);
     unsigned bytes = strlen(line);
+    IOLockLock(report_lock);
     if (bytes < sizeof(wireless_report) - report_length) {
         memcpy(wireless_report + report_length, line, bytes + 1);
         report_length += bytes;
     }
+    IOLockUnlock(report_lock);
 }
 
 static uint32_t rd(vm_offset_t at) { return *(volatile uint32_t *)at; }
@@ -183,7 +186,9 @@ static void wireless_survey(thread_call_param_t, thread_call_param_t)
     if (wireless_level >= 4) nabu_modem_start_trial();
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
     if (chosen) {
+        IOLockLock(report_lock);
         chosen->setProperty("nabu-wireless-report", wireless_report);
+        IOLockUnlock(report_lock);
         chosen->release();
     }
 }
@@ -193,6 +198,8 @@ extern "C" void nabu_wireless_start(void)
     uint32_t level = 0;
     if (!PE_parse_boot_argn("nabu-wireless", &level, sizeof(level)) || level < 1 || level > 5) return;
     wireless_level = level;
+    report_lock = IOLockAlloc();
+    if (!report_lock) return;
     wireless_call = thread_call_allocate(wireless_survey, nullptr);
     uint64_t deadline;
     clock_interval_to_deadline(5, NSEC_PER_SEC, &deadline);

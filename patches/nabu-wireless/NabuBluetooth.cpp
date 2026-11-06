@@ -5,11 +5,25 @@
 // Linux hci_qca/btqca. Board pins/resources were read in device run 76.
 #include <IOKit/IOLib.h>
 #include <kern/locks.h>
+#include <kern/clock.h>
+#include <kern/thread_call.h>
+#include <miscfs/devfs/devfs.h>
+#include <sys/conf.h>
+#include <sys/errno.h>
+#include <sys/fcntl.h>
+#include <sys/filio.h>
+#include <sys/proc.h>
+#include <sys/systm.h>
+#include <sys/termios.h>
+#include <sys/ttycom.h>
+#include <sys/uio.h>
+#include <sys/vnode.h>
 #include <pexpert/pexpert.h>
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IORegistryEntry.h>
 #include <libkern/c++/OSData.h>
 #include "NabuWirelessLog.h"
+#include "NabuBluetoothTransport.h"
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern "C" lck_mtx_t hakios_rsc_lock;
@@ -230,6 +244,239 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     return ok;
 }
 
+static vm_offset_t stream_uart;
+static lck_grp_t *stream_group;
+static lck_mtx_t *stream_rx_lock, *stream_tx_lock, *stream_read_lock;
+static thread_call_t stream_call;
+static NabuBluetoothRx *stream_rx;
+static struct user_termios stream_termios{};
+static unsigned stream_minimum = 1;
+static bool stream_opened;
+static int stream_rx_error;
+static uint64_t stream_received, stream_written, stream_overruns;
+
+// RX ownership transfers here only after the synchronous firmware/HCI sequence.
+// Caller holds stream_rx_lock; the poller and explicit flush are the only readers.
+static void stream_drain_rx(bool discard)
+{
+    uint32_t irq = rd(stream_uart + 0x640);
+    // GENI FIFO overrun/read errors and UART parity/break indications.
+    if (!discard && (irq & ((3u << 24) | (15u << 9)))) {
+        stream_rx_error = EIO; stream_rx->clear(); ++stream_overruns;
+    }
+    uint32_t status = rd(stream_uart + 0x804);
+    unsigned words = status & 0x01ffffff;
+    for (unsigned word = 0; word < words; ++word) {
+        uint32_t data = rd(stream_uart + 0x780);
+        unsigned bytes = 4;
+        if (word + 1 == words && (status & 0x80000000)) {
+            unsigned last = (status >> 28) & 7;
+            if (last && last < 4) bytes = last;
+        }
+        stream_received += bytes;
+        if (!discard && !stream_rx_error && !stream_rx->push_word(data, bytes)) {
+            stream_rx_error = EOVERFLOW; stream_rx->clear(); ++stream_overruns;
+        }
+    }
+    wr(stream_uart + 0x648, irq);
+}
+
+static void stream_poll(thread_call_param_t, thread_call_param_t)
+{
+    lck_mtx_lock(stream_rx_lock);
+    unsigned before = stream_rx->count;
+    int previous_error = stream_rx_error;
+    stream_drain_rx(false);
+    // Wake only for new data/errors: waking every poll would restart VTIME forever.
+    if (stream_rx->count != before || stream_rx_error != previous_error) wakeup(stream_rx);
+    lck_mtx_unlock(stream_rx_lock);
+    uint64_t deadline;
+    clock_interval_to_deadline(1, kMillisecondScale, &deadline);
+    thread_call_enter_delayed(stream_call, deadline);
+}
+
+static int stream_open(dev_t, int, int, struct proc *)
+{
+    lck_mtx_lock(stream_tx_lock);
+    lck_mtx_lock(stream_rx_lock);
+    int error = stream_opened ? EBUSY : 0;
+    if (!error) {
+        stream_opened = true; stream_rx_error = 0; stream_rx->clear();
+        stream_drain_rx(true); stream_minimum = 1;
+        stream_termios.c_cc[VMIN] = 1; stream_termios.c_cc[VTIME] = 0;
+    }
+    lck_mtx_unlock(stream_rx_lock);
+    lck_mtx_unlock(stream_tx_lock);
+    nabu_wireless_log("NABU BT STREAM: open result=%d\n", error);
+    return error;
+}
+
+static int stream_close(dev_t, int, int, struct proc *)
+{
+    lck_mtx_lock(stream_rx_lock);
+    stream_opened = false; stream_rx->clear(); wakeup(stream_rx);
+    uint64_t received = stream_received, overruns = stream_overruns;
+    lck_mtx_unlock(stream_rx_lock);
+    lck_mtx_lock(stream_tx_lock);
+    uint64_t written = stream_written;
+    lck_mtx_unlock(stream_tx_lock);
+    nabu_wireless_log("NABU BT STREAM: close rx=%llu tx=%llu overruns=%llu; receiver and supplies retained\n", received, written, overruns);
+    return 0;
+}
+
+static int stream_read(dev_t, struct uio *uio, int ioflag)
+{
+    if (!uio_resid(uio)) return 0;
+    lck_mtx_lock(stream_read_lock);
+    lck_mtx_lock(stream_rx_lock);
+    int error = 0;
+    while (stream_opened && !stream_rx_error) {
+        unsigned minimum = stream_minimum;
+        if (minimum > (uint64_t)uio_resid(uio)) minimum = (unsigned)uio_resid(uio);
+        unsigned timeout_ds = stream_termios.c_cc[VTIME];
+        if (stream_rx->count >= minimum && (minimum || !timeout_ds || stream_rx->count)) break;
+        if (ioflag & IO_NDELAY) { if (!stream_rx->count) error = EWOULDBLOCK; break; }
+        struct timespec timeout{(time_t)(timeout_ds / 10), (long)(timeout_ds % 10) * 100000000};
+        struct timespec *wait = timeout_ds && (!minimum || stream_rx->count) ? &timeout : nullptr;
+        error = msleep(stream_rx, stream_rx_lock, PZERO | PCATCH, "nabu-bt-rx", wait);
+        if (error == EWOULDBLOCK) { error = 0; break; }
+        if (error) break;
+    }
+    if (!stream_opened) error = ENXIO;
+    if (stream_rx_error) error = stream_rx_error;
+    unsigned available = stream_rx->count;
+    if (available > (uint64_t)uio_resid(uio)) available = (unsigned)uio_resid(uio);
+    if (error) available = 0;
+    while (available) {
+        uint8_t data[1024];
+        unsigned bytes = stream_rx->peek(data, available < sizeof(data) ? available : sizeof(data));
+        uint32_t generation = stream_rx->generation;
+        user_ssize_t before = uio_resid(uio);
+        lck_mtx_unlock(stream_rx_lock);
+        error = uiomove((caddr_t)data, bytes, uio);
+        lck_mtx_lock(stream_rx_lock);
+        unsigned moved = (unsigned)(before - uio_resid(uio));
+        // A concurrent flush invalidates the old reservation, never the new bytes.
+        if (generation != stream_rx->generation) break;
+        stream_rx->consume(moved); available -= moved;
+        if (error || !moved) break;
+    }
+    lck_mtx_unlock(stream_rx_lock);
+    lck_mtx_unlock(stream_read_lock);
+    return error;
+}
+
+static int stream_write(dev_t, struct uio *uio, int)
+{
+    lck_mtx_lock(stream_tx_lock);
+    int error = 0;
+    while (uio_resid(uio)) {
+        uint8_t data[256];
+        unsigned bytes = uio_resid(uio) < (user_ssize_t)sizeof(data) ? (unsigned)uio_resid(uio) : sizeof(data);
+        error = uiomove((caddr_t)data, bytes, uio);
+        if (error) break;
+        if (!transmit(stream_uart, data, bytes, true)) {
+            wr(stream_uart + 0x604, 4);
+            wait_bit(stream_uart + 0x40, 1, false, 10000);
+            error = EIO; break;
+        }
+        stream_written += bytes;
+    }
+    lck_mtx_unlock(stream_tx_lock);
+    return error;
+}
+
+static int stream_set_termios(const struct user_termios &settings, bool flush)
+{
+    // This candidate exposes the exact 115200/8N1 mode already used by the board.
+    // Changing the controller's baud rate also needs its vendor HCI transaction.
+    if (settings.c_ospeed != 115200 || (settings.c_ispeed && settings.c_ispeed != 115200) ||
+        (settings.c_cflag & CSIZE) != CS8 || !(settings.c_cflag & CREAD) ||
+        (settings.c_cflag & (PARENB | CSTOPB | CDTR_IFLOW | CDSR_OFLOW | CCAR_OFLOW))) return EINVAL;
+    if ((settings.c_iflag & (ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY | PARMRK)) ||
+        (settings.c_oflag & OPOST) || (settings.c_lflag & (ECHO | ECHONL | ICANON | ISIG | IEXTEN))) return ENOTSUP;
+    wr(stream_uart + 0x25c, (settings.c_cflag & CCTS_OFLOW) ? 0 : 2);
+    wr(stream_uart + 0x2ac, (settings.c_cflag & CRTS_IFLOW) ? 0 : 0x80000001u);
+    lck_mtx_lock(stream_rx_lock);
+    stream_termios = settings; stream_termios.c_ispeed = 115200;
+    stream_minimum = settings.c_cc[VMIN];
+    if (flush) { stream_rx->clear(); stream_rx_error = 0; stream_drain_rx(true); }
+    wakeup(stream_rx);
+    lck_mtx_unlock(stream_rx_lock);
+    return 0;
+}
+
+static int stream_ioctl(dev_t, u_long command, caddr_t data, int, struct proc *)
+{
+    int error = 0;
+    lck_mtx_lock(stream_tx_lock);
+    switch (command) {
+    case TIOCGETA_64:
+        lck_mtx_lock(stream_rx_lock); memcpy(data, &stream_termios, sizeof(stream_termios)); lck_mtx_unlock(stream_rx_lock); break;
+    case TIOCSETA_64: case TIOCSETAW_64: case TIOCSETAF_64:
+        error = stream_set_termios(*(const struct user_termios *)data, command == TIOCSETAF_64); break;
+    case 0x80085402: // IOSSIOSPEED, 64-bit speed_t
+        if (*(const uint64_t *)data != 115200) error = EINVAL;
+        break;
+    case 0x80085408: { // Original AppleOnboardSerial minimum read size
+        uint64_t minimum = *(const uint64_t *)data;
+        if (minimum > NabuBluetoothRx::capacity) { error = EINVAL; break; }
+        lck_mtx_lock(stream_rx_lock); stream_minimum = (unsigned)minimum; wakeup(stream_rx); lck_mtx_unlock(stream_rx_lock); break;
+    }
+    case TIOCFLUSH: {
+        int direction = *(int *)data;
+        if (direction & ~(FREAD | FWRITE)) { error = EINVAL; break; }
+        if (!direction || (direction & FREAD)) {
+            lck_mtx_lock(stream_rx_lock); stream_rx->clear(); stream_rx_error = 0; stream_drain_rx(true); lck_mtx_unlock(stream_rx_lock);
+        }
+        // TX is synchronous and this lock has waited for the previous write.
+        break;
+    }
+    case FIONREAD:
+        lck_mtx_lock(stream_rx_lock); *(int *)data = stream_rx->count; lck_mtx_unlock(stream_rx_lock); break;
+    case FIONBIO: break; // The VFS passes IO_NDELAY to read.
+    case FIOASYNC: if (*(int *)data) error = ENOTSUP; break;
+    case TIOCOUTQ: *(int *)data = 0; break;
+    case TIOCEXCL: case TIOCNXCL: break; // Original UART accepts both; this transport has one owner.
+    default: error = ENOTTY; break;
+    }
+    lck_mtx_unlock(stream_tx_lock);
+    nabu_wireless_log("NABU BT STREAM: ioctl=%#lx result=%d\n", command, error);
+    return error;
+}
+
+static const struct cdevsw stream_cdevsw = {
+    .d_open = stream_open, .d_close = stream_close, .d_read = stream_read, .d_write = stream_write,
+    .d_ioctl = stream_ioctl, .d_stop = eno_stop, .d_reset = eno_reset, .d_select = eno_select,
+    .d_mmap = eno_mmap, .d_strategy = eno_strat, .d_type = 0
+};
+
+static bool stream_start(vm_offset_t uart)
+{
+    stream_group = lck_grp_alloc_init("nabu-bluetooth", LCK_GRP_ATTR_NULL);
+    if (!stream_group) return false;
+    stream_rx_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
+    stream_tx_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
+    stream_read_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
+    stream_call = thread_call_allocate_with_priority(stream_poll, nullptr, THREAD_CALL_PRIORITY_KERNEL_HIGH);
+    if (!stream_rx_lock || !stream_tx_lock || !stream_read_lock || !stream_call) return false;
+    stream_rx = (NabuBluetoothRx *)IOMalloc(sizeof(*stream_rx));
+    if (!stream_rx) return false;
+    bzero(stream_rx, sizeof(*stream_rx));
+    stream_uart = uart;
+    stream_termios.c_cflag = CS8 | CREAD | CLOCAL | CRTSCTS;
+    stream_termios.c_ispeed = stream_termios.c_ospeed = 115200;
+    stream_termios.c_cc[VMIN] = 1;
+    int major = cdevsw_add(-1, &stream_cdevsw);
+    if (major < 0) return false;
+    if (!devfs_make_node(makedev(major, 0), DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, "uart.bluetooth")) {
+        cdevsw_remove(major, &stream_cdevsw); return false;
+    }
+    thread_call_enter(stream_call);
+    nabu_wireless_log("NABU BT STREAM: /dev/uart.bluetooth major=%d ready; baud=115200 rx-poll=1ms capacity=%u\n", major, NabuBluetoothRx::capacity);
+    return true;
+}
+
 void nabu_bluetooth_version_trial()
 {
     uint32_t level = 0;
@@ -238,10 +485,10 @@ void nabu_bluetooth_version_trial()
     vm_offset_t rsc = ml_io_map(0x18220000, 0x4000), gcc = ml_io_map(0x00100000, 0x60000);
     vm_offset_t pins = ml_io_map(0x0352b000, 0x4000);
     if (!rsc || !gcc || !pins) return;
-    if (!enable_supply(rsc, "ldoa1", 0x40800, 750) ||
+    if (!enable_supply(rsc, "ldoa1", 0x40800, 752) ||
         !enable_supply(rsc, "ldoa7", 0x41f00, 1800) ||
         !enable_supply(rsc, "ldoc2", 0x41d00, 1304) ||
-        !enable_supply(rsc, "ldoc11", 0x41a00, 3300)) return;
+        !enable_supply(rsc, "ldoc11", 0x41a00, 3312)) return;
     IOSleep(10);
     if (!serial_clock(gcc)) return;
     vm_offset_t uart = ml_io_map(0x00c8c000, 0x4000);
@@ -279,6 +526,9 @@ void nabu_bluetooth_version_trial()
     }
     nabu_wireless_log("NABU BT: trial complete version-response=%u irq=%#x status=%#x ios=%#x\n",
         version_ok, rd(uart + 0x640), rd(uart + 0x40), rd(uart + 0x908));
-    if (version_ok && level >= 3) nabu_bluetooth_load_firmware(uart);
+    bool initialized = version_ok && level >= 3 && nabu_bluetooth_load_firmware(uart);
+    uint32_t persistent = 0;
+    PE_parse_boot_argn("nabu-bt-transport", &persistent, sizeof(persistent));
+    if (initialized && persistent && stream_start(uart)) return;
     cancel_commands(uart);
 }

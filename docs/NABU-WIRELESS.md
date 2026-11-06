@@ -276,6 +276,37 @@ registration-status，避免把初次注册响应当实时状态。主机QMI/GLI
 servreg_loc.c，后者明确0x24请求的TLV1为service、TLV2为reason。MAC主机编码/状态机
 及GLINK测试已通过ASan/UBSan；补充诊断后重新构建，等待实机确认MAC响应与失败原因。
 
+第95轮（2026-11-06）桌面/USB正常，MAC_ADDR 0x33响应成功、board-MAC applied=1。
+44.324712秒固件明确上报`EX:wlan_process:0x1:WLAN RT:0x14c:PC=0xb019b9bc`，
+46.363411秒WLFW端口35→41；没有FW_READY/FW_INIT_DONE。完整64MiB槽及2,308,690
+字节有效日志已备份清空，APFS计数64→65。不能把此前的complete=1（QMI请求序列
+结束）理解成固件已就绪，也不能再仅按漏接通知解释这次失败。
+
+本地LLVM18的Hexagon反汇编把PC定位到WLAN MMIO读助手的`memw(r0)`，初始化函数
+把该虚拟基址映射到物理0x18800000+0x800000。缺少异常r0/r31，尚不能确定访问哪个
+寄存器及具体原因。Android本机ICNSS只有已使用的四路共享供电；实际读回L1=752mV、
+L11=3312mV，与当前750/3300存在差异。第96轮只对齐这两处实际值，不新增推测的
+第五路供电或时钟。详细地址、调用与证据在`log/host/wireless-v95/wlan-fault-analysis/`。
+
+第96轮（2026-11-07）同时推进蓝牙：`nabu-bt-transport=1`在已验证的固件/HCI初始化
+后保持UART，发布`/dev/uart.bluetooth`；单一1ms轮询接收、64KiB运行时分配缓冲、
+非阻塞/阻塞read、串行write、termios/flush。当前只支持115200/8N1，未知ioctl返回
+错误，未实现select及原版内核控制socket。生产环缓冲ASan/UBSan和ARM64编译通过；
+静态64KiB缓冲导致旧prelink DATA空间不足，改为IOMalloc后链接通过，容量未减小。
+并发串口/调制解调器日志共用锁，避免共同运行时破坏报告缓冲。
+
+菜单前置按原版MG回调补入本机`chosen/mac-address-bluetooth0`（HCI地址反转为显示
+顺序）及`product/bluetooth-le`存在属性。恢复原版bluetoothd、BluetoothUIService和
+bluetoothuserd本地Mach触发；BlueTool原本已纳入。新增只读能力清单及成组HCI查询
+探针，Actions42247947900构建成功，bootstrap重新打包后待实机验收。完整接口证据
+见`analysis/nabu-bluetooth-interface-findings.md`。上述构建结果不等于菜单、扫描或配对已通过。
+
+用户态分析首轮Actions42246716289虽任务成功，但macOS ARM runner缺Ghidra原生
+decompile程序，实际只有汇编，伪代码全部失败。已改Intel runner并在零成功反编译时
+使任务失败；42248142465继续分析。汇编已确认原版POSIX传输使用内核控制socket，
+因此字符设备存在只满足启动路径检查，仍需接入真实socket传输；不把H4配置字符串
+误解释为直接打开字符文件。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

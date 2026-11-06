@@ -114,6 +114,7 @@ def main():
     ap.add_argument('--wlan-qmi',action='store_true',help='Register WLAN QMI client and query host capability/MSA information')
     ap.add_argument('--wlan-msa',action='store_true',help='Assign returned MSA regions, signal ready and query chipset capabilities')
     ap.add_argument('--wlan-board',type=Path,help='Original board parameters for QMI download and calibration report')
+    ap.add_argument('--bluetooth-transport', action='store_true', help='Keep the initialized Bluetooth UART running and publish its board capabilities')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
@@ -122,6 +123,7 @@ def main():
     assert not a.wlan_qmi or a.modem_glink, 'WLAN QMI requires GLINK'
     assert not a.wlan_msa or a.wlan_qmi, 'MSA setup requires WLAN QMI'
     assert not a.wlan_board or a.wlan_msa, 'Board parameter download requires MSA setup'
+    assert not a.bluetooth_transport or a.bluetooth_firmware, 'Bluetooth transport requires controller firmware'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -177,6 +179,8 @@ def main():
             assert kernel_report['data_block']['modem_trial'], 'Modem startup requires its linked PAS/SMP2P implementation'
         old_args=entry['args']
         entry['args'] += ' nabu-wireless=' + ('5' if a.modem_glink else '4' if a.modem_firmware else '3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
+        if a.bluetooth_transport:
+            entry['args'] += ' nabu-bt-transport=1'
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:
@@ -244,11 +248,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     assert len(blob) <= 16*1024*1024, 'ADT exceeds the current DarwinBoot ReadFile limit (16 MiB)'
     manifest = []
@@ -272,6 +276,7 @@ def main():
     receipt['platform_uuid_from_soc'] = platform_identity is not None
     receipt['native_usb_selected'] = a.native_usb
     receipt['wifi_mac_supplied'] = wifi_mac is not None
+    receipt['bluetooth_transport_selected'] = a.bluetooth_transport
     receipt['compatibility_serial_supplied'] = userland_serial is not None
     receipt['userland_model'] = a.userland_model
     if wifi_mac is not None:

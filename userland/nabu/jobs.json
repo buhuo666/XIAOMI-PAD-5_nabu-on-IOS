@@ -20,6 +20,7 @@
     "com.apple.logd_helper",
     "com.apple.iconservices.iconservicesagent",
     "com.apple.pluginkit.pkd",
+    "com.apple.bluetoothd",
     "com.apple.SpringBoard"
   ],
   "additional_deny": [
@@ -27,9 +28,13 @@
     "mobileactivation"
   ],
   "on_demand_allow": [
-    "com.apple.dmd"
+    "com.apple.dmd",
+    "com.apple.bluetoothuserd"
   ],
   "environment_overrides": {
+    "com.apple.bluetoothd": {
+      "OS_ACTIVITY_DT_MODE": "YES"
+    },
     "com.apple.backboardd": {
       "CA_FORCE_TIMER": "1"
     },
@@ -37,9 +42,10 @@
       "CG_CONTEXT_SHOW_BACKTRACE": "1"
     }
   },
-  "scope": "20F66 local software service restoration, run70 candidate: two original on-demand dependencies, original passcode-compliance condition, selected local notifications and lifecycle triggers; no cloud/account/hardware trigger expansion",
+  "scope": "20F66 local services plus Nabu native Bluetooth bring-up: original bluetoothd at boot, Bluetooth UI service and local user-daemon Mach triggers; controller operation requires separate runtime validation",
   "source_job_allow": [
-    "com.apple.managedconfiguration.passcodenagd"
+    "com.apple.managedconfiguration.passcodenagd",
+    "com.apple.bluetoothuiservice"
   ],
   "restore_conditions": {
     "com.apple.chronod": {

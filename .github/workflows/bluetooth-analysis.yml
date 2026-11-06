@@ -4,7 +4,8 @@ on:
     branches: [nabu16-bootstrap]
     paths:
       - '.github/workflows/bluetooth-analysis.yml'
-      - 'analysis/bluetooth/**'
+      - 'analysis/image4/extract_image4.py'
+      - 'analysis/image4/ExportImage4.java'
   workflow_dispatch:
 permissions:
   contents: read
