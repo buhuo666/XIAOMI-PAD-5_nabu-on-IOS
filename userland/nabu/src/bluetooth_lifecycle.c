@@ -124,13 +124,23 @@ static int hci_command(int fd, uint16_t opcode, uint8_t *parameters,
 
 static int diagnose_command_family(int fd) {
     /* No scan-enable or advertising-enable command is issued. Reuse exactly
-     * the same passive scan parameters before and after the capacity query.
+     * the same passive scan parameters in separate Reset intervals, so the
+     * baseline legacy command cannot select the family for the capacity query.
      */
     const uint8_t scan[] = {0, 0xe0, 1, 0x30, 0, 0, 0}; // 300ms interval, 30ms window, public address.
     const char *names[] = {"legacy-before", "periodic-list-size", "legacy-after"};
+    int preparation_error = 0;
     for (unsigned step = 0; step < 3; ++step) {
         uint8_t response[32]; size_t size = sizeof(response);
         struct LifecycleResult observed = {0};
+        if (step == 1) {
+            preparation_error = hci_command(fd, 0x0c03, response, &size, &observed);
+            report("LE family diagnostic separator-reset errno=%d hci-status=%u", preparation_error, observed.hci_status);
+            if (!preparation_error && size != 1) preparation_error = EPROTO;
+            if (preparation_error) break;
+            size = sizeof(response);
+            observed = (struct LifecycleResult){0};
+        }
         int error = step == 1 ? hci_command(fd, 0x204a, response, &size, &observed) :
             hci_command_data(fd, 0x200b, scan, sizeof(scan), response, &size, &observed);
         report("LE family diagnostic phase=%s errno=%d hci-status=%u", names[step], error, observed.hci_status);
@@ -143,7 +153,7 @@ static int diagnose_command_family(int fd) {
     struct LifecycleResult reset = {0};
     int error = hci_command(fd, 0x0c03, response, &size, &reset);
     report("LE family diagnostic final-reset errno=%d hci-status=%u", error, reset.hci_status);
-    return error ? error : size == 1 ? 0 : EPROTO;
+    return error ? error : size == 1 ? preparation_error : EPROTO;
 }
 
 static int connect_controller(void) {

@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--lifecycle', type=Path, help='Source-owned QCA implementation of the BlueTool lifecycle service')
     parser.add_argument('--lifecycle-ci-run', type=int)
     parser.add_argument('--compatibility', type=Path, help='20F66 bluetoothd optional-HCI initializer adapter')
-    parser.add_argument('--diagnose-le-family', action='store_true', help='One first-boot Reset/legacy/query/legacy/Reset controller diagnostic; never enables scanning')
+    parser.add_argument('--diagnose-le-family', action='store_true', help='One first-boot Reset/legacy/Reset/query/legacy/Reset controller diagnostic; never enables scanning')
     args = parser.parse_args()
     jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     baseline = ROOT / 'artifacts/nabu-bootstrap-v77'

@@ -63,6 +63,118 @@ static void *peer_main(void *context) {
     return NULL;
 }
 
+enum ResetReply { RESET_OK, RESET_DENIED, RESET_BAD_LENGTH, RESET_EOF };
+
+struct DiagnosticCase {
+    const char *name;
+    uint8_t statuses[3];
+    enum ResetReply separator, final;
+    int expected_error;
+};
+
+struct DiagnosticPeer { int fd; const struct DiagnosticCase *test; };
+
+static void expect_scan_parameters(int fd) {
+    const uint8_t expected[] = {1, 0x0b, 0x20, 7, 0, 0xe0, 1, 0x30, 0, 0, 0};
+    uint8_t command[sizeof(expected)];
+    assert(transfer(fd, command, sizeof(command), false, seconds_now()+2) == 0);
+    assert(memcmp(command, expected, sizeof(command)) == 0);
+}
+
+static void complete_command(int fd, uint16_t opcode, uint8_t status) {
+    const uint8_t complete[] = {4, 0x0e, 4, 1, (uint8_t)opcode,
+                                (uint8_t)(opcode >> 8), status};
+    send_event(fd, complete, sizeof(complete));
+}
+
+static void complete_reset(int fd, enum ResetReply reply) {
+    assert(reply != RESET_EOF);
+    if (reply == RESET_BAD_LENGTH) {
+        /* Status success with an extra return byte must still fail Reset. */
+        const uint8_t oversized[] = {4, 0x0e, 5, 1, 3, 0x0c, 0, 0xa5};
+        send_event(fd, oversized, sizeof(oversized));
+    } else {
+        complete_command(fd, 0x0c03, reply == RESET_DENIED ? 0x0c : 0);
+    }
+}
+
+static void *diagnostic_peer_main(void *context) {
+    struct DiagnosticPeer *peer = context;
+    const struct DiagnosticCase *test = peer->test;
+    /* One socket owns the whole experiment, including both clean intervals
+     * and identity revalidation. Any extra command fails the byte assertions.
+     */
+    expect_command(peer->fd, 0x0c03);
+    complete_reset(peer->fd, RESET_OK);
+    expect_scan_parameters(peer->fd);
+    complete_command(peer->fd, 0x200b, test->statuses[0]);
+    expect_command(peer->fd, 0x0c03);
+    complete_reset(peer->fd, test->separator);
+    if (test->separator == RESET_OK) {
+        expect_command(peer->fd, 0x204a);
+        const uint8_t capacity[] = {4, 0x0e, 5, 1, 0x4a, 0x20, 0, 8};
+        if (test->statuses[1]) complete_command(peer->fd, 0x204a, test->statuses[1]);
+        else send_event(peer->fd, capacity, sizeof(capacity));
+        expect_scan_parameters(peer->fd);
+        complete_command(peer->fd, 0x200b, test->statuses[2]);
+    }
+    /* A failed separator must skip both queries but still attempt recovery. */
+    expect_command(peer->fd, 0x0c03);
+    if (test->final == RESET_EOF) {
+        close(peer->fd);
+        return NULL;
+    }
+    complete_reset(peer->fd, test->final);
+    if (!test->expected_error) {
+        expect_command(peer->fd, 0x1001);
+        const uint8_t version[] = {4,0x0e,12,1,1,0x10,0,11,0,0,11,0x1d,0,0x3f,0x37};
+        send_event(peer->fd, version, sizeof(version));
+        expect_command(peer->fd, 0x1009);
+        const uint8_t address[] = {4,0x0e,10,1,9,0x10,0,0x57,0x46,0x35,0x24,0x13,2};
+        send_event(peer->fd, address, sizeof(address));
+    }
+    uint8_t unexpected;
+    assert(transfer(peer->fd, &unexpected, 1, false, seconds_now()+2) == EPIPE);
+    close(peer->fd);
+    return NULL;
+}
+
+static void test_command_family(void) {
+    static const struct DiagnosticCase cases[] = {
+        {"all-supported", {0, 0, 0}, RESET_OK, RESET_OK, 0},
+        {"legacy-after-rejected", {0, 0, 0x0c}, RESET_OK, RESET_OK, 0},
+        {"query-rejections-are-diagnostic", {0x0c, 1, 0x0c}, RESET_OK, RESET_OK, 0},
+        {"separator-status", {0, 0, 0}, RESET_DENIED, RESET_OK, EIO},
+        {"separator-length", {0, 0, 0}, RESET_BAD_LENGTH, RESET_OK, EPROTO},
+        {"final-status", {0, 0, 0}, RESET_OK, RESET_DENIED, EIO},
+        {"final-length", {0, 0, 0}, RESET_OK, RESET_BAD_LENGTH, EPROTO},
+        {"final-eof", {0, 0, 0}, RESET_OK, RESET_EOF, EPIPE},
+        {"final-status-over-separator-length", {0, 0, 0}, RESET_BAD_LENGTH, RESET_DENIED, EIO},
+        {"final-length-over-separator-status", {0, 0, 0}, RESET_DENIED, RESET_BAD_LENGTH, EPROTO},
+    };
+    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+        int pair[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+        assert(fcntl(pair[0], F_SETFL, O_NONBLOCK) == 0);
+        struct DiagnosticPeer peer = {pair[1], &cases[i]};
+        pthread_t thread;
+        assert(pthread_create(&thread, NULL, diagnostic_peer_main, &peer) == 0);
+        struct LifecycleResult result = {0};
+        uint8_t response[8]; size_t size = sizeof(response);
+        /* run_lifecycle performs this Reset before calling the diagnostic. */
+        assert(hci_command(pair[0], 0x0c03, response, &size, &result) == 0 && size == 1);
+        int error = diagnose_command_family(pair[0]);
+        assert(error == cases[i].expected_error);
+        if (!error) {
+            assert(verify_controller(pair[0], "02:13:24:35:46:57", &result) == 0);
+            assert(result.address_checked);
+        }
+        close(pair[0]);
+        assert(pthread_join(thread, NULL) == 0);
+        printf("LE family diagnostic case %s passed (errno=%d)\n", cases[i].name, error);
+    }
+}
+
 int main(void) {
     for (unsigned mode = 0; mode < 8; ++mode) {
         int pair[2];
@@ -97,6 +209,7 @@ int main(void) {
     uint8_t byte;
     assert(transfer(pair[0], &byte, 1, false, seconds_now()+0.02) == ETIMEDOUT);
     close(pair[0]); close(pair[1]);
+    test_command_family();
     puts("Production HCI readiness: fragmented events, unrelated payload bytes, address mismatch, wrong firmware, command error, malformed frame, EOF and deadline passed");
     return 0;
 }
