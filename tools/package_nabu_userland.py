@@ -73,6 +73,7 @@ def main():
     ap.add_argument('--lockdown-stack-sample', type=Path, help='Read-only thread sampler for a stalled stock lockdownd')
     ap.add_argument('--lockdown-timeout', type=Path, help='Bound the original FairPlay HWInfo receive wait in stock lockdownd')
     ap.add_argument('--fairplay-trace', type=Path, help='Transparent call observer for stock fairplayd.A2 startup')
+    ap.add_argument('--local-activation', type=Path, help='Source-built local NSXPC activation state provider')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
@@ -138,6 +139,14 @@ def main():
     if a.lockdown_timeout:
         assert a.lockdown_probe, 'The HWInfo deadline requires stock lockdownd'
         shutil.copy2(a.lockdown_timeout,root/'lib/libnabu.lockdown-timeout.dylib')
+    if a.local_activation:
+        shutil.copy2(a.local_activation,root/'sbin/local-activation')
+        job={'Label':'org.nabu.local-activation','Program':'/redwood/sbin/local-activation',
+             'MachServices':{'com.apple.mobileactivationd':True},
+             'RunAtLoad':True,'UserName':'root','StandardOutPath':'/dev/console',
+             'StandardErrorPath':'/dev/console'}
+        (root/'LaunchDaemons/org.nabu.local-activation.plist').write_bytes(
+            plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -215,6 +224,10 @@ def main():
             'stock_lockdown_stack_sample_enabled': a.lockdown_stack_sample is not None,
             'stock_lockdown_hwinfo_timeout_enabled': a.lockdown_timeout is not None,
             'fairplay_trace_enabled': a.fairplay_trace is not None,
+            'local_activation': ({'mode':'NabuLocalCompatibility',
+                'program':'/redwood/sbin/local-activation',
+                'required_bootarg':'nabu-local-activation=1',
+                'apple_server_validated':False} if a.local_activation else None),
             'setup_compat':setup_report,'device_execution_validated':False,
             'filesystem_check':'apfsck -c -u -w passed separately for both containers',
             'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}

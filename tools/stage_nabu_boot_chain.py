@@ -151,6 +151,10 @@ def main():
         assert all(x in args for x in ['nabu-storage=1','nabu-bootstrap=1','rd=md0','root_apfs=nabu_os'])
         assert not any(x.startswith(('nabu-root-probe=','return_panic=','return_cpu=')) for x in args)
         boot_report=json.loads((a.bootstrap.parent/'bootstrap-report.json').read_text())
+        if boot_report.get('local_activation'):
+            args.append('nabu-local-activation=1')
+            config_bytes=config_bytes.replace(entry['args'].encode(),' '.join(args).encode(),1)
+            entry['args']=' '.join(args)
         if data_enabled:
             assert boot_report.get('persistent_data_supported') is True
         assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024

@@ -4,7 +4,9 @@
  */
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <notify.h>
 #include <stdio.h>
@@ -58,6 +60,9 @@ static void reject5(id self, SEL selector, id a, id b, id c, id d, Reply reply) 
 - (void)getActivationBuildWithCompletionBlock:(Reply)reply {
     reply(@{@"LastActivated": localState[@"BuildVersion"]}, nil);
 }
+- (void)getDCRTStateWithCompletionBlock:(Reply)reply {
+    reply(@{@"DCRTState": @"DCRTUnavailable"}, nil);
+}
 - (BOOL)listener:(NSXPCListener *)listener shouldAcceptNewConnection:(NSXPCConnection *)connection {
     (void)listener;
     connection.exportedInterface = [NSXPCInterface interfaceWithProtocol:activationProtocol];
@@ -84,7 +89,8 @@ static BOOL bootEnabled(void) {
 static BOOL loadState(void) {
     uuid_t identity;
     struct timespec timeout = {2, 0};
-    if (gethostuuid(identity, &timeout)) {
+    int (*hostUUID)(uuid_t, const struct timespec *) = dlsym(RTLD_DEFAULT, "gethostuuid");
+    if (!hostUUID || hostUUID(identity, &timeout)) {
         fprintf(stderr, "NABU ACTIVATION: gethostuuid errno=%d\n", errno);
         return NO;
     }
@@ -171,10 +177,15 @@ int main(void) {
         activationProtocol = objc_getProtocol("MobileActivationProtocol");
         if (!activationProtocol || !loadState() || !installUnsupportedMethods()) return 1;
         NabuLocalActivation *provider = [NabuLocalActivation new];
-        NSXPCListener *listener = [[NSXPCListener alloc]
-                                  initWithMachServiceName:@"com.apple.mobileactivationd"];
+        // This SPI is implemented by the supplied Foundation, but marked
+        // unavailable to public iOS apps in the SDK. The daemon uses it directly.
+        NSXPCListener *listener = ((id (*)(id, SEL, NSString *))objc_msgSend)(
+            [NSXPCListener alloc], sel_registerName("initWithMachServiceName:"),
+            @"com.apple.mobileactivationd");
         listener.delegate = provider;
         [listener resume];
+        notify_post("com.apple.mobile.lockdown.activation_state");
+        notify_post("com.apple.mobile.lockdown.brick_state");
         fprintf(stderr, "NABU ACTIVATION: local NSXPC state provider ready\n");
         [[NSRunLoop currentRunLoop] run];
     }
