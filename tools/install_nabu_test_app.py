@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install this project's source-owned test IPA through stock AFC/installation_proxy."""
+"""Install or remove this project's test app through stock installation_proxy."""
 import argparse
 import json
 from pathlib import Path
@@ -36,15 +36,21 @@ class AFC:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--ipa', type=Path, required=True)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument('--ipa', type=Path)
+    action.add_argument('--uninstall', action='store_true', help='Remove only org.nabu.LocalTest')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    with zipfile.ZipFile(args.ipa) as package:
-        info = plistlib.loads(package.read('Payload/LocalTest.app/Info.plist'))
-        assert info['CFBundleIdentifier'] == 'org.nabu.LocalTest'
+    info = {'CFBundleIdentifier': 'org.nabu.LocalTest'}
+    if args.ipa:
+        with zipfile.ZipFile(args.ipa) as package:
+            info = plistlib.loads(package.read('Payload/LocalTest.app/Info.plist'))
+            assert info['CFBundleIdentifier'] == 'org.nabu.LocalTest'
     args.output.mkdir(parents=True, exist_ok=True)
     report = {'started_utc': utc_now(), 'bundle_id': info['CFBundleIdentifier'],
-              'ipa_bytes': args.ipa.stat().st_size, 'installed_verified': False,
+              'ipa_bytes': args.ipa.stat().st_size if args.ipa else None,
+              'action': 'uninstall' if args.uninstall else 'install', 'installed_verified': False,
+              'uninstall_verified': False,
               'launch_verified': False, 'progress': []}
 
     def save():
@@ -74,22 +80,25 @@ def main():
             stream = mux_connect(device['DeviceID'], reply['Port'])
             return wrap_pinned(context, stream, record) if reply.get('EnableServiceSSL') else stream
 
-        afc_socket = start_service('com.apple.afc')
-        afc = AFC(afc_socket)
-        afc.command(0x09, b'/PublicStaging\0', accepted=(0, 16))
-        path = ('PublicStaging/NabuLocalTest-' + uuid.uuid4().hex + '.ipa').encode()
-        handle = afc.command(0x0d, struct.pack('<Q', 3) + b'/' + path + b'\0')
-        staged = True
-        with args.ipa.open('rb') as source:
-            while data := source.read(32768):
-                afc.command(0x10, handle, data)
-        afc.command(0x14, handle)
-        report['uploaded'] = True
-        save()
+        if args.ipa:
+            afc_socket = start_service('com.apple.afc')
+            afc = AFC(afc_socket)
+            afc.command(0x09, b'/PublicStaging\0', accepted=(0, 16))
+            path = ('PublicStaging/NabuLocalTest-' + uuid.uuid4().hex + '.ipa').encode()
+            handle = afc.command(0x0d, struct.pack('<Q', 3) + b'/' + path + b'\0')
+            staged = True
+            with args.ipa.open('rb') as source:
+                while data := source.read(32768):
+                    afc.command(0x10, handle, data)
+            afc.command(0x14, handle)
+            report['uploaded'] = True
+            save()
         service = start_service('com.apple.mobile.installation_proxy')
         service.settimeout(30)
-        request = plistlib.dumps({'Command': 'Install', 'PackagePath': path.decode(),
-                                 'ClientOptions': {'CFBundleIdentifier': info['CFBundleIdentifier']}})
+        request = plistlib.dumps(
+            {'Command': 'Uninstall', 'ApplicationIdentifier': info['CFBundleIdentifier']}
+            if args.uninstall else {'Command': 'Install', 'PackagePath': path.decode(),
+                                   'ClientOptions': {'CFBundleIdentifier': info['CFBundleIdentifier']}})
         service.sendall(struct.pack('>I', len(request)) + request)
         while True:
             size, = struct.unpack('>I', receive(service, 4))
@@ -97,9 +106,11 @@ def main():
             report['progress'].append(response)
             save()
             if 'Error' in response or response.get('Status') == 'Complete':
-                report['installed_verified'] = response.get('Status') == 'Complete' and 'Error' not in response
+                complete = response.get('Status') == 'Complete' and 'Error' not in response
+                report['installed_verified'] = complete and not args.uninstall
+                report['uninstall_verified'] = complete and args.uninstall
                 break
-        if report['installed_verified']:
+        if complete:
             report['lookup'] = exchange(service, {'Command': 'Lookup', 'ClientOptions': {
                 'BundleIDs': [info['CFBundleIdentifier']],
                 'ReturnAttributes': ['CFBundleIdentifier', 'CFBundleDisplayName', 'Path', 'Container']}})

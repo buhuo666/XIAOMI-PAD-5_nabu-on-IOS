@@ -86,3 +86,33 @@ APFS计数33→34、fullfsync成功。
 后续候选让setup_compat在nabu-local-activation=1时将brickedDevice交回原版方法，
 继续保留跳过首次设置的界面策略，实测系统激活判断能够承担这条路径；对应10项
 实际包装器主机检查和arm64构建通过Actions42156474592。候选尚未部署。
+
+## 第六十四轮：原版界面判断和完整测试应用生命周期
+
+v61内核/bootstrap v64已实机通过。日志确认`brickedDevice uses original system
+activation state`，本地状态从APFS恢复；用户确认正常进入桌面，已有测试应用仍
+能打开，保存次数仍为1。原版Lockdown继续返回Activated和BrickState=false。
+
+随后PC通过原版安装代理卸载org.nabu.LocalTest，返回Complete且Lookup为空；
+重新安装同一源构建IPA也返回Complete，应用路径及Data容器UUID均重新分配。
+用户确认重装后启动次数1、保存次数0。应用保留在设备上供后续软件功能测试。
+仅自有普通arm64、ad hoc签名、无官方服务器依赖的测试IPA得到此验收，不推广到
+所有IPA、DRM内容或需要Apple服务的应用。
+
+本轮1,607,605字节日志和完整槽已备份，槽14已清空，APFS计数34→35、fullfsync
+成功，GPT及引导分区一致，设备在Android。没有下一轮日志槽或临时启动暂存。
+run_nabu_temporary_boot.py现在在回收前等待Android sys.boot_completed=1，解决
+已经重复观察到的早期ADB切换导致回收中断；本轮回收同样先等待该条件。
+
+### 当前软件阶段剩余项
+
+- com.apple.mobilesync已通过服务启动、连接和TLS，不表示真实同步数据已验收。
+- com.apple.mobilebackup2已越过激活限制并得到端口，但TLS超时。运行日志确认
+  BackupAgent2因`Error getting UniqueDeviceID from MobileGestalt (9)`抛异常并SIGABRT。
+  后续应定位此真实身份查询失败；不要伪造设备证书或以握手超时直接认定USB故障。
+- ActivationStateAcknowledged仍为MissingValue。它来自独立的SetupAssistant完成
+  路径，当前没有阻止安装和运行，不为填键而修改授权或data_ark。
+- 设置、实际同步/备份和更广泛应用样本尚未全部验收，软件阶段仍继续；驱动扩展后置。
+
+准确接续在ignored `log/host/activation-v64/continuation.json`，已验证结果在同目录
+`device-results.json`。当前完成的是系统本地激活和基础应用生命周期里程碑。

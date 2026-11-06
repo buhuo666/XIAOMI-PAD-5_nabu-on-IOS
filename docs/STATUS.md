@@ -2,6 +2,14 @@
 
 更新：2026-11-06，Asia/Shanghai。
 
+最新可用基线：v61内核/bootstrap v64。第六十二至六十四轮已验证系统本地Activated、
+BrickState=false和跨重启保留；第六十四轮SpringBoard使用原版激活判断，桌面正常。
+PC原版安装代理完成自有测试IPA的安装、运行、数据写入、重启保留、卸载和重装。
+重启前后保存次数1，重装后用户确认启动1/保存0。未进行Apple服务器激活。
+第六十四轮1,607,605字节日志及完整槽已备份清空，APFS计数34→35；设备在Android。
+下一项软件阻塞是BackupAgent2读取MobileGestalt UniqueDeviceID错误9并退出；真实
+同步/备份、更广泛应用及设置体验仍待完善，驱动扩展继续后置。
+
 用户已确定[基本技术路线](BASIC-TECHNICAL-ROADMAP.md)：先完成系统和应用体验，
 首先实现系统级本地激活态及PC应用安装，再进入软硬件协同驱动修复。当前不接入
 Apple官方服务器激活、Apple ID、App Store、iCloud等服务。

@@ -45,6 +45,22 @@ def main():
     def shell(cmd):
         return command(adb+['exec-out', 'su', '-c', cmd])
 
+    if a.collect:
+        # Android exposes ADB before its USB configuration settles. The first
+        # collections after runs 60/62/63 lost that connection mid-read.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                ready = subprocess.run(adb+['shell', 'getprop', 'sys.boot_completed'],
+                                       capture_output=True, timeout=5)
+                if ready.returncode == 0 and ready.stdout.strip() == b'1':
+                    break
+            except subprocess.TimeoutExpired:
+                pass
+            time.sleep(1)
+        else:
+            raise RuntimeError('Android has not completed boot; runtime log remains untouched')
+
     assert shell('getprop ro.product.device').strip() == b'nabu'
     assert shell('getprop ro.boot.slot_suffix').strip() == b'_a'
     gpt = json.loads((a.gpt_backup/'gpt-report.json').read_text())
