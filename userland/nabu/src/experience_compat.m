@@ -42,7 +42,9 @@ static BOOL loadNabuStill(id object, SEL selector, NSURL *url) {
 
 void nabuInstallExperienceCompatibility(void) {
     static BOOL installed;
-    if (installed || !isNabuScreen()) return;
+    // Run72: asking mainScreen here, during dyld constructors, aborts SpringBoard
+    // before display initialization. Check geometry only inside live layout calls.
+    if (installed) return;
     installed = YES;
     Method keyboard = class_getInstanceMethod(NSClassFromString(@"UIKBDerivedKeyboard"),
         NSSelectorFromString(@"setKeyboardSize:"));
@@ -54,7 +56,7 @@ void nabuInstallExperienceCompatibility(void) {
         NSSelectorFromString(@"wk_ignoreLogicalScreenClassForWallpaperBundle"));
     originalIgnoreScreenClass = (BOOL (*)(id, SEL))method_setImplementation(ignore, (IMP)ignoreNabuStillScreenClass);
     originalWallpaperLoad = (BOOL (*)(id, SEL, NSURL *))method_setImplementation(filter, (IMP)loadNabuStill);
-    NSLog(@"NABU EXPERIENCE: native display keyboard and bundled still compatibility installed");
+    NSLog(@"NABU EXPERIENCE: hooks installed; screen check deferred to layout calls");
 }
 
 #ifdef NABU_EXPERIENCE_DYLIB

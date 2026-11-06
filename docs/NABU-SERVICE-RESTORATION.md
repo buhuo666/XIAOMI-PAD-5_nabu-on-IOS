@@ -102,3 +102,11 @@ apfsck通过，未部署。当前设备仍在第71轮iPadOS，日志槽14尚待�
 
 第71轮日志已回收：16,795,201字节有效前缀，无终止记录；完整64MiB槽14备份清空，
 APFS计数41→42、fullfsync成功。原生USB和已验收About字段维持；设备返回Android。
+
+第72轮全局候选启动失败，用户停在logo；SpringBoard持续抛出
+`NSInternalInconsistencyException: returning nil screen from mainScreen is not allowed!`。
+库构造函数先于屏幕初始化查询UIScreen.mainScreen，回溯进入isNabuScreen和安装函数。
+没有NABU EXPERIENCE安装完成记录，系统探针baseline仍是第71轮旧值。
+已回收1,703,962字节有效前缀及完整64MiB槽，清空读回通过；APFS计数42→43。
+第73轮先恢复第71轮bootstrap。源码修正只移除构造期屏幕查询，几何条件保留在
+实际键盘/壁纸调用处；新候选仍需构建和实机验证。

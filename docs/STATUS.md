@@ -19,6 +19,10 @@ SIGTRAP，下一轮撤回这两个按需入口。其余服务仍按实际功能�
 第72轮bootstrap已打包并通过apfsck；待回收第71轮后在系统实际画布验证。
 第71轮现已回到Android并回收16,795,201字节有效日志前缀（无终止记录）；完整64MiB槽
 备份后清空读回通过，APFS计数41→42、fullfsync成功。第72轮正在准备临时启动。
+第72轮未进入桌面：兼容库constructor在显示初始化前调用UIScreen.mainScreen，触发
+SpringBoard异常“returning nil screen from mainScreen is not allowed!”。原生USB仍通，
+系统探针没有更新，取到的是旧baseline，不能算修复通过。已回收1,703,962字节有效前缀
+及完整槽并清空，APFS计数42→43。第73轮恢复bootstrap v71；兼容库移除构造期屏幕查询。
 详见[本地系统服务恢复](NABU-SERVICE-RESTORATION.md)。
 
 2026-11-06补充全系统服务复核：用户反馈桌面、锁屏背景均黑；PosterBoard两轮已运行，
