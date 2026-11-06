@@ -26,7 +26,7 @@ def main():
                     '--entitlements', str(entitlements), str(binary)], check=True)
     subprocess.run(['codesign', '--verify', '--strict', str(binary)], check=True)
     signed_entitlements = plistlib.loads(subprocess.check_output(
-        ['codesign', '--display', '--entitlements', '-', str(binary)]))
+        ['codesign', '--display', '--xml', '--entitlements', '-', str(binary)]))
     assert signed_entitlements == plistlib.loads(entitlements.read_bytes())
     report = {'target': 'arm64-ios16.5', 'source': str(source.relative_to(ROOT)),
               'bytes': binary.stat().st_size, 'command': command, 'default_action': 'inventory',
