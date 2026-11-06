@@ -78,6 +78,24 @@ NVM使用本机Android地址，设置当前已验证的115200波特率并暂时�
 原Android固件文件不修改；数据通过本轮ADT的`nabu-bluetooth`节点供给。
 主机已验证固件版本及ADT属性往返，模块编译链接通过；本轮尚未实机验收。
 
+第78轮实机已通过：525个rampatch段及23个NVM段完成，控制器确认接收；HCI Reset
+返回0，Read BD_ADDR与本机地址一致，Read Local Version返回HCI/LMP版本11、
+厂商29、子版本0x373f。用户确认桌面正常，USB实时报告可读。2,308,513字节日志及
+完整槽已备份清空，APFS计数48→49。蓝牙固件和基本HCI控制已成立，但尚未接入
+iPadOS蓝牙栈，也未验证发现、配对或外设操作。
+
+第79轮候选加入Nabu modem PAS4启动：本机0x8e000000+0x9600000预留区，原机
+modem.mdt及22个PT_LOAD段（有文件内容的段共5,042,996字节），APCS位0的AOP邮箱、
+RPMh CX/MSS资源、SMEM硬件锁3及SMP2P item428。它观察peer item435/GLINK缓冲区后
+请求停止并关闭modem；不配置蜂窝业务或IPA，不发布Wi-Fi可用状态。
+APPS CX请求暂保留到重启，未实现通用电源消费者计数。
+
+新增模块超出原驱动DATA尾部空间，已追加64KiB并移动尾部PRELINK_INFO。验证了
+原有段地址不变、原代码/数据内容相同且新段无重叠；当前总附加驱动DATA空间192KiB。
+最终候选为`artifacts/nabu-wireless-v79a`，bootstrap v77，Bluetooth固件沿用v78。
+未使用的早期v79日志准备槽已按prepared-not-started备份清空，重新绑定最终候选；
+没有产生额外实机轮次。第79轮尚待启动验收。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。

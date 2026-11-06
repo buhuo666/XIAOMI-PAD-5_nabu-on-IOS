@@ -104,6 +104,7 @@ def main():
     wireless.add_argument('--wireless-survey', action='store_true', help='Enable the compiled Nabu wireless hardware survey')
     wireless.add_argument('--bluetooth-version', action='store_true', help='Enable Nabu wireless power and Bluetooth UART ROM version trial')
     wireless.add_argument('--bluetooth-firmware', type=Path, help='Prepared original-board Bluetooth firmware for the UART download trial')
+    ap.add_argument('--modem-firmware', type=Path, help='Prepared Nabu modem metadata/segments for the bounded PAS boot trial')
     a = ap.parse_args()
     bluetooth_firmware = None
     if a.bluetooth_firmware:
@@ -111,6 +112,14 @@ def main():
         bluetooth_firmware = {'rampatch': (a.bluetooth_firmware/meta['rampatch']).read_bytes(),
                               'nvm': (a.bluetooth_firmware/meta['nvm']).read_bytes(),
                               'address-hci': (a.bluetooth_firmware/meta['address_hci']).read_bytes()}
+    modem_firmware = None
+    if a.modem_firmware:
+        assert a.bluetooth_firmware, 'The modem trial retains the qualified Bluetooth initialization'
+        meta = json.loads((a.modem_firmware/'firmware.json').read_text())
+        modem_firmware = {'metadata': (a.modem_firmware/meta['metadata']).read_bytes()}
+        for segment in meta['segments']:
+            if segment['file']:
+                modem_firmware[f"segment-{segment['index']:02}"] = (a.modem_firmware/segment['file']).read_bytes()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
     rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
@@ -140,8 +149,10 @@ def main():
             assert kernel_report['data_block']['bluetooth_trial'], 'Bluetooth trial requires its linked ROM transport'
         if a.bluetooth_firmware:
             assert kernel_report['data_block']['bluetooth_firmware'], 'Bluetooth download requires its linked firmware loader'
+        if a.modem_firmware:
+            assert kernel_report['data_block']['modem_trial'], 'Modem startup requires its linked PAS/SMP2P implementation'
         old_args=entry['args']
-        entry['args'] += ' nabu-wireless=' + ('3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
+        entry['args'] += ' nabu-wireless=' + ('4' if a.modem_firmware else '3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:
@@ -209,11 +220,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     manifest = []
     for rel, data in files.items():

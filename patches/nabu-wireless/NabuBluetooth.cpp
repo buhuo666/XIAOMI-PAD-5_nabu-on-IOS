@@ -279,6 +279,6 @@ void nabu_bluetooth_version_trial()
     }
     nabu_wireless_log("NABU BT: trial complete version-response=%u irq=%#x status=%#x ios=%#x\n",
         version_ok, rd(uart + 0x640), rd(uart + 0x40), rd(uart + 0x908));
-    if (version_ok && level == 3) nabu_bluetooth_load_firmware(uart);
+    if (version_ok && level >= 3) nabu_bluetooth_load_firmware(uart);
     cancel_commands(uart);
 }

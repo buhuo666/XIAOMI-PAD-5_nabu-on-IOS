@@ -50,6 +50,7 @@ def main():
     if a.wireless:
         sources.append(('NabuWireless',ROOT/'patches/nabu-wireless/NabuWireless.cpp'))
         sources.append(('NabuBluetooth',ROOT/'patches/nabu-wireless/NabuBluetooth.cpp'))
+        sources.append(('NabuModem',ROOT/'patches/nabu-wireless/NabuModem.cpp'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

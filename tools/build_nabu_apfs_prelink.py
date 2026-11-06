@@ -12,12 +12,13 @@ sys.path.insert(0,str(ROOT/'src/XnuPrelink'))
 from emit_prelink import emit
 from native_prelink import macho
 
-def reserve_usb_driver_data(image,report):
+def reserve_usb_driver_data(image,report,extra=0x20000):
     # Including the stock mux leaves only 44 KiB after its DATA extent. The
     # Data/Power/USB module needs more space; keep every original VA fixed.
     b=bytearray(image);parsed=macho(b)
     data=next(s for s in parsed['segments'] if s['name']=='__PRELINK_DATA')
-    extra=0x20000;cut=data['fileoff']+data['filesize']
+    assert extra > 0 and extra % 0x4000 == 0
+    cut=data['fileoff']+data['filesize']
     assert data['size']==data['filesize']
     assert data['va']+data['size']==max(s['va']+s['size'] for s in parsed['segments'] if s['size'] and s['name']!='__PRELINK_INFO')
     b[cut:cut]=bytes(extra)
@@ -32,7 +33,8 @@ def reserve_usb_driver_data(image,report):
     tail=data['sections'][-1]
     assert tail['va']+tail['size']==data['va']+data['size']
     struct.pack_into('<Q',b,tail['command_offset']+40,tail['size']+extra)
-    report['usb_driver_data_reservation']={'additional_bytes':extra,'existing_virtual_addresses_changed':False}
+    previous=report.get('usb_driver_data_reservation',{}).get('additional_bytes',0)
+    report['usb_driver_data_reservation']={'additional_bytes':previous+extra,'existing_virtual_addresses_changed':False}
     return bytes(b)
 
 
