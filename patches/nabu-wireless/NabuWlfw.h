@@ -13,6 +13,8 @@ struct NabuWlfw {
     bool fw_ready=false;
     bool init_done=false,status_valid=false;
     bool board_id_valid=false;
+    bool mac_available=false,mac_set=false;
+    uint8_t mac_address[6]{};
     uint64_t fw_status=0;
     uint32_t chip_id=0,chip_family=0,board_id=0xff,soc_id=0,fw_version=0;
     char build_id[129]{};
@@ -24,8 +26,8 @@ struct NabuWlfw {
         for(unsigned i=0;i<size;++i)request[bytes++]=value>>(8*i);
     }
     void prepare() {
-        static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24,0x20,0x25,0x26};
-        if(step>=(board_data?8u:activate?5u:3u))return;
+        static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24,0x20,0x25,0x26,0x33};
+        if(step>=(board_data?(mac_available?9u:8u):activate?5u:3u))return;
         message=ids[step];++transaction;memset(request,0,sizeof(request));bytes=7;
         request[1]=transaction;request[2]=transaction>>8;request[3]=message;request[4]=message>>8;
         if(step==0||step==5){
@@ -44,6 +46,10 @@ struct NabuWlfw {
             value(0x15,0,1); // Original Xiaomi daemon explicitly selects BIN board-data type.
         }
         if(step==7)value(1,0,1); // No saved calibration IDs; request firmware calibration.
+        if(step==8){
+            request[bytes++]=0x10;request[bytes++]=6;request[bytes++]=0;
+            memcpy(request+bytes,mac_address,6);bytes+=6;
+        }
         request[5]=bytes-7;request[6]=(bytes-7)>>8;
     }
     void sent() {waiting=true;elapsed=0;}
@@ -82,6 +88,7 @@ struct NabuWlfw {
             p=NabuRmtfs::tlv(data,size,0x14,length);if(p){unsigned n=length<128?length:128;memcpy(build_id,p,n);build_id[n]=0;}
         }
         if(step==6){board_sent+=chunk;++board_segment;if(board_sent<board_bytes){bytes=0;return true;}}
-        ++step;complete=step==(board_data?8u:activate?5u:3u)&&!failed;bytes=0;return true;
+        if(step==8)mac_set=true;
+        ++step;complete=step==(board_data?(mac_available?9u:8u):activate?5u:3u)&&!failed;bytes=0;return true;
     }
 };

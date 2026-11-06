@@ -233,6 +233,10 @@ struct NabuGlink {
                 r.bytes=registry.answer(data+at,header.size,r.data);if(r.bytes)++response_count;
                 unsigned name_bytes=0;const uint8_t *name=NabuRmtfs::tlv(data+at,header.size,1,name_bytes);
                 nabu_wireless_log("NABU SERVREG: request=%#x service=%.*s reply-bytes=%u\n",NabuRmtfs::u16(data+at+3),name?(int)name_bytes:0,name?(const char*)name:"",r.bytes);
+                if(NabuRmtfs::u16(data+at+3)==0x24){
+                    unsigned reason_bytes=0;const uint8_t *reason=NabuRmtfs::tlv(data+at,header.size,2,reason_bytes);
+                    nabu_wireless_log("NABU SERVREG: PFR from=%u:%u service=%.*s reason=%.*s\n",header.from_node,header.from_port,name?(int)name_bytes:0,name?(const char*)name:"",reason?(int)reason_bytes:0,reason?(const char*)reason:"");
+                }
                 return;
             }
             if (wlan_firmware && header.to_port >= 0x4000 && header.to_port <= 0x4011) {
@@ -250,7 +254,10 @@ struct NabuGlink {
             uint32_t node = packet.u32(at + 12), port = packet.u32(at + 16);
             if (service && command == 4) servers++;
             nabu_wireless_log("NABU QRTR: %s service=%u version=%u instance=%u node=%u port=%u\n", command == 4 ? "server" : "removed", service, instance & 255, instance >> 8, node, port);
-            if (service == wlfw_service && command == 4) { wlfw_node = node; wlfw_port = port; }
+            if (service == wlfw_service && command == 4) {
+                if(wlfw_port&&(wlfw_node!=node||wlfw_port!=port))nabu_wireless_log("NABU WLFW: endpoint changed old=%u:%u new=%u:%u step=%u complete=%u\n",wlfw_node,wlfw_port,node,port,wlfw.step,wlfw.complete);
+                wlfw_node = node; wlfw_port = port;
+            }
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
             if (packet.u32(at+4) == 0 || packet.u32(at+4) == 4096 || packet.u32(at+4) == 14 || packet.u32(at+4)==64) announce_tftp(header.from_node);
@@ -363,6 +370,12 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     // All state belongs to this one bounded trial; no interrupt callback retains it.
     bzero(link, sizeof(*link)); link->features = 1; link->wlfw=NabuWlfw{};
     link->memory = {(const volatile uint8_t *)smem, 0x200000}; link->doorbell = (volatile uint32_t *)ipc;
+    IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
+    if(chosen){
+        OSData *mac=OSDynamicCast(OSData,chosen->getProperty("mac-address-wifi0"));
+        if(mac&&mac->getLength()==6){memcpy(link->wlfw.mac_address,mac->getBytesNoCopy(),6);link->wlfw.mac_available=true;}
+        chosen->release();
+    }
     IORegistryEntry *firmware_entry = IORegistryEntry::fromPath("/nabu-modem", gIODTPlane);
     if (firmware_entry) {
         OSData *firmware = OSDynamicCast(OSData, firmware_entry->getProperty("wlanmdsp"));
@@ -397,6 +410,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
+    if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-MAC available=%u applied=%u\n",link->wlfw.mac_available,link->wlfw.mac_set);
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }

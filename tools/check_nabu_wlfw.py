@@ -50,8 +50,11 @@ int main(){
         assert(w.receive(response,sizeof(response))&&!w.failed);
     }
     assert(copied==board&&w.board_sent==board.size()&&w.board_segment==5);
+    const uint8_t mac[]={2,0x11,0x22,0x33,0x44,0x55};w.mac_available=true;memcpy(w.mac_address,mac,6);
     w.prepare();assert(w.message==0x26&&w.bytes==11&&w.request[7]==1&&w.request[10]==0);w.sent();
-    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&w.complete&&w.step==8);
+    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==8);
+    w.prepare();assert(w.message==0x33&&w.bytes==16&&w.request[7]==0x10&&w.request[8]==6&&!memcmp(w.request+10,mac,6));
+    w.sent();response[1]=w.transaction;response[3]=0x33;assert(w.receive(response,sizeof(response))&&w.mac_set&&w.complete);
     w.prepare();assert(w.bytes==0); // Wait for indications without registering the live daemon again.
     NabuWlfw registration{};registration.prepare();registration.sent();
     std::vector<uint8_t> status{2,1,0,0x20,0,18,0,2,4,0,0,0,0,0,0x10,8,0,0x1f,0,0,0,0,0,0,0};
@@ -63,7 +66,7 @@ int main(){
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);
-    puts("WLFW: dual registration/MSA, BIN board segments, calibration without re-registration, ready/init indications, errors and timeout passed");
+    puts("WLFW: dual registration/MSA, BIN board segments, calibration and board MAC without re-registration, ready/init indications, errors and timeout passed");
 }
 '''
 
