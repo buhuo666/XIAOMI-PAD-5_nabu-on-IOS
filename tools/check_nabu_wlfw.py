@@ -14,7 +14,7 @@ HARNESS=r'''
 #include "NabuWlfw.h"
 int main(){
     NabuWlfw w{};w.prepare();
-    const uint8_t register_request[]={0,1,0,0x20,0,15,0,0x10,1,0,1,0x13,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b};
+    const uint8_t register_request[]={0,1,0,0x20,0,19,0,0x10,1,0,1,0x13,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1};
     assert(w.bytes==sizeof(register_request)&&!memcmp(w.request,register_request,sizeof(register_request)));
     uint8_t response[]={2,1,0,0x20,0,7,0,2,4,0,0,0,0,0};w.sent();
     response[1]=9;assert(!w.receive(response,sizeof(response))&&w.waiting);response[1]=1;assert(w.receive(response,sizeof(response))&&w.step==1);
@@ -42,12 +42,18 @@ int main(){
     }
     assert(copied==board&&w.board_sent==board.size()&&w.board_segment==7);
     w.prepare();assert(w.message==0x26&&w.bytes==11&&w.request[7]==1&&w.request[10]==0);w.sent();
-    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&w.complete);
+    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==7);
+    for(unsigned i=0;i<2000;++i)w.tick();assert(w.post_cal_wait==2000);w.prepare();w.sent();
+    std::vector<uint8_t> status{2,(uint8_t)w.transaction,0,0x20,0,18,0,2,4,0,0,0,0,0,0x10,8,0,0x1f,0,0,0,0,0,0,0};
+    assert(w.receive(status.data(),status.size())&&w.complete&&w.status_valid&&w.fw_status==0x1f);
     uint8_t ready[]={4,0,0,0x21,0,0,0};w.receive(ready,sizeof(ready));assert(w.fw_ready);
+    uint8_t initialized[]={4,0,0,0x38,0,0,0};w.receive(initialized,sizeof(initialized));assert(w.init_done);
+    NabuWlfw absent{};absent.status_valid=true;absent.fw_status=0x1f;absent.prepare();absent.sent();
+    response[1]=1;response[3]=0x20;assert(absent.receive(response,sizeof(response))&&!absent.status_valid&&!absent.fw_status);
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);
-    puts("WLFW: golden registration/MSA requests, transaction match, two regions, error and timeout passed");
+    puts("WLFW: registration/MSA, board segments, calibration, status refresh, ready/init indications, errors and timeout passed");
 }
 '''
 
