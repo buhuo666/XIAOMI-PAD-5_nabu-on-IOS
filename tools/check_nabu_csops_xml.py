@@ -21,8 +21,11 @@ PRELUDE = r'''
 #define CS_VALID 1
 #define CS_DEBUGGED 2
 #define CS_OPS_ENTITLEMENTS_BLOB 7
-typedef size_t user_size_t;
-typedef uintptr_t user_addr_t;
+#ifndef __APPLE__
+typedef uint64_t user_size_t;
+typedef uint64_t user_addr_t;
+#endif
+_Static_assert(sizeof(user_size_t) == 8 && sizeof(user_addr_t) == 8, "64-bit csops ABI");
 typedef struct { uint32_t magic, length; unsigned char data[]; } CS_GenericBlob;
 struct cs_blob { int unused; } signature;
 struct proc { char p_comm[17]; } process = { "lockdownd" };
