@@ -18,6 +18,19 @@
 + (instancetype)defaultWorkspace;
 - (NSArray *)allApplications;
 - (BOOL)registerApplication:(NSURL *)url;
+- (BOOL)registerApplicationDictionary:(NSDictionary *)info;
+@end
+
+@interface MIExecutableBundle : NSObject
++ (instancetype)bundleForURL:(NSURL *)url error:(NSError **)error;
+@end
+
+@interface MILaunchServicesDatabaseGatherer : NSObject
++ (NSArray *)fetchInfoForBundle:(MIExecutableBundle *)bundle inContainer:(id)container withError:(NSError **)error;
+@end
+
+@interface ICLBundleRecord : NSObject
++ (NSArray<NSDictionary *> *)bundleRecordArrayToInfoDictionaryArray:(NSArray *)records;
 @end
 
 static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuServices";
@@ -210,7 +223,61 @@ static void saveReport(NSDictionary *report, NSString *name) {
     else NSLog(@"NABU SERVICES: saved %@ bytes=%lu", name, (unsigned long)data.length);
 }
 
-static NSDictionary *registerMissing(LSApplicationWorkspace *workspace, NSArray *bundleIDs) {
+static NSDictionary *errorInfo(NSError *error) {
+    if (!error) return @{};
+    NSMutableDictionary *out = [@{@"domain": error.domain, @"code": @(error.code),
+        @"description": error.localizedDescription ?: @"", @"details": error.userInfo.description ?: @""} mutableCopy];
+    NSError *underlying = error.userInfo[NSUnderlyingErrorKey];
+    if (underlying) out[@"underlying"] = errorInfo(underlying);
+    return out;
+}
+
+static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString *path, NSString *identifier) {
+    // Original 20F66 factory: reads the shipped signature and creates required
+    // data/group containers. Never synthesize signer, container or plugin data.
+    dlopen("/System/Library/PrivateFrameworks/InstalledContentLibrary.framework/InstalledContentLibrary", RTLD_NOW);
+    Class bundleClass = NSClassFromString(@"MIExecutableBundle");
+    Class gathererClass = NSClassFromString(@"MILaunchServicesDatabaseGatherer");
+    Class recordClass = NSClassFromString(@"ICLBundleRecord");
+    NSMutableDictionary *result = [@{@"metadata_source": @"original InstalledContentLibrary",
+        @"creates_containers": @YES} mutableCopy];
+    if (!bundleClass || !gathererClass || !recordClass) {
+        result[@"error"] = @"original metadata classes unavailable";
+        return result;
+    }
+    NSError *error = nil;
+    MIExecutableBundle *bundle = [bundleClass bundleForURL:[NSURL fileURLWithPath:path] error:&error];
+    if (!bundle) {
+        result[@"bundle_error"] = errorInfo(error);
+        return result;
+    }
+    NSArray *records = [gathererClass fetchInfoForBundle:bundle inContainer:nil withError:&error];
+    if (!records) {
+        result[@"gather_error"] = errorInfo(error);
+        return result;
+    }
+    NSArray<NSDictionary *> *infos = [recordClass bundleRecordArrayToInfoDictionaryArray:records];
+    NSMutableArray *summary = [NSMutableArray array];
+    NSDictionary *application = nil;
+    for (NSDictionary *info in infos) {
+        NSMutableDictionary *item = [@{@"keys": [info.allKeys sortedArrayUsingSelector:@selector(compare:)]} mutableCopy];
+        for (NSString *key in @[@"CFBundleIdentifier", @"ApplicationType", @"Path", @"Container",
+                                @"IsContainerized", @"IsPlaceholder", @"SignerIdentity", @"SignerOrganization"])
+            if (info[key]) item[key] = jsonValue(info[key]);
+        if ([info[@"Entitlements"] isKindOfClass:NSDictionary.class])
+            item[@"entitlement_keys"] = [((NSDictionary *)info[@"Entitlements"]).allKeys sortedArrayUsingSelector:@selector(compare:)];
+        if ([info[@"_LSBundlePlugins"] isKindOfClass:NSDictionary.class])
+            item[@"plugin_identifiers"] = [((NSDictionary *)info[@"_LSBundlePlugins"]).allKeys sortedArrayUsingSelector:@selector(compare:)];
+        [summary addObject:item];
+        if ([info[@"CFBundleIdentifier"] isEqual:identifier] && [info[@"Path"] isEqual:path]) application = info;
+    }
+    result[@"generated_records"] = summary;
+    if (!application) result[@"error"] = @"original factory did not return the requested application";
+    else result[@"register_return"] = @([workspace registerApplicationDictionary:application]);
+    return result;
+}
+
+static NSDictionary *registerMissing(LSApplicationWorkspace *workspace, NSArray *bundleIDs, BOOL nativeMetadata) {
     NSMutableSet *installed = [NSMutableSet set];
     for (NSDictionary *app in applications(workspace)) {
         id identifier = app[@"bundleIdentifier"] ?: app[@"applicationIdentifier"];
@@ -222,12 +289,8 @@ static NSDictionary *registerMissing(LSApplicationWorkspace *workspace, NSArray 
         if (!identifier || ![app[@"staged"] boolValue] || ![bundleIDs containsObject:identifier]) continue;
         NSMutableDictionary *result = [@{@"bundle_id": identifier, @"path": app[@"path"]} mutableCopy];
         if ([installed containsObject:identifier]) result[@"already_registered"] = @YES;
-        else {
-            NSURL *url = [NSURL fileURLWithPath:app[@"path"]];
-            int32_t (*registerURL)(CFURLRef, Boolean) = dlsym(RTLD_DEFAULT, "LSRegisterURL");
-            if (registerURL) result[@"register_osstatus"] = @(registerURL((__bridge CFURLRef)url, false));
-            else result[@"register_return"] = @([workspace registerApplication:url]);
-        }
+        else if (nativeMetadata) [result addEntriesFromDictionary:nativeRegister(workspace, app[@"path"], identifier)];
+        else result[@"register_return"] = @([workspace registerApplication:[NSURL fileURLWithPath:app[@"path"]]]);
         [results addObject:result];
     }
     return @{@"applications": results};
@@ -256,7 +319,9 @@ int main(void) {
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
                         else if ([action isEqual:@"RegisterMissingStaged"] && [request[@"BundleIDs"] isKindOfClass:NSArray.class])
-                            result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"]);
+                            result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"], NO);
+                        else if ([action isEqual:@"RegisterNativeStaged"] && [request[@"BundleIDs"] isKindOfClass:NSArray.class])
+                            result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"], YES);
                         else result[@"error"] = @"unsupported action";
                     } @catch (NSException *error) { result[@"exception"] = error.reason ?: error.name; }
                     result[@"after"] = snapshot(workspace);

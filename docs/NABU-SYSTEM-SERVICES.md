@@ -1,8 +1,9 @@
 # 系统服务与预装应用恢复
 
 更新：2026-11-06，Asia/Shanghai。继续[基本技术路线](BASIC-TECHNICAL-ROADMAP.md)的软件阶段。
-第六十五轮已完成USB侧取证，尚待用户手动返回Android回收完整日志。
-第六十六轮候选已构建，尚未部署、启动或验收。不能把构建成功当作应用恢复成功。
+第六十五轮已完成USB取证和日志回收，用户确认桌面正常。
+第六十六轮桌面正常，路径修复28/28通过，Safari界面和“关于本机”由用户确认可用。
+单项应用登记仍失败，正在完善原版安装信息生成和登记流程。
 
 ## 已核对的服务覆盖
 
@@ -15,7 +16,8 @@ run64确认安装、容器、LaunchServices、PlugInKit、FileProvider、日历�
 
 首个恢复候选是`com.apple.dmd`，依据SpringBoard、ScreenTimeAgent、mediaserverd等
 对`com.apple.dmd.policy`的实际查询失败。保留MachServices按需触发，移除RunAtLoad、
-KeepAlive和后台事件等自动触发；其运行健康状态等待run65日志确认。
+KeepAlive和后台事件等自动触发。run65确认仅启动一次、无退出记录、无dmd查询失败，
+原版CoreData自行创建缺失数据库后成功恢复，应用和通信策略监控登记均成功。
 
 `duetexpertd`的失败查询另行跟进。硬件服务扩展保持后置；本轮没有启用Apple账户、
 App Store或iCloud功能。BackupAgent2的MG UniqueDeviceID错误9仍是独立未修复项。
@@ -50,7 +52,7 @@ SpringBoard图标清单和设备端探针报告：
 
 证据：`log/host/services-v65/baseline/`、`register-notes/`、`live-summary.json`。
 图标清单仍仅见信息、Safari、照片、设置、App Store、照片组件及自有测试应用。
-这不表示其中每个功能均已可用；本轮用户屏幕反馈尚未收到。
+这不表示其中每个功能均已可用；用户已确认本轮桌面正常。
 
 ## 路径修复候选
 
@@ -66,7 +68,8 @@ APFS只读适配层的synthetic alias创建会先查找原目录，从而预先�
 不改写原OS镜像。失败的alias和普通空synthetic目录不执行身份更新。
 主机检查执行实际补丁代码片段；完整原生内核编译、既有导出、存储、显示及启动检查
 通过Actions **42160433518**，源提交`5009ad4`。实际F_GETPATH、登记、启动和重启保留
-仍待第六十六轮。
+已在第六十六轮确认：28个目录、Info.plist和可执行文件的F_GETPATH均返回
+`/Applications/...`，28个父目录都正确回到`/Applications`。登记和启动仍有独立阻塞。
 
 ## App cryptex供给
 
@@ -80,7 +83,8 @@ APFS只读适配层的synthetic alias创建会先查找原目录，从而预先�
 
 打包器根据该镜像的真实目录清单恢复8个先前因程序供给不足被遗漏的按需任务。
 候选共401项：v64的391项加dmd、探针及8个App cryptex任务。
-这里只恢复本地程序供给，不表示任何联网服务、同步或Safari功能已经验收。
+第六十六轮实机确认History和webbookmarksd程序可见，用户确认Safari地址栏和
+浏览器界面正常、“关于本机”不再卡住。联网浏览、同步和其他Safari功能仍待验收。
 
 ## 检查和登记工具
 
@@ -92,7 +96,10 @@ APFS只读适配层的synthetic alias创建会先查找原目录，从而预先�
 
 不能依赖`_LSPrivateRebuildApplicationDatabasesForSystemApps:internal:user:`参数名称
 判断重建范围：已检查的20F66服务端忽略前三个分类参数，最终会重置并枚举全库。
-因此当前工具仅针对明确缺失的暂存应用使用原版单项登记方法。
+因此工具仅针对明确缺失的暂存应用进行单项登记。实测URL-only方法返回false；
+后续原版代码分析表明该入口未提供安装信息字典，缺失bundle的创建路径被跳过。
+下一版使用原版MILaunchServicesDatabaseGatherer生成完整记录，避免人工编造签名、
+容器和插件信息。生成记录会创建所需容器，属于受请求触发的安装准备步骤。
 
 探针v2（本轮使用）通过Actions **42159415889**，新版v3通过 **42160869333**。
 对应主机工具为`tools/probe_nabu_system_services.py`，沿用既有证书逐字节固定的TLS会话。
@@ -102,8 +109,10 @@ APFS只读适配层的synthetic alias创建会先查找原目录，从而预先�
 - 内核：`artifacts/nabu-services-v66/kernel.native-apfs.macho`，新路径补丁；复用已验证v61
   Data/AES/电源/USB对象，并对新内核重新链接。
 - 启动包：`artifacts/nabu-bootstrap-v66-final/bootstrap.apfs`，包含原App cryptex及v3探针。
-- 当前run65日志仍在槽14，完整回收并备份后才允许清空、准备下一轮。
-- 收到用户手动返回Android后，先回收run65，检查dmd启动/退出及登记错误，再临时启动候选。
+- run65已回收6,281,305字节连续日志及完整64MiB槽，备份后清空并读回确认；
+  手动重启前没有END记录。APFS计数35→36，GPT及Android引导分区一致。
+- dmd政策服务已有真实登记结果；单项应用登记的更具体失败原因未输出到本轮控制台。
+- 第六十六轮已准备新槽、部署候选，继续临时启动；不自动返回Android。
 - 下一轮首先比较28个路径、父目录与注册状态，再对备忘录、文件、日历、时钟等本地功能
   分项登记和操作验证，最后验证数据跨重启。用户测试应用必须仍保留。
 
