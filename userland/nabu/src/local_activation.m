@@ -17,8 +17,8 @@
 #include <uuid/uuid.h>
 
 typedef void (^Reply)(NSDictionary *, NSError *);
-static NSString *const stateDirectory = @"/private/var/db/nabu";
-static NSString *const statePath = @"/private/var/db/nabu/local-activation.plist";
+static NSString *stateDirectory = @"/private/var/db/nabu";
+static NSString *statePath = @"/private/var/db/nabu/local-activation.plist";
 static NSDictionary *localState;
 static Protocol *activationProtocol;
 
@@ -114,12 +114,6 @@ static BOOL loadState(void) {
         data = [NSPropertyListSerialization dataWithPropertyList:localState
                 format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error];
         if (!data || ![data writeToFile:statePath options:NSDataWritingAtomic error:&error]) return NO;
-        if (chmod(statePath.fileSystemRepresentation, 0600)) return NO;
-        int fd = open(statePath.fileSystemRepresentation, O_RDONLY);
-        if (fd < 0) return NO;
-        int status = fcntl(fd, F_FULLFSYNC);
-        close(fd);
-        if (status) return NO;
         created = YES;
     } else {
         localState = [NSPropertyListSerialization propertyListWithData:data
@@ -132,6 +126,17 @@ static BOOL loadState(void) {
         ![localState[@"BuildVersion"] isEqualToString:@"20F66"] ||
         ![localState[@"AppleServerValidated"] isEqual:@NO]) {
         fprintf(stderr, "NABU ACTIVATION: local state identity or format mismatch\n");
+        return NO;
+    }
+    // Complete a previously interrupted first write before publishing state.
+    // An existing file alone does not establish that fullfsync succeeded.
+    if (chmod(statePath.fileSystemRepresentation, 0600)) return NO;
+    int fd = open(statePath.fileSystemRepresentation, O_RDONLY);
+    if (fd < 0) return NO;
+    int status = fcntl(fd, F_FULLFSYNC);
+    close(fd);
+    if (status) {
+        fprintf(stderr, "NABU ACTIVATION: state fullfsync failed errno=%d\n", errno);
         return NO;
     }
     fprintf(stderr, "NABU ACTIVATION: %s persistent local state; AppleServerValidated=false\n",

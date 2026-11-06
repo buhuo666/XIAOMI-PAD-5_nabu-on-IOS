@@ -152,6 +152,7 @@ def main():
         assert not any(x.startswith(('nabu-root-probe=','return_panic=','return_cpu=')) for x in args)
         boot_report=json.loads((a.bootstrap.parent/'bootstrap-report.json').read_text())
         if boot_report.get('local_activation'):
+            assert data_enabled, 'Local activation state requires persistent APFS Data'
             args.append('nabu-local-activation=1')
             config_bytes=config_bytes.replace(entry['args'].encode(),' '.join(args).encode(),1)
             entry['args']=' '.join(args)

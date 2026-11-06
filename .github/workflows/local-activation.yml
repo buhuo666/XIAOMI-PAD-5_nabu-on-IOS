@@ -6,6 +6,7 @@ on:
       - '.github/workflows/local-activation.yml'
       - 'tools/build_nabu_local_activation.py'
       - 'userland/nabu/src/local_activation.m'
+      - 'userland/nabu/tests/local_activation_test.m'
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +22,10 @@ jobs:
           persist-credentials: false
       - name: Compile source-only local state provider
         run: python3 tools/build_nabu_local_activation.py --output artifacts/nabu-local-activation
+      - name: Test persistence and reply contracts
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -fsanitize=address,undefined userland/nabu/tests/local_activation_test.m -framework Foundation -o /tmp/nabu-activation-test
+          /tmp/nabu-activation-test > artifacts/nabu-local-activation/host-test.log 2>&1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: nabu-local-activation-${{ github.run_number }}
