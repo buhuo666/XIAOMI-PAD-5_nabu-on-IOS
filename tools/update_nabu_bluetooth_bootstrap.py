@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lifecycle', type=Path, help='Source-owned QCA implementation of the BlueTool lifecycle service')
     parser.add_argument('--lifecycle-ci-run', type=int)
+    parser.add_argument('--compatibility', type=Path, help='20F66 bluetoothd optional-HCI initializer adapter')
     args = parser.parse_args()
     jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     baseline = ROOT / 'artifacts/nabu-bootstrap-v77'
@@ -47,6 +48,14 @@ def main():
         (destination / (filename + '.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
         changed.append('LaunchDaemons/' + filename + '.plist')
         policies[filename] = job
+    if args.compatibility:
+        shutil.copy2(args.compatibility, args.work / 'root/lib/libnabu.bluetooth.compat.dylib')
+        config = args.work / 'root/etc/inject.conf'
+        injection = config.read_text() + '/redwood/lib/libnabu.bluetooth.compat.dylib bluetoothd\n'
+        if len(injection.encode()) >= 512:
+            raise ValueError('Bluetooth injection exceeds the existing kern.exec_inject 512-byte buffer')
+        config.write_text(injection)
+        changed.extend(['lib/libnabu.bluetooth.compat.dylib', 'etc/inject.conf'])
     if args.lifecycle:
         shutil.copy2(args.lifecycle, args.work / 'root/sbin/nabu-bluetooth-lifecycle')
         filename = 'com.apple.BlueTool'
@@ -94,6 +103,12 @@ def main():
             'boot_init': 'Real HCI Reset (boot), QCA LocalVersion and requested BD_ADDR verification',
             'deepsleep': 'Real HCI Reset then confirmed IBS transport idle; shared supplies retained',
             'donor_firmware_scripts_used': False, 'runtime_verified': False}
+    if args.compatibility:
+        report['bluetooth_optional_reporting'] = {
+            'ci_run': args.lifecycle_ci_run, 'source': str(args.compatibility),
+            'process': 'bluetoothd', 'injection': '/redwood/lib/libnabu.bluetooth.compat.dylib',
+            'scope': 'Advance optional initializer only when real supportedCommands[18] lacks 0x08',
+            'controller_support_or_hci_replies_modified': False, 'runtime_verified': False}
     report['service_restoration'].append({'label': 'com.apple.bluetoothuiservice',
         'operation': 'include-original-job', 'original_conditions_preserved': True})
     report['filesystem_check'] = 'Regenerated NabuInit: apfsck -c -u -w passed; Boot/App copied from qualified v77'

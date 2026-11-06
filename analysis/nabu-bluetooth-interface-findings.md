@@ -543,3 +543,158 @@ transport子任务与父任务已商定一个源码共享`NabuBluetoothControl.h
 - 新版sleep调用成功后还读取NabuBluetoothIbsState的完整大小和CONFIRMED标志，诊断包含双方sleep计数。close发生在所有XPC回复之前，不在回复后继续占有UART。
 - 真实模块供应商未知用-1，版本描述明确标为QCA且来自已读版本；没有伪造BCM固件名或HCI success。可选btaddress不存在时address_checked保持false，符合原版可选字段；原生daemon的已验证非零地址路径会提供该值。
 - 本次是源码审查，未在Windows运行iOS/macOS SDK编译，也未宣称ASan/UBSan或实机通过；这些仍由父任务CI执行。审查时打包/工作流尚待接入，已提醒父任务在部署前显式完成helper产物复制及同一com.apple.BlueTool生成job的ProgramArguments重定向。
+
+## 第99轮：可选 ErroneousDataReporting 初始化导致本地失败
+
+### 实机证据及准确边界
+
+`log/host/wireless-v99/bluetoothd-146.txt:749`记录本轮支持掩码，byte18为`0x83`；`:769..771`依次记录`OI_HCICMD_WriteDefaultErroneousDataReporting (status=628)`、`HCI initialization failed`、`Bluetooth error - restarting { build=release, reason=108, context="HCI initialization failed" }`。`wireless-report.txt:445..486`的一次原生栈会话有21条标准HCI命令及其status0完成事件，末尾为`0x0c33`、`0x0c31`，该会话没有`0x0c5b`或VSC发送。生命周期helper自己的Reset/Version/BDADDR事务是分开的会话，不能算进这21条。
+
+628不是控制器返回的HCI status：它是daemon本地`OI_HCI_UNSUPPORTED_COMMAND=0x274`。该命令在支持位检查失败后根本未发送；本轮不能归因为QCA拒绝了`0x0c5b`，也不能归因为尚未发送的Broadcom VSC。
+
+原始静态证据保存在`log/host/wireless-v99/erroneous-data-reporting-analysis/bluetoothd-init.asm`（900行）。每条指令附unslid VA及原文件4字节，开头附26个序列表槽、命令描述符、状态表及Mach-O映射。输入仍为`log/host/wireless-v93/bluetooth-original/usr/sbin/bluetoothd`，没有重下载或重复哈希审计。本节是原文件静态分析与v99实机日志的对照；尚未实施槽位替换或宣称修复实机通过。
+
+### 描述符、真实支持位和628来源
+
+`0x10014a16c`按`0x1008448d0 + internal_id * 24`定位描述符。ID`0x7c`位于`0x100845470`，原始24字节为：
+
+```text
+02005b0c081201005f266c00000030000000000000000100
+```
+
+其中`+2`的uint16为opcode`0x0c5b`，`+4`的uint16为支持位字段`0x1208`，高字节选择byte18、低字节选择bit3（mask`0x08`）。通用发送器`0x10010c8c4`的关键原始汇编：
+
+```asm
+10010c9e8  ldrh w8, [x0, #4]
+10010c9ec  lsr  w9, w8, #8
+10010c9f0  cmp  w9, #0x2e
+10010c9f4  b.hi 10010ca44
+10010c9f8  lsr  x9, x8, #8
+10010c9fc  adrp x10, 100863000
+10010ca00  add  x10, x10, #0x928
+10010ca04  ldrb w9, [x10, x9]
+10010ca08  tst  w9, w8
+10010ca0c  b.eq 10010ca44
+; 支持分支随后才构造和提交命令
+10010ca44  mov  w0, #0x274
+10010ca48  b    10010cb5c
+```
+
+`0x83 & 0x08 == 0`，与无`0x0c5b` TX一致。状态名称也由原版格式化器确认：`0x1001c5cb0`对`0x274-0x192`索引，`0x1006780dc`的halfword为`0x0346`，跳到`0x1001c5ce4 + 4*0x346 = 0x1001c69fc`，返回`0x1007108be`的字符串`OI_HCI_UNSUPPORTED_COMMAND`。
+
+位图`0x100863928`是`__DATA,__common`内联字节数组，不是指向别处的指针。真实写入路径为`readLocalSupportedCommandsCompleteCB=0x100113750`：
+
+```asm
+100113808  ldr  x9, [x2]             ; 已解析的回复byte-stream
+10011380c  add  x21, x9, x8
+100113810  adrp x22, 100863000
+100113814  add  x22, x22, #0x928
+100113818  mov  x0, x22
+10011381c  mov  x1, x21
+100113820  mov  w2, #0x2f
+100113824  bl   _memmove
+```
+
+原版随后打印这47字节掩码；`0x10011389c..8a4`还会对byte14 OR`0x10`，但不改变本次读取的byte18。不可将整个缓存笼统称为永不修改的控制器回复。初始化变量路径先清除此缓存，因此任何适配必须在**slot24实际执行时**读取`bitmap[18]`，不能在dylib constructor阶段读取未填充缓存并缓存结论。
+
+### 最后一个初始化步骤和终止路径
+
+初始化步骤`0x10010b970`提交ID`0x7c`、参数1，完成回调是`0x10010c548`。它将所有非零提交状态视为致命错误：
+
+```asm
+10010b980  mov  w8, #1
+10010b984  str  x8, [sp]
+10010b988  adr  x1, 10010c548
+10010b990  mov  w0, #0x7c
+10010b994  bl   10010c8c4
+10010b998  cbz  w0, 10010b9e4       ; 已提交，等待真实异步完成
+10010b99c  mov  x19, x0
+; 记录该命令提交失败
+10010b9d4  adrp x8, 10084f000
+10010b9d8  ldr  x0, [x8, #0x588]
+10010b9dc  mov  x1, x19
+10010b9e0  bl   1001c20b0           ; abort current sequence
+```
+
+`0x1001096d0:0x100109708..714`设置全局当前序列表指针并启动原版序列：
+
+```asm
+100109704  adrp x8, 10084f000
+100109708  adrp x0, 1007fb000
+10010970c  add  x0, x0, #0xd20
+100109710  str  x0, [x8, #0x588]
+100109714  bl   1001c1ecc
+```
+
+序列表起点是`0x1007fbd20`，不是`0x1007fbde0`。其slot0为终止回调`0x10010a5b4`，slot1..24为各初始化步骤；slot24（`0x1007fbde0`）为`0x10010b970`，slot25（`0x1007fbde8`）为NULL。因此这是主标准HCI初始化序列的**最后一个步骤**，后面没有另一条HCI初始化命令。
+
+`0x1001c204c`接受序列表起点，扫描`0x10085aa80`开始的5个16字节活跃记录，对照记录首个qword的表指针；匹配后把该**内部记录指针**传给`0x1001c2004`。后者按记录`+8`的索引调用表中下一项，先递增索引，再`br x1`。走到NULL时清除内部记录，以`w0=0`调用slot0。不能把“从initializer返回0”当作序列推进，也不能把原先传入initializer的内部记录地址传给`0x1001c204c`。
+
+```asm
+1001c2004  ldr   x8, [x0]           ; record->sequence_table
+1001c2008  ldrsw x9, [x0, #8]       ; record->next_index
+1001c200c  ldr   x1, [x8, x9, lsl #3]
+1001c2010  cbz   x1, 1001c2020
+1001c2014  add   w8, w9, #1
+1001c2018  str   w8, [x0, #8]
+1001c201c  br    x1                 ; initializer输入x0仍为record
+; NULL且正常活动状态时：
+1001c2038  ldr   x1, [x8]           ; slot0终止回调
+1001c203c  str   xzr, [x0]
+1001c2040  str   wzr, [x0, #0xc]
+1001c2044  mov   w0, #0
+1001c2048  br    x1
+```
+
+终止回调`0x10010a5b4`把status0转换为状态2、非零转换为状态3，写入`0x100863908`并清空`0x10084f588`。其原始字节为`1f000071480080520805881ac93a00b0280909b9283a00b01fc502f9c0035fd6`。状态查询`0x10010976c`通过`0x1006768e2`的表`07 09 03 05 00 00 00`把状态2映射成0、状态3映射成`0x6c=108`、状态1映射成`0x6d`（仍在进行）：
+
+```asm
+10010a5b4  cmp  w0, #0
+10010a5b8  mov  w8, #2
+10010a5bc  cinc w8, w8, ne
+10010a5c0  adrp x9, 100863000
+10010a5c4  str  w8, [x9, #0x908]
+10010a5c8  adrp x8, 10084f000
+10010a5cc  str  xzr, [x8, #0x588]
+10010a5d0  ret
+1001097bc  mov  w0, #0
+1001097c0  b    1001097d4
+1001097c4  mov  w0, #0x6c
+1001097c8  b    1001097d4
+```
+
+上层同步路径是`0x1000f3260:0x1000f3454/3474`启动/查询HCI初始化，非零终态到`0x1000f34bc`记录`HCI initialization failed`，`0x1000f351c`调用`0x1000901f4(status108, context)`。该函数调用`0x100090238`记录restart reason108及context，再调用`_exit(1)`。这条链准确解释v99的628→HCI失败→108重启。另有`0x1001097dc`异步轮询并把终态交给调用者路径；不能仅因存在异步路径就把v99同一日志改归因成其他错误。
+
+原完成回调`0x10010c548`把真实完成status和名称`initCmdWriteErroneousDataReportingCB`交给`0x1001092d8`；后者非零走`0x1001c20b0`，零走`0x1001c204c`。这一真实命令完成路径应保留。
+
+### 原版已有跳过先例和最小源码适配边界
+
+参数缓存恢复步骤`0x100122f48`提交完全相同的ID`0x7c`，在`0x100122f90`显式识别本地`0x274`，再调用恢复回调`0x100123170`。该回调的`0x100123190..194`对`0x274`跳到`0x1001232cc`，用`0x1001c204c(0x1007fc4e0)`推进自己的序列。原版这里确实把unsupported当成可跳过设置；它同时宽容其他硬件错误的更宽逻辑不应照抄到当前主初始化。
+
+父任务提出的源码dylib仅替换slot24，在静态控制流及寄存器约定上可行：该步骤执行时读取真实`bitmap[18] & 0x08`；缺失则记录“未支持，跳过可选设置”，读取当前序列表指针并调用原版`sequenceAdvance`；存在则调用原initializer，保留真实发送/完成/失败处理。不得更改HCI支持位、伪造HCI完成包、把所有提交错误改成成功或改动公共完成回调。此结论只覆盖当前步骤，不表示后续栈、配对或VSC已经可用。
+
+| 对象 | 静态VA及运行期取址 | 形态/调用约定 |
+|---|---|---|
+| initializer槽 | `slide + 0x1007fbde0` | 单个8字节函数指针；slot24 |
+| 原initializer | `slide + 0x10010b970` | 返回值未使用；函数在覆盖w0前未读x0，实际无需入参。序列调用时x0仍是内部record，可将wrapper声明为接收record并原样转发，保留观察到的ABI；不能宣称已恢复原始源码typedef |
+| 真实支持位 | `(uint8_t *)(slide + 0x100863928)`的`[18]` | 内联byte数组，读取mask`0x08`；只在步骤执行时读 |
+| 当前序列表指针global | `slide + 0x10084f588` | `__DATA,__bss`中的64位指针变量；对该地址解引用一次得到表起点，不能直接把global地址作为参数 |
+| sequenceAdvance | `slide + 0x1001c204c` | `void(sequence_table_pointer)`，x0=当前表起点；查找内部record后推进。当前表值应为`slide + 0x1007fbd20` |
+| 内部record数组 | `slide + 0x10085aa80` | 5个16字节记录，首qword是表指针、+8为索引、+12为活动状态；wrapper无需直接改动 |
+
+这里`slide`是**bluetoothd主镜像**的ASLR slide，不是适配dylib自身的slide。也可从主镜像实际header地址加`VA - 0x100000000`得到这些位置。槽位已加载后的值可保留为原initializer；原文件槽字节`70b9100000002000`是chained-rebase编码，不能直接作为运行期指针使用。
+
+槽位位于`__DATA_CONST,__const`：段VA`0x1007f4000`、size`0x40000`、fileoff`0x7f4000`、maxprot/initprot均为3（RW），segment flags为`0x10`（SG_READ_ONLY）。这是装载fixup后的只读意图，**不能据initprot=3推断constructor阶段可直接写槽**；应实际读取目标页保护，必要时仅临时开放该数据页写权限后恢复。静态原文件不能证明该次进程的实际VM保护或保护变更调用能成功；实现必须记录实际结果，不能默默声称安装成功。主镜像cputype`0x0100000c`、cpusubtype0，`__DATA_CONST`的chained-start记录文件偏移`0x848038`给出page_size`0x4000`、pointer_format6，无arm64e认证指针。该设计只替换此数据槽，不需改TEXT；具体运行期实现、CI和实机验收由父任务负责。
+
+### commit 4ecf776 源码适配审查
+
+审查`userland/nabu/src/bluetooth_compat.c`、`tools/test_nabu_bluetooth_compat.c`及其构建入口后，未发现ABI、页保护调用或支持位读取时序的阻断性问题。
+
+- constructor使用主镜像slide，加到既定20F66地址；从已装载slot保存原函数指针，未把文件chained-rebase编码当作运行期指针。修改的是单个8字节slot24。支持路径调用原函数并转发record；缺位路径把`*active_sequence`传入原版advance，解引用次数和入参对象正确。
+- 支持位只在`initialize_optional_reporting`实际执行时读取。constructor仅设置地址和替换槽，没有缓存当时尚未填充的支持掩码。后续重复初始化仍会读取该次缓存。
+- `vm_region_64`使用`vm_address_t`/`vm_size_t`、`VM_REGION_BASIC_INFO_64`和对应count；返回object port按需释放。查询失败或获取写权限失败时不写slot。以`getpagesize()`计算包含slot的页，只有原保护缺WRITE时请求原保护加WRITE/COPY，并在写入后恢复查询得到的原保护。slot本身不会跨页。
+- 本地对应XNU源`src/xnu-8796/osfmk/mach/vm_prot.h:115..124`明确说明`VM_PROT_COPY`建立needs-copy/COW并增加最大写权限；`osfmk/vm/vm_user.c:570`的`vm_protect`接受该标志并按当前map页粒度处理。调用的set_maximum参数为FALSE，但COPY本身仍可扩展最大写权限；当前映像静态maxprot原已含WRITE。恢复调用恢复的是当前保护，不应描述成撤销COW或恢复所有VM属性。操作范围是slot的数据页，未请求TEXT写权限。实际目标是否允许此调用仍以运行结果为准。
+- 测试依次覆盖byte18=`0x83/0/0x08/0xff`，核对原函数/advance各自恰调用一次、record/table实参、整份47字节位图不变；同一wrapper经历不同掩码，也覆盖了不缓存首次判断。构建入口把这份测试交给macOS ASan/UBSan，再独立编译、签名iOS dylib。
+- 测试宏明确排除constructor，因此测试通过不证明目标页保护修改、恢复或注入成功。恢复失败会另有诊断，即使随后出现installed日志也不能忽略该失败。实机验收应同时看到安装日志且无query/make/restore错误、缺位skip日志及初始化继续推进。当前审查没有在Windows伪造SDK测试成功，也未重新运行CI。
+
+父任务明确通过既有`etc/inject.conf`只为bluetoothd注入；现有`src/hakios-8796/userland/src/init.c:1450..1481`按库路径/进程名读取配置并送给`kern.exec_inject`。这说明不依赖新猜测的DYLD环境覆盖；实际打包项和目标constructor执行仍由父任务部署验证。本审查只追加分析账本，没有修改已进入CI的实现和测试。

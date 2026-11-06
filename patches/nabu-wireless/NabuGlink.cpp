@@ -136,8 +136,8 @@ struct NabuGlink {
                 }
             }
         }
-        if(qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete){
-            if(wlfw.activate&&wlfw.step==3&&!wlfw.permissions_ready){
+        if(qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete&&!wlfw.rejuvenate_ack_finished){
+            if(!wlfw.rejuvenate_count&&wlfw.activate&&wlfw.step==3&&!wlfw.permissions_ready){
                 wlfw.permissions_ready=nabu_msa_prepare(wlfw.regions,wlfw.region_count);
                 if(!wlfw.permissions_ready){wlfw.failed=true;return;}
             }
@@ -237,11 +237,15 @@ struct NabuGlink {
                 const uint8_t *qmi=data+at;
                 if(header.size>=7&&qmi[0]==4){
                     unsigned pin_count=wlfw.pin_result_count;
+                    unsigned rejuvenate_count=wlfw.rejuvenate_count;
                     wlfw.receive(qmi,header.size);
                     nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);
                     if(wlfw.pin_result_count!=pin_count)nabu_wireless_log("NABU WLFW: pin-connect count=%u step=%u request=%#x waiting=%u client-port=%#x pwr-valid=%u pwr=%#x phy-io-valid=%u phy-io=%#x rf-valid=%u rf=%#x\n",
                         wlfw.pin_result_count,wlfw.pin_result_step,wlfw.message,wlfw.waiting,header.to_port,
                         wlfw.pin_result_valid[0],wlfw.pin_result[0],wlfw.pin_result_valid[1],wlfw.pin_result[1],wlfw.pin_result_valid[2],wlfw.pin_result[2]);
+                    if(wlfw.rejuvenate_count!=rejuvenate_count)nabu_wireless_log("NABU WLFW: rejuvenate count=%u step=%u client-port=%#x cause-valid=%u cause=%#x subsystem-valid=%u subsystem=%#x line-valid=%u line=%u function-valid=%u function=%s; initialization stopped, KNEL ACK pending\n",
+                        wlfw.rejuvenate_count,wlfw.rejuvenate_step,header.to_port,wlfw.rejuvenate_valid[0],wlfw.rejuvenate_cause,wlfw.rejuvenate_valid[1],wlfw.rejuvenate_subsystem,
+                        wlfw.rejuvenate_valid[2],wlfw.rejuvenate_line,wlfw.rejuvenate_valid[3],wlfw.rejuvenate_function);
                 }
                 else if(wlfw.receive(qmi,header.size)){
                     unsigned n=0;const uint8_t *result=NabuRmtfs::tlv(qmi,header.size,2,n);
@@ -251,6 +255,9 @@ struct NabuGlink {
                     if(wlfw.message==0x24)nabu_wireless_log("NABU WLFW: board-id-valid=%u\n",wlfw.board_id_valid);
                     if(wlfw.board_sent)nabu_wireless_log("NABU WLFW: board-data acknowledged=%u/%u segments=%u\n",wlfw.board_sent,wlfw.board_bytes,wlfw.board_segment);
                     if(wlfw.message==0x20)nabu_wireless_log("NABU WLFW: status valid=%u flags=%#llx\n",wlfw.status_valid,wlfw.fw_status);
+                    if(wlfw.message==0x3b)nabu_wireless_log("NABU WLFW: dynamic-feature requested=0x1 previous-valid=%u previous=%#llx current-valid=%u current=%#llx\n",
+                        wlfw.dynamic_prev_valid,wlfw.dynamic_prev,wlfw.dynamic_current_valid,wlfw.dynamic_current);
+                    if(wlfw.message==0x3a)nabu_wireless_log("NABU WLFW: rejuvenate ACK finished=%u success=%u; ending trial without data-path restart\n",wlfw.rejuvenate_ack_finished,wlfw.rejuvenate_ack_success);
                 }
                 return;
             }
@@ -294,8 +301,12 @@ struct NabuGlink {
                 if(wlfw_port&&(wlfw_node!=node||wlfw_port!=port)) {
                     nabu_wireless_log("NABU WLFW: endpoint changed old=%u:%u new=%u:%u step=%u complete=%u\n",wlfw_node,wlfw_port,node,port,wlfw.step,wlfw.complete);
                     if(wlan_crash_captured) capture_wlan_crash("restart");
+                    if(wlfw.rejuvenate_count){wlfw.failed=true;wlfw.waiting=false;wlfw.bytes=0;nabu_wireless_log("NABU WLFW: rejuvenate ACK cancelled after endpoint change; ending trial\n");}
                 }
                 wlfw_node = node; wlfw_port = port;
+            } else if(service==wlfw_service&&command==5&&node==wlfw_node&&port==wlfw_port&&wlfw.rejuvenate_count) {
+                wlfw.failed=true;wlfw.waiting=false;wlfw.bytes=0;wlfw_port=0;
+                nabu_wireless_log("NABU WLFW: rejuvenate ACK cancelled after endpoint removal; ending trial\n");
             }
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
@@ -436,6 +447,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     link->command(0, 1, 1);
     for (unsigned i = 0; i < 30000 && !link->broken; ++i) {
         link->pump(); for (auto &t : link->transfers) t.tick(); link->wlfw.tick(); IOSleep(1);
+        if(link->wlfw.rejuvenate_count&&(link->wlfw.rejuvenate_ack_finished||link->wlfw.failed))break;
     }
     bool was_open = link->opened;
     if (link->opened && !link->broken) {
@@ -451,6 +463,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-MAC available=%u applied=%u\n",link->wlfw.mac_available,link->wlfw.mac_set);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: pin-connect indications=%u last-step=%u\n",link->wlfw.pin_result_count,link->wlfw.pin_result_step);
+    if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: dynamic-feature-complete=%u rejuvenate=%u ack-finished=%u ack-success=%u\n",link->wlfw.dynamic_feature_complete,link->wlfw.rejuvenate_count,link->wlfw.rejuvenate_ack_finished,link->wlfw.rejuvenate_ack_success);
     if(link->wlan_crash_captured) link->capture_wlan_crash("end");
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));

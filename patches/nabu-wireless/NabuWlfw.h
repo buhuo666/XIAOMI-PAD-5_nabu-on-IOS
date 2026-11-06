@@ -15,6 +15,15 @@ struct NabuWlfw {
     unsigned pin_result_count=0,pin_result_step=0;
     bool pin_result_valid[3]{};
     uint32_t pin_result[3]{};
+    bool dynamic_feature_complete=false;
+    bool dynamic_prev_valid=false,dynamic_current_valid=false;
+    uint64_t dynamic_prev=0,dynamic_current=0;
+    unsigned rejuvenate_count=0,rejuvenate_step=0;
+    bool rejuvenate_valid[4]{};
+    uint8_t rejuvenate_cause=0,rejuvenate_subsystem=0;
+    uint16_t rejuvenate_line=0;
+    char rejuvenate_function[129]{};
+    bool rejuvenate_ack_finished=false,rejuvenate_ack_success=false;
     bool board_id_valid=false;
     bool mac_available=false,mac_set=false;
     uint8_t mac_address[6]{};
@@ -23,22 +32,29 @@ struct NabuWlfw {
     char build_id[129]{};
     struct Region { uint64_t address; uint32_t size; bool secure; } regions[2]{};
     unsigned region_count = 0;
-    unsigned local_port() const { return board_data&&step>=5?0x4004:0x4003; }
+    unsigned local_port() const { return rejuvenate_count||(step==5&&!dynamic_feature_complete)?0x4003:board_data&&step>=5?0x4004:0x4003; }
     void value(unsigned type, uint64_t value, unsigned size) {
         request[bytes++]=type;request[bytes++]=size;request[bytes++]=0;
         for(unsigned i=0;i<size;++i)request[bytes++]=value>>(8*i);
     }
     void prepare() {
         static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24,0x20,0x25,0x26,0x33};
-        if(step>=(board_data?(mac_available?9u:8u):activate?5u:3u))return;
-        message=ids[step];++transaction;memset(request,0,sizeof(request));bytes=7;
+        if(rejuvenate_count){if(rejuvenate_ack_finished||failed)return;message=0x3a;}
+        else {
+            if(failed||step>=(board_data?(mac_available?9u:8u):activate?5u:3u))return;
+            message=step==5&&!dynamic_feature_complete?0x3b:ids[step];
+        }
+        ++transaction;memset(request,0,sizeof(request));bytes=7;
         request[1]=transaction;request[2]=transaction>>8;request[3]=message;request[4]=message>>8;
+        if(message==0x3a)return; // No data path is active; acknowledge the stop through KNEL.
+        if(message==0x3b){value(0x10,1,8);request[5]=bytes-7;return;}
         if(step==0||step==5){
             value(0x10,1,1);
             if(step!=0){value(0x11,1,1);value(0x12,1,1);}
             value(0x13,1,1);
             if(step==0)value(0x14,1,1); // ICNSS KNEL subscribes to pin-connect results.
             value(0x15,step==0?0x4b4e454c:0x444d4f4e,4);value(0x18,1,1);
+            if(step==0)value(0x19,1,4); // Original Android quirks=128 enables rejuvenation.
         }
         if(step==1)value(0x10,board_data?1:0,4);
         if(step==2){value(1,0x8bc00000,8);value(2,0x180000,4);}
@@ -73,12 +89,36 @@ struct NabuWlfw {
                     pin_result[i]=pin_result_valid[i]?NabuRmtfs::u32(p):0;
                 }
             }
+            if(indication==0x39){
+                ++rejuvenate_count;rejuvenate_step=step;
+                unsigned length=0;const uint8_t *p=NabuRmtfs::tlv(data,size,0x10,length);
+                rejuvenate_valid[0]=p&&length==1;rejuvenate_cause=rejuvenate_valid[0]?p[0]:0;
+                p=NabuRmtfs::tlv(data,size,0x11,length);
+                rejuvenate_valid[1]=p&&length==1;rejuvenate_subsystem=rejuvenate_valid[1]?p[0]:0;
+                p=NabuRmtfs::tlv(data,size,0x12,length);
+                rejuvenate_valid[2]=p&&length==2;rejuvenate_line=rejuvenate_valid[2]?NabuRmtfs::u16(p):0;
+                p=NabuRmtfs::tlv(data,size,0x13,length);
+                rejuvenate_valid[3]=p&&length<=128;memset(rejuvenate_function,0,sizeof(rejuvenate_function));
+                if(rejuvenate_valid[3])memcpy(rejuvenate_function,p,length);
+                if(rejuvenate_count==1){waiting=false;failed=false;complete=false;bytes=0;}
+            }
             return false;
         }
         if(data[0]!=2||NabuRmtfs::u16(data+1)!=transaction||NabuRmtfs::u16(data+3)!=message)return false;
         unsigned length=0;const uint8_t *result=NabuRmtfs::tlv(data,size,2,length);
         if(!waiting||!result||length!=4)return false;
         waiting=false;
+        if(message==0x3a){
+            rejuvenate_ack_finished=true;rejuvenate_ack_success=NabuRmtfs::u16(result)==0;
+            failed=!rejuvenate_ack_success;bytes=0;return true;
+        }
+        if(message==0x3b){
+            const uint8_t *p=NabuRmtfs::tlv(data,size,0x10,length);
+            dynamic_prev_valid=p&&length==8;dynamic_prev=dynamic_prev_valid?(uint64_t)NabuRmtfs::u32(p)|(uint64_t)NabuRmtfs::u32(p+4)<<32:0;
+            p=NabuRmtfs::tlv(data,size,0x11,length);
+            dynamic_current_valid=p&&length==8;dynamic_current=dynamic_current_valid?(uint64_t)NabuRmtfs::u32(p)|(uint64_t)NabuRmtfs::u32(p+4)<<32:0;
+            failed=NabuRmtfs::u16(result)!=0;dynamic_feature_complete=!failed;bytes=0;return true;
+        }
         // Some older firmware doesn't implement host capabilities (QMI error 94).
         if(NabuRmtfs::u16(result) && !(step==1&&NabuRmtfs::u16(result+2)==94)){failed=true;return true;}
         if(message==0x20){

@@ -113,6 +113,11 @@ KNEL PIN_CONNECT订阅。三套生产协议/传输测试及用户态HCI测试通
 统一内核和iOS服务构建正在进行，尚未实测生命周期、扫描、配对或联网。
 第99轮统一内核链接与Actions42259918375原生服务构建通过；WSL bootstrap打包、
 apfsck及BlueTool job入口检查通过，准备临时启动验证两套驱动。
+第99轮桌面正常，源码QCA boot/init实测通过，原生栈21条标准HCI命令均成功；
+随后因本地不支持可选WriteDefaultErroneousDataReporting返回628而重启。用户确认
+开关灰色/加载，IBS idle仍未测试。WLAN同PC崩溃、PIN_CONNECT未到。完整64MiB槽及
+7,006,654字节日志已备份清空，APFS计数68→69。第100轮准备可选步骤降级和原机
+dynamic_feature_mask=1/REJUVENATE协议对齐；当前设备在Android。
 
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。

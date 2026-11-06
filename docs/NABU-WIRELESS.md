@@ -398,6 +398,33 @@ job的ProgramArguments为`/redwood/sbin/nabu-bluetooth-lifecycle`，MachServices
 mobile身份保留；上一Windows打包尝试在调用Linux apfsck时失败，目录另存未部署。
 本轮准备临时启动，实际生命周期、IBS idle及原生厂商命令仍待实机验证。
 
+第99轮用户确认桌面正常。源码QCA服务实际通过boot/init，HCI Reset、LocalVersion
+和本机BD_ADDR全部成功，原生StackManager开始初始化；其21条标准HCI命令均得到
+status0，没有观测到VSC已发送。随后原生`WriteDefaultErroneousDataReporting`返回
+628并每约10秒重启。用户确认开关灰色/加载中，无法关闭，所以IBS idle尚未实测。
+WLAN仍同PC异常，PIN_CONNECT通知0次，三份SMEM611仍全零。7,006,654字节有效日志
+及完整64MiB槽已回收清空，APFS计数68→69、fullfsync成功。
+
+第99轮静态追踪确认628=0x274来自本地支持位检查：0x0c5b的命令描述要求
+supportedCommands[18]&0x08，实际QCA回复该字节为0x83，命令在构包前被拒绝。
+初始化最后一步slot24把此返回值当致命错误；原版其它恢复路径则对同一缺项继续。
+第100轮源码兼容库仅替换此数据表slot，执行时读取真实位图；有支持位时调用原步骤，
+缺位时记录跳过并调用原版sequenceAdvance。临时调整并恢复实际数据页保护，不改
+TEXT、不伪造HCI回应、不修改supported位图。原始指令和完整ABI见
+`log/host/wireless-v99/erroneous-data-reporting-analysis/bluetoothd-init.asm`及分析账本。
+
+第100轮Wi-Fi按原机只读参数quirks=128、dynamic_feature_mask=1补齐KNEL流程：
+初次IND_REGISTER增加rejuvenate订阅TLV0x19/u32=1，CAP成功后、DMON注册前发送
+DYNAMIC_FEATURE_MASK 0x3b/TLV0x10/u64=1，分别记录previous/current字段valid及原值。
+实际0x39通知会记录cause/subsystem/line/function，停止后续初始化并由KNEL发空体
+0x3a ACK，再按现有路径清理结束；旧事务回复和撤销/替换端点不继续驱动请求。
+生产WLFW/GLINK ASan/UBSan回放通过，统一内核编译链接成功。
+
+固件静态证据还显示0x3b会配置`/dev/wlanmd`的minidump回调；原始默认mask本已为1，
+所以不能说此前缺少bit0，也不能把这项称为已修复崩溃。回调的实际转储仍有独立
+运行门槛，本轮不修改安全位或读取未知MMIO。蓝牙兼容库的构造器/页保护和无线新
+接口均待第一百轮实机验证，iOS构建正在云端排队。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

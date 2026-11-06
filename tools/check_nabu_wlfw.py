@@ -14,7 +14,7 @@ HARNESS=r'''
 #include "NabuWlfw.h"
 int main(){
     NabuWlfw w{};w.prepare();
-    const uint8_t register_request[]={0,1,0,0x20,0,23,0,0x10,1,0,1,0x13,1,0,1,0x14,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1};
+    const uint8_t register_request[]={0,1,0,0x20,0,30,0,0x10,1,0,1,0x13,1,0,1,0x14,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1,0x19,4,0,1,0,0,0};
     assert(w.bytes==sizeof(register_request)&&!memcmp(w.request,register_request,sizeof(register_request)));
     uint8_t response[]={2,1,0,0x20,0,7,0,2,4,0,0,0,0,0};w.sent();
     response[1]=9;assert(!w.receive(response,sizeof(response))&&w.waiting);response[1]=1;assert(w.receive(response,sizeof(response))&&w.step==1);
@@ -47,9 +47,17 @@ int main(){
     response[1]=1;response[3]=0x24;assert(missing_board.receive(response,sizeof(response))&&!missing_board.board_id_valid&&missing_board.board_id==0xff);
     std::vector<uint8_t> board(26328),copied;for(unsigned i=0;i<board.size();++i)board[i]=i%251;
     w.board_data=board.data();w.board_bytes=board.size();w.complete=false;
+    w.prepare();
+    const uint8_t feature_request[]={0,6,0,0x3b,0,11,0,0x10,8,0,1,0,0,0,0,0,0,0};
+    assert(w.local_port()==0x4003&&w.bytes==sizeof(feature_request)&&!memcmp(w.request,feature_request,sizeof(feature_request)));w.sent();
+    uint8_t features[]={2,6,0,0x3b,0,29,0,2,4,0,0,0,0,0,0x10,8,0,0xef,0xcd,0xab,0x89,0x67,0x45,0x23,0x81,
+        0x11,8,0,1,0,0,0,0,0,0,0};
+    assert(w.receive(features,sizeof(features))&&w.dynamic_feature_complete&&w.step==5&&!w.waiting&&!w.complete);
+    assert(w.dynamic_prev_valid&&w.dynamic_prev==0x8123456789abcdefULL&&w.dynamic_current_valid&&w.dynamic_current==1);
     w.prepare();unsigned dn=0;const uint8_t *dc=NabuRmtfs::tlv(w.request,w.bytes,0x15,dn);
     assert(w.message==0x20&&w.local_port()==0x4004&&dc&&dn==4&&NabuRmtfs::u32(dc)==0x444d4f4e);
     assert(!NabuRmtfs::tlv(w.request,w.bytes,0x14,dn)); // DMON registration stays as captured.
+    assert(!NabuRmtfs::tlv(w.request,w.bytes,0x19,dn));
     w.sent();response[1]=w.transaction;response[3]=0x20;assert(w.receive(response,sizeof(response))&&w.step==6);
     NabuWlfw host{};host.board_data=board.data();host.step=1;host.prepare();
     const uint8_t *support=NabuRmtfs::tlv(host.request,host.bytes,0x10,dn);assert(support&&dn==4&&NabuRmtfs::u32(support)==1);
@@ -78,7 +86,36 @@ int main(){
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);
-    puts("WLFW: KNEL pin subscription, asynchronous raw/valid pin results, dual registration/MSA, BIN board segments, calibration and board MAC, ready/init indications, errors and timeout passed");
+    NabuWlfw feature_absent{};feature_absent.board_data=board.data();feature_absent.step=5;
+    feature_absent.dynamic_prev_valid=feature_absent.dynamic_current_valid=true;feature_absent.dynamic_prev=feature_absent.dynamic_current=99;
+    feature_absent.prepare();feature_absent.sent();response[1]=1;response[3]=0x3b;response[10]=response[12]=0;
+    assert(feature_absent.receive(response,sizeof(response))&&feature_absent.dynamic_feature_complete&&feature_absent.step==5);
+    assert(!feature_absent.dynamic_prev_valid&&!feature_absent.dynamic_current_valid&&!feature_absent.dynamic_prev&&!feature_absent.dynamic_current);
+    NabuWlfw feature_error{};feature_error.board_data=board.data();feature_error.step=5;feature_error.prepare();feature_error.sent();response[10]=1;response[12]=94;
+    assert(feature_error.receive(response,sizeof(response))&&feature_error.failed&&!feature_error.dynamic_feature_complete);
+    feature_error.prepare();assert(feature_error.bytes==0&&feature_error.step==5); // No DMON after failure.
+    NabuWlfw recovery{};recovery.board_data=board.data();recovery.board_bytes=board.size();recovery.step=6;recovery.prepare();recovery.sent();
+    uint16_t old_transaction=recovery.transaction;
+    const uint8_t rejuvenate[]={4,0,0,0x39,0,20,0,0x10,1,0,0x81,0x11,1,0,3,0x12,2,0,0x34,0x12,0x13,4,0,'i','n','i','t'};
+    assert(!recovery.receive(rejuvenate,sizeof(rejuvenate))&&recovery.rejuvenate_count==1&&!recovery.waiting&&!recovery.complete);
+    assert(recovery.rejuvenate_valid[0]&&recovery.rejuvenate_cause==0x81&&recovery.rejuvenate_valid[1]&&recovery.rejuvenate_subsystem==3);
+    assert(recovery.rejuvenate_valid[2]&&recovery.rejuvenate_line==0x1234&&recovery.rejuvenate_valid[3]&&!strcmp(recovery.rejuvenate_function,"init"));
+    recovery.prepare();assert(recovery.message==0x3a&&recovery.bytes==7&&recovery.local_port()==0x4003&&recovery.transaction==old_transaction+1);recovery.sent();
+    response[1]=old_transaction;response[3]=0x25;response[10]=response[12]=0;
+    assert(!recovery.receive(response,sizeof(response))&&recovery.waiting&&recovery.board_sent==0);
+    recovery.receive(rejuvenate,sizeof(rejuvenate));assert(recovery.rejuvenate_count==2&&recovery.waiting&&recovery.transaction==old_transaction+1);
+    response[1]=recovery.transaction;response[3]=0x3a;
+    assert(recovery.receive(response,sizeof(response))&&recovery.rejuvenate_ack_finished&&recovery.rejuvenate_ack_success&&!recovery.failed);
+    recovery.prepare();assert(recovery.bytes==0&&recovery.step==6&&recovery.board_sent==0&&!recovery.complete);
+    const uint8_t empty_rejuvenate[]={4,0,0,0x39,0,0,0};
+    recovery.receive(empty_rejuvenate,sizeof(empty_rejuvenate));
+    assert(!recovery.rejuvenate_valid[0]&&!recovery.rejuvenate_valid[1]&&!recovery.rejuvenate_valid[2]&&!recovery.rejuvenate_valid[3]&&!recovery.rejuvenate_function[0]);
+    NabuWlfw ack_error{};ack_error.receive(empty_rejuvenate,sizeof(empty_rejuvenate));ack_error.prepare();ack_error.sent();
+    response[1]=ack_error.transaction;response[3]=0x3a;response[10]=1;response[12]=1;
+    assert(ack_error.receive(response,sizeof(response))&&ack_error.rejuvenate_ack_finished&&!ack_error.rejuvenate_ack_success&&ack_error.failed);
+    NabuWlfw ack_timeout{};ack_timeout.receive(empty_rejuvenate,sizeof(empty_rejuvenate));ack_timeout.prepare();ack_timeout.sent();
+    for(unsigned i=0;i<10000;++i)ack_timeout.tick();assert(ack_timeout.failed&&!ack_timeout.waiting&&!ack_timeout.rejuvenate_ack_success);
+    puts("WLFW: Android feature-mask ordering and 64-bit fields, KNEL notifications and one-shot rejuvenate ACK, stale-response rejection, BDF/MSA/MAC, errors and timeout passed");
 }
 '''
 
