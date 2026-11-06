@@ -14,6 +14,7 @@ def main():
     action.add_argument('--pair',action='store_true')
     action.add_argument('--validate-existing',action='store_true',help='Validate persisted pairing without sending Pair')
     ap.add_argument('--output',type=Path,required=True)
+    ap.add_argument('--afc-roundtrip',action='store_true',help='Write/read/remove a unique 1 MiB file using Apple AFC APIs')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     apple=AppleMobileDevice(Path('C:/Program Files/Common Files/Apple/Mobile Device Support'))
     for name in ('AMDevicePair','AMDeviceValidatePairing','AMDeviceStartSession','AMDeviceStopSession'):
@@ -50,6 +51,9 @@ def main():
             code=apple.am.AMDeviceStartSession(device);report['start_session']=result(code);save()
             if code:report['state']='session-failed';return
             session=True;report['session_verified']=True;report['state']='session-verified'
+            if a.afc_roundtrip:
+                from nabu_native_afc import roundtrip
+                roundtrip(apple,device,report,save)
         except Exception as error:report.update(state='error',error=str(error))
         finally:
             if session:report['stop_session']=result(apple.am.AMDeviceStopSession(device))

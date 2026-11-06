@@ -3,6 +3,32 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第六十一轮：Windows原生配对、会话及AFC全部通过
+
+用户确认桌面正常。40hex板级USB标识被原版AMDS接受，使用第五十九轮用户信任时
+生成并保留的同一组证书，AMDeviceValidatePairing、AMDeviceStartSession、StopSession
+和Disconnect均返回0。本轮没有发送Pair。USB身份格式修复已获实机支持，未修改
+认证结果、钥匙包或设备配对记录。
+
+`tools/pair_nabu_apple_device.py --validate-existing --afc-roundtrip`通过已安装的
+原版MobileDevice.dll启动com.apple.afc并调用AFCConnectionOpen、AFCFileRefOpen/
+Write/Read/Close。测试文件1,048,603字节写入后关闭并重开，逐字节回读一致，文件删除
+和连接关闭均返回0；最终StopSession/Disconnect也成功。主机结构化结果为ignored
+`log/host/native-usb-v61/native-afc/pairing.json`。
+
+`tools/nabu_native_afc.py`按本机DLL反汇编使用指针宽度SOCKET和size_t，文件引用是
+不透明对象指针，AFCConnectionOpen成功后由AFCConnectionClose释放socket。旧公开
+头文件的参数宽度/含义不完全适用于本机版本；分析保存在v60/host-abi/afc-abi.md。
+
+完整Apple Devices/iTunes媒体同步和备份尚未验收；当前用户未安装Apple Devices包，
+也未发现传统iTunes路径。com.apple.mobilesync本轮返回InvalidService，仅此不足以
+判定其他同步/备份服务不可用。Lockdown的全f UniqueDeviceID仍是单独待查问题，
+没有用它作为多设备共用的USB身份。当前可用基线为v61内核/bootstrap v58。
+
+本轮2,713,065字节连续日志和完整64MiB槽已备份，槽14已清空；手动重启前没有END。
+APFS计数31→32、fullfsync成功，GPT及引导分区一致，当前设备在Android，无下一轮
+启动暂存。桌面/配对/传输结果与证据索引已保存在v61/continuation.json。
+
 ## 第六十轮：配对持久化、TLS会话和AFC文件传输
 
 沿用v59内核/bootstrap v58，用户确认桌面正常。未经重新Pair，直接使用Windows

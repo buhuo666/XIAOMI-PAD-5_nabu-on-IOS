@@ -2,6 +2,14 @@
 
 更新：2026-11-06，Asia/Shanghai。
 
+当前可用基线：第六十一轮v61内核/bootstrap v58。桌面正常，40hex板级USB身份修复
+通过实机，Windows原版AMDeviceValidatePairing和StartSession均成功，沿用已有用户
+信任证书、没有重新Pair。Apple原版AFC接口完成1,048,603字节写入/关闭/重开/回读，
+内容一致，测试文件已删除，所有服务/文件/会话关闭均返回0。完整Apple Devices/
+iTunes同步与备份尚未验收。第六十一轮已回到Android，2,713,065字节日志及完整槽
+备份后清空对应槽；APFS计数31→32、fullfsync成功，GPT及引导分区一致。
+见[USB连接](NABU-USB.md)。
+
 第六十轮已回收：用户确认桌面正常，同一内核跨重启后使用既有配对证书完成TLS1.2，
 设备证书与上轮保存值完全相同，加密GetValue成功；原版AFC写入、关闭、重开并读回
 262,170字节一致，测试文件已删除。Windows原生AMDevice仍报MissingPairRecord：
