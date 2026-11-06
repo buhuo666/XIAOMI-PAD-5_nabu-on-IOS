@@ -10,6 +10,7 @@
 #include <kern/locks.h>
 #include <mach/vm_param.h>
 #include <vm/memory_types.h>
+#include <pexpert/pexpert.h>
 #include "NabuSmem.h"
 #include "NabuWirelessLog.h"
 
@@ -18,6 +19,7 @@ extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock;
 extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
+extern "C" void nabu_glink_trial(vm_offset_t, vm_offset_t);
 
 static vm_offset_t aop, ipc, rsc, smem_va;
 static uint32_t mailbox, our_item;
@@ -130,31 +132,42 @@ static bool proxy_power() {
     return done && (a & 0x10000) && (b & 0x10000);
 }
 
-static bool make_smp2p(NabuSmem &smem) {
+static bool allocate_item(NabuSmem &smem, uint16_t id, uint32_t bytes, uint32_t *offset) {
     uint32_t base, line;
     if (!smem.partition(1, &base, &line)) return false;
     NabuSmemItem existing;
-    if (smem.find(435, &existing) || smem.find(428, &existing)) {
-        nabu_wireless_log("NABU MODEM: modem items already exist; cold-boot trial stops\n"); return false;
-    }
     vm_offset_t lock = map_region("SMEM-lock3", 0x01f43000, 0x1000, VM_WIMG_IO);
     if (!lock) return false;
     lck_mtx_lock(&hakios_smem_alloc_lock);
     bool held = false;
     for (unsigned i = 0; i < 1000; ++i) { wr(lock, 1); if (rd(lock) == 1) { held = true; break; } IODelay(10); }
     if (!held) { lck_mtx_unlock(&hakios_smem_alloc_lock); return false; }
+    if (smem.item_in(base, line, id, &existing)) {
+        wr(lock, 0); lck_mtx_unlock(&hakios_smem_alloc_lock);
+        *offset = existing.offset; return existing.size == bytes;
+    }
+    uint32_t size = (bytes + 7) & ~7u;
     uint32_t free = smem.u32(base + 12), limit = smem.u32(base + 16);
-    bool ok = free == 32 && limit >= free && limit - free >= 360;
+    bool ok = free >= 32 && limit >= free && limit - free >= 16 + size;
     if (ok) {
         unsigned header = base + free;
-        wr(smem_va + header, 0xa5a5 | (428u << 16)); wr(smem_va + header + 4, 344);
-        wr(smem_va + header + 8, 4); wr(smem_va + header + 12, 0);
-        our_item = header + 16;
-        for (unsigned at = 0; at < 344; at += 4) wr(smem_va + our_item + at, 0);
-        wr(smem_va + base + 12, free + 360);
+        wr(smem_va + header, 0xa5a5 | ((uint32_t)id << 16)); wr(smem_va + header + 4, size);
+        wr(smem_va + header + 8, size - bytes); wr(smem_va + header + 12, 0);
+        *offset = header + 16;
+        for (unsigned at = 0; at < size; at += 4) wr(smem_va + *offset + at, 0);
+        wr(smem_va + base + 12, free + 16 + size);
     }
     wr(lock, 0); lck_mtx_unlock(&hakios_smem_alloc_lock);
-    if (!ok) return false;
+    nabu_wireless_log("NABU MODEM: SMEM allocate item=%u bytes=%u result=%u\n", id, bytes, ok);
+    return ok;
+}
+
+static bool make_smp2p(NabuSmem &smem) {
+    NabuSmemItem existing;
+    if (smem.find(435, &existing) || smem.find(428, &existing)) {
+        nabu_wireless_log("NABU MODEM: modem items already exist; cold-boot trial stops\n"); return false;
+    }
+    if (!allocate_item(smem, 428, 340, &our_item)) return false;
     wr(smem_va + our_item, 0x504d5324); wr(smem_va + our_item + 8, 1u << 16);
     const char name[16] = "master-kernel";
     for (unsigned at = 0; at < 16; at += 4) { uint32_t word; memcpy(&word, name + at, 4); wr(smem_va + our_item + 20 + at, word); }
@@ -198,6 +211,13 @@ extern "C" void nabu_modem_start_trial() {
     NabuSmem smem{(const volatile uint8_t *)smem_va, 0x200000};
     nabu_wireless_log("NABU MODEM: signed image PAS4 trial begin; reserved=0x8e000000+0x9600000\n");
     if (!make_smp2p(smem) || !proxy_power()) { entry->release(); return; }
+    uint32_t level = 0;
+    PE_parse_boot_argn("nabu-wireless", &level, sizeof(level));
+    if (level >= 5) {
+        uint32_t descriptor = 0, fifo = 0;
+        if (!allocate_item(smem, 478, 32, &descriptor) || !allocate_item(smem, 479, 16384, &fifo)) { entry->release(); return; }
+        wr(smem_va + descriptor + 4, 0); wr(smem_va + descriptor + 8, 0);
+    }
     IOPhysicalAddress physical = 0;
     nabu_wireless_log("NABU MODEM: allocate PAS metadata buffer\n");
     void *header = IOMallocContiguous(16384, 16384, &physical);
@@ -243,6 +263,7 @@ extern "C" void nabu_modem_start_trial() {
             nabu_wireless_log("NABU MODEM: GLINK item=%u found=%u size=%u\n", id, found, found ? item.size : 0);
         }
         if (state & 2) {
+            if (level >= 5) nabu_glink_trial(smem_va, ipc);
             wr(smem_va + our_item + 36, 1); wr(ipc, 1u << 14);
             for (unsigned i = 0; i < 500; ++i) { state = modem_state(smem, false); if (state & 9) break; IOSleep(10); }
             nabu_wireless_log("NABU MODEM: stop-ack=%u state=%#x\n", !!(state & 8), state);

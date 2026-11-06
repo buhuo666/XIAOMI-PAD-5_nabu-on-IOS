@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Qualcomm SMEM v12 wire format; Linux drivers/soc/qcom/smem.c.+#pragma once
+// Qualcomm SMEM v12 wire format; Linux drivers/soc/qcom/smem.c.
+#pragma once
 #include <stdint.h>
 #include <stddef.h>
 

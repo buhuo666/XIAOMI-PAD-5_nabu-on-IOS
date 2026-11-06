@@ -105,7 +105,9 @@ def main():
     wireless.add_argument('--bluetooth-version', action='store_true', help='Enable Nabu wireless power and Bluetooth UART ROM version trial')
     wireless.add_argument('--bluetooth-firmware', type=Path, help='Prepared original-board Bluetooth firmware for the UART download trial')
     ap.add_argument('--modem-firmware', type=Path, help='Prepared Nabu modem metadata/segments for the bounded PAS boot trial')
+    ap.add_argument('--modem-glink', action='store_true', help='Negotiate GLINK/IPCRTR and inventory QRTR services before stopping the modem')
     a = ap.parse_args()
+    assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -152,7 +154,7 @@ def main():
         if a.modem_firmware:
             assert kernel_report['data_block']['modem_trial'], 'Modem startup requires its linked PAS/SMP2P implementation'
         old_args=entry['args']
-        entry['args'] += ' nabu-wireless=' + ('4' if a.modem_firmware else '3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
+        entry['args'] += ' nabu-wireless=' + ('5' if a.modem_glink else '4' if a.modem_firmware else '3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:

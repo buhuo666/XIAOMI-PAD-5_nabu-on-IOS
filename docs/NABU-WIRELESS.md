@@ -112,6 +112,24 @@ APPS CX请求暂保留到重启，未实现通用电源消费者计数。
 复制循环，在4KiB和16KiB页模型下通过全部22段的文件数据、BSS清零和段间空隙保留
 检查，ASan/UBSan通过；最大单次映射约15.9MiB，复制后立即解除。
 
+第80轮实机通过：用户确认桌面正常，配对USB读回完整报告。PAS init-image、mem-setup、
+auth-and-reset均返回0；22段共5,042,996字节文件内容及49,157,945字节内存范围完成
+复制/清零。AOP接受load-state on；peer435出现slave-kernel=0x6，ready位成立；
+GLINK item478为32字节、item480为16KiB，APPS发送FIFO item479尚未创建。
+请求停止后得到state0xe/stop-ack，PAS shutdown返回0，AOP接受load-state off。
+蓝牙固件和HCI再次通过。证据为`log/host/wireless-v80/modem-result.json`和
+`wireless-report.txt`。映射修正后未重现第79轮HALTED；原停机没有直接panic记录。
+完整64MiB槽及2,365,831字节有效日志已在Android回收清空，无终止提交记录；APFS计数
+50→51。Wi-Fi扫描/连接及蓝牙系统栈仍未实现。
+
+第81轮候选增加`nabu-wireless=5`（部署参数`--modem-glink`）：在modem启动前按SMEM
+私有分配格式创建descriptor478和16KiB发送FIFO479，使用本机APCS位12通知。modem
+ready后协商GLINK版本1/intent reuse，双向打开IPCRTR，接收分片并处理QRTR v1/v2
+HELLO、服务公告和流控确认。轮询15秒后关闭通道，继续第80轮已验证的modem停止流程。
+只查询服务清单，不发WLAN、蜂窝或IPA请求。`NabuGlink.cpp`已编译链接；
+`check_nabu_glink.py`使用生产分配器/协议代码通过SMEM新建和重复项、队列回绕/边界、
+通道/intent、QRTR分片/版本/确认测试，ASan/UBSan通过。实机服务清单仍待验证。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。
