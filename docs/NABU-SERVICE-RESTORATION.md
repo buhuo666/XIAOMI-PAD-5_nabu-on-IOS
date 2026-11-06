@@ -75,6 +75,7 @@ Actions42197727993通过，设备树编码/解码字段检查通过；界面修�
 第71轮已临时启动，原生USB/本地激活/155项总登记保持。ExperienceInventory确认
 MG ModelNumber=21051182C，ArtworkTraits含Xiaomi Pad 5及pad。用户先报告关于本机
 没反应，后澄清首次加载很久，之后可快速打开；尚未明确确认显示字段。
+随后用户明确确认两个字段都已显示，关于本机字段缺失修复验收通过；首次加载慢另记。
 原版默认壁纸筛选返回false，WKLogicalScreenClassString=800w-1280h@2x~ipad。
 KBLayouts_iPad.dat/KBLayouts_Dynamic.dat可读，800和1280均找到原版布局前缀，
 但原版keyboardSizeForInputMode在两种方向、英文与拼音均返回0高度。
@@ -83,3 +84,13 @@ Nabu Test更新经原版installation_proxy安装成功（Actions42199589019）�
 768x1024兼容画布中，原版英文/拼音布局返回768x258或1024x343，用户确认可显示但比例
 不对。实验对比的零高度拦截没有触发，不能声称它修好了键盘；已安排真实屏幕规格
 与兼容规格的应用内对照。原版方法在诊断结束后恢复。证据在services-v71/keyboard-app。
+
+最新待验收候选：Nabu Test 1.3(4)，构建42201920929通过，已经installation_proxy安装。
+它增加标准LaunchScreen.storyboard以处理兼容画布的比例问题，先测原版尺寸和临时
+对照，再在该应用内启用experience_compat。候选只将Nabu实际屏幕下的派生键盘零高度
+改为原版的-1哨兵，使调用方保留已加载布局高度；壁纸候选仅在加载内置iPad静态包
+时放宽屏幕规格匹配，保留原版元数据和产品类型筛选。尚不能声明键盘或壁纸已修好。
+配套dylib构建42201921051通过，第72轮bootstrap为402项任务，inject.conf 362字节，
+apfsck通过，未部署。当前设备仍在第71轮iPadOS，日志槽14尚待回收清空。
+下一步打开最新Nabu Test，通过tools/read_nabu_test_documents.py回收新版结果，
+核对physical_screen、compatibility_queries和wallpaper_accepted_with_compatibility。
