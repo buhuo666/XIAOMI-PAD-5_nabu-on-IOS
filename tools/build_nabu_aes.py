@@ -53,6 +53,7 @@ def main():
         sources.append(('NabuModem',ROOT/'patches/nabu-wireless/NabuModem.cpp'))
         sources.append(('NabuGlink',ROOT/'patches/nabu-wireless/NabuGlink.cpp'))
         sources.append(('NabuRmtfs',ROOT/'patches/nabu-wireless/NabuRmtfs.cpp'))
+        sources.append(('NabuMsa',ROOT/'patches/nabu-wireless/NabuMsa.cpp'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

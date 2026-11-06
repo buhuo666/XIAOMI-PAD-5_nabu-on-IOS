@@ -27,6 +27,11 @@ int main(){
         0,0,0xd0,0x8b,0,0,0,0,0,0,8,0,0};
     assert(w.receive(msa.data(),msa.size())&&w.complete&&!w.failed&&w.region_count==2);
     assert(w.regions[0].address==0x8bc00000&&w.regions[1].size==0x80000&&!w.regions[1].secure);
+    w.activate=true;w.complete=false;w.prepare();assert(w.message==0x2e&&w.bytes==7);w.sent();
+    response[1]=4;response[3]=0x2e;assert(w.receive(response,sizeof(response))&&w.msa_ready);
+    w.prepare();assert(w.message==0x24&&w.bytes==7);w.sent();
+    std::vector<uint8_t> cap{2,5,0,0x24,0,25,0,2,4,0,0,0,0,0,0x10,8,0,0x91,0x39,0,0,1,0,0,0,0x11,4,0,0x34,0x12,0,0};
+    assert(w.receive(cap.data(),cap.size())&&w.complete&&w.capability_valid&&w.chip_id==0x3991&&w.board_id==0x1234);
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);

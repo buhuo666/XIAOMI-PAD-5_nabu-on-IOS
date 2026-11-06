@@ -7,6 +7,9 @@ struct NabuWlfw {
     unsigned bytes = 0, step = 0, elapsed = 0;
     uint16_t transaction = 0, message = 0;
     bool waiting = false, failed = false, complete = false;
+    bool activate = false, permissions_ready = false, capability_valid = false, msa_ready = false;
+    uint32_t chip_id=0,chip_family=0,board_id=0,soc_id=0,fw_version=0;
+    char build_id[129]{};
     struct Region { uint64_t address; uint32_t size; bool secure; } regions[2]{};
     unsigned region_count = 0;
     void value(unsigned type, uint64_t value, unsigned size) {
@@ -14,8 +17,8 @@ struct NabuWlfw {
         for(unsigned i=0;i<size;++i)request[bytes++]=value>>(8*i);
     }
     void prepare() {
-        static const uint16_t ids[]={0x20,0x34,0x2d};
-        if(step>=3)return;
+        static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24};
+        if(step>=(activate?5u:3u))return;
         message=ids[step];transaction=step+1;memset(request,0,sizeof(request));bytes=7;
         request[1]=transaction;request[3]=message;request[4]=message>>8;
         if(step==0){value(0x10,1,1);value(0x13,1,1);value(0x15,0x4b4e454c,4);}
@@ -42,6 +45,15 @@ struct NabuWlfw {
                 if(regions[i].address<0x8bc00000||regions[i].address>0x8bd80000||regions[i].size>0x8bd80000-regions[i].address)failed=true;
             }
         }
-        ++step;complete=step==3&&!failed;bytes=0;return true;
+        if(step==3)msa_ready=true;
+        if(step==4){
+            const uint8_t *p=NabuRmtfs::tlv(data,size,0x10,length);
+            if(p&&length==8){chip_id=NabuRmtfs::u32(p);chip_family=NabuRmtfs::u32(p+4);capability_valid=true;}
+            p=NabuRmtfs::tlv(data,size,0x11,length);if(p&&length==4)board_id=NabuRmtfs::u32(p);
+            p=NabuRmtfs::tlv(data,size,0x12,length);if(p&&length==4)soc_id=NabuRmtfs::u32(p);
+            p=NabuRmtfs::tlv(data,size,0x13,length);if(p&&length>=4)fw_version=NabuRmtfs::u32(p);
+            p=NabuRmtfs::tlv(data,size,0x14,length);if(p){unsigned n=length<128?length:128;memcpy(build_id,p,n);build_id[n]=0;}
+        }
+        ++step;complete=step==(activate?5u:3u)&&!failed;bytes=0;return true;
     }
 };

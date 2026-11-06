@@ -15,19 +15,20 @@ static bool shared;
 // Use its first 3 MiB, outside the XNU-owned memory, with HLOS/MSS permissions.
 static constexpr uint32_t buffer_pa = 0x99100000, buffer_bytes = 0x300000;
 
-static bool assign(bool in) {
+extern "C" bool nabu_assign_memory(uint64_t address, uint64_t bytes, const uint32_t *sources, unsigned source_count,
+                                  const uint32_t *destinations, unsigned destination_count) {
     IOPhysicalAddress physical = 0;
     uint8_t *page = (uint8_t *)IOMallocContiguous(16384, 16384, &physical);
     if (!page) return false;
     bzero(page, 16384);
-    uint64_t *range = (uint64_t *)page; range[0] = buffer_pa; range[1] = buffer_bytes;
-    uint32_t *source = (uint32_t *)(page+64); source[0] = 3; if (!in) source[1] = 15;
+    uint64_t *range = (uint64_t *)page; range[0] = address; range[1] = bytes;
+    uint32_t *source = (uint32_t *)(page+64); for(unsigned i=0;i<source_count;++i)source[i]=sources[i];
     struct Permission { uint32_t vmid, permission; uint64_t context; uint32_t context_size, reserved; };
-    Permission *dest = (Permission *)(page+128); dest[0] = {3, 6, 0, 0, 0}; if (in) dest[1] = {15, 6, 0, 0, 0};
-    uint64_t *more = (uint64_t *)(page+256); more[0] = in ? 4 : 8; more[1] = physical+128; more[2] = in ? 48 : 24;
+    Permission *dest = (Permission *)(page+128); for(unsigned i=0;i<destination_count;++i)dest[i]={destinations[i],6,0,0,0};
+    uint64_t *more = (uint64_t *)(page+256); more[0] = source_count*4; more[1] = physical+128; more[2] = destination_count*sizeof(Permission);
     for (uintptr_t line = (uintptr_t)page; line < (uintptr_t)page+16384; line += 64) __asm__ volatile("dc civac, %0" :: "r"(line));
     __asm__ volatile("dsb sy" ::: "memory");
-    nabu_wireless_log("NABU RMTFS: assign buffer=%#x+%#x to=%s\n", buffer_pa, buffer_bytes, in ? "HLOS,MSS" : "HLOS");
+    nabu_wireless_log("NABU ASSIGN: address=%#llx bytes=%#llx source-count=%u destination-count=%u\n",address,bytes,source_count,destination_count);
     uint64_t session = 0, result = ~0ull, response = ~0ull;
     for (unsigned attempt = 0; attempt < 100; ++attempt) {
         register uint64_t x0 __asm__("x0") = attempt ? 1 : 0x42000c16;
@@ -43,8 +44,13 @@ static bool assign(bool in) {
         session = x6; result = x0; response = x1; if (result != 1) break;
     }
     IOFreeContiguous(page, 16384);
-    nabu_wireless_log("NABU RMTFS: assign result=%lld response=%#llx\n", result, response);
+    nabu_wireless_log("NABU ASSIGN: result=%lld response=%#llx\n", result, response);
     return result == 0 && response == 0;
+}
+
+static bool assign(bool in) {
+    const uint32_t owners[]={3,15};
+    return nabu_assign_memory(buffer_pa,buffer_bytes,owners,in?1:2,owners,in?2:1);
 }
 
 extern "C" bool nabu_rmtfs_available() { return shared; }
