@@ -159,7 +159,9 @@ def main():
         if data_enabled:
             assert boot_report.get('persistent_data_supported') is True
         assert a.bootstrap.stat().st_size==boot_report['bytes']<=256*1024*1024
-        assert sha(a.bootstrap)==boot_report['sha256'] and len(boot_report['containers'])==2
+        assert sha(a.bootstrap)==boot_report['sha256']
+        assert [c['name'] for c in boot_report['containers']] == (
+            ['Boot.apfs', 'NabuInit.apfs', 'App.apfs'] if boot_report.get('app_cryptex') else ['Boot.apfs', 'NabuInit.apfs'])
         setup_compat_enabled = check_setup_compat_boot_policy(args, boot_report)
         input_bridge = boot_report.get('input_bridge')
         if input_bridge:

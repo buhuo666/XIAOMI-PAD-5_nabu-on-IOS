@@ -161,11 +161,33 @@ static NSDictionary *identityQuery(void) {
     return out;
 }
 
+static NSDictionary *processes(void) {
+    void *library = dlopen("/usr/lib/libproc.dylib", RTLD_NOW);
+    int (*list)(void *, int) = dlsym(library, "proc_listallpids");
+    int (*name)(int, void *, uint32_t) = dlsym(library, "proc_name");
+    if (!list || !name) return @{@"error": @"libproc symbols unavailable"};
+    int capacity = list(NULL, 0) + 32;
+    NSMutableData *buffer = [NSMutableData dataWithLength:(NSUInteger)capacity * sizeof(int)];
+    int count = list(buffer.mutableBytes, (int)buffer.length);
+    if (count < 0) return @{@"errno": @(errno)};
+    int *pids = buffer.mutableBytes;
+    NSMutableArray *out = [NSMutableArray array];
+    for (int i = 0; i < count && i < capacity; i++) {
+        char text[1024] = {0};
+        if (name(pids[i], text, sizeof(text)) > 0)
+            [out addObject:@{@"pid": @(pids[i]), @"name": @(text)}];
+    }
+    return @{@"entries": out, @"returned_count": @(count)};
+}
+
 static NSDictionary *snapshot(LSApplicationWorkspace *workspace) {
     NSMutableDictionary *out = [@{@"uid": @(getuid()), @"time": @((long long)time(NULL)),
         @"paths": @[pathInfo(@"/Applications"), pathInfo(@"/private/var/staged_system_apps"),
-                     pathInfo(@"/System/Cryptexes/App"), pathInfo(@"/System/Cryptexes/App/Applications/MobileSafari.app"),
+                     pathInfo(@"/System/Cryptexes/App"),
+                     pathInfo(@"/System/Cryptexes/App/usr/libexec/com.apple.Safari.History"),
+                     pathInfo(@"/System/Cryptexes/App/usr/libexec/webbookmarksd"),
                      pathInfo(@"/System/Cryptexes/OS")],
+        @"processes": processes(),
         @"getattrlistbulk": bulkDirectory(),
         @"application_files": appFiles(), @"ls_applications": applications(workspace),
         @"mg_unique_device_id": identityQuery()} mutableCopy];

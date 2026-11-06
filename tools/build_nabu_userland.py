@@ -34,7 +34,7 @@ def verify(path):
     return {'name':path.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'entry':hex(entry),'static_arm64_verified':True}
 
 
-def generate_sources(src):
+def generate_sources(src, app_cryptex=False):
     stage=(src/'userland/src/stage0.c').read_text()
     stage=stage.replace('mount("apfs",','mount(nabu_boot_filesystem(),')
     stage=once(stage,'(void *)"/dev/md1"','(void *)"/dev/md0,c=1"')
@@ -61,6 +61,14 @@ def generate_sources(src):
         '\t\tprintf("NABU INIT: SystemOS mount failed: %s\\n", strerror(errno));\n'
         '\t\treboot(RB_HALT); return;\n\t}\n'
         '\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");\n')
+    if app_cryptex:
+        init=once(init, '\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");',
+            '\tprintf("NABU INIT: SystemOS mounted from nabu_systemos\\n");\n'
+            '\tif (mount(nabu_boot_filesystem(), "/private/preboot/Cryptexes/App", MNT_RDONLY, (void *)"/dev/md0,c=2") != 0) {\n'
+            '\t\tnabu_failure("mount App cryptex", (unsigned)errno);\n'
+            '\t\tprintf("NABU INIT: App cryptex mount failed: %s\\n", strerror(errno));\n'
+            '\t\treboot(RB_HALT); return;\n\t}\n'
+            '\tprintf("NABU INIT: App cryptex mounted from bootstrap container 2\\n");')
     init=once(init,'\tshow_system();\n\tmount_writable();',
         '\tif (!flash_root_mode) { printf("NABU INIT: root switch did not complete\\n"); reboot(RB_HALT); return 1; }\n'
         '\tshow_system();\n\tmount_writable();')
@@ -121,6 +129,7 @@ def main():
     ap.add_argument('--work',type=Path,required=True)
     ap.add_argument('--generate-only',action='store_true')
     ap.add_argument('--local-llvm',action='store_true',help='Use local LLVM 18 and the existing static Mach-O adapter')
+    ap.add_argument('--app-cryptex',action='store_true',help='Mount the original App APFS as bootstrap container 2')
     a=ap.parse_args()
     assert a.generate_only or a.local_llvm or sys.platform=='darwin','Use macOS Actions or --local-llvm'
     assert not a.work.exists();a.work.mkdir(parents=True);a.output.mkdir(parents=True,exist_ok=True)
@@ -128,7 +137,7 @@ def main():
     expected=next(x['commit'] for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources'] if x['name']=='hakios-8796-reference')
     assert subprocess.check_output(['git','-C',str(src),'rev-parse','HEAD'],text=True).strip()==expected
     assert not subprocess.check_output(['git','-C',str(src),'status','--porcelain'])
-    sources=generate_sources(src)
+    sources=generate_sources(src, a.app_cryptex)
     for name,text in sources.items():(a.work/name).write_text(text)
     if a.generate_only:return
     if a.local_llvm:
@@ -164,6 +173,7 @@ def main():
         binaries.append(verify(out))
     report={'source_commit':expected,'compiler':subprocess.check_output(command([clang,'--version']),text=True).splitlines()[0],
             'binaries':binaries,'generated_sources':[{'name':n,'sha256':hashlib.sha256((a.work/n).read_bytes()).hexdigest()} for n in sources],
+            'app_cryptex_container': 2 if a.app_cryptex else None,
             'scope':'Static source-built bootstrap only; no Apple payload included, no device execution or desktop claim'}
     (a.output/'build-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 

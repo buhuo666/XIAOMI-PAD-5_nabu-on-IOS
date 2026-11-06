@@ -75,12 +75,14 @@ def main():
     ap.add_argument('--fairplay-trace', type=Path, help='Transparent call observer for stock fairplayd.A2 startup')
     ap.add_argument('--local-activation', type=Path, help='Source-built local NSXPC activation state provider')
     ap.add_argument('--system-service-probe', type=Path, help='Local filesystem/LaunchServices inventory and paired-host repair diagnostic')
+    ap.add_argument('--app-cryptex', type=Path, help='Original 20F66 App APFS container appended to the RAM bootstrap')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
     assert not a.work.exists() and not a.output.exists()
     a.work.mkdir(parents=True);a.output.mkdir(parents=True)
     source=ROOT/'src/hakios-8796';build=json.loads((a.programs/'build-report.json').read_text())
+    assert bool(a.app_cryptex) == (build.get('app_cryptex_container') == 2)
     inp=json.loads((a.inputs/'inputs.json').read_text());assert (inp['build'],inp['product'])==('20F66','iPad7,11')
     boot=a.work/'boot';root=a.work/'root'
     for rel in ('sbin','redwood','dev','flash','Cryptexes/OS','Cryptexes/App'):(boot/rel).mkdir(parents=True,exist_ok=True)
@@ -97,6 +99,16 @@ def main():
     extra=''.join(repr(x)+', ' for x in jobs['additional_deny'])
     script=script.replace("DENY = ('watchdog'","DENY = ("+extra+"'watchdog'",1)
     mkjobs=a.work/'mkjobs.py';mkjobs.write_text(script)
+    if a.app_cryptex:
+        # Presence comes from the supplied cryptex listing, not extracted binaries.
+        app_listing = a.app_cryptex.with_suffix('.slt')
+        app_paths = {line[len('Path = '):].strip() for line in app_listing.open(errors='replace')
+                     if line.startswith('Path = ')}
+        marker = 'def present(program):\n'
+        script=script.replace(marker, marker+
+            '    if program.startswith("/System/Cryptexes/App/"):\n'+
+            '        return program[len("/System/Cryptexes/App/"):] in '+repr(sorted(app_paths))+'\n', 1)
+        mkjobs.write_text(script)
     env=dict(os.environ,ALLOW='lockdown' if a.lockdown_probe else '',OSLOG='com.apple.backboardd com.apple.SpringBoard'+(' com.apple.mobile.lockdown' if a.lockdown_probe else ''))
     with (a.output/'jobs.log').open('w') as log:
         subprocess.run([sys.executable,str(mkjobs),'--rest','--root-volume',str(a.inputs/'rootfs.slt'),
@@ -229,6 +241,12 @@ def main():
         with image.open('rb') as f:header=f.read(4096)
         assert header[32:36]==b'NXSB' and struct.unpack_from('<IQ',header,36)==(4096,image.stat().st_size//4096)
         images.append(image)
+    if a.app_cryptex:
+        image = a.output/'App.apfs'
+        shutil.copy2(a.app_cryptex, image)
+        with image.open('rb') as stream: header = stream.read(4096)
+        assert header[32:36] == b'NXSB' and struct.unpack_from('<IQ', header, 36) == (4096, image.stat().st_size//4096)
+        images.append(image)
     target=a.output/'bootstrap.apfs'
     with target.open('wb') as dest:
         for p in images:
@@ -242,6 +260,8 @@ def main():
             'environment_overrides':jobs.get('environment_overrides',{}),
             'on_demand_allow': jobs.get('on_demand_allow', []),
             'system_service_probe_enabled': a.system_service_probe is not None,
+            'app_cryptex': ({'bootstrap_container': 2, 'mount': '/private/preboot/Cryptexes/App',
+                             'source': str(a.app_cryptex)} if a.app_cryptex else None),
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
             'persistent_data_supported':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':setup_report is not None or input_report is not None,
@@ -256,8 +276,8 @@ def main():
                 'required_bootarg':'nabu-local-activation=1',
                 'apple_server_validated':False} if a.local_activation else None),
             'setup_compat':setup_report,'device_execution_validated':False,
-            'filesystem_check':'apfsck -c -u -w passed separately for both containers',
-            'scope':'Local bootstrap image; source-only programs plus supplied 20F66 metadata; no device writes'}
+            'filesystem_check':'apfsck -c -u -w passed for generated Boot and NabuInit containers; supplied App container geometry checked when present',
+            'scope':'Local bootstrap image; source-built programs, supplied 20F66 metadata and optional original App cryptex; no device writes'}
     (a.output/'bootstrap-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 
 
