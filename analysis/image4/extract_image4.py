@@ -78,6 +78,29 @@ for address in range(stubs['va'], stubs['va'] + stubs['size'], 12):
     names.extend(label.encode() + b'\0')
     symbols.extend(struct.pack('<IBBHQQ', name_at, 0x12, 0, stub_index, address, 12))
 
+# Virtual methods and cdev callbacks have no direct caller to seed analysis.
+# Preserve function pointers found in the component's original data sections.
+text = next(s for s in segments if s['name'] == '__TEXT_EXEC')
+callback_addresses = set()
+for segment in segments:
+    if segment['initprot'] & 4:
+        continue
+    contents = read(segment['va'], segment['filesize'])
+    for offset in range(0, len(contents) - 7, 8):
+        address = struct.unpack_from('<Q', contents, offset)[0]
+        if text['va'] <= address < text['va'] + text['filesize'] and address % 4 == 0:
+            callback_addresses.add(address)
+callback_labels = []
+for address in sorted(callback_addresses):
+    if stubs['va'] <= address < stubs['va'] + stubs['size']:
+        continue
+    index = next(i + 1 for i, s in enumerate(sections) if s[3] <= address < s[3] + s[5])
+    label = f'callback_{address:x}'
+    name_at = len(names)
+    names.extend(label.encode() + b'\0')
+    symbols.extend(struct.pack('<IBBHQQ', name_at, 0x12, 0, index, address, 0))
+    callback_labels.append({'address': hex(address), 'name': label})
+
 strings_at = len(output)
 output.extend(names)
 strings_index = section('.strtab', 3, 0, 0, strings_at, len(names))
@@ -104,7 +127,7 @@ destination.mkdir(parents=True, exist_ok=True)
 (destination / (args.name + '.elf')).write_bytes(output)
 (destination / 'mapping.json').write_text(json.dumps({
     'source': str(source), 'bundle': entry['CFBundleIdentifier'],
-    'segments': segments, 'stub_labels': labels,
+    'segments': segments, 'stub_labels': labels, 'callback_labels': callback_labels,
     'scope': 'Analysis-only ELF container; original virtual addresses and bytes preserved'
 }, indent=2) + '\n')
-print(args.name, 'analysis ELF:', len(output), 'bytes;', len(labels), 'named stubs')
+print(args.name, 'analysis ELF:', len(output), 'bytes;', len(labels), 'named stubs;', len(callback_labels), 'callback seeds')
