@@ -23,6 +23,12 @@ using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }
 static void IOSleep(unsigned) {}
+static constexpr const char *gIODTPlane = "IODeviceTree";
+struct IORegistryEntry {
+    static IORegistryEntry *fromPath(const char *, const char *) { return nullptr; }
+    void setProperty(const char *, const void *, unsigned) {}
+    void release() {}
+};
 static bool nabu_rmtfs_available() { return false; }
 static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { return 0; }
 static bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned) { return true; }
@@ -128,8 +134,16 @@ int main() {
     uint8_t ready[]={4,0,0,0x21,0,0,0};reply.size=sizeof(ready);reply.to_port=0x4003;
     packet.resize(32+sizeof(ready));memcpy(packet.data(),&reply,32);memcpy(packet.data()+32,ready,sizeof(ready));
     g.qrtr(packet.data(),packet.size());assert(g.wlfw.fw_ready&&g.wlfw.step==6);
+    g.wlfw.prepare();g.wlfw.sent();
+    const uint8_t pins[]={4,0,0,0x2c,0,14,0,0x10,4,0,0,0,0,0,0x12,4,0,0x78,0x56,0x34,0x12};
+    reply.size=sizeof(pins);packet.resize(32+sizeof(pins));
+    memcpy(packet.data(),&reply,32);memcpy(packet.data()+32,pins,sizeof(pins));
+    g.qrtr(packet.data(),packet.size());
+    assert(g.wlfw.pin_result_count==1&&g.wlfw.pin_result_step==6&&g.wlfw.waiting&&g.wlfw.message==0x25);
+    assert(g.wlfw.pin_result_valid[0]&&g.wlfw.pin_result[0]==0&&!g.wlfw.pin_result_valid[1]);
+    assert(g.wlfw.pin_result_valid[2]&&g.wlfw.pin_result[2]==0x12345678&&!g.wlfw.init_done);
     g.release();
-    puts("GLINK: wraparound, negotiation, QRTR, fragments, reuse, queue bounds and 6144-byte board datagram passed");
+    puts("GLINK: wraparound, negotiation, QRTR, fragments, reuse, queue bounds, board datagram and asynchronous KNEL pin results passed");
 }
 '''
 

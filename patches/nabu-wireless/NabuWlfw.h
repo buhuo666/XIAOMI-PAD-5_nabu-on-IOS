@@ -12,6 +12,9 @@ struct NabuWlfw {
     unsigned board_bytes=0,board_sent=0,board_segment=0,chunk=0;
     bool fw_ready=false;
     bool init_done=false,status_valid=false;
+    unsigned pin_result_count=0,pin_result_step=0;
+    bool pin_result_valid[3]{};
+    uint32_t pin_result[3]{};
     bool board_id_valid=false;
     bool mac_available=false,mac_set=false;
     uint8_t mac_address[6]{};
@@ -33,7 +36,9 @@ struct NabuWlfw {
         if(step==0||step==5){
             value(0x10,1,1);
             if(step!=0){value(0x11,1,1);value(0x12,1,1);}
-            value(0x13,1,1);value(0x15,step==0?0x4b4e454c:0x444d4f4e,4);value(0x18,1,1);
+            value(0x13,1,1);
+            if(step==0)value(0x14,1,1); // ICNSS KNEL subscribes to pin-connect results.
+            value(0x15,step==0?0x4b4e454c:0x444d4f4e,4);value(0x18,1,1);
         }
         if(step==1)value(0x10,board_data?1:0,4);
         if(step==2){value(1,0x8bc00000,8);value(2,0x180000,4);}
@@ -56,7 +61,20 @@ struct NabuWlfw {
     void tick(){if(waiting&&++elapsed>=10000){waiting=false;failed=true;}}
     bool receive(const uint8_t *data,unsigned size) {
         if(size<7||NabuRmtfs::u16(data+5)!=size-7)return false;
-        if(data[0]==4){if(NabuRmtfs::u16(data+3)==0x21)fw_ready=true;if(NabuRmtfs::u16(data+3)==0x38)init_done=true;return false;}
+        if(data[0]==4){
+            uint16_t indication=NabuRmtfs::u16(data+3);
+            if(indication==0x21)fw_ready=true;
+            if(indication==0x38)init_done=true;
+            if(indication==0x2c){
+                ++pin_result_count;pin_result_step=step;
+                for(unsigned i=0;i<3;++i){
+                    unsigned length=0;const uint8_t *p=NabuRmtfs::tlv(data,size,0x10+i,length);
+                    pin_result_valid[i]=p&&length==4;
+                    pin_result[i]=pin_result_valid[i]?NabuRmtfs::u32(p):0;
+                }
+            }
+            return false;
+        }
         if(data[0]!=2||NabuRmtfs::u16(data+1)!=transaction||NabuRmtfs::u16(data+3)!=message)return false;
         unsigned length=0;const uint8_t *result=NabuRmtfs::tlv(data,size,2,length);
         if(!waiting||!result||length!=4)return false;

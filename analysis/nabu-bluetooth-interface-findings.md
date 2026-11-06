@@ -532,3 +532,14 @@ transport子任务与父任务已商定一个源码共享`NabuBluetoothControl.h
 因此下一版最小额外诊断是driver层有界记录完整H4命令的opcode/参数长度、Command Complete/Status的对应opcode/status及IBS状态变化，保留真实QCA返回；不需要复制所有ACL数据或私密负载。先以第一个实际必需且失败的VSC收窄后续适配。不要统一模拟成功/改写QCA错误，也不要在未见真实失败前添加大量BCM到QCA的猜测翻译。
 
 本轮设计分析仅追加本文件。源码helper、kernel sockopt及实际验收由父任务与transport子任务实施；本子任务未改主代码、未操作设备。
+
+### 源码生命周期服务初审
+
+审查父任务新建`userland/nabu/src/bluetooth_lifecycle.c`、`tools/build_nabu_bluetooth_lifecycle.py`及`tools/test_nabu_bluetooth_lifecycle.c`后，未发现新的阻断性逻辑问题。共享头常量名的不一致已由父任务在本轮修正，不重复列为未解决问题。
+
+- XPC外层/参数/reply类型与前述原版契约一致，未知操作返回非零；raw listener使用原生Mach服务名与LISTENER flag，处理队列串行。
+- HCI Command Complete按`event+6`返回包含status的参数。Read Local Version的manufacturer位于response[5..6]、subversion位于[7..8]；Read BD_ADDR包含status加6字节，用response[6-i]与常规MAC字符串比较正确。固件筛选值0x001d/0x373f直接对应`log/host/wireless-v97/wireless-report.txt:63`真实包`04 0e 0c 01 01 10 00 0b 00 00 0b 1d 00 3f 37`。
+- boot做Reset后验证，init只读取验证（发送时由后端发起IBS唤醒），deepsleep做Reset后请求真实idle。每次read/write有期限，H4事件按长度精确读取，不会提前读走下个事件；非零HCI状态/EOF/超时均不能返回成功。
+- 新版sleep调用成功后还读取NabuBluetoothIbsState的完整大小和CONFIRMED标志，诊断包含双方sleep计数。close发生在所有XPC回复之前，不在回复后继续占有UART。
+- 真实模块供应商未知用-1，版本描述明确标为QCA且来自已读版本；没有伪造BCM固件名或HCI success。可选btaddress不存在时address_checked保持false，符合原版可选字段；原生daemon的已验证非零地址路径会提供该值。
+- 本次是源码审查，未在Windows运行iOS/macOS SDK编译，也未宣称ASan/UBSan或实机通过；这些仍由父任务CI执行。审查时打包/工作流尚待接入，已提醒父任务在部署前显式完成helper产物复制及同一com.apple.BlueTool生成job的ProgramArguments重定向。

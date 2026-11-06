@@ -371,6 +371,27 @@ fwPos=-1；随后`No WiFi - Iteration`重试，30秒watchdog退出，bluetoothd�
 Wi-Fi仍同PC异常且三阶段611全零。首次Android回收短读，保留未完整备份后重收成功；
 2,684,618字节有效日志与完整64MiB槽已备份清空，APFS计数67→68，fullfsync成功。
 
+第99轮候选将原生`com.apple.BlueTool`的launchd入口重定向到源码
+`nabu-bluetooth-lifecycle`，保留mobile身份和原Mach服务名。仅处理已确认的
+RunBuiltinScript envelope：boot执行真实HCI Reset并读取LocalVersion/BD_ADDR，
+init再次核对本机QCA版本及请求中的地址；每次先释放独占socket再回复bluetoothd。
+任何HCI、地址或传输失败均返回非零result，附实际errno/status；module manufacturer
+保持未知-1，firmware来自真实QCA版本，不选用供体MUR/USI固件或伪造厂商命令成功。
+
+deepsleep在原生栈停止后执行HCI Reset，再通过Nabu自有sockopt排空收发，在H4
+边界发送IBS FE，等待UART发送完成和真实controller RX asleep。总期限2000ms，
+成功后回读32字节状态与双方sleep计数；下次open恢复FD/FC唤醒。该结果仅表示
+无线活动复位后的IBS传输空闲，共享供电保留，不能称为芯片深度断电；原NVM不变。
+生产函数ASan/UBSan通过，增加最多96条TX opcode及96条RX完成/status日志，用于
+定位原生BCM枚举的后续实际命令，按原样传输控制器回复。
+
+Wi-Fi同时按原机ICNSS增加KNEL的PIN_CONNECT_RESULT订阅（0x20/TLV0x14=1），
+DMON注册保持原样。0x2c的PWR/PHY_IO/RF字段分别记录valid和原值，并记录请求阶段。
+固件静态发送点位于完成路径、紧邻FW_READY；收到可补充阶段证据，缺失不能诊断
+某根引脚故障。两套生产WLFW/GLINK回放均通过ASan/UBSan，未增加推测MMIO/SMMU操作。
+QCA用户态HCI消费测试也已通过ASan/UBSan；SDK禁止直接调用Mach服务入口的问题已
+按原版实际导出符号改为动态解析，iOS重新构建与统一内核链接、实机结果待确认。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

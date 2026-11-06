@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--ci-run', type=int, required=True)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--lifecycle', type=Path, help='Source-owned QCA implementation of the BlueTool lifecycle service')
+    parser.add_argument('--lifecycle-ci-run', type=int)
     args = parser.parse_args()
     jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     baseline = ROOT / 'artifacts/nabu-bootstrap-v77'
@@ -44,6 +46,14 @@ def main():
             job.setdefault('EnvironmentVariables', {})['OS_ACTIVITY_DT_MODE'] = 'YES'
         (destination / (filename + '.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
         changed.append('LaunchDaemons/' + filename + '.plist')
+        policies[filename] = job
+    if args.lifecycle:
+        shutil.copy2(args.lifecycle, args.work / 'root/sbin/nabu-bluetooth-lifecycle')
+        filename = 'com.apple.BlueTool'
+        job = plistlib.loads((destination / (filename + '.plist')).read_bytes())
+        job['ProgramArguments'] = ['/redwood/sbin/nabu-bluetooth-lifecycle']
+        (destination / (filename + '.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
+        changed.extend(['sbin/nabu-bluetooth-lifecycle', 'LaunchDaemons/' + filename + '.plist'])
         policies[filename] = job
     nodes = read_tree(str(args.work / 'root'))
     bootstrap_permissions(nodes)
@@ -77,6 +87,13 @@ def main():
     report['system_service_probe_update'] = {'ci_run': args.ci_run, 'source': str(args.probe),
         'baseline': str(baseline), 'actions_added': ['BluetoothInventory', 'BluetoothTransportTrial', 'BluetoothSocketTrial'],
         'wireless_smem611_snapshots': True}
+    if args.lifecycle:
+        report['bluetooth_lifecycle'] = {
+            'ci_run': args.lifecycle_ci_run, 'source': str(args.lifecycle),
+            'service': 'com.apple.BlueTool', 'user': policies['com.apple.BlueTool']['UserName'],
+            'boot_init': 'Real HCI Reset (boot), QCA LocalVersion and requested BD_ADDR verification',
+            'deepsleep': 'Real HCI Reset then confirmed IBS transport idle; shared supplies retained',
+            'donor_firmware_scripts_used': False, 'runtime_verified': False}
     report['service_restoration'].append({'label': 'com.apple.bluetoothuiservice',
         'operation': 'include-original-job', 'original_conditions_preserved': True})
     report['filesystem_check'] = 'Regenerated NabuInit: apfsck -c -u -w passed; Boot/App copied from qualified v77'

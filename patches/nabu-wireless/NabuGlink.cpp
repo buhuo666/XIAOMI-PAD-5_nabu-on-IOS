@@ -235,7 +235,14 @@ struct NabuGlink {
         if (header.to_port != control_port && header.type == 1) {
             if(qmi_enabled&&(header.to_port==0x4003||header.to_port==0x4004)&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
                 const uint8_t *qmi=data+at;
-                if(header.size>=7&&qmi[0]==4){wlfw.receive(qmi,header.size);nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);}
+                if(header.size>=7&&qmi[0]==4){
+                    unsigned pin_count=wlfw.pin_result_count;
+                    wlfw.receive(qmi,header.size);
+                    nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);
+                    if(wlfw.pin_result_count!=pin_count)nabu_wireless_log("NABU WLFW: pin-connect count=%u step=%u request=%#x waiting=%u client-port=%#x pwr-valid=%u pwr=%#x phy-io-valid=%u phy-io=%#x rf-valid=%u rf=%#x\n",
+                        wlfw.pin_result_count,wlfw.pin_result_step,wlfw.message,wlfw.waiting,header.to_port,
+                        wlfw.pin_result_valid[0],wlfw.pin_result[0],wlfw.pin_result_valid[1],wlfw.pin_result[1],wlfw.pin_result_valid[2],wlfw.pin_result[2]);
+                }
                 else if(wlfw.receive(qmi,header.size)){
                     unsigned n=0;const uint8_t *result=NabuRmtfs::tlv(qmi,header.size,2,n);
                     nabu_wireless_log("NABU WLFW: response message=%#x result=%u error=%u\n",NabuRmtfs::u16(qmi+3),result?NabuRmtfs::u16(result):65535,result?NabuRmtfs::u16(result+2):65535);
@@ -443,6 +450,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-MAC available=%u applied=%u\n",link->wlfw.mac_available,link->wlfw.mac_set);
+    if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: pin-connect indications=%u last-step=%u\n",link->wlfw.pin_result_count,link->wlfw.pin_result_step);
     if(link->wlan_crash_captured) link->capture_wlan_crash("end");
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));

@@ -14,7 +14,7 @@ HARNESS=r'''
 #include "NabuWlfw.h"
 int main(){
     NabuWlfw w{};w.prepare();
-    const uint8_t register_request[]={0,1,0,0x20,0,19,0,0x10,1,0,1,0x13,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1};
+    const uint8_t register_request[]={0,1,0,0x20,0,23,0,0x10,1,0,1,0x13,1,0,1,0x14,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1};
     assert(w.bytes==sizeof(register_request)&&!memcmp(w.request,register_request,sizeof(register_request)));
     uint8_t response[]={2,1,0,0x20,0,7,0,2,4,0,0,0,0,0};w.sent();
     response[1]=9;assert(!w.receive(response,sizeof(response))&&w.waiting);response[1]=1;assert(w.receive(response,sizeof(response))&&w.step==1);
@@ -28,6 +28,17 @@ int main(){
     assert(w.receive(msa.data(),msa.size())&&w.complete&&!w.failed&&w.region_count==2);
     assert(w.regions[0].address==0x8bc00000&&w.regions[1].size==0x80000&&!w.regions[1].secure);
     w.activate=true;w.complete=false;w.prepare();assert(w.message==0x2e&&w.bytes==7);w.sent();
+    // The KNEL notification can arrive during another outstanding request.
+    const uint8_t pins[]={4,0,0,0x2c,0,21,0,0x12,4,0,0xff,0xff,0xff,0xff,
+        0x10,4,0,0,0,0,0,0x11,4,0,0x78,0x56,0x34,0x12};
+    assert(!w.receive(pins,sizeof(pins))&&w.waiting&&w.message==0x2e&&w.step==3);
+    assert(w.pin_result_count==1&&w.pin_result_step==3);
+    assert(w.pin_result_valid[0]&&w.pin_result[0]==0&&w.pin_result_valid[1]&&w.pin_result[1]==0x12345678);
+    assert(w.pin_result_valid[2]&&w.pin_result[2]==0xffffffffu&&!w.fw_ready&&!w.init_done);
+    const uint8_t pwr_only[]={4,0,0,0x2c,0,7,0,0x10,4,0,1,0,0,0};
+    w.receive(pwr_only,sizeof(pwr_only));assert(w.pin_result_count==2&&w.pin_result_valid[0]&&w.pin_result[0]==1);
+    assert(!w.pin_result_valid[1]&&!w.pin_result_valid[2]&&!w.pin_result[1]&&!w.pin_result[2]);
+    assert(!w.receive(pins,sizeof(pins)-1)&&w.pin_result_count==2&&w.waiting);
     response[1]=4;response[3]=0x2e;assert(w.receive(response,sizeof(response))&&w.msa_ready);
     w.prepare();assert(w.message==0x24&&w.bytes==7);w.sent();
     std::vector<uint8_t> cap{2,5,0,0x24,0,25,0,2,4,0,0,0,0,0,0x10,8,0,0x91,0x39,0,0,1,0,0,0,0x11,4,0,0x34,0x12,0,0};
@@ -38,6 +49,7 @@ int main(){
     w.board_data=board.data();w.board_bytes=board.size();w.complete=false;
     w.prepare();unsigned dn=0;const uint8_t *dc=NabuRmtfs::tlv(w.request,w.bytes,0x15,dn);
     assert(w.message==0x20&&w.local_port()==0x4004&&dc&&dn==4&&NabuRmtfs::u32(dc)==0x444d4f4e);
+    assert(!NabuRmtfs::tlv(w.request,w.bytes,0x14,dn)); // DMON registration stays as captured.
     w.sent();response[1]=w.transaction;response[3]=0x20;assert(w.receive(response,sizeof(response))&&w.step==6);
     NabuWlfw host{};host.board_data=board.data();host.step=1;host.prepare();
     const uint8_t *support=NabuRmtfs::tlv(host.request,host.bytes,0x10,dn);assert(support&&dn==4&&NabuRmtfs::u32(support)==1);
@@ -66,7 +78,7 @@ int main(){
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);
-    puts("WLFW: dual registration/MSA, BIN board segments, calibration and board MAC without re-registration, ready/init indications, errors and timeout passed");
+    puts("WLFW: KNEL pin subscription, asynchronous raw/valid pin results, dual registration/MSA, BIN board segments, calibration and board MAC, ready/init indications, errors and timeout passed");
 }
 '''
 

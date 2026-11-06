@@ -4,6 +4,7 @@
 // Register and protocol definitions: MiCode nabu-r-oss GENI/GCC/RPMh;
 // Linux hci_qca/btqca. Board pins/resources were read in device run 76.
 #include <IOKit/IOLib.h>
+#include <IOKit/IOLocks.h>
 #include <kern/locks.h>
 #include <kern/clock.h>
 #include <kern/thread_call.h>
@@ -27,6 +28,7 @@
 #include <libkern/c++/OSData.h>
 #include "NabuWirelessLog.h"
 #include "NabuBluetoothTransport.h"
+#include "NabuBluetoothControl.h"
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern "C" lck_mtx_t hakios_rsc_lock;
@@ -333,6 +335,11 @@ enum { StreamTxAsleep, StreamTxWaking, StreamTxAwake };
 static unsigned stream_ibs_tx, stream_ibs_pending_acks, stream_ibs_attempts;
 static bool stream_ibs_rx_awake;
 static uint64_t stream_ibs_deadline, stream_ibs_wakes, stream_ibs_acks, stream_ibs_sleeps;
+static bool stream_idle_requested, stream_idle_confirmed, stream_suspending, stream_rx_wake_waiting;
+static uint64_t stream_host_sleep_count;
+static unsigned stream_command_logs, stream_event_logs;
+static uint8_t stream_event_code, stream_event_prefix[4];
+static unsigned stream_event_payload_seen;
 
 static void stream_clear_rx()
 {
@@ -361,13 +368,37 @@ static void stream_drain_rx(bool discard)
         stream_received += bytes;
         for (unsigned i = 0; i < bytes; ++i) {
             uint8_t byte = data >> (i * 8);
+            uint8_t previous_type = stream_rx_frame.type;
+            unsigned previous_header = stream_rx_frame.header_bytes;
             int kind = stream_rx_frame.take(byte);
-            if (kind == 2) { ++stream_ibs_pending_acks; ++stream_ibs_wakes; stream_ibs_rx_awake = true; }
+            if (kind == 2) {
+                ++stream_ibs_wakes; stream_idle_confirmed = false;
+                if (stream_suspending) stream_rx_wake_waiting = true;
+                else { ++stream_ibs_pending_acks; stream_ibs_rx_awake = true; }
+            }
             else if (kind == 3) { if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAwake; ++stream_ibs_acks; }
-            else if (kind == 4) { stream_ibs_rx_awake = false; ++stream_ibs_sleeps; }
+            else if (kind == 4) { stream_ibs_rx_awake = false; stream_rx_wake_waiting = false; ++stream_ibs_sleeps; }
             else if (kind < 0) { stream_rx_error = EPROTO; stream_clear_rx(); }
             else if (!discard && !stream_discard_frame && !stream_rx_error && !stream_rx->push_word(byte, 1)) {
                 stream_rx_error = EOVERFLOW; stream_clear_rx(); ++stream_overruns;
+            }
+            if (kind == 1 && stream_suspending) { stream_ibs_rx_awake = true; stream_idle_confirmed = false; }
+            if (kind != 1 || stream_idle_requested) wakeup(&stream_idle_requested);
+            if (kind == 1 && previous_type == 4) {
+                if (previous_header < 2) {
+                    if (stream_rx_frame.header_bytes == 2) { stream_event_code = stream_rx_frame.header[0]; stream_event_payload_seen = 0; }
+                } else {
+                    if (stream_event_payload_seen < sizeof(stream_event_prefix)) stream_event_prefix[stream_event_payload_seen] = byte;
+                    ++stream_event_payload_seen;
+                }
+                if (stream_rx_frame.boundary() && !stream_rx_error && stream_event_payload_seen >= 4 &&
+                    (stream_event_code == 0x0e || stream_event_code == 0x0f) && stream_event_logs < 96) {
+                    unsigned opcode = stream_event_code == 0x0e ? stream_event_prefix[1] | stream_event_prefix[2] << 8 :
+                        stream_event_prefix[2] | stream_event_prefix[3] << 8;
+                    unsigned status = stream_event_prefix[stream_event_code == 0x0e ? 3 : 0];
+                    nabu_wireless_log("NABU BT HCI: RX event=%#x opcode=%#x status=%u\n", stream_event_code, opcode, status);
+                    ++stream_event_logs;
+                }
             }
             if (stream_rx_frame.boundary()) stream_discard_frame = false;
         }
@@ -384,6 +415,7 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
         lck_mtx_lock(stream_rx_lock);
         int packet = stream_tx->packet_size();
         uint8_t control = 0;
+        if (stream_suspending) { lck_mtx_unlock(stream_rx_lock); break; }
         if (stream_ibs_pending_acks) control = 0xfc;
         else if (stream_tx_error) { lck_mtx_unlock(stream_rx_lock); break; }
         else if (packet < 0) stream_tx_error = EPROTO;
@@ -399,13 +431,15 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
             ++stream_ibs_attempts;
             clock_interval_to_deadline(100, kMillisecondScale, &stream_ibs_deadline);
         }
+        bool log_command = !control && packet > 0 && stream_tx->at(0) == 1 && stream_command_logs < 96;
+        unsigned command_opcode = log_command ? stream_tx->at(1) | stream_tx->at(2) << 8 : 0;
         lck_mtx_unlock(stream_rx_lock);
         if (control) {
             bool ok = transmit(stream_uart, &control, 1, true);
             lck_mtx_lock(stream_rx_lock);
             if (ok && control == 0xfc) --stream_ibs_pending_acks;
             if (!ok) stream_tx_error = EIO;
-            wakeup(stream_tx); wakeup(stream_rx);
+            wakeup(stream_tx); wakeup(stream_rx); wakeup(&stream_idle_requested);
             lck_mtx_unlock(stream_rx_lock);
             if (!ok) break;
             continue;
@@ -420,10 +454,15 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
             lck_mtx_lock(stream_rx_lock);
             if (ok) { stream_tx->consume(count); stream_written += count; left -= count; }
             else stream_tx_error = EIO;
-            wakeup(stream_tx); wakeup(stream_rx);
+            wakeup(stream_tx); wakeup(stream_rx); wakeup(&stream_idle_requested);
             lck_mtx_unlock(stream_rx_lock);
             if (!ok) break;
         }
+        lck_mtx_lock(stream_rx_lock);
+        bool sent_command = log_command && !stream_tx_error;
+        if (sent_command) ++stream_command_logs;
+        lck_mtx_unlock(stream_rx_lock);
+        if (sent_command) nabu_wireless_log("NABU BT HCI: TX opcode=%#x bytes=%u\n", command_opcode, (unsigned)packet);
     }
     lck_mtx_lock(stream_rx_lock);
     int error = stream_tx_error;
@@ -453,7 +492,7 @@ static void stream_socket_deliver(thread_call_param_t, thread_call_param_t)
         if (!error) stream_rx->consume(bytes);
         else if (error != ENOBUFS && error != ENOMEM) stream_rx_error = error;
     }
-    stream_socket_enqueuing = false; wakeup(&stream_socket_enqueuing);
+    stream_socket_enqueuing = false; wakeup(&stream_socket_enqueuing); wakeup(&stream_idle_requested);
     lck_mtx_unlock(stream_rx_lock);
     if (error && error != ENOBUFS && error != ENOMEM)
         nabu_wireless_log("NABU BT STREAM: socket RX error=%d unit=%u\n", error, unit);
@@ -467,9 +506,9 @@ static void stream_poll(thread_call_param_t, thread_call_param_t)
     stream_drain_rx(false);
     // Wake only for new data/errors: waking every poll would restart VTIME forever.
     if (stream_rx->count != before || stream_rx_error != previous_error) wakeup(stream_rx);
-    bool tx_needed = stream_ibs_pending_acks ||
+    bool tx_needed = !stream_suspending && (stream_ibs_pending_acks ||
         (!stream_tx_error && ((stream_ibs_tx == StreamTxWaking && mach_absolute_time() >= stream_ibs_deadline) ||
-         (stream_ibs_tx != StreamTxWaking && stream_tx->packet_size() != 0)));
+         (stream_ibs_tx != StreamTxWaking && stream_tx->packet_size() != 0))));
     bool socket_needed = stream_socket_unit && !stream_socket_closing && !stream_ibs_pending_acks && !stream_rx_error && stream_rx->count;
     lck_mtx_unlock(stream_rx_lock);
     if (tx_needed) thread_call_enter(stream_tx_call);
@@ -486,6 +525,8 @@ static int stream_acquire(uint32_t unit)
     int error = stream_opened ? EBUSY : 0;
     if (!error) {
         stream_opened = true; stream_socket_unit = unit; stream_socket_closing = false;
+        stream_idle_requested = stream_idle_confirmed = stream_suspending = false;
+        if (stream_rx_wake_waiting) { ++stream_ibs_pending_acks; stream_ibs_rx_awake = true; stream_rx_wake_waiting = false; }
         stream_rx_error = stream_tx_error = 0; stream_clear_rx(); stream_tx->clear();
         if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAsleep;
         stream_drain_rx(true); stream_minimum = 1;
@@ -493,6 +534,7 @@ static int stream_acquire(uint32_t unit)
     }
     lck_mtx_unlock(stream_rx_lock);
     lck_mtx_unlock(stream_tx_lock);
+    if (!error) thread_call_enter(stream_tx_call);
     nabu_wireless_log("NABU BT STREAM: open unit=%u result=%d\n", unit, error);
     return error;
 }
@@ -578,7 +620,7 @@ static int stream_wait_space(unsigned bytes, bool nonblocking)
     if (bytes > StreamTxQueue::capacity) return EMSGSIZE;
     lck_mtx_lock(stream_rx_lock);
     int error = 0;
-    while (stream_opened && !stream_rx_error && !stream_tx_error && StreamTxQueue::capacity - stream_tx->count < bytes) {
+    while (stream_opened && !stream_rx_error && !stream_tx_error && !stream_idle_requested && !stream_suspending && StreamTxQueue::capacity - stream_tx->count < bytes) {
         if (nonblocking) { error = EWOULDBLOCK; break; }
         error = msleep(stream_tx, stream_rx_lock, PZERO | PCATCH, "nabu-bt-tx", nullptr);
         if (error) break;
@@ -586,6 +628,7 @@ static int stream_wait_space(unsigned bytes, bool nonblocking)
     if (!stream_opened) error = ENOTCONN;
     if (stream_rx_error) error = stream_rx_error;
     if (stream_tx_error) error = stream_tx_error;
+    if (stream_idle_requested || stream_suspending) error = EBUSY;
     lck_mtx_unlock(stream_rx_lock);
     return error;
 }
@@ -689,6 +732,102 @@ static int stream_ioctl(dev_t, u_long command, caddr_t data, int, struct proc *)
     return error;
 }
 
+// Caller holds the state/RX lock. One absolute deadline covers every wakeup.
+static int stream_idle_wait(uint64_t deadline)
+{
+    uint64_t now = mach_absolute_time(), ns;
+    if (now >= deadline) return ETIMEDOUT;
+    absolutetime_to_nanoseconds(deadline - now, &ns);
+    struct timespec timeout{(time_t)(ns / 1000000000), (long)(ns % 1000000000)};
+    int error = msleep(&stream_idle_requested, stream_rx_lock, PZERO | PCATCH, "nabu-bt-idle", &timeout);
+    return error == EWOULDBLOCK ? ETIMEDOUT : error;
+}
+
+static bool stream_idle_drained()
+{
+    return !stream_tx->count && !stream_ibs_pending_acks && !stream_socket_enqueuing &&
+        !stream_rx->count && stream_rx_frame.boundary();
+}
+
+static int stream_enter_idle()
+{
+    // A lifecycle client must already own the transport, after stack shutdown.
+    // Do not interrupt a producer halfway through copying an H4 fragment.
+    if (!IOLockTryLock((IOLock *)stream_write_lock)) return EBUSY;
+    lck_mtx_lock(stream_rx_lock);
+    int error = !stream_opened ? ENOTCONN : stream_idle_requested ? EBUSY : 0;
+    if (!error) { stream_idle_requested = true; stream_idle_confirmed = false; }
+    lck_mtx_unlock(stream_rx_lock);
+    lck_mtx_unlock(stream_write_lock);
+    if (error) return error;
+    uint64_t deadline;
+    clock_interval_to_deadline(NABU_BT_IDLE_DEADLINE_MS, kMillisecondScale, &deadline);
+    thread_call_enter(stream_tx_call); thread_call_enter(stream_socket_call);
+    bool sent_sleep = false;
+    while (!error && !sent_sleep) {
+        lck_mtx_lock(stream_rx_lock);
+        if (!stream_opened) error = ENOTCONN;
+        else if (stream_rx_error) error = stream_rx_error;
+        else if (stream_tx_error) error = stream_tx_error;
+        bool drained = stream_idle_drained();
+        if (!error && !drained) error = stream_idle_wait(deadline);
+        lck_mtx_unlock(stream_rx_lock);
+        if (error) break;
+        if (!drained) continue;
+        // Never wait indefinitely behind a long H4 frame holding the TX lock.
+        if (!IOLockTryLock((IOLock *)stream_tx_lock)) {
+            if (mach_absolute_time() >= deadline) error = ETIMEDOUT;
+            else IOSleep(1);
+            continue;
+        }
+        lck_mtx_lock(stream_rx_lock);
+        drained = stream_idle_drained();
+        if (drained) stream_suspending = true;
+        lck_mtx_unlock(stream_rx_lock);
+        if (drained) {
+            uint64_t send_limit;
+            // Existing transmit has <=60ms FIFO/completion waits, plus 10ms abort.
+            clock_interval_to_deadline(70, kMillisecondScale, &send_limit);
+            if (send_limit > deadline) error = ETIMEDOUT;
+            else {
+                const uint8_t sleep = 0xfe;
+                sent_sleep = transmit(stream_uart, &sleep, 1, true);
+                lck_mtx_lock(stream_rx_lock);
+                if (sent_sleep) { stream_ibs_tx = StreamTxAsleep; ++stream_host_sleep_count; }
+                else { stream_tx_error = EIO; error = EIO; }
+                lck_mtx_unlock(stream_rx_lock);
+                if (!sent_sleep) { wr(stream_uart + 0x604, 4); wait_bit(stream_uart + 0x40, 1, false, 10000); }
+            }
+        }
+        lck_mtx_unlock(stream_tx_lock);
+    }
+    lck_mtx_lock(stream_rx_lock);
+    while (!error) {
+        stream_drain_rx(false);
+        if (!stream_opened) error = ENOTCONN;
+        else if (stream_rx_error) error = stream_rx_error;
+        else if (stream_tx_error) error = stream_tx_error;
+        else if (mach_absolute_time() >= deadline) error = ETIMEDOUT;
+        else if (sent_sleep && stream_idle_drained() && !stream_ibs_rx_awake && stream_ibs_sleeps && !stream_rx_wake_waiting) {
+            stream_idle_confirmed = true; break;
+        }
+        if (!error) error = stream_idle_wait(deadline);
+    }
+    stream_idle_requested = false;
+    if (error) {
+        stream_idle_confirmed = stream_suspending = false;
+        if (stream_rx_wake_waiting) { ++stream_ibs_pending_acks; stream_ibs_rx_awake = true; stream_rx_wake_waiting = false; }
+    }
+    uint64_t host_sleeps = stream_host_sleep_count, peer_sleeps = stream_ibs_sleeps;
+    bool rx_awake = stream_ibs_rx_awake;
+    wakeup(stream_tx); wakeup(stream_rx);
+    lck_mtx_unlock(stream_rx_lock);
+    if (error) thread_call_enter(stream_tx_call);
+    nabu_wireless_log("NABU BT IDLE: result=%d FE-sent=%u host-sleeps=%llu peer-sleeps=%llu rx-awake=%u; shared supplies retained\n",
+        error, sent_sleep, host_sleeps, peer_sleeps, rx_awake);
+    return error;
+}
+
 static errno_t stream_ctl_connect(kern_ctl_ref, struct sockaddr_ctl *address, void **unitinfo)
 {
     int error = stream_acquire(address->sc_unit);
@@ -745,6 +884,10 @@ static errno_t stream_ctl_send(kern_ctl_ref, uint32_t unit, void *unitinfo, mbuf
 static errno_t stream_ctl_setopt(kern_ctl_ref, uint32_t unit, void *unitinfo, int option, void *data, size_t length)
 {
     if (!stream_ctl_owner(unit, unitinfo)) return ENOTCONN;
+    if (option == NABU_BT_OPT_IBS_IDLE) {
+        if (length != sizeof(uint32_t) || !data || *(const uint32_t *)data != NABU_BT_CONTROL_VERSION) return EINVAL;
+        return stream_enter_idle();
+    }
     u_long command = (uint32_t)option;
     if (command != TIOCSETA_64 && command != 0x80085402 && command != TIOCEXCL && command != TIOCNXCL) return ENOTTY;
     if (length != IOCPARM_LEN(command) || (length && !data)) return EINVAL;
@@ -760,6 +903,16 @@ static errno_t stream_ctl_setopt(kern_ctl_ref, uint32_t unit, void *unitinfo, in
 static errno_t stream_ctl_getopt(kern_ctl_ref, uint32_t unit, void *unitinfo, int option, void *data, size_t *length)
 {
     if (!stream_ctl_owner(unit, unitinfo)) return ENOTCONN;
+    if (option == NABU_BT_OPT_IBS_STATE) {
+        if (!data) { *length = sizeof(NabuBluetoothIbsState); return 0; }
+        if (*length < sizeof(NabuBluetoothIbsState)) return EMSGSIZE;
+        lck_mtx_lock(stream_rx_lock);
+        NabuBluetoothIbsState state{NABU_BT_CONTROL_VERSION,
+            (stream_idle_confirmed ? NABU_BT_IDLE_CONFIRMED : 0u) | (stream_idle_requested ? NABU_BT_IDLE_IN_PROGRESS : 0u),
+            stream_ibs_tx, (uint32_t)stream_ibs_rx_awake, stream_host_sleep_count, stream_ibs_sleeps};
+        lck_mtx_unlock(stream_rx_lock);
+        memcpy(data, &state, sizeof(state)); *length = sizeof(state); return 0;
+    }
     u_long command = (uint32_t)option;
     if (command != TIOCGETA_64 && command != TIOCOUTQ) return ENOTTY;
     size_t required = IOCPARM_LEN(command);
