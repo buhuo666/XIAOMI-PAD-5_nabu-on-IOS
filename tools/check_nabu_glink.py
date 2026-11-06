@@ -18,6 +18,7 @@ PREFIX = r'''
 #include "NabuSmem.h"
 #include "NabuTftp.h"
 #include "NabuServreg.h"
+#include "NabuWlfw.h"
 using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }

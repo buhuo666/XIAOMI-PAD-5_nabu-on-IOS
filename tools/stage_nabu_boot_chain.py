@@ -111,11 +111,13 @@ def main():
     ap.add_argument('--wlan-firmware', type=Path, help='Original wlanmdsp.mbn served read-only over QRTR TFTP')
     ap.add_argument('--rmtfs-snapshot', type=Path, help='This board modem storage snapshots for RAM-only RMTFS')
     ap.add_argument('--servreg',type=Path,help='Original-board JSON service-registry directory')
+    ap.add_argument('--wlan-qmi',action='store_true',help='Register WLAN QMI client and query host capability/MSA information')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
     assert not a.rmtfs_snapshot or a.modem_glink, 'RMTFS requires GLINK'
     assert not a.servreg or a.modem_glink, 'Service registry requires GLINK'
+    assert not a.wlan_qmi or a.modem_glink, 'WLAN QMI requires GLINK'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -132,6 +134,7 @@ def main():
                 modem_firmware[f"segment-{segment['index']:02}"] = (a.modem_firmware/segment['file']).read_bytes()
         if a.wlan_firmware: modem_firmware['wlanmdsp'] = a.wlan_firmware.read_bytes()
         if a.servreg: modem_firmware['servreg']=encode_servreg(a.servreg)
+        if a.wlan_qmi: modem_firmware['wlfw-qmi']=(1).to_bytes(4,'little')
         if a.rmtfs_snapshot:
             for file in json.loads((a.rmtfs_snapshot/'snapshot.json').read_text())['files']:
                 modem_firmware['rmtfs-'+file['partition']] = pack_rmtfs((a.rmtfs_snapshot/file['file']).read_bytes())
