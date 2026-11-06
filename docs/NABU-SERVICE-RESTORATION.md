@@ -130,8 +130,13 @@ ExperienceCompatibilityTrial显式请求先保存原版结果，再在同一进�
 第75轮用户确认两项修复生效：键盘显示且比例正常；备忘录中英文输入、删除和保存
 均正常。静态壁纸已出现，可以设置到锁屏和主屏，两处显示正常。原生USB/本地激活
 及155项登记保持，实时日志记录MobileNotes调用零高度修正，键盘最终区域800x320。
-候选为v66内核/bootstrap v75，修复库42207243443。同配置跨重启验收仍待第76轮。
+候选为v66内核/bootstrap v75，修复库42207243443。同配置跨重启验收暂缓：用户在
+第75轮后返回Android并明确开始修复Wi-Fi和蓝牙，第76轮改为无线硬件诊断。
 实时日志另有一次MobileNotes在前台恢复时SIGABRT，符号化指向
 `PKMetalResourceHandler newPaintShaderKernelPipelineState`→`setComputeFunction:`→
 MTLReportFailure。随后应用重启，用户完成中英文文字测试；这项PencilKit/Metal问题
 独立保留，不将文字输入通过泛化为绘图或备忘录全部功能稳定。见services-v75/notes-metal-abort.json。
+
+第75轮已回收6,017,712字节有效日志前缀，无终止提交记录；完整64MiB槽14已备份，
+清空读回通过。APFS计数45→46、fullfsync成功。记录位于
+`log/device/nabu-boot-20261106-75/runtime-log/`，无线工作保留bootstrap v75。

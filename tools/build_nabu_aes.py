@@ -18,6 +18,7 @@ def main():
     ap.add_argument('--usb',action='store_true',help='Include the DWC3 CDC runtime-log channel')
     ap.add_argument('--usb-reference',action='store_true',help='Compile the recovered stock controller ABI reference (not linked)')
     ap.add_argument('--native-usb',action='store_true',help='Include the stock USB family adapter and DWC3 bidirectional transport')
+    ap.add_argument('--wireless',action='store_true',help='Include the Nabu SM8150 wireless foundation')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     assert not a.native_usb or a.power, 'Native USB reconnect uses the PMIC power sampler'
     headers=ROOT/'build/nabu-kernel-headers-v29'
@@ -37,6 +38,7 @@ def main():
     if a.power: flags += ['-DNABU_POWER_SERVICE=1']
     if a.usb or a.native_usb: flags += ['-DNABU_USB_SERVICE=1']
     if a.native_usb: flags += ['-DNABU_USB_NATIVE_SERVICE=1']
+    if a.wireless: flags += ['-DNABU_WIRELESS_SERVICE=1']
     sources = [('NabuAES',ROOT/'patches/nabu-apfs/NabuAES.cpp'),
                         ('NabuDataBlock',ROOT/'patches/nabu-storage/NabuDataBlock.cpp'),
                         ('AESReference',ROOT/'patches/nabu-apfs/AESReference.cpp'),
@@ -45,6 +47,7 @@ def main():
     if a.usb or a.native_usb: sources.append(('NabuUsbCaptureCdc',ROOT/'patches/nabu-usb/NabuUsbCaptureCdc.cpp'))
     if a.native_usb: sources.append(('NabuUsbNativeController',ROOT/'patches/nabu-usb/NabuUsbNativeController.cpp'))
     if a.usb_reference or a.native_usb: sources.append(('NativeUsbReference',ROOT/'patches/nabu-usb/NativeUsbReference.cpp'))
+    if a.wireless: sources.append(('NabuWireless',ROOT/'patches/nabu-wireless/NabuWireless.cpp'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

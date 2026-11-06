@@ -100,6 +100,7 @@ def main():
     ap.add_argument('--rtc-calibration', type=Path, help='Android time / PM8150 RTC capture from capture_nabu_power.py')
     ap.add_argument('--platform-identity', type=Path, help='Local capture containing the real Qualcomm SoC identity')
     ap.add_argument('--native-usb', action='store_true', help='Select the experimental native Apple USB controller for this staged boot')
+    ap.add_argument('--wireless-survey', action='store_true', help='Enable the compiled Nabu wireless hardware survey')
     a = ap.parse_args()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
@@ -123,6 +124,13 @@ def main():
     config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
+    if a.wireless_survey:
+        kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
+        assert kernel_report['data_block']['wireless_start'], 'Wireless survey requires its linked Nabu module'
+        old_args=entry['args']
+        entry['args'] += ' nabu-wireless=1'
+        assert config_bytes.count(old_args.encode())==1
+        config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:
         kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
         assert kernel_report['stock_apple_usb_included'] and kernel_report['data_block']['usb_class']
