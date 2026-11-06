@@ -35,6 +35,7 @@
 @end
 
 static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuServices";
+extern NSDictionary *nabuWallpaperSnapshot(void);
 
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
@@ -380,6 +381,10 @@ int main(void) {
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
+                        else if ([action isEqual:@"WallpaperInventory"]) {
+                            result[@"read_only"] = @YES;
+                            result[@"wallpaper"] = nabuWallpaperSnapshot();
+                        }
                         else if ([action isEqual:@"RegisterMissingStaged"] && [request[@"BundleIDs"] isKindOfClass:NSArray.class])
                             result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"], NO);
                         else if ([action isEqual:@"RegisterNativeStaged"] && [request[@"BundleIDs"] isKindOfClass:NSArray.class])

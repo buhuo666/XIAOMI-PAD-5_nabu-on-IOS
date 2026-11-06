@@ -16,10 +16,13 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
     source = ROOT / 'userland/nabu/src/system_service_probe.m'
+    wallpaper_source = ROOT / 'userland/nabu/src/wallpaper_probe.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), '-framework', 'Foundation', '-o', str(binary)]
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source),
+               '-framework', 'Foundation', '-framework', 'ImageIO',
+               '-framework', 'CoreGraphics', '-o', str(binary)]
     subprocess.run(command, check=True)
     entitlements = ROOT / 'userland/nabu/system-service-probe.entitlements.plist'
     subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none',
@@ -33,7 +36,9 @@ def main():
               'repair_requires_live_paired_host_request': True, 'request_window_seconds': 1200,
               'network_calls': False, 'runtime_verified': False,
               'signed_entitlements': signed_entitlements,
-              'daemon_container_query_diagnostic': True}
+              'daemon_container_query_diagnostic': True,
+              'wallpaper_source': str(wallpaper_source.relative_to(ROOT)),
+              'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request'}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 

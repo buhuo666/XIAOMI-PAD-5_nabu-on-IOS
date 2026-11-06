@@ -6,6 +6,7 @@ on:
       - '.github/workflows/system-services.yml'
       - 'tools/build_nabu_system_service_probe.py'
       - 'userland/nabu/src/system_service_probe.m'
+      - 'userland/nabu/src/wallpaper_probe.m'
       - 'userland/nabu/system-service-probe.entitlements.plist'
   workflow_dispatch:
 permissions:
