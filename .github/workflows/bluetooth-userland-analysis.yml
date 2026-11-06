@@ -33,6 +33,10 @@ jobs:
               raise RuntimeError('Ghidra download digest mismatch')
           subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
           PY
+      - name: Build the required native macOS decompiler
+        run: |
+          export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+          build/ghidra_12.2_PUBLIC/support/gradle/gradlew -p build/ghidra_12.2_PUBLIC/support/gradle buildNatives
       - name: Recover transport choices and initialization callers
         run: |
           export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
