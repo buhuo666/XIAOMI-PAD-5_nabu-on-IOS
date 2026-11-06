@@ -39,7 +39,7 @@ struct NabuGlink {
     bool server_check_valid = false;
     NabuWlfw wlfw;
     bool qmi_enabled = false;
-    uint8_t transmit[4096]{};
+    uint8_t transmit[8192]{};
     struct RemoteIntent { uint32_t id, size; bool present, used; } remote[64]{};
     struct LocalIntent { uint8_t *data; uint32_t size, fill; } local[16]{};
     unsigned local_count = 0;
@@ -216,6 +216,7 @@ struct NabuGlink {
                     nabu_wireless_log("NABU WLFW: response message=%#x result=%u error=%u\n",NabuRmtfs::u16(qmi+3),result?NabuRmtfs::u16(result):65535,result?NabuRmtfs::u16(result+2):65535);
                     if(wlfw.message==0x2d)for(unsigned i=0;i<wlfw.region_count;++i)nabu_wireless_log("NABU WLFW: MSA region=%u address=%#llx size=%#x secure=%u\n",i,wlfw.regions[i].address,wlfw.regions[i].size,wlfw.regions[i].secure);
                     if(wlfw.message==0x24&&wlfw.capability_valid)nabu_wireless_log("NABU WLFW: chip=%#x family=%#x board=%#x soc=%#x fw=%#x build=%s\n",wlfw.chip_id,wlfw.chip_family,wlfw.board_id,wlfw.soc_id,wlfw.fw_version,wlfw.build_id);
+                    if(wlfw.message==0x24)nabu_wireless_log("NABU WLFW: board-id-valid=%u\n",wlfw.board_id_valid);
                     if(wlfw.board_sent)nabu_wireless_log("NABU WLFW: board-data acknowledged=%u/%u segments=%u\n",wlfw.board_sent,wlfw.board_bytes,wlfw.board_segment);
                     if(wlfw.message==0x20)nabu_wireless_log("NABU WLFW: status valid=%u flags=%#llx\n",wlfw.status_valid,wlfw.fw_status);
                 }

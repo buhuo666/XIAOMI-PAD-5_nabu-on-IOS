@@ -106,8 +106,21 @@ int main() {
     unsigned before=g.word(8);uint32_t fragment[]={12,0};receive(g,9,9,1,fragment,8);g.pump();assert(g.word(8)==before);
     // A full TX queue rejects a write without changing its producer index.
     put32(4,0);put32(0,16);GlinkMessage m{13,0,0};assert(!g.send(&m,8)&&g.word(4)==0);
+    // A full 6144-byte board segment traverses QRTR and wraps the TX FIFO intact.
+    put32(4,15000);put32(0,15000);
+    for(auto &r:g.remote)r.present=false;
+    g.remote[0]={101,8192,true,false};
+    std::vector<uint8_t> board(26328);for(unsigned i=0;i<board.size();++i)board[i]=i%251;
+    NabuWlfw w{};w.board_data=board.data();w.board_bytes=board.size();w.step=5;w.prepare();
+    assert(g.datagram(1,0x4003,0,35,w.request,w.bytes)&&g.remote[0].used);
+    unsigned total=(32+w.bytes+3)&~3u,frame=(16+total+7)&~7u;
+    std::vector<uint8_t> wire(frame);for(unsigned i=0;i<frame;++i)wire[i]=shared[g.tx.offset+(15000+i)%g.tx.size];
+    GlinkMessage gh;memcpy(&gh,wire.data(),8);assert(gh.command==9&&gh.value==101);
+    assert(NabuRmtfs::u32(wire.data()+8)==total&&NabuRmtfs::u32(wire.data()+12)==0);
+    QrtrHeader qh;memcpy(&qh,wire.data()+16,32);assert(qh.size==w.bytes&&qh.to_node==0&&qh.to_port==35);
+    assert(!memcmp(wire.data()+48,w.request,w.bytes)&&g.word(4)==(15000+frame)%g.tx.size);
     g.release();
-    puts("GLINK: wraparound, version/open, intents, v1/v2 QRTR, fragments, resume, reuse and queue bounds passed");
+    puts("GLINK: wraparound, negotiation, QRTR, fragments, reuse, queue bounds and 6144-byte board datagram passed");
 }
 '''
 
