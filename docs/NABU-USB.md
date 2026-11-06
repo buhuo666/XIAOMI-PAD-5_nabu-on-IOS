@@ -20,6 +20,14 @@ CS_VALID、CodeDirectory槽哈希验证及错误返回，再经原csops_copy_tok
 完整数据原样复制、缺失数据、校验失败、进程标志、copyout错误与两种内存所有权。
 此检查不替代内核构建、实机权限查询及正常配对验收；第五十九轮尚未启动。
 
+后续：源提交2c3211a的Actions 42139214783完整构建及全部检查通过，下载时已核对
+新产物。v59内核与原版组件重新链接，继续使用v57的Data/Power/USB对象和bootstrap
+v58。第五十九轮临时启动成功，用户确认桌面正常，AMDeviceConnect与设备信息查询
+成功；AMDevicePair返回0xe800001a（kAMDPasswordProtectedError），没有进入验证或
+会话阶段。原版handle_pair在远端信任查询之后调用MKBGetDeviceLockState；仅凭
+错误码尚不能确定实际锁定值。日志仍在本轮槽内，等待手动返回Android后回收，
+不能宣称XML运行时验收或配对成功。证据位于ignored `log/host/native-usb-v59/`。
+
 ## 第五十八轮：Lockdown 响应恢复，配对进入权限查询失败
 
 第五十七轮确认1203请求实际返回 MACH_RCV_TIMED_OUT（0x10004003），随后又等待
