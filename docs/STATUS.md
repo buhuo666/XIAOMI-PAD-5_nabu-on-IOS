@@ -2,6 +2,10 @@
 
 更新：2026-11-06，Asia/Shanghai。
 
+用户已授权恢复符合移植路线的服务。第70轮候选处理13项本地服务配置，原生诊断构建
+及配置检查通过，正在打包；含壁纸ImageIO解码和SQLite vnode失效观察，实机尚待验证。
+详见[本地系统服务恢复](NABU-SERVICE-RESTORATION.md)。
+
 2026-11-06补充全系统服务复核：用户反馈桌面、锁屏背景均黑；PosterBoard两轮已运行，
 原版默认壁纸素材存在，黑色背景根因尚未确认。当前与原版相比90份任务未纳入，
 218份至少移除一个有效触发字段；ScreenTimeAgent/RemoteManagement存在数据库I/O
