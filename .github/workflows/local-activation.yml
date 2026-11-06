@@ -1,0 +1,28 @@
+name: nabu16 - local activation provider
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/local-activation.yml'
+      - 'tools/build_nabu_local_activation.py'
+      - 'userland/nabu/src/local_activation.m'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-activation:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile source-only local state provider
+        run: python3 tools/build_nabu_local_activation.py --output artifacts/nabu-local-activation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nabu-local-activation-${{ github.run_number }}
+          path: artifacts/nabu-local-activation/
+          retention-days: 14
