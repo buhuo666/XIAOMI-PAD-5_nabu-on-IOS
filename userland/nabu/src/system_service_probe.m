@@ -235,6 +235,7 @@ static NSDictionary *errorInfo(NSError *error) {
 static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString *path, NSString *identifier) {
     // Original 20F66 factory: reads the shipped signature and creates required
     // data/group containers. Never synthesize signer, container or plugin data.
+    NSLog(@"NABU SERVICES: %@ loading original metadata framework", identifier);
     dlopen("/System/Library/PrivateFrameworks/InstalledContentLibrary.framework/InstalledContentLibrary", RTLD_NOW);
     Class bundleClass = NSClassFromString(@"MIExecutableBundle");
     Class gathererClass = NSClassFromString(@"MILaunchServicesDatabaseGatherer");
@@ -245,17 +246,20 @@ static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString 
         result[@"error"] = @"original metadata classes unavailable";
         return result;
     }
+    NSLog(@"NABU SERVICES: %@ constructing original executable bundle", identifier);
     NSError *error = nil;
     MIExecutableBundle *bundle = [bundleClass bundleForURL:[NSURL fileURLWithPath:path] error:&error];
     if (!bundle) {
         result[@"bundle_error"] = errorInfo(error);
         return result;
     }
+    NSLog(@"NABU SERVICES: %@ gathering original installation metadata", identifier);
     NSArray *records = [gathererClass fetchInfoForBundle:bundle inContainer:nil withError:&error];
     if (!records) {
         result[@"gather_error"] = errorInfo(error);
         return result;
     }
+    NSLog(@"NABU SERVICES: %@ converting %lu original records", identifier, (unsigned long)records.count);
     NSArray<NSDictionary *> *infos = [recordClass bundleRecordArrayToInfoDictionaryArray:records];
     NSMutableArray *summary = [NSMutableArray array];
     NSDictionary *application = nil;
@@ -286,6 +290,7 @@ static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString 
         NSMutableDictionary *submission = [application mutableCopy];
         if (plugins.count) submission[@"_LSBundlePlugins"] = plugins;
         result[@"plugin_count"] = @(plugins.count);
+        NSLog(@"NABU SERVICES: %@ submitting original dictionary with %lu plugins", identifier, (unsigned long)plugins.count);
         result[@"register_return"] = @([workspace registerApplicationDictionary:submission]);
     }
     return result;
