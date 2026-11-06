@@ -24,6 +24,11 @@ def platform_uuid_from_soc(identity):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f'nabu-platform://soc/{soc_id}/serial/{serial}'))
 
 
+def usb_serial_from_platform_uuid(platform_uuid):
+    """Stable board identifier in AMDS's accepted 40-hex record-name format."""
+    return hashlib.sha1(b'nabu-usb:' + uuid.UUID(platform_uuid).bytes).hexdigest()
+
+
 class Node:
     def __init__(self, name, props=None, children=()):
         self.props = {'name': STR(name), **(props or {})}
@@ -108,6 +113,7 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
         chosen.props['nabu-rtc-offset'] = U64(rtc_offset)
     if platform_uuid is not None:
         chosen.props['nabu-platform-uuid'] = STR(str(uuid.UUID(platform_uuid)))
+        chosen.props['nabu-usb-serial'] = STR(usb_serial_from_platform_uuid(platform_uuid))
     if wifi_mac is not None:
         # MobileGestalt reads this CFData before falling back to network-service
         # matching. This supplies board identity; it does not publish a NIC.

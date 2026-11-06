@@ -3,6 +3,43 @@
 2026-11-05，用户要求优先开发 iPadOS 与电脑的 USB 连接，便于获取运行日志。
 此前“USB 响应正常”的验收仅指电源插拔和充电图标，尚无数据传输验收。
 
+## 第六十轮：配对持久化、TLS会话和AFC文件传输
+
+沿用v59内核/bootstrap v58，用户确认桌面正常。未经重新Pair，直接使用Windows
+保存记录的HostID/SystemBUID，原版Lockdown返回StartSession及EnableSessionSSL。
+TLS1.2 ECDHE-RSA-AES256-GCM-SHA384握手成功，服务端DER证书与第五十九轮保存的
+DeviceCertificate逐字节一致，加密GetValue PasswordProtected=false，StopSession成功。
+这证明该主机信任和设备证书跨重启保留，不能将Windows的MissingPairRecord归因于
+设备端配对文件丢失。该设备证书为自签名，普通根CA验证失败；诊断工具在任何加密
+应用请求前核对已信任的设备证书，证书不同即中止，不跳过对端身份核对。
+
+`tools/probe_nabu_lockdown_session.py --afc-roundtrip`通过同一已验证会话启动原版
+com.apple.afc，以32KiB分块写入一个唯一命名测试文件，关闭、重开并读回262,170
+字节，全部一致，随后删除该文件。AFC不启用服务TLS；其启动授权经过TLS Lockdown。
+此结果是原版服务文件传输验收，不代表Apple Devices/iTunes媒体同步或备份通过。
+
+原版MobileDevice 1860.49.2.1的AMDeviceIsPaired和AMDeviceValidatePairing都实际
+调用StartSession再StopSession。此前探针“只是状态flag”的描述不准确；现已从
+只读设备信息探针移除IsPaired，配对工具也去掉重复调用。现有失败发生在电脑端
+读取配对记录之前，原生AMDevice会话尚未通过。
+
+本地原版DLL反汇编确认：客户端以USB标识请求AMDS ReadPairRecord；服务端只接受
+24hex、8hex-16hex或40hex，当前32hex标识在路径生成阶段即返回EINVAL=22，客户端
+将无PairRecordData映射为0xe8000025。磁盘文件虽然存在，也不会被打开。实际请求
+32hex返回22，40hex不存在文件返回ENOENT=2，与该调用链一致。分析证据位于ignored
+`log/host/native-usb-v60/host-abi/findings.md`，属于Capstone静态反汇编；REA深度提供器
+本机不可用，本次无需反编译即可结合运行结果确认原因。
+
+第六十一轮候选新增chosen/nabu-usb-serial：以本机真实SoC身份派生的平台UUID为输入，
+取带nabu-usb命名空间的SHA1十六进制作为稳定40字符USB标识。此值仅用于主机识别，
+不是Apple凭证，也不替换Lockdown仍为全f的UniqueDeviceID。控制器已编译和重链接；
+Windows将原有配对文件保留并复制到新标识文件名，AMDS读回9308字节、全部字段与
+原记录一致，未发出新Pair。需要下一轮证明原生AMDevice可以直接建立会话。
+
+第六十轮3,457,510字节日志及完整64MiB槽已备份清空；APFS计数30→31、fullfsync成功，
+GPT/引导分区一致。首次回收在Android刚返回时短读，未写设备；确认root和完整读取
+恢复后回收成功。相关主机结果位于ignored `log/host/native-usb-v60/`。
+
 ## 第五十九轮回收：原版权限读取和用户信任后的配对成功
 
 原版remotepairingdeviced对lockdownd的14次XML查询均先以1032字节缓冲区得到

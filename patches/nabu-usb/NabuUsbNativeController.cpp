@@ -73,22 +73,16 @@ OSDictionary *deviceDescription()
 {
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
     if (!chosen) return nullptr;
-    OSData *uuid = OSDynamicCast(OSData, chosen->getProperty("nabu-platform-uuid"));
-    char serial[37] = {};
-    unsigned used = 0;
-    if (uuid) {
-        const char *bytes = static_cast<const char *>(uuid->getBytesNoCopy());
-        for (unsigned i = 0; i < uuid->getLength() && bytes[i]; ++i) {
-            if (bytes[i] == '-') continue;
-            if (used == sizeof(serial) - 1) { used = 0; break; }
-            serial[used++] = bytes[i];
-        }
-    }
-    if (!used) {
-        IOLog("NABU NATIVE USB: missing device-derived nabu-platform-uuid\n");
+    OSData *identity = OSDynamicCast(OSData, chosen->getProperty("nabu-usb-serial"));
+    // AMDS rejects the previous 32-hex UUID before opening its pair record.
+    // The ADT supplies a stable 40-hex board identifier, not an Apple credential.
+    if (!identity || identity->getLength() != 41) {
+        IOLog("NABU NATIVE USB: missing 40-hex nabu-usb-serial\n");
         chosen->release();
         return nullptr;
     }
+    char serial[41] = {};
+    bcopy(identity->getBytesNoCopy(), serial, 40);
     OSDictionary *description = OSDictionary::withCapacity(12);
     OSArray *configurations = OSArray::withCapacity(2);
     OSDictionary *reserved = configuration(false);
@@ -254,7 +248,7 @@ bool NabuUsbNativeController::start(IOService *provider)
     // A stock standardBringup configurator would supply its one-config default.
     setProperty("ConfigurationType", "nabuNative");
     setProperty("DeviceDescription", description);
-    setProperty("NabuUSBIdentitySource", "IODeviceTree:/chosen/nabu-platform-uuid");
+    setProperty("NabuUSBIdentitySource", "IODeviceTree:/chosen/nabu-usb-serial");
     description->release();
     loop->runAction(finishStart, this);
     OSArray *configurations = *reinterpret_cast<OSArray **>(

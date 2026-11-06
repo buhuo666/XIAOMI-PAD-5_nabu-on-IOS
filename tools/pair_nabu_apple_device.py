@@ -38,7 +38,7 @@ def main():
             connected=True
             product=apple.copy_value(device,'ProductType');report['product_type']=product
             if product!='iPad7,11':report['state']='unexpected-product';return
-            report['is_paired_before']=apple.am.AMDeviceIsPaired(device)
+            report['identifier']=apple.take_string(apple.am.AMDeviceCopyDeviceIdentifier(device))
             if a.pair:
                 report['state']='pair-request';save()
                 code=apple.am.AMDevicePair(device);report['pair']=result(code);save()

@@ -135,8 +135,8 @@ class AppleMobileDevice:
         if code:
             return result
         try:
-            # This is the library's status flag, not proof of a usable pairing.
-            result['is_paired_status'] = self.am.AMDeviceIsPaired(device)
+            # Installed MobileDevice 1860.49.2.1 implements IsPaired by starting
+            # and stopping a session. Omit it from this read-only value probe.
             product = self.copy_value(device, 'ProductType')
             result['expected_product_match'] = product == expected_product
             result['values'] = {'ProductType': product}
