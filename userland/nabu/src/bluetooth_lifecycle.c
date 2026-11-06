@@ -1,6 +1,7 @@
 /* Nabu QCA lifecycle behind the original BlueTool XPC message contract. */
 #include <dispatch/dispatch.h>
 #include <xpc/xpc.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -245,7 +246,11 @@ static void handle_message(xpc_connection_t peer, xpc_object_t message) {
 int main(void) {
     openlog("nabu-bluetooth-lifecycle", LOG_PID, LOG_DAEMON);
     dispatch_queue_t queue = dispatch_queue_create("nabu.bluetooth.lifecycle", DISPATCH_QUEUE_SERIAL);
-    xpc_connection_t listener = xpc_connection_create_mach_service(
+    /* Present in the original 20F66 BlueTool, but unavailable to SDK iOS apps. */
+    xpc_connection_t (*create_service)(const char *, dispatch_queue_t, uint64_t) =
+        dlsym(RTLD_DEFAULT, "xpc_connection_create_mach_service");
+    if (!create_service) { report("native Mach-service entry unavailable"); return 1; }
+    xpc_connection_t listener = create_service(
         "com.apple.BlueTool", queue, XPC_CONNECTION_MACH_SERVICE_LISTENER);
     if (!listener) { report("listener creation failed"); return 1; }
     xpc_connection_set_event_handler(listener, ^(xpc_object_t peer) {
