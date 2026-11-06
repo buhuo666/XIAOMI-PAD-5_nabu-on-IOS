@@ -111,14 +111,14 @@ struct NabuGlink {
             }
         }
         if(qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete){
-            if(wlfw.step==7&&wlfw.post_cal_wait<2000)return;
+            if(wlfw.step==8&&wlfw.post_cal_wait<2000)return;
             if(wlfw.activate&&wlfw.step==3&&!wlfw.permissions_ready){
                 wlfw.permissions_ready=nabu_msa_prepare(wlfw.regions,wlfw.region_count);
                 if(!wlfw.permissions_ready){wlfw.failed=true;return;}
             }
             if(!wlfw.bytes)wlfw.prepare();
-            if(datagram(1,0x4003,wlfw_node,wlfw_port,wlfw.request,wlfw.bytes)){
-                wlfw.sent();nabu_wireless_log("NABU WLFW: request message=%#x transaction=%u bytes=%u\n",wlfw.message,wlfw.transaction,wlfw.bytes);
+            if(datagram(1,wlfw.local_port(),wlfw_node,wlfw_port,wlfw.request,wlfw.bytes)){
+                wlfw.sent();nabu_wireless_log("NABU WLFW: request message=%#x transaction=%u bytes=%u client-port=%#x\n",wlfw.message,wlfw.transaction,wlfw.bytes,wlfw.local_port());
             }
         }
     }
@@ -208,7 +208,7 @@ struct NabuGlink {
         }
         unsigned command = packet.u32(at);
         if (header.to_port != control_port && header.type == 1) {
-            if(qmi_enabled&&header.to_port==0x4003&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
+            if(qmi_enabled&&(header.to_port==0x4003||header.to_port==0x4004)&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
                 const uint8_t *qmi=data+at;
                 if(header.size>=7&&qmi[0]==4){wlfw.receive(qmi,header.size);nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);}
                 else if(wlfw.receive(qmi,header.size)){
@@ -362,7 +362,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     NabuGlink *link = (NabuGlink *)IOMalloc(sizeof(NabuGlink));
     if (!link) return;
     // All state belongs to this one bounded trial; no interrupt callback retains it.
-    bzero(link, sizeof(*link)); link->features = 1;
+    bzero(link, sizeof(*link)); link->features = 1; link->wlfw=NabuWlfw{};
     link->memory = {(const volatile uint8_t *)smem, 0x200000}; link->doorbell = (volatile uint32_t *)ipc;
     IORegistryEntry *firmware_entry = IORegistryEntry::fromPath("/nabu-modem", gIODTPlane);
     if (firmware_entry) {

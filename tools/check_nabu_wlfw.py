@@ -36,7 +36,12 @@ int main(){
     response[1]=1;response[3]=0x24;assert(missing_board.receive(response,sizeof(response))&&!missing_board.board_id_valid&&missing_board.board_id==0xff);
     std::vector<uint8_t> board(26328),copied;for(unsigned i=0;i<board.size();++i)board[i]=i%251;
     w.board_data=board.data();w.board_bytes=board.size();w.complete=false;
-    while(w.step==5){
+    w.prepare();unsigned dn=0;const uint8_t *dc=NabuRmtfs::tlv(w.request,w.bytes,0x15,dn);
+    assert(w.message==0x20&&w.local_port()==0x4004&&dc&&dn==4&&NabuRmtfs::u32(dc)==0x444d4f4e);
+    w.sent();response[1]=w.transaction;response[3]=0x20;assert(w.receive(response,sizeof(response))&&w.step==6);
+    NabuWlfw host{};host.board_data=board.data();host.step=1;host.prepare();
+    const uint8_t *support=NabuRmtfs::tlv(host.request,host.bytes,0x10,dn);assert(support&&dn==4&&NabuRmtfs::u32(support)==1);
+    while(w.step==6){
         w.prepare();unsigned n=0;const uint8_t *p=NabuRmtfs::tlv(w.request,w.bytes,0x13,n);
         assert(p&&n==w.chunk+2&&NabuRmtfs::u16(p)==w.chunk&&w.bytes<8192-32);
         assert(w.chunk==(w.board_segment<4?6144u:1752u));
@@ -45,7 +50,7 @@ int main(){
     }
     assert(copied==board&&w.board_sent==board.size()&&w.board_segment==5);
     w.prepare();assert(w.message==0x26&&w.bytes==11&&w.request[7]==1&&w.request[10]==0);w.sent();
-    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==7);
+    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==8);
     for(unsigned i=0;i<2000;++i)w.tick();assert(w.post_cal_wait==2000);w.prepare();w.sent();
     std::vector<uint8_t> status{2,(uint8_t)w.transaction,0,0x20,0,18,0,2,4,0,0,0,0,0,0x10,8,0,0x1f,0,0,0,0,0,0,0};
     assert(w.receive(status.data(),status.size())&&w.complete&&w.status_valid&&w.fw_status==0x1f);

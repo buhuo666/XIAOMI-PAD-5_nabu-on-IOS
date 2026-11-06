@@ -111,14 +111,23 @@ int main() {
     for(auto &r:g.remote)r.present=false;
     g.remote[0]={101,8192,true,false};
     std::vector<uint8_t> board(26328);for(unsigned i=0;i<board.size();++i)board[i]=i%251;
-    NabuWlfw w{};w.board_data=board.data();w.board_bytes=board.size();w.step=5;w.prepare();
-    assert(g.datagram(1,0x4003,0,35,w.request,w.bytes)&&g.remote[0].used);
+    NabuWlfw w{};w.board_data=board.data();w.board_bytes=board.size();w.step=6;w.prepare();
+    assert(g.datagram(1,w.local_port(),0,35,w.request,w.bytes)&&g.remote[0].used);
     unsigned total=(32+w.bytes+3)&~3u,frame=(16+total+7)&~7u;
     std::vector<uint8_t> wire(frame);for(unsigned i=0;i<frame;++i)wire[i]=shared[g.tx.offset+(15000+i)%g.tx.size];
     GlinkMessage gh;memcpy(&gh,wire.data(),8);assert(gh.command==9&&gh.value==101);
     assert(NabuRmtfs::u32(wire.data()+8)==total&&NabuRmtfs::u32(wire.data()+12)==0);
-    QrtrHeader qh;memcpy(&qh,wire.data()+16,32);assert(qh.size==w.bytes&&qh.to_node==0&&qh.to_port==35);
+    QrtrHeader qh;memcpy(&qh,wire.data()+16,32);assert(qh.size==w.bytes&&qh.from_port==0x4004&&qh.to_node==0&&qh.to_port==35);
     assert(!memcmp(wire.data()+48,w.request,w.bytes)&&g.word(4)==(15000+frame)%g.tx.size);
+    g.qmi_enabled=true;g.wlfw_node=0;g.wlfw_port=35;g.wlfw=NabuWlfw{};
+    g.wlfw.board_data=board.data();g.wlfw.board_bytes=board.size();g.wlfw.step=5;g.wlfw.prepare();g.wlfw.sent();
+    uint8_t reg_response[]={2,1,0,0x20,0,7,0,2,4,0,0,0,0,0};
+    QrtrHeader reply{1,1,0,35,0,sizeof(reg_response),1,0x4004};
+    packet.resize(32+sizeof(reg_response));memcpy(packet.data(),&reply,32);memcpy(packet.data()+32,reg_response,sizeof(reg_response));
+    g.qrtr(packet.data(),packet.size());assert(g.wlfw.step==6&&!g.wlfw.waiting);
+    uint8_t ready[]={4,0,0,0x21,0,0,0};reply.size=sizeof(ready);reply.to_port=0x4003;
+    packet.resize(32+sizeof(ready));memcpy(packet.data(),&reply,32);memcpy(packet.data()+32,ready,sizeof(ready));
+    g.qrtr(packet.data(),packet.size());assert(g.wlfw.fw_ready&&g.wlfw.step==6);
     g.release();
     puts("GLINK: wraparound, negotiation, QRTR, fragments, reuse, queue bounds and 6144-byte board datagram passed");
 }
