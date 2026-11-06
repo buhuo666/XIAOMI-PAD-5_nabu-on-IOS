@@ -1,6 +1,6 @@
 /* Local software bring-up: inspect actual files and LaunchServices records.
- * The default action is read-only. A paired host may request one of the two
- * stock LS repair operations through AFC; no arbitrary commands are accepted.
+ * The default action is read-only. A paired host may request registration of
+ * named missing staged apps through AFC; no arbitrary commands are accepted.
  */
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
@@ -18,9 +18,6 @@
 + (instancetype)defaultWorkspace;
 - (NSArray *)allApplications;
 - (BOOL)registerApplication:(NSURL *)url;
-- (BOOL)_LSPrivateRebuildApplicationDatabasesForSystemApps:(BOOL)system
-                                               internal:(BOOL)internal
-                                                   user:(BOOL)user;
 @end
 
 static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuServices";
@@ -29,27 +26,41 @@ static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
     attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
     attributes.commonattr = ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_ERROR | ATTR_CMN_NAME | ATTR_CMN_OBJTYPE;
+    attributes.dirattr = ATTR_DIR_ENTRYCOUNT | ATTR_DIR_MOUNTSTATUS;
     NSMutableArray *entries = [NSMutableArray array];
     int fd = open("/Applications", O_RDONLY);
     if (fd < 0) return @{@"open_errno": @(errno)};
-    char buffer[65536];
+    char buffer[16384];
     int count;
-    while ((count = getattrlistbulk(fd, &attributes, buffer, sizeof(buffer), FSOPT_PACK_INVAL_ATTRS)) > 0) {
+    while ((count = getattrlistbulk(fd, &attributes, buffer, sizeof(buffer), 0)) > 0) {
         char *cursor = buffer;
         for (int i = 0; i < count; i++) {
-            struct {
-                uint32_t length;
-                attribute_set_t returned;
-                uint32_t error;
-                attrreference_t name;
-                fsobj_type_t type;
-            } record;
-            memcpy(&record, cursor, sizeof(record));
-            const char *name = cursor + offsetof(typeof(record), name) + record.name.attr_dataoffset;
-            NSString *text = record.name.attr_length ? @(name) : @"";
-            [entries addObject:@{@"name": text, @"error": @(record.error), @"type": @(record.type),
-                @"returned_common": @(record.returned.commonattr), @"record_bytes": @(record.length)}];
-            cursor += record.length;
+            uint32_t length;
+            attribute_set_t returned;
+            memcpy(&length, cursor, 4);
+            memcpy(&returned, cursor + 4, sizeof(returned));
+            char *value = cursor + 4 + sizeof(returned);
+            NSMutableDictionary *entry = [@{@"returned_common": @(returned.commonattr),
+                @"returned_directory": @(returned.dirattr), @"record_bytes": @(length)} mutableCopy];
+            if (returned.commonattr & ATTR_CMN_ERROR) {
+                uint32_t error; memcpy(&error, value, 4); value += 4; entry[@"error"] = @(error);
+            }
+            if (returned.commonattr & ATTR_CMN_NAME) {
+                attrreference_t name; memcpy(&name, value, sizeof(name));
+                entry[@"name"] = name.attr_length ? @(value + name.attr_dataoffset) : @"";
+                value += sizeof(name);
+            }
+            if (returned.commonattr & ATTR_CMN_OBJTYPE) {
+                uint32_t type; memcpy(&type, value, 4); value += 4; entry[@"type"] = @(type);
+            }
+            if (returned.dirattr & ATTR_DIR_ENTRYCOUNT) {
+                uint32_t children; memcpy(&children, value, 4); value += 4; entry[@"children"] = @(children);
+            }
+            if (returned.dirattr & ATTR_DIR_MOUNTSTATUS) {
+                uint32_t mounted; memcpy(&mounted, value, 4); entry[@"mount_status"] = @(mounted);
+            }
+            [entries addObject:entry];
+            cursor += length;
         }
     }
     int error = count < 0 ? errno : 0;
@@ -189,7 +200,12 @@ static NSDictionary *registerMissing(LSApplicationWorkspace *workspace, NSArray 
         if (!identifier || ![app[@"staged"] boolValue] || ![bundleIDs containsObject:identifier]) continue;
         NSMutableDictionary *result = [@{@"bundle_id": identifier, @"path": app[@"path"]} mutableCopy];
         if ([installed containsObject:identifier]) result[@"already_registered"] = @YES;
-        else result[@"register_return"] = @([workspace registerApplication:[NSURL fileURLWithPath:app[@"path"]]]);
+        else {
+            NSURL *url = [NSURL fileURLWithPath:app[@"path"]];
+            int32_t (*registerURL)(CFURLRef, Boolean) = dlsym(RTLD_DEFAULT, "LSRegisterURL");
+            if (registerURL) result[@"register_osstatus"] = @(registerURL((__bridge CFURLRef)url, false));
+            else result[@"register_return"] = @([workspace registerApplication:url]);
+        }
         [results addObject:result];
     }
     return @{@"applications": results};
@@ -217,8 +233,6 @@ int main(void) {
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
-                        else if ([action isEqual:@"RebuildSystemApplications"])
-                            result[@"rebuild_return"] = @([workspace _LSPrivateRebuildApplicationDatabasesForSystemApps:YES internal:NO user:NO]);
                         else if ([action isEqual:@"RegisterMissingStaged"] && [request[@"BundleIDs"] isKindOfClass:NSArray.class])
                             result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"]);
                         else result[@"error"] = @"unsupported action";

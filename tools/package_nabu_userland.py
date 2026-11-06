@@ -74,6 +74,7 @@ def main():
     ap.add_argument('--lockdown-timeout', type=Path, help='Bound the original FairPlay HWInfo receive wait in stock lockdownd')
     ap.add_argument('--fairplay-trace', type=Path, help='Transparent call observer for stock fairplayd.A2 startup')
     ap.add_argument('--local-activation', type=Path, help='Source-built local NSXPC activation state provider')
+    ap.add_argument('--system-service-probe', type=Path, help='Local filesystem/LaunchServices inventory and paired-host repair diagnostic')
     a=ap.parse_args();assert sys.platform!='win32','Run image assembly in WSL for Unix metadata'
     setup_library,setup_report=qualified_setup_compat(a.setup_compat) if a.setup_compat else (None,None)
     input_library,input_report=qualified_input_bridge(a.input_bridge) if a.input_bridge else (None,None)
@@ -103,6 +104,18 @@ def main():
     for p in (root/'LaunchDaemons').glob('*.plist'):
         assert not any(x in p.name for x in jobs['additional_deny'])
         plistlib.loads(p.read_bytes())
+    # Restore individual observed dependencies, retaining only their Mach triggers.
+    for label in jobs.get('on_demand_allow', []):
+        path = a.inputs/'rootfs/System/Library/LaunchDaemons'/(label+'.plist')
+        job = plistlib.loads(path.read_bytes())
+        assert job['Label'] == label and job.get('MachServices')
+        assert not any(word in label for word in jobs['additional_deny'])
+        for key in ('RunAtLoad', 'KeepAlive', 'StartInterval', 'StartCalendarInterval',
+                    'WatchPaths', 'QueueDirectories', 'StartOnMount', 'LaunchEvents'):
+            job.pop(key, None)
+        job['StandardErrorPath'] = '/dev/console'
+        job.setdefault('EnvironmentVariables', {})['OS_ACTIVITY_DT_MODE'] = 'YES'
+        (root/'LaunchDaemons'/(label+'.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
     for label,overrides in jobs.get('environment_overrides',{}).items():
         assert label in jobs['run_at_boot'] and isinstance(overrides,dict)
         assert all(isinstance(k,str) and isinstance(v,str) and k and '=' not in k and
@@ -147,6 +160,18 @@ def main():
              'StandardErrorPath':'/dev/console'}
         (root/'LaunchDaemons/org.nabu.local-activation.plist').write_bytes(
             plistlib.dumps(job,fmt=plistlib.FMT_BINARY))
+    if a.system_service_probe:
+        shutil.copy2(a.system_service_probe, root/'sbin/system-service-probe')
+        job = {'Label': 'org.nabu.system-service-probe', 'Program': '/redwood/sbin/system-service-probe',
+               'RunAtLoad': True, 'UserName': 'mobile',
+               'StandardOutPath': '/dev/console', 'StandardErrorPath': '/dev/console'}
+        (root/'LaunchDaemons/org.nabu.system-service-probe.plist').write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
+        prefix = 'Path = private/var/staged_system_apps/'
+        staged = sorted({line.strip()[len(prefix):].split('/')[0]
+                         for line in (a.inputs/'rootfs.slt').open(errors='replace')
+                         if line.startswith(prefix) and line.strip().endswith('.app/Info.plist')
+                         and line.strip()[len(prefix):].count('/') == 1})
+        (root/'etc/staged-apps.plist').write_bytes(plistlib.dumps(staged, fmt=plistlib.FMT_BINARY))
     for name in ('extensions.plist','extensions.plist.sig'):
         p=a.inputs/'rootfs/System/Library/xpc'/name
         if p.exists():shutil.copy2(p,root/'xpc'/name)
@@ -215,6 +240,8 @@ def main():
             'unix_metadata':{'owner':'root:wheel','directories':'0755','data_files':'0644','programs_and_libraries':'0755'},
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
+            'on_demand_allow': jobs.get('on_demand_allow', []),
+            'system_service_probe_enabled': a.system_service_probe is not None,
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
             'persistent_data_supported':True,'setup_assistant_skipped_in_seed':True,
             'private_address_injections_enabled':setup_report is not None or input_report is not None,

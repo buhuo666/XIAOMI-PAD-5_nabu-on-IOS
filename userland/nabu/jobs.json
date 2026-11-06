@@ -23,8 +23,9 @@
     "com.apple.SpringBoard"
   ],
   "additional_deny": ["purplebuddy", "mobileactivation"],
+  "on_demand_allow": ["com.apple.dmd"],
   "environment_overrides": {
     "com.apple.backboardd": {"CA_FORCE_TIMER": "1"}
   },
-  "scope": "Candidate selection from the actual 20F66 plists; desktop execution not yet verified"
+  "scope": "20F66 local software bring-up; dmd is a run65 on-demand candidate for observed application-policy lookup failures"
 }
