@@ -24,10 +24,14 @@ def main():
     executable = app / 'LocalTest'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-fblocks', '-Os', '-Wall', '-Wextra', '-Werror',
-               str(source), str(source.with_name('keyboard_diagnostic.m')), '-framework', 'UIKit', '-framework', 'Foundation',
+               str(source), str(source.with_name('keyboard_diagnostic.m')),
+               str(ROOT / 'userland/nabu/src/experience_compat.m'), '-framework', 'UIKit', '-framework', 'Foundation',
                '-o', str(executable)]
     subprocess.run(command, check=True)
     executable.chmod(0o755)
+    subprocess.run(['xcrun', 'ibtool', '--compile', str(app / 'LaunchScreen.storyboardc'),
+                    '--sdk', sdk, '--minimum-deployment-target', '16.5', '--target-device', 'ipad',
+                    str(source.with_name('LaunchScreen.storyboard'))], check=True)
     info = {
         'CFBundleIdentifier': 'org.nabu.LocalTest',
         'CFBundleName': 'LocalTest',
@@ -35,15 +39,15 @@ def main():
         'CFBundleExecutable': 'LocalTest',
         'CFBundlePackageType': 'APPL',
         'CFBundleInfoDictionaryVersion': '6.0',
-        'CFBundleVersion': '3',
-        'CFBundleShortVersionString': '1.2',
+        'CFBundleVersion': '4',
+        'CFBundleShortVersionString': '1.3',
         'CFBundleDevelopmentRegion': 'zh-Hans',
         'CFBundleLocalizations': ['zh-Hans'],
         'CFBundleSupportedPlatforms': ['iPhoneOS'],
         'MinimumOSVersion': '16.5',
         'LSRequiresIPhoneOS': True,
         'UIDeviceFamily': [2],
-        'UILaunchScreen': {},
+        'UILaunchStoryboardName': 'LaunchScreen',
         'UISupportedInterfaceOrientations': [
             'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
             'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],

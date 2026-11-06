@@ -1,9 +1,11 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+extern void nabuInstallExperienceCompatibility(void);
 
 @interface NSObject (NabuKeyboardDiagnostic)
 + (id)traitsWithScreen:(UIScreen *)screen orientation:(NSInteger)orientation;
 + (CGSize)keyboardSizeForInputMode:(NSString *)mode screenTraits:(id)traits keyboardType:(NSInteger)type;
++ (BOOL)shouldLoadWallpaperBundleAtURL:(NSURL *)url;
 @end
 
 static NSMutableArray *events;
@@ -79,10 +81,20 @@ NSString *nabuKeyboardDiagnostic(void) {
     useBaseHeight = NO;
     method_setImplementation(sizeMethod, (IMP)originalSize);
     method_setImplementation(graphMethod, (IMP)originalGraph);
+    nabuInstallExperienceCompatibility();
+    NSMutableArray *candidate = [NSMutableArray array];
+    for (NSNumber *orientation in @[@1, @3]) {
+        id traits = [NSClassFromString(@"UIKBScreenTraits") traitsWithScreen:screen orientation:orientation.integerValue];
+        CGSize size = [NSClassFromString(@"UIKeyboardLayoutStar") keyboardSizeForInputMode:@"zh_Hans-Pinyin@sw=Pinyin;hw=Automatic" screenTraits:traits keyboardType:0];
+        [candidate addObject:@{@"orientation": orientation, @"size": NSStringFromCGSize(size)}];
+    }
+    NSURL *wallpaper = [NSURL fileURLWithPath:@"/Library/Wallpaper/Stills/iPad/7410.WWDC_2022-810w-1080h@2x~ipad.wallpaper"];
+    BOOL wallpaperAccepted = [NSClassFromString(@"WKWallpaperBundle") shouldLoadWallpaperBundleAtURL:wallpaper];
     NSURL *documents = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
     NSDictionary *report = @{@"screen": NSStringFromCGRect(naturalBounds),
         @"physical_screen": NSStringFromCGRect(physicalBounds), @"queries": rows,
-        @"scope": @"Temporary method instrumentation in this app; original implementations restored before text input"};
+        @"compatibility_queries": candidate, @"wallpaper_accepted_with_compatibility": @(wallpaperAccepted),
+        @"scope": @"Baseline instrumentation restored; candidate display compatibility active only in this app"};
     [[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL]
         writeToURL:[documents URLByAppendingPathComponent:@"keyboard-diagnostic.json"] atomically:YES];
     NSLog(@"NABU KEYBOARD APP: %@", report);

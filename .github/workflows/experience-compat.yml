@@ -1,0 +1,27 @@
+name: nabu16 - display experience compatibility
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/experience-compat.yml'
+      - 'tools/build_nabu_experience_compat.py'
+      - 'userland/nabu/src/experience_compat.m'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  experience:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: python3 tools/build_nabu_experience_compat.py --output artifacts/nabu-experience-compat
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nabu-experience-compat-${{ github.run_number }}
+          path: artifacts/nabu-experience-compat/
+          retention-days: 14
