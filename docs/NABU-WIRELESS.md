@@ -474,6 +474,18 @@ DIAG联合内核已重新链接，WSL bootstrap通过apfsck，BlueTool任务确�
 前轮无线属性已有30,470字节，接近32KiB容量；若本轮实时报告缺尾部，以已配置的
 持久化完整IOLog补全，不能以属性缺行断言未收到DIAG包。当前准备联合实机验证。
 
+第102轮未进入正常桌面，现场照片为KERNEL RETURN/HALTED、reason/ESR=0、无panic
+buffer，不能将普通callback的X4–X7视为ELR/FAR/LR/SP。完整64MiB槽已备份清空回读，
+恢复368,070字节至约44.422秒，照片另显示44.754秒WLAN固件传输完成，停止尾部未落盘。
+APFS计数71→72、fullfsync成功。控制源0:26实际送来FEATURE包
+`080000000700000003000000f7fe03`与NUM_PRESETS包`0c0000000100000002`；公共TOC中
+MODEM↔TZ为entry10、offset0x163000、size0x2000，仍未访问受保护payload。
+两包经生产解析器QRTR v1/v2及confirm0/1定向ASan/UBSan回放通过，无可复现越界或
+WLFW/TFTP状态污染。BlueTool未见spawn、control socket未打开，A/B/C诊断尚未执行；
+早期bluetoothd退出及diagnosticd corpse在正常v101也出现，不能据末条日志归因。
+故障记录见`log/host/wireless-v102/halt-wlan-analysis.md`和`bluetooth-halted-review.md`。
+第103轮计划复用相同内核/bootstrap，桌面确认后才启动USB服务探针，检查停机重现性。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

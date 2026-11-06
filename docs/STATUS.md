@@ -135,6 +135,13 @@ fullfsync成功。第102轮并行准备蓝牙Reset分隔的legacy/periodic命令
 联合内核已重新链接；WSL bootstrap通过apfsck并确认启用Reset隔离诊断参数。
 两侧独立复核完成，准备第102轮临时启动；当前设备在Android。
 
+第102轮约44.75秒出现KERNEL RETURN/HALTED，照片reason/ESR均0、未见panic buffer。
+完整64MiB槽已备份清空回读，恢复368,070字节有效前缀至约44.422秒，缺少停止尾部；
+APFS计数71→72、fullfsync成功。DIAG实际收到FEATURE(mask=f7fe03)与NUM_PRESETS(2)，
+MODEM↔TZ公共目录entry10、offset0x163000、size0x2000。蓝牙生命周期尚无执行记录，
+没有A/B/C结果。现场包ASan/UBSan回放通过，停机根因仍未知；准备第103轮复用同一
+内核/bootstrap，等用户确认桌面后再开启USB服务探针，对照启动早期请求这一变量。
+
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。
 原生USB、本地激活和155项应用总登记保持。当前使用v66内核/bootstrap v75，
