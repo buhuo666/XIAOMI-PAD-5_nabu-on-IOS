@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   bluetooth-userland:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -40,6 +40,12 @@ jobs:
           for name in BlueTool bluetoothd; do
             build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-bt-userland "$name" -import "log/ci/bluetooth-userland/$name" -analysisTimeoutPerFile 300 -scriptPath analysis/bluetooth -postScript ExportBluetoothUserland.java log/ci/bluetooth-userland "$name" -log "log/ci/bluetooth-userland/$name-ghidra.log"
           done
+          python3 - <<'PY'
+          import json,pathlib
+          for name in ('BlueTool', 'bluetoothd'):
+              report=json.loads(pathlib.Path('log/ci/bluetooth-userland', name+'-decompilation.json').read_text())
+              if report['decompiled'] == 0: raise RuntimeError(name+' produced no decompiled functions')
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

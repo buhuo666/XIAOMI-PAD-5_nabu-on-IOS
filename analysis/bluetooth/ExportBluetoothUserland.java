@@ -49,7 +49,8 @@ public class ExportBluetoothUserland extends GhidraScript {
                 functions.addAll(seed.getCalledFunctions(monitor));
             }
             DecompInterface decompiler = new DecompInterface();
-            decompiler.openProgram(currentProgram);
+            if (!decompiler.openProgram(currentProgram)) throw new Exception(decompiler.getLastMessage());
+            int recovered = 0;
             try (PrintWriter code = new PrintWriter(new File(output, name + ".c"));
                  PrintWriter assembly = new PrintWriter(new File(output, name + ".asm"))) {
                 for (Function function : functions) {
@@ -57,7 +58,7 @@ public class ExportBluetoothUserland extends GhidraScript {
                     selected.println("FUNCTION " + function.getEntryPoint() + " " + function.getName());
                     code.println("\n/* " + function.getEntryPoint() + " " + function.getName() + " */");
                     DecompileResults result = decompiler.decompileFunction(function, 20, monitor);
-                    if (result.decompileCompleted()) code.println(result.getDecompiledFunction().getC());
+                    if (result.decompileCompleted()) { code.println(result.getDecompiledFunction().getC()); recovered++; }
                     else code.println("/* Unresolved: " + result.getErrorMessage() + " */");
                     InstructionIterator instructions = currentProgram.getListing().getInstructions(function.getBody(), true);
                     while (instructions.hasNext()) {
@@ -66,6 +67,9 @@ public class ExportBluetoothUserland extends GhidraScript {
                     }
                 }
             } finally { decompiler.dispose(); }
+            try (PrintWriter report = new PrintWriter(new File(output, name + "-decompilation.json"))) {
+                report.println("{\"selected\":" + functions.size() + ",\"decompiled\":" + recovered + "}");
+            }
             selected.println("Seed functions=" + seeds.size() + " selected functions=" + functions.size());
         }
     }
