@@ -79,7 +79,9 @@ Lockdown均实际查询该服务。测试应用有前台运行及正常exit(0)�
 第六十三轮沿用完全相同的内核/bootstrap，未经重装先查询：Activated及BrickState=false
 保留，原生AMDevice会话成功，应用路径与Data容器UUID均与安装时一致。经原版
 house_arrest的VendContainer和AFC读回Documents/counts.plist，SaveCount=1、
-LaunchCount=2，证明已有应用数据跨重启保留。用户屏幕计数反馈和本轮日志回收待完成。
+LaunchCount=2，证明已有应用数据跨重启保留。用户随后确认界面启动次数3、保存次数1。
+本轮1,720,639字节日志及完整槽已备份清空，日志明确记录restored persistent local state，
+APFS计数33→34、fullfsync成功。
 
 后续候选让setup_compat在nabu-local-activation=1时将brickedDevice交回原版方法，
 继续保留跳过首次设置的界面策略，实测系统激活判断能够承担这条路径；对应10项

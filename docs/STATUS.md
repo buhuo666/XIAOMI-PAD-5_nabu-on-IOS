@@ -11,6 +11,11 @@ Apple官方服务器激活、Apple ID、App Store、iCloud等服务。
 启动次数1、按钮保存次数1。候选是v61内核/bootstrap v62-final，原生构建及状态持久化
 主机测试通过，跨重启实机验收待进行。详见[本地激活兼容](NABU-LOCAL-ACTIVATION.md)。
 
+第六十三轮已确认上述激活态和应用数据跨重启保留：日志读回既有本地状态，原生
+配对会话正常，应用/容器路径一致，用户确认启动次数3/保存次数1。1,720,639字节
+日志及完整槽已备份清空，APFS计数33→34。正在准备第六十四轮，恢复SpringBoard
+原版激活判断，继续软件阶段；驱动扩展尚未开始。
+
 当前可用基线：第六十一轮v61内核/bootstrap v58。桌面正常，40hex板级USB身份修复
 通过实机，Windows原版AMDeviceValidatePairing和StartSession均成功，沿用已有用户
 信任证书、没有重新Pair。Apple原版AFC接口完成1,048,603字节写入/关闭/重开/回读，
