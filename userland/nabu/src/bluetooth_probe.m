@@ -3,7 +3,12 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/kern_control.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sys_domain.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -36,14 +41,7 @@ static double monotonicSeconds(void) {
     return now.tv_sec + now.tv_nsec / 1e9;
 }
 
-NSDictionary *nabuBluetoothTransportTrial(void) {
-    NSMutableDictionary *result = [@{@"scope": @"Exclusive UART; repeated read-only HCI queries, no discovery or pairing"} mutableCopy];
-    int fd = open("/dev/uart.bluetooth", O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (fd < 0) { result[@"open_errno"] = @(errno); return result; }
-    struct termios attributes;
-    int status = tcgetattr(fd, &attributes);
-    result[@"tcgetattr_errno"] = @(status ? errno : 0);
-    if (!status) result[@"input_speed"] = @(cfgetispeed(&attributes));
+static void runHciQueries(int fd, NSMutableDictionary *result) {
     NSMutableArray *queries = [NSMutableArray array];
     const uint16_t opcodes[] = {0x1001, 0x1003, 0x1005, 0x2003, 0x1001, 0x1003, 0x1005, 0x2003};
     const unsigned chunks[] = {1, 2, 7, 31};
@@ -83,11 +81,83 @@ NSDictionary *nabuBluetoothTransportTrial(void) {
         [queries addObject:item];
         if (!matched) break;
     }
-    close(fd);
     result[@"queries"] = queries;
     result[@"all_responses_successful"] = @(queries.count == 8 && [queries indexOfObjectPassingTest:^BOOL(NSDictionary *item, NSUInteger index, BOOL *stop) {
         (void)index; (void)stop;
         return ![item[@"matched"] boolValue] || [item[@"status"] unsignedIntValue] != 0;
     }] == NSNotFound);
+}
+
+NSDictionary *nabuBluetoothTransportTrial(void) {
+    NSMutableDictionary *result = [@{@"scope": @"Exclusive UART; repeated read-only HCI queries, no discovery or pairing"} mutableCopy];
+    int fd = open("/dev/uart.bluetooth", O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0) { result[@"open_errno"] = @(errno); return result; }
+    struct termios attributes;
+    int status = tcgetattr(fd, &attributes);
+    result[@"tcgetattr_errno"] = @(status ? errno : 0);
+    if (!status) result[@"input_speed"] = @(cfgetispeed(&attributes));
+    runHciQueries(fd, result);
+    close(fd);
+    return result;
+}
+
+NSDictionary *nabuBluetoothSocketTrial(void) {
+    NSMutableDictionary *result = [@{
+        @"scope": @"Exclusive UART control socket; configure raw 115200 mode and repeat read-only HCI queries, no discovery or pairing",
+        @"control_name": @"com.apple.uart.bluetooth",
+        @"all_responses_successful": @NO
+    } mutableCopy];
+    int fd = socket(AF_SYSTEM, SOCK_STREAM, SYSPROTO_CONTROL);
+    result[@"socket_errno"] = @(fd < 0 ? errno : 0);
+    if (fd < 0) return result;
+    do {
+        struct ctl_info info = {0};
+        strlcpy(info.ctl_name, "com.apple.uart.bluetooth", sizeof(info.ctl_name));
+        int status = ioctl(fd, CTLIOCGINFO, &info);
+        result[@"control_lookup_errno"] = @(status ? errno : 0);
+        if (status) break;
+        result[@"control_id"] = @(info.ctl_id);
+
+        struct sockaddr_ctl address = {0};
+        address.sc_len = sizeof(address);
+        address.sc_family = AF_SYSTEM;
+        address.ss_sysaddr = AF_SYS_CONTROL;
+        address.sc_id = info.ctl_id;
+        status = connect(fd, (const struct sockaddr *)&address, sizeof(address));
+        int error = status ? errno : 0;
+        result[@"connect_errno"] = @(error);
+        result[@"connected"] = @(status == 0);
+        if (status) {
+            if (error == EBUSY) result[@"controller_in_use"] = @YES;
+            break;
+        }
+
+        struct termios attributes = {0};
+        socklen_t length = sizeof(attributes);
+        status = getsockopt(fd, SYSPROTO_CONTROL, (int)TIOCGETA, &attributes, &length);
+        result[@"get_termios_errno"] = @(status ? errno : 0);
+        result[@"termios_bytes"] = @(length);
+        result[@"termios_expected_bytes"] = @(sizeof(attributes));
+        if (status || length != sizeof(attributes)) break;
+        result[@"input_speed_before"] = @(cfgetispeed(&attributes));
+        result[@"output_speed_before"] = @(cfgetospeed(&attributes));
+        cfmakeraw(&attributes);
+        status = cfsetspeed(&attributes, 115200);
+        result[@"cfsetspeed_errno"] = @(status ? errno : 0);
+        if (status) break;
+        status = setsockopt(fd, SYSPROTO_CONTROL, (int)TIOCSETA, &attributes, sizeof(attributes));
+        result[@"set_termios_errno"] = @(status ? errno : 0);
+        if (status) break;
+        result[@"configured_speed"] = @(cfgetospeed(&attributes));
+
+        int flags = fcntl(fd, F_GETFL);
+        result[@"get_flags_errno"] = @(flags < 0 ? errno : 0);
+        if (flags < 0) break;
+        status = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        result[@"set_nonblocking_errno"] = @(status ? errno : 0);
+        if (status) break;
+        runHciQueries(fd, result);
+    } while (0);
+    close(fd);
     return result;
 }

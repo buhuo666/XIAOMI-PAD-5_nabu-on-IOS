@@ -25,7 +25,8 @@ public class ExportBluetoothUserland extends GhidraScript {
         String name = getScriptArgs()[1];
         output.mkdirs();
         Set<Function> seeds = new LinkedHashSet<>();
-        String[] terms = {"/dev/", "com.apple.uart", "Broadcom", "Qualcomm", "BCM", "HCITransport", "TransportUART", "IOSSIOSPEED"};
+        String[] terms = {"/dev/uart.bluetooth", "/dev/cu.bluetooth", "/dev/btwake", "/dev/btreset", "/dev/btpoweroff",
+            "com.apple.uart", "BT_HCI_TRANSPORT", "BT_DEVICE_ADDRESS"};
         try (PrintWriter selected = new PrintWriter(new File(output, name + "-seeds.log"))) {
             DataIterator data = currentProgram.getListing().getDefinedData(true);
             while (data.hasNext() && !monitor.isCancelled()) {
@@ -40,7 +41,13 @@ public class ExportBluetoothUserland extends GhidraScript {
                 for (Reference reference : getReferencesTo(item.getAddress())) addAt(seeds, reference.getFromAddress());
             }
             if (name.equals("BlueTool")) {
-                long[] entries = {0x10003eec8L,0x10003f358L,0x1000400ecL,0x10003f77cL,0x10003fa34L,0x10003fd34L};
+                long[] entries = {0x10003eec8L,0x10003f358L,0x1000400ecL,0x10003f77cL,0x10003fa34L,0x10003fd34L,
+                    0x1000161a0L,0x100016474L,0x10001c06cL,0x100040958L};
+                for (long entry : entries) addAt(seeds, toAddr(entry));
+            } else {
+                long[] entries = {0x100155f8cL,0x10015627cL,0x10006669cL,0x100271e60L,
+                    0x100272b10L,0x100272b88L,0x100272c00L,0x100068004L,0x1000670d0L,
+                    0x1000673c8L,0x10029a5ecL,0x10029a5acL,0x1000689f0L,0x100027194L};
                 for (long entry : entries) addAt(seeds, toAddr(entry));
             }
             Set<Function> functions = new LinkedHashSet<>(seeds);

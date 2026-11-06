@@ -41,6 +41,7 @@ extern NSDictionary *nabuExperienceSnapshot(void);
 extern void nabuInstallExperienceCompatibility(void);
 extern NSDictionary *nabuBluetoothSnapshot(void);
 extern NSDictionary *nabuBluetoothTransportTrial(void);
+extern NSDictionary *nabuBluetoothSocketTrial(void);
 
 static NSDictionary *wirelessSnapshot(void) {
     void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
@@ -50,10 +51,16 @@ static NSDictionary *wirelessSnapshot(void) {
     int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
     uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
     id value = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-wireless-report"), NULL, 0)) : nil;
+    NSMutableDictionary *crash = [NSMutableDictionary dictionary];
+    for (NSString *phase in @[@"pfr", @"restart", @"end"]) {
+        NSString *key = [@"nabu-wlan-crash-" stringByAppendingString:phase];
+        id data = chosen ? CFBridgingRelease(property(chosen, (__bridge CFStringRef)key, NULL, 0)) : nil;
+        if ([data isKindOfClass:NSData.class]) crash[phase] = [data base64EncodedStringWithOptions:0];
+    }
     if (chosen) release(chosen);
     dlclose(kit);
     return @{@"read_only": @YES, @"registry_entry_found": @(chosen != 0),
-             @"report": value ?: NSNull.null};
+             @"report": value ?: NSNull.null, @"wlan_smem611_snapshots_base64": crash};
 }
 
 static NSDictionary *bulkDirectory(void) {
@@ -412,6 +419,10 @@ int main(void) {
                         else if ([action isEqual:@"BluetoothTransportTrial"]) {
                             result[@"bluetooth"] = nabuBluetoothSnapshot();
                             result[@"transport"] = nabuBluetoothTransportTrial();
+                        }
+                        else if ([action isEqual:@"BluetoothSocketTrial"]) {
+                            result[@"bluetooth"] = nabuBluetoothSnapshot();
+                            result[@"transport"] = nabuBluetoothSocketTrial();
                         }
                         else if ([action isEqual:@"ExperienceInventory"]) {
                             result[@"read_only"] = @YES;
