@@ -9,7 +9,7 @@
 
 第六十八轮28/28预装应用经原版元数据工厂登记成功；安装代理总数155，桌面出现27项。
 备忘录本机保存、文件/日历/时钟打开和秒表启停通过用户实测。完整日志已备份清空。
-同镜像跨重启验证待第六十九轮完成。
+第六十九轮已确认28项登记及容器不变，备忘录文字跨重启保留；日志槽已回收清空。
 
 ## 已核对的服务覆盖
 
@@ -189,3 +189,20 @@ Lookup与图标清单再次确认。主机脚本已将这一实际出现的读�
 证据位于log/host/services-v68/{live-summary.json,live-diagnostic,native-core-apps,
 native-remaining-apps}及log/device/nabu-boot-20261106-68/runtime-log。
 接下来第六十九轮沿用同一内核/bootstrap，只查询登记状态并人工检查既有备忘录。
+
+## 第六十九轮跨重启验收
+
+使用完全相同的v66内核/bootstrap v68，主机只发送Inventory请求，没有再次登记。
+原版安装代理仍返回155项，包含全部28项恢复应用；这28项Path/Container与第六十八轮
+逐项一致。桌面仍包含其中27项，Photo Booth维持已登记但未显示的已知状态。
+用户确认桌面正常，备忘录原有测试文字及文件/日历/时钟图标均保留。本地Activated、
+BrickState=false、沿用配对证书的TLS与原版安装/桌面服务正常。
+
+完整日志仅见探针保存baseline和Inventory前后报告，没有元数据登记调用；
+APFS计数39→40、fullfsync成功。1,454,294字节日志和完整64MiB槽备份后已清空，
+GPT及Android引导分区一致；设备在Android。
+
+证据：log/host/services-v69/persistence-summary.json、persistence-inventory/、
+activation-after/以及log/device/nabu-boot-20261106-69/runtime-log/。
+本项验收覆盖预装登记持久化和上述常用应用操作；Photo Booth摄像头条件、其他应用
+完整功能及BackupAgent2的UniqueDeviceID错误9继续单独跟进。
