@@ -1,0 +1,28 @@
+diff --git a/bsd/miscfs/apfs/apfs_vfsops.c b/bsd/miscfs/apfs/apfs_vfsops.c
+--- a/bsd/miscfs/apfs/apfs_vfsops.c
++++ b/bsd/miscfs/apfs/apfs_vfsops.c
+@@ -755,10 +755,24 @@
+ 			sy->id = id;
+ 			strlcpy(sy->name, name, sizeof(sy->name));
+ 			am->am_nsynth++;
++			/* vnode_lookup(target) already cached this directory under its old
++			 * parent. Match the alias-parent policy used for newly made vnodes:
++			 * both '..' and ATTR_CMN_PARENTID must now describe the alias. */
++			if (tvp != NULLVP) {
++				APFS_VP(tvp)->an_parent = dn->an_id;
++				APFS_VP(tvp)->an_ino.parent_id = dn->an_id;
++			}
+ 			error = 0;
+ 		}
+ 	}
+ 	apfs_unlock(am);
++	if (error == 0 && tvp != NULLVP) {
++		/* F_GETPATH follows the vnode identity, not just an_parent. Drop the
++		 * old name-cache link before /private/var is covered by Data. VFS
++		 * takes its own locks, so do this after releasing the APFS lock. */
++		vnode_update_identity(tvp, dvp, name, (int)len, 0,
++		    VNODE_UPDATE_PARENT | VNODE_UPDATE_NAME | VNODE_UPDATE_CACHE);
++	}
+ 	/* the parent's entries changed: what the name cache has of it is stale */
+ 	cache_purge(dvp);
+ 	cache_purge_negatives(dvp);     /* (the new name was known not to be there) */

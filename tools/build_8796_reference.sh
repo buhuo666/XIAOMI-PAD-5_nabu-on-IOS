@@ -62,6 +62,7 @@ python3 tools/check_nabu_csops_xml.py --tree "$XNU_SRC" --output log/ci/nabu-cso
 python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
 python3 tools/prepare_nabu_input.py --tree "$XNU_SRC" --output log/ci/nabu-input/source.json
 python3 tools/prepare_nabu_native_apfs.py --tree "$XNU_SRC" --output log/ci/nabu-native-apfs/source.json
+python3 tools/check_nabu_apfs_alias.py --tree "$XNU_SRC" --output log/ci/nabu-apfs-alias
 python3 tools/check_nabu_native_apfs.py --output log/ci/nabu-native-apfs/checks
 python3 tools/check_nabu_input.py --output log/ci/nabu-input/checks
 python3 tools/check_nabu_storage.py --tree "$XNU_SRC" --output log/ci/nabu-storage/host

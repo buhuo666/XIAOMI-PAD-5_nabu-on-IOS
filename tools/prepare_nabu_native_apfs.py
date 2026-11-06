@@ -20,6 +20,9 @@ def main():
     a=ap.parse_args();patch=ROOT/'patches/nabu-apfs/sparse-prelink-8796.patch'
     for extra in (['--check'],[]):
         subprocess.run(['git','-C',str(a.tree),'apply',*extra,str(patch)],check=True)
+    alias_patch = ROOT/'patches/nabu-apfs/synthetic-alias-identity.patch'
+    for extra in (['--check'], []):
+        subprocess.run(['git', '-C', str(a.tree), 'apply', *extra, str(alias_patch)], check=True)
     dest=a.tree/'bsd/dev/nabu_native_apfs.c'
     shutil.copy2(ROOT/'patches/nabu-apfs/NabuNativeApfs.c',dest)
     with (a.tree/'bsd/conf/files.arm64').open('a') as f:f.write('\nbsd/dev/nabu_native_apfs.c optional nos_arm_asm\n')
@@ -34,7 +37,7 @@ def main():
         '\textern void nabu_apfs_vfs_registered(struct vfstable *);\n'
         '\tnabu_apfs_vfs_registered(*handle);\n'
         '\tkfree_type(struct vfstable, newvfstbl);\n\n\treturn 0;');p.write_text(text)
-    changed=['osfmk/kern/kalloc.c','bsd/vfs/vfs_init.c','bsd/vfs/kpi_vfs.c','bsd/kern/bsd_init.c','bsd/dev/nabu_native_apfs.c','iokit/Kernel/NabuDataLookup.cpp']
+    changed=['osfmk/kern/kalloc.c','bsd/vfs/vfs_init.c','bsd/vfs/kpi_vfs.c','bsd/kern/bsd_init.c','bsd/dev/nabu_native_apfs.c','iokit/Kernel/NabuDataLookup.cpp','bsd/miscfs/apfs/apfs_vfsops.c']
     report={'enabled_by':'nabu-native-apfs=1','source':'Original 20F66 APFS closure is prelinked locally after compilation',
         'legacy_reader_name':'apfsro','original_reader_name':'apfs','scope':'Source integration only; runtime registration and read/write qualification remain separate',
         'sparse_patch_origin':'XnuPrelink 2b6ffb50117eee820b98aca9bd51b5c7dfb2970e; original 10063 patch applies to pinned 8796',
