@@ -130,6 +130,20 @@ HELLO、服务公告和流控确认。轮询15秒后关闭通道，继续第80�
 `check_nabu_glink.py`使用生产分配器/协议代码通过SMEM新建和重复项、队列回绕/边界、
 通道/intent、QRTR分片/版本/确认测试，ASan/UBSan通过。实机服务清单仍待验证。
 
+第81轮实机已正常桌面和USB。GLINK版本1/feature1协商成功，IPCRTR本地channel1、
+远端channel2双向打开，收到node0的QRTR HELLO及两个不同服务：43/version2/instance18/
+port1，66/version1/instance180/port2；没有WLAN服务。正常CLOSE收到ACK及远端对称
+CLOSE，旧诊断误将后者计作broken，下一轮修正；不能据此推断握手失败。
+WLAN筛选常量也已核对为`0x45`（69），原代码写成十进制45，清单仍完整记录所有公告，
+不影响本轮仅有43/66的事实。完整64MiB槽及2,409,909字节日志已回收清空，APFS计数51→52。
+
+第82轮候选增加只读QRTR TFTP服务4096，供给原机4,331,136字节`wlanmdsp.mbn`。
+Android实测运行tftp_server和pd-mapper，modemuw.jsn声明`msm/modem/wlan_pd`，
+instance180，提供`kernel/elf_loader`、`tms/servreg`、`wlan/fw`。
+候选只服务`/readonly/firmware/image/wlanmdsp.mbn`，实现blksize/tsize/seek/rsize及
+窗口1、确认和重传；其余文件明确返回不存在，写入返回只读。轮询30秒后关闭modem。
+主机TFTP和GLINK生产代码ASan/UBSan通过；原固件服务请求和WLAN服务出现仍待实测。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。

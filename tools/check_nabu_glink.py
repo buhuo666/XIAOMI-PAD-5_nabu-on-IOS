@@ -16,6 +16,7 @@ PREFIX = r'''
 #include <cstring>
 #include <vector>
 #include "NabuSmem.h"
+#include "NabuTftp.h"
 using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }
@@ -91,10 +92,11 @@ int main() {
     // v2 control header, confirmed and split over two GLINK fragments.
     packet.assign(36,0);packet[0]=3;packet[1]=4;packet[2]=1;packet[4]=20;
     packet[8]=3;packet[10]=0xfe;packet[11]=0xff;packet[12]=1;packet[14]=0xfe;packet[15]=0xff;
-    c={4,{45,1,3,17}};memcpy(packet.data()+16,&c,20);
+    c={4,{0x45,1,3,17}};memcpy(packet.data()+16,&c,20);
     data(g,packet,19);assert(g.servers==1&&g.wlfw_node==3&&g.wlfw_port==17&&g.local[0].fill==0);
     assert(count_command(g,14)==2&&count_command(g,9)==3&&!g.broken);
     receive(g,14,9,91);g.pump();assert(g.remote[0].present&&!g.remote[0].used);
+    g.closing=true;receive(g,11,1,0);receive(g,3,9,0);g.pump();assert(g.close_ack&&!g.opened&&!g.broken);
     // Truncated transport data remains unread until its payload is available.
     unsigned before=g.word(8);uint32_t fragment[]={12,0};receive(g,9,9,1,fragment,8);g.pump();assert(g.word(8)==before);
     // A full TX queue rejects a write without changing its producer index.
@@ -112,6 +114,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     source = (ROOT/'patches/nabu-wireless/NabuGlink.cpp').read_text()
     source = source[source.index('struct GlinkMessage'):]
+    source = source[:source.index('extern "C" void nabu_glink_trial')]
     source = source.replace('__asm__ volatile("dsb sy" ::: "memory");', '(void)0;')
     harness = args.output/'glink.cpp'
     modem = (ROOT/'patches/nabu-wireless/NabuModem.cpp').read_text()

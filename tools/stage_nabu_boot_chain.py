@@ -106,8 +106,10 @@ def main():
     wireless.add_argument('--bluetooth-firmware', type=Path, help='Prepared original-board Bluetooth firmware for the UART download trial')
     ap.add_argument('--modem-firmware', type=Path, help='Prepared Nabu modem metadata/segments for the bounded PAS boot trial')
     ap.add_argument('--modem-glink', action='store_true', help='Negotiate GLINK/IPCRTR and inventory QRTR services before stopping the modem')
+    ap.add_argument('--wlan-firmware', type=Path, help='Original wlanmdsp.mbn served read-only over QRTR TFTP')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
+    assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -122,6 +124,7 @@ def main():
         for segment in meta['segments']:
             if segment['file']:
                 modem_firmware[f"segment-{segment['index']:02}"] = (a.modem_firmware/segment['file']).read_bytes()
+        if a.wlan_firmware: modem_firmware['wlanmdsp'] = a.wlan_firmware.read_bytes()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
     rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
