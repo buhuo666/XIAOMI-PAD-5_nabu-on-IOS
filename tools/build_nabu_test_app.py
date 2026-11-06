@@ -24,7 +24,7 @@ def main():
     executable = app / 'LocalTest'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-fblocks', '-Os', '-Wall', '-Wextra', '-Werror',
-               str(source), '-framework', 'UIKit', '-framework', 'Foundation',
+               str(source), str(source.with_name('keyboard_diagnostic.m')), '-framework', 'UIKit', '-framework', 'Foundation',
                '-o', str(executable)]
     subprocess.run(command, check=True)
     executable.chmod(0o755)
@@ -35,8 +35,8 @@ def main():
         'CFBundleExecutable': 'LocalTest',
         'CFBundlePackageType': 'APPL',
         'CFBundleInfoDictionaryVersion': '6.0',
-        'CFBundleVersion': '1',
-        'CFBundleShortVersionString': '1.0',
+        'CFBundleVersion': '2',
+        'CFBundleShortVersionString': '1.1',
         'CFBundleDevelopmentRegion': 'zh-Hans',
         'CFBundleLocalizations': ['zh-Hans'],
         'CFBundleSupportedPlatforms': ['iPhoneOS'],

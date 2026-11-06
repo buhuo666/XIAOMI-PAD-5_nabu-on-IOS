@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+extern NSString *nabuKeyboardDiagnostic(void);
 
 @interface LocalTestController : UIViewController
 @property(nonatomic, strong) NSURL *stateURL;
@@ -7,9 +8,17 @@
 @property(nonatomic, strong) UIButton *saveButton;
 @property(nonatomic) unsigned long long launches;
 @property(nonatomic) unsigned long long saves;
+@property(nonatomic) BOOL keyboardDiagnosed;
 @end
 
 @implementation LocalTestController
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if (!self.keyboardDiagnosed) {
+        self.keyboardDiagnosed = YES;
+        self.statusLabel.text = nabuKeyboardDiagnostic();
+    }
+}
 - (void)updateCounts {
     self.countsLabel.text = [NSString stringWithFormat:
         @"持久启动次数：%llu\n按钮保存次数：%llu", self.launches, self.saves];
@@ -71,8 +80,11 @@
     hint.numberOfLines = 0;
     hint.textAlignment = NSTextAlignmentCenter;
 
+    UITextField *input = [UITextField new];
+    input.placeholder = @"点这里测试输入法";
+    input.borderStyle = UITextBorderStyleRoundedRect;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:
-        @[title, self.countsLabel, self.saveButton, self.statusLabel, hint]];
+        @[title, self.countsLabel, self.saveButton, self.statusLabel, input, hint]];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 24;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -84,7 +96,8 @@
         [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:safe.leadingAnchor constant:24],
         [stack.trailingAnchor constraintLessThanOrEqualToAnchor:safe.trailingAnchor constant:-24],
         [stack.widthAnchor constraintLessThanOrEqualToConstant:600],
-        [self.saveButton.heightAnchor constraintGreaterThanOrEqualToConstant:48]
+        [self.saveButton.heightAnchor constraintGreaterThanOrEqualToConstant:48],
+        [input.heightAnchor constraintGreaterThanOrEqualToConstant:44]
     ]];
 
     NSFileManager *files = [NSFileManager defaultManager];
