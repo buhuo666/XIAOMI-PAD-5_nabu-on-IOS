@@ -12,6 +12,7 @@ import tomllib
 from make_nabu_adt import make_tree, parse, validate_wifi_mac, validate_userland_serial, platform_uuid_from_soc, CHECKPOINTS, DEFAULT_CHECKPOINT
 from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
+from nabu_rmtfs_sparse import pack as pack_rmtfs
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41959293411-attempt-1/xnu8796-reference-38/artifacts/8796-reference/mach.development.bcm2837'
@@ -129,7 +130,7 @@ def main():
         if a.wlan_firmware: modem_firmware['wlanmdsp'] = a.wlan_firmware.read_bytes()
         if a.rmtfs_snapshot:
             for file in json.loads((a.rmtfs_snapshot/'snapshot.json').read_text())['files']:
-                modem_firmware['rmtfs-'+file['partition']] = (a.rmtfs_snapshot/file['file']).read_bytes()
+                modem_firmware['rmtfs-'+file['partition']] = pack_rmtfs((a.rmtfs_snapshot/file['file']).read_bytes())
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
     rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
@@ -236,6 +237,7 @@ def main():
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
                          a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
+    assert len(blob) <= 16*1024*1024, 'ADT exceeds the current DarwinBoot ReadFile limit (16 MiB)'
     manifest = []
     for rel, data in files.items():
         target = a.output/rel

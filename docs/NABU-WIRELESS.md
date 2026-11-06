@@ -156,6 +156,12 @@ instance180，提供`kernel/elf_loader`、`tms/servreg`、`wlan/fw`。
 不采用参考板CDSP地址或Android动态分配地址。生产QMI解析和GLINK主机ASan/UBSan
 测试通过，编译链接通过；共享授权与真实文件请求待实测。
 
+第83轮停留在XNU加载界面，用户已返回Android。原因是打包遗漏了DarwinBoot的ADT
+16MiB读取上限：包含完整快照的ADT为35,156,376字节，启动器在内核前拒绝读取。
+完整槽已备份清空，state=prepared-not-started、有效日志0字节；APFS最后已知计数53。
+第84轮改为NRF1零页稀疏格式，内核完整还原四份快照。总快照体积4,477,264字节，
+生产解码器对本机文件逐字节还原一致，ASan/UBSan通过；部署工具增加实际16MiB限制。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。

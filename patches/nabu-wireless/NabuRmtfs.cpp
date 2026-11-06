@@ -4,6 +4,7 @@
 #include <libkern/c++/OSData.h>
 #include <vm/memory_types.h>
 #include "NabuRmtfs.h"
+#include "NabuRmtfsSparse.h"
 #include "NabuWirelessLog.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned);
@@ -53,11 +54,14 @@ extern "C" bool nabu_rmtfs_prepare(IORegistryEntry *entry) {
     const char *paths[] = {"/boot/modem_fs1", "/boot/modem_fs2", "/boot/modem_fsg", "/boot/modem_fsc"};
     for (unsigned i = 0; i < 4; ++i) {
         OSData *file = OSDynamicCast(OSData, entry->getProperty(properties[i]));
-        if (!file) return false;
-        state.files[i] = {paths[i], (uint8_t *)IOMalloc(file->getLength()), file->getLength(), false};
+        if (!file || file->getLength() < 16) return false;
+        const uint8_t *packed = (const uint8_t *)file->getBytesNoCopy();
+        unsigned size = NabuRmtfs::u32(packed+4);
+        if (size != (i == 3 ? 262144u : 8388608u)) return false;
+        state.files[i] = {paths[i], (uint8_t *)IOMalloc(size), size, false};
         if (!state.files[i].data) return false;
-        memcpy(state.files[i].data, file->getBytesNoCopy(), file->getLength());
-        nabu_wireless_log("NABU RMTFS: snapshot %s bytes=%u; writes remain in RAM\n", paths[i], file->getLength());
+        if (!nabu_rmtfs_unpack(packed, file->getLength(), state.files[i].data, size)) return false;
+        nabu_wireless_log("NABU RMTFS: snapshot %s bytes=%u packed=%u; writes remain in RAM\n", paths[i], size, file->getLength());
     }
     if (!assign(true)) return false;
     shared = true;
