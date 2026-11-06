@@ -13,6 +13,7 @@ from make_nabu_adt import make_tree, parse, validate_wifi_mac, validate_userland
 from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYTES, SLOT_BYTES, PARTITION_BYTES
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 from nabu_rmtfs_sparse import pack as pack_rmtfs
+from nabu_servreg import encode as encode_servreg
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41959293411-attempt-1/xnu8796-reference-38/artifacts/8796-reference/mach.development.bcm2837'
@@ -109,10 +110,12 @@ def main():
     ap.add_argument('--modem-glink', action='store_true', help='Negotiate GLINK/IPCRTR and inventory QRTR services before stopping the modem')
     ap.add_argument('--wlan-firmware', type=Path, help='Original wlanmdsp.mbn served read-only over QRTR TFTP')
     ap.add_argument('--rmtfs-snapshot', type=Path, help='This board modem storage snapshots for RAM-only RMTFS')
+    ap.add_argument('--servreg',type=Path,help='Original-board JSON service-registry directory')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
     assert not a.rmtfs_snapshot or a.modem_glink, 'RMTFS requires GLINK'
+    assert not a.servreg or a.modem_glink, 'Service registry requires GLINK'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -128,6 +131,7 @@ def main():
             if segment['file']:
                 modem_firmware[f"segment-{segment['index']:02}"] = (a.modem_firmware/segment['file']).read_bytes()
         if a.wlan_firmware: modem_firmware['wlanmdsp'] = a.wlan_firmware.read_bytes()
+        if a.servreg: modem_firmware['servreg']=encode_servreg(a.servreg)
         if a.rmtfs_snapshot:
             for file in json.loads((a.rmtfs_snapshot/'snapshot.json').read_text())['files']:
                 modem_firmware['rmtfs-'+file['partition']] = pack_rmtfs((a.rmtfs_snapshot/file['file']).read_bytes())

@@ -8,6 +8,7 @@
 #include "NabuSmem.h"
 #include "NabuWirelessLog.h"
 #include "NabuTftp.h"
+#include "NabuServreg.h"
 extern "C" bool nabu_rmtfs_available();
 extern "C" unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *);
 
@@ -30,13 +31,14 @@ struct NabuGlink {
     const uint8_t *wlan_firmware = nullptr;
     unsigned wlan_bytes = 0, tftp_requests = 0, tftp_completed = 0;
     NabuTftp transfers[2]{};
+    NabuServreg registry;
     uint8_t transmit[4096]{};
     struct RemoteIntent { uint32_t id, size; bool present, used; } remote[64]{};
     struct LocalIntent { uint8_t *data; uint32_t size, fill; } local[16]{};
     unsigned local_count = 0;
     struct Pending { QrtrHeader header; QrtrControl control; } pending[16]{};
     unsigned pending_head = 0, pending_count = 0;
-    struct Response { uint32_t node, port, bytes; uint8_t data[64]; } responses[8]{};
+    struct Response { uint32_t node, port, from, bytes; uint8_t data[1024]; } responses[8]{};
     unsigned response_head = 0, response_count = 0;
 
     bool datagram(unsigned type, unsigned from, unsigned node, unsigned port, const void *data, unsigned size) {
@@ -58,6 +60,7 @@ struct NabuGlink {
     }
     void announce_tftp(unsigned node) {
         if (nabu_rmtfs_available()) { uint32_t server[4] = {14, 1, 1, 0x4001}; queue_control(4, node, control_port, server); }
+        if (registry.records) { uint32_t server[4] = {64, 257, 1, 0x4002}; queue_control(4,node,control_port,server); }
         if (!wlan_firmware) return;
         uint32_t server[4] = {4096, 1, 1, 0x4000}; queue_control(4, node, control_port, server);
     }
@@ -84,7 +87,7 @@ struct NabuGlink {
         if (!opened || broken || closing) return;
         while (response_count) {
             Response &r = responses[response_head];
-            if (!datagram(1, 0x4001, r.node, r.port, r.data, r.bytes)) break;
+            if (!datagram(1, r.from, r.node, r.port, r.data, r.bytes)) break;
             response_head = (response_head+1)%8; --response_count;
         }
         for (auto &t : transfers) {
@@ -179,8 +182,16 @@ struct NabuGlink {
         if (header.to_port != control_port && header.type == 1) {
             if (header.to_port == 0x4001 && nabu_rmtfs_available()) {
                 if (response_count == 8) { broken = true; return; }
-                Response &r = responses[(response_head+response_count)%8]; r.node = header.from_node; r.port = header.from_port;
+                Response &r = responses[(response_head+response_count)%8]; r.node = header.from_node; r.port = header.from_port;r.from=0x4001;
                 r.bytes = nabu_rmtfs_request(data+at, header.size, r.data); if (r.bytes) ++response_count;
+                return;
+            }
+            if(header.to_port==0x4002 && registry.records) {
+                if(response_count==8){broken=true;return;}
+                Response &r=responses[(response_head+response_count)%8];r.node=header.from_node;r.port=header.from_port;r.from=0x4002;
+                r.bytes=registry.answer(data+at,header.size,r.data);if(r.bytes)++response_count;
+                unsigned name_bytes=0;const uint8_t *name=NabuRmtfs::tlv(data+at,header.size,1,name_bytes);
+                nabu_wireless_log("NABU SERVREG: request=%#x service=%.*s reply-bytes=%u\n",NabuRmtfs::u16(data+at+3),name?(int)name_bytes:0,name?(const char*)name:"",r.bytes);
                 return;
             }
             if (wlan_firmware && header.to_port >= 0x4000 && header.to_port <= 0x4011) {
@@ -201,7 +212,7 @@ struct NabuGlink {
             if (service == wlfw_service && command == 4) { wlfw_node = node; wlfw_port = port; }
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
-            if (packet.u32(at+4) == 0 || packet.u32(at+4) == 4096 || packet.u32(at+4) == 14) announce_tftp(header.from_node);
+            if (packet.u32(at+4) == 0 || packet.u32(at+4) == 4096 || packet.u32(at+4) == 14 || packet.u32(at+4)==64) announce_tftp(header.from_node);
             queue_control(4, header.from_node, header.from_port);
         } else if (command == 3) {
             nabu_wireless_log("NABU QRTR: peer BYE\n"); broken = true;
@@ -315,6 +326,8 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if (firmware_entry) {
         OSData *firmware = OSDynamicCast(OSData, firmware_entry->getProperty("wlanmdsp"));
         if (firmware) { link->wlan_firmware = (const uint8_t *)firmware->getBytesNoCopy(); link->wlan_bytes = firmware->getLength(); }
+        OSData *registry=OSDynamicCast(OSData,firmware_entry->getProperty("servreg"));
+        if(registry)link->registry.load((const uint8_t*)registry->getBytesNoCopy(),registry->getLength());
     }
     if (!link->memory.find(478, &link->descriptor) || link->descriptor.size != 32 ||
         !link->memory.find(479, &link->tx) || !link->memory.find(480, &link->rx) ||
@@ -336,6 +349,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     nabu_wireless_log("NABU GLINK: trial complete agreed=%u open=%u broken=%u tx=%u rx=%u close-ack=%u\n", link->agreed, was_open, link->broken, link->sent, link->received, link->close_ack);
     nabu_wireless_log("NABU QRTR: inventory peer=%u servers=%u WLFW-node=%u WLFW-port=%u; WLAN requests not sent\n", link->peer, link->servers, link->wlfw_node, link->wlfw_port);
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
+    nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }
