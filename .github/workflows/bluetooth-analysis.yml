@@ -1,0 +1,54 @@
+name: nabu16 - original Bluetooth interface analysis
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bluetooth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Obtain selected original kernel and map Bluetooth interfaces
+        run: |
+          python3 tools/fetch_sources.py --only XnuPrelink lzfse --report log/ci/bluetooth-analysis/sources.json
+          python3 tools/fetch_ipsw_members.py
+          python3 tools/inspect_kernelcache.py OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.release.ipad7c --payload-output build/kernelcache.20f66.lzfse
+          make -C src/lzfse -j3
+          src/lzfse/build/bin/lzfse -decode -i build/kernelcache.20f66.lzfse -o OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.decoded.macho
+          python3 tools/inspect_kernelcache.py OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.decoded.macho --report log/ci/bluetooth-analysis/original.json
+          python3 analysis/image4/extract_image4.py --bundle com.apple.driver.AppleBluetooth --name AppleBluetooth --output log/ci/bluetooth-analysis/reset
+          python3 analysis/image4/extract_image4.py --bundle com.apple.driver.AppleOnboardSerial --name AppleOnboardSerial --output log/ci/bluetooth-analysis/serial
+      - name: Download the existing pinned Ghidra release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/bluetooth-analysis/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('log/ci/bluetooth-analysis/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          actual='sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != asset['digest']: raise RuntimeError('Ghidra download digest mismatch')
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Recover reset and serial call contracts
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          mkdir -p build/ghidra-bluetooth
+          build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-bluetooth Reset -import log/ci/bluetooth-analysis/reset/AppleBluetooth.elf -processor AARCH64:LE:64:v8A -analysisTimeoutPerFile 600 -scriptPath analysis/image4 -postScript ExportImage4.java log/ci/bluetooth-analysis/reset AppleBluetooth -log log/ci/bluetooth-analysis/reset/ghidra.log
+          build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-bluetooth Serial -import log/ci/bluetooth-analysis/serial/AppleOnboardSerial.elf -processor AARCH64:LE:64:v8A -analysisTimeoutPerFile 600 -scriptPath analysis/image4 -postScript ExportImage4.java log/ci/bluetooth-analysis/serial AppleOnboardSerial -log log/ci/bluetooth-analysis/serial/ghidra.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bluetooth-interface-analysis-${{ github.run_number }}
+          path: |
+            log/ci/bluetooth-analysis/**/*.c
+            log/ci/bluetooth-analysis/**/*.asm
+            log/ci/bluetooth-analysis/**/*.json
+            log/ci/bluetooth-analysis/**/*.log
+          retention-days: 14

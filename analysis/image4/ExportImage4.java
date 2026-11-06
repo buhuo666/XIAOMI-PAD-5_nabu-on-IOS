@@ -13,12 +13,13 @@ import ghidra.program.model.listing.InstructionIterator;
 public class ExportImage4 extends GhidraScript {
     @Override public void run() throws Exception {
         File output = new File(getScriptArgs()[0]);
+        String name = getScriptArgs().length > 1 ? getScriptArgs()[1] : "AppleImage4";
         output.mkdirs();
         DecompInterface decompiler = new DecompInterface();
         decompiler.openProgram(currentProgram);
         int count = 0;
-        try (PrintWriter code = new PrintWriter(new File(output, "AppleImage4.c"));
-             PrintWriter assembly = new PrintWriter(new File(output, "AppleImage4.asm"))) {
+        try (PrintWriter code = new PrintWriter(new File(output, name + ".c"));
+             PrintWriter assembly = new PrintWriter(new File(output, name + ".asm"))) {
             FunctionIterator functions = currentProgram.getFunctionManager().getFunctions(true);
             while (functions.hasNext() && !monitor.isCancelled()) {
                 Function function = functions.next();
@@ -34,6 +35,6 @@ public class ExportImage4 extends GhidraScript {
                 assembly.println(instruction.getAddress() + " " + instruction);
             }
         } finally { decompiler.dispose(); }
-        println("Exported " + count + " recovered Image4 functions");
+        println("Exported " + count + " recovered " + name + " functions");
     }
 }

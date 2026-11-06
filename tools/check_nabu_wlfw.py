@@ -45,15 +45,17 @@ int main(){
         w.prepare();unsigned n=0;const uint8_t *p=NabuRmtfs::tlv(w.request,w.bytes,0x13,n);
         assert(p&&n==w.chunk+2&&NabuRmtfs::u16(p)==w.chunk&&w.bytes<8192-32);
         assert(w.chunk==(w.board_segment<4?6144u:1752u));
+        unsigned tn=0;const uint8_t *type=NabuRmtfs::tlv(w.request,w.bytes,0x15,tn);assert(type&&tn==1&&type[0]==0);
         copied.insert(copied.end(),p+2,p+n);w.sent();response[1]=w.transaction;response[3]=0x25;
         assert(w.receive(response,sizeof(response))&&!w.failed);
     }
     assert(copied==board&&w.board_sent==board.size()&&w.board_segment==5);
     w.prepare();assert(w.message==0x26&&w.bytes==11&&w.request[7]==1&&w.request[10]==0);w.sent();
-    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&!w.complete&&w.step==8);
-    for(unsigned i=0;i<2000;++i)w.tick();assert(w.post_cal_wait==2000);w.prepare();w.sent();
-    std::vector<uint8_t> status{2,(uint8_t)w.transaction,0,0x20,0,18,0,2,4,0,0,0,0,0,0x10,8,0,0x1f,0,0,0,0,0,0,0};
-    assert(w.receive(status.data(),status.size())&&w.complete&&w.status_valid&&w.fw_status==0x1f);
+    response[1]=w.transaction;response[3]=0x26;assert(w.receive(response,sizeof(response))&&w.complete&&w.step==8);
+    w.prepare();assert(w.bytes==0); // Wait for indications without registering the live daemon again.
+    NabuWlfw registration{};registration.prepare();registration.sent();
+    std::vector<uint8_t> status{2,1,0,0x20,0,18,0,2,4,0,0,0,0,0,0x10,8,0,0x1f,0,0,0,0,0,0,0};
+    assert(registration.receive(status.data(),status.size())&&registration.status_valid&&registration.fw_status==0x1f);
     uint8_t ready[]={4,0,0,0x21,0,0,0};w.receive(ready,sizeof(ready));assert(w.fw_ready);
     uint8_t initialized[]={4,0,0,0x38,0,0,0};w.receive(initialized,sizeof(initialized));assert(w.init_done);
     NabuWlfw absent{};absent.status_valid=true;absent.fw_status=0x1f;absent.prepare();absent.sent();
@@ -61,7 +63,7 @@ int main(){
     NabuWlfw timeout{};timeout.prepare();timeout.sent();for(unsigned i=0;i<10000;++i)timeout.tick();assert(timeout.failed&&!timeout.waiting);
     NabuWlfw error{};error.prepare();error.sent();response[1]=1;response[3]=0x20;response[10]=1;response[12]=1;
     assert(error.receive(response,sizeof(response))&&error.failed&&!error.complete);
-    puts("WLFW: registration/MSA, board segments, calibration, status refresh, ready/init indications, errors and timeout passed");
+    puts("WLFW: dual registration/MSA, BIN board segments, calibration without re-registration, ready/init indications, errors and timeout passed");
 }
 '''
 

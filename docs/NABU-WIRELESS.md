@@ -258,6 +258,13 @@ FW_READY/FW_INIT_DONE，随后DMON状态刷新值为0。board-id-valid=0且默�
 modem停止与MSA/RMTFS回收正常；实时报告已保存，完整槽等待Android回收。下一步
 核对原机显式BDF type字段和MAC请求；不能把MSA_READY当作WLAN可用。
 
+第93轮完整64MiB槽及2,190,158字节有效日志已在Android回收清空，APFS计数62→63。
+DMON初次状态0x4在44.421413秒，校准响应44.431103秒，重复注册46.704301秒返回0。
+第94轮补原机BDF下载的显式BIN类型TLV0x15=0，取消校准后的第二次DMON注册，直接
+等待异步就绪通知。IND_REGISTER是注册操作，不能当作无副作用的状态读取；当前证据
+尚不能证明重复注册导致了未就绪，因此作为对齐原机流程的验证。末尾状态日志改名
+registration-status，避免把初次注册响应当实时状态。主机QMI/GLINK测试与编译链接通过。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。
@@ -272,6 +279,11 @@ AppleOnboardSerial；未据macOS的IOBluetoothHCI类名猜测iPadOS接口。已�
 OS镜像提取bluetoothd和BlueTool作静态调查：前者含cu.bluetooth、uart.bluetooth、
 btwake设备路径，后者含btpoweroff、btwake、btreset。路径目前仅为静态字符串线索，
 尚需追踪调用与ioctl契约，不能宣称这些接口或系统蓝牙已经实现。
+
+原版AppleBluetooth和AppleOnboardSerial已按既有Image4方法映射为分析ELF，保留原
+地址与段字节，分别20,504和96,280字节；仅分析使用。新增手动GitHub Actions流程
+`bluetooth-analysis.yml`提取公开原版内核并反编译这两个组件，输出代码/汇编与映射，
+不上传原始内核或ELF。用于追踪复位节点、串口属性及控制命令，尚无运行接口结论。
 
 本机Android设备树Wi-Fi为`/soc/qcom,icnss@18800000`，蓝牙供电节点为
 `/vendor/bt_wcn3990`，引用了相同的部分供电phandle。公开Nabu树为SNOC Wi-Fi及

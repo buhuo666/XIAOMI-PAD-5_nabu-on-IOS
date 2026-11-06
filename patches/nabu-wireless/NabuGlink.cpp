@@ -111,7 +111,6 @@ struct NabuGlink {
             }
         }
         if(qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete){
-            if(wlfw.step==8&&wlfw.post_cal_wait<2000)return;
             if(wlfw.activate&&wlfw.step==3&&!wlfw.permissions_ready){
                 wlfw.permissions_ready=nabu_msa_prepare(wlfw.regions,wlfw.region_count);
                 if(!wlfw.permissions_ready){wlfw.failed=true;return;}
@@ -397,7 +396,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
-    if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
+    if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }

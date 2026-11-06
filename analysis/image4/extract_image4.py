@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Map the original 20F66 Image4 segments into an analysis-only ARM64 ELF."""
+"""Map one original 20F66 prelinked component into an analysis-only ARM64 ELF."""
+import argparse
 import json
 from pathlib import Path
 import struct
@@ -9,13 +10,19 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src/XnuPrelink'))
 from native_prelink import macho, backed_offset, exports, unserialize_xml
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--bundle', default='com.apple.security.AppleImage4')
+parser.add_argument('--name', default='AppleImage4')
+parser.add_argument('--output', type=Path, default=ROOT / 'log/ci/image4-analysis')
+args = parser.parse_args()
+
 source = ROOT / 'OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.arm64.macho'
 data = source.read_bytes()
 parent = macho(data)
 info = next(s for s in parent['segments'] if s['name'] == '__PRELINK_INFO')
 metadata = unserialize_xml(data[info['fileoff']:info['fileoff'] + info['filesize']])
 entry = next(e for e in metadata['_PrelinkInfoDictionary']
-             if e['CFBundleIdentifier'] == 'com.apple.security.AppleImage4')
+             if e['CFBundleIdentifier'] == args.bundle)
 at = backed_offset(parent['segments'], entry['_PrelinkExecutableLoadAddr'], 32, len(data))
 module = macho(data, at)
 segments = [s for s in module['segments'] if s['filesize']]
@@ -92,12 +99,12 @@ struct.pack_into('<16sHHIQQQIHHHHHH', output, 0,
     0, 64, 56, len(programs), 64, len(sections) + 1, section_names_index)
 for index, program in enumerate(programs):
     struct.pack_into('<IIQQQQQQ', output, 64 + index * 56, *program)
-destination = ROOT / 'log/ci/image4-analysis'
+destination = args.output
 destination.mkdir(parents=True, exist_ok=True)
-(destination / 'AppleImage4.elf').write_bytes(output)
+(destination / (args.name + '.elf')).write_bytes(output)
 (destination / 'mapping.json').write_text(json.dumps({
     'source': str(source), 'bundle': entry['CFBundleIdentifier'],
     'segments': segments, 'stub_labels': labels,
     'scope': 'Analysis-only ELF container; original virtual addresses and bytes preserved'
 }, indent=2) + '\n')
-print('Image4 analysis ELF:', len(output), 'bytes;', len(labels), 'named stubs')
+print(args.name, 'analysis ELF:', len(output), 'bytes;', len(labels), 'named stubs')
