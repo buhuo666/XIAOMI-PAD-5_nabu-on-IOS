@@ -5,13 +5,24 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <sys/kern_control.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/sys_domain.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+
+// These XNU 8796 user ABI declarations are omitted from the iPhoneOS SDK.
+struct NabuControlInfo { uint32_t ctl_id; char ctl_name[96]; };
+struct NabuControlAddress {
+    uint8_t sc_len, sc_family;
+    uint16_t ss_sysaddr;
+    uint32_t sc_id, sc_unit, sc_reserved[5];
+};
+enum { NabuSystemFamily = 32, NabuControlProtocol = 2, NabuControlAddressType = 2 };
+#define NABU_CTLIOCGINFO _IOWR('N', 3, struct NabuControlInfo)
+_Static_assert(sizeof(struct NabuControlInfo) == 100, "XNU control lookup ABI");
+_Static_assert(sizeof(struct NabuControlAddress) == 32, "XNU control address ABI");
+_Static_assert(sizeof(struct termios) == 72, "64-bit XNU termios ABI");
 
 NSDictionary *nabuBluetoothSnapshot(void) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
@@ -107,21 +118,21 @@ NSDictionary *nabuBluetoothSocketTrial(void) {
         @"control_name": @"com.apple.uart.bluetooth",
         @"all_responses_successful": @NO
     } mutableCopy];
-    int fd = socket(AF_SYSTEM, SOCK_STREAM, SYSPROTO_CONTROL);
+    int fd = socket(NabuSystemFamily, SOCK_STREAM, NabuControlProtocol);
     result[@"socket_errno"] = @(fd < 0 ? errno : 0);
     if (fd < 0) return result;
     do {
-        struct ctl_info info = {0};
+        struct NabuControlInfo info = {0};
         strlcpy(info.ctl_name, "com.apple.uart.bluetooth", sizeof(info.ctl_name));
-        int status = ioctl(fd, CTLIOCGINFO, &info);
+        int status = ioctl(fd, NABU_CTLIOCGINFO, &info);
         result[@"control_lookup_errno"] = @(status ? errno : 0);
         if (status) break;
         result[@"control_id"] = @(info.ctl_id);
 
-        struct sockaddr_ctl address = {0};
+        struct NabuControlAddress address = {0};
         address.sc_len = sizeof(address);
-        address.sc_family = AF_SYSTEM;
-        address.ss_sysaddr = AF_SYS_CONTROL;
+        address.sc_family = NabuSystemFamily;
+        address.ss_sysaddr = NabuControlAddressType;
         address.sc_id = info.ctl_id;
         status = connect(fd, (const struct sockaddr *)&address, sizeof(address));
         int error = status ? errno : 0;
@@ -134,7 +145,7 @@ NSDictionary *nabuBluetoothSocketTrial(void) {
 
         struct termios attributes = {0};
         socklen_t length = sizeof(attributes);
-        status = getsockopt(fd, SYSPROTO_CONTROL, (int)TIOCGETA, &attributes, &length);
+        status = getsockopt(fd, NabuControlProtocol, (int)TIOCGETA, &attributes, &length);
         result[@"get_termios_errno"] = @(status ? errno : 0);
         result[@"termios_bytes"] = @(length);
         result[@"termios_expected_bytes"] = @(sizeof(attributes));
@@ -145,7 +156,7 @@ NSDictionary *nabuBluetoothSocketTrial(void) {
         status = cfsetspeed(&attributes, 115200);
         result[@"cfsetspeed_errno"] = @(status ? errno : 0);
         if (status) break;
-        status = setsockopt(fd, SYSPROTO_CONTROL, (int)TIOCSETA, &attributes, sizeof(attributes));
+        status = setsockopt(fd, NabuControlProtocol, (int)TIOCSETA, &attributes, sizeof(attributes));
         result[@"set_termios_errno"] = @(status ? errno : 0);
         if (status) break;
         result[@"configured_speed"] = @(cfgetospeed(&attributes));
