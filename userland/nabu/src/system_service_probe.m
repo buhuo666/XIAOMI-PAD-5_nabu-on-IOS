@@ -39,6 +39,8 @@ extern NSDictionary *nabuWallpaperSnapshot(void);
 extern void nabuStartSQLiteVnodeWatch(void);
 extern NSDictionary *nabuExperienceSnapshot(void);
 extern void nabuInstallExperienceCompatibility(void);
+extern NSDictionary *nabuBluetoothSnapshot(void);
+extern NSDictionary *nabuBluetoothTransportTrial(void);
 
 static NSDictionary *wirelessSnapshot(void) {
     void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
@@ -402,6 +404,14 @@ int main(void) {
                         else if ([action isEqual:@"WirelessInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"wireless"] = wirelessSnapshot();
+                        }
+                        else if ([action isEqual:@"BluetoothInventory"]) {
+                            result[@"read_only"] = @YES;
+                            result[@"bluetooth"] = nabuBluetoothSnapshot();
+                        }
+                        else if ([action isEqual:@"BluetoothTransportTrial"]) {
+                            result[@"bluetooth"] = nabuBluetoothSnapshot();
+                            result[@"transport"] = nabuBluetoothTransportTrial();
                         }
                         else if ([action isEqual:@"ExperienceInventory"]) {
                             result[@"read_only"] = @YES;
