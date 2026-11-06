@@ -1,0 +1,27 @@
+name: nabu16 - local test app
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/local-test-app.yml'
+      - 'tools/build_nabu_test_app.py'
+      - 'userland/nabu/apps/LocalTest/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-app:
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: python3 tools/build_nabu_test_app.py --output artifacts/nabu-test-app
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nabu-test-app-${{ github.run_number }}
+          path: artifacts/nabu-test-app/
+          retention-days: 14
