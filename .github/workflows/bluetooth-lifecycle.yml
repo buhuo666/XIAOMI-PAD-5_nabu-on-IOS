@@ -6,7 +6,9 @@ on:
       - '.github/workflows/bluetooth-lifecycle.yml'
       - 'tools/build_nabu_bluetooth_lifecycle.py'
       - 'tools/test_nabu_bluetooth_lifecycle.c'
+      - 'tools/test_nabu_bluetooth_compat.c'
       - 'userland/nabu/src/bluetooth_lifecycle.c'
+      - 'userland/nabu/src/bluetooth_compat.c'
       - 'patches/nabu-wireless/NabuBluetoothControl.h'
   workflow_dispatch:
 permissions:
