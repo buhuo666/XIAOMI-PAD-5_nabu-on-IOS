@@ -2,6 +2,11 @@
 
 更新：2026-11-06，Asia/Shanghai。
 
+用户已确定[基本技术路线](BASIC-TECHNICAL-ROADMAP.md)：先完成系统和应用体验，
+首先实现系统级本地激活态及PC应用安装，再进入软硬件协同驱动修复。当前不接入
+Apple官方服务器激活、Apple ID、App Store、iCloud等服务。正在核对原版激活服务
+和系统消费者，尚未修改或验证系统激活态；当前设备与可用基线仍为下述第六十一轮。
+
 当前可用基线：第六十一轮v61内核/bootstrap v58。桌面正常，40hex板级USB身份修复
 通过实机，Windows原版AMDeviceValidatePairing和StartSession均成功，沿用已有用户
 信任证书、没有重新Pair。Apple原版AFC接口完成1,048,603字节写入/关闭/重开/回读，
