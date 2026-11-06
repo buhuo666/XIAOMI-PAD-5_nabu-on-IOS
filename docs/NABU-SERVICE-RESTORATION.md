@@ -115,3 +115,4 @@ APFS计数41→42、fullfsync成功。原生USB和已验收About字段维持；�
 保持，系统探针的新ID请求成功。第74轮仅替换诊断程序：构建42207743393成功，
 ExperienceCompatibilityTrial显式请求先保存原版结果，再在同一进程安装候选并复查。
 候选源码编入探针时没有constructor，不向SpringBoard、设置或其他程序注入。
+第73轮随后回收4,051,023字节有效前缀及完整槽，清空读回通过，APFS计数43→44。
