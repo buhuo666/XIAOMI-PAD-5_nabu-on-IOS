@@ -33,7 +33,8 @@
   ],
   "environment_overrides": {
     "com.apple.bluetoothd": {
-      "OS_ACTIVITY_DT_MODE": "YES"
+      "OS_ACTIVITY_DT_MODE": "YES",
+      "BT_HCI_TRANSPORT": "H4:POSIX:com.apple.uart.bluetooth,115200"
     },
     "com.apple.backboardd": {
       "CA_FORCE_TIMER": "1"

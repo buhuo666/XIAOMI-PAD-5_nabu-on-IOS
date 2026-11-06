@@ -1,6 +1,6 @@
 # 项目进展
 
-更新：2026-11-06，Asia/Shanghai。
+更新：2026-11-07，Asia/Shanghai。
 
 当前优先级已按用户要求切换到Wi-Fi和蓝牙。设备在Android，正在根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
@@ -89,6 +89,15 @@ APFS计数60→61。第92轮按原机程序将下载分段改为6144字节，主
 寄存器未知。2026-11-07第96轮并行验证共享L1/L11电压对齐与蓝牙持续UART、原生
 服务和菜单能力发布；编译/协议测试通过，新的蓝牙探针Actions42247947900成功。
 尚未宣称蓝牙菜单、发现或配对恢复；原版用户态控制socket路径仍在接入分析。
+第96轮用户已确认蓝牙菜单出现，桌面正常；classic/LE能力true、UART节点存在。
+bluetoothd因IOService/MAC查找失败重启，持续HCI收到未处理的IBS唤醒字节0xfd；
+第97轮将补真实service身份、control socket与包边界IBS。Wi-Fi电压对齐后仍同PC
+崩溃，继续查QURT转储路径。第96轮2,754,081字节及完整槽已回收清空，计数65→66。
+第97轮候选原生control socket、真实IOService地址及IBS握手已实现，生产函数
+ASan/UBSan通过；WLAN同步增加有固件依据的SMEM611三阶段异常快照。新的socket
+探针因iPhoneOS SDK省略control头文件而首次编译失败，已按XNU8796 ABI补声明重建。
+修正版探针Actions42253896974成功，第97轮内核链接及bootstrap apfsck通过，准备
+临时启动验证原生socket/HCI与WLAN异常快照；当前仍未取得扫描、连接或配对成功。
 
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。

@@ -39,6 +39,7 @@ struct NabuGlink {
     bool server_check_valid = false;
     NabuWlfw wlfw;
     bool qmi_enabled = false;
+    bool wlan_crash_captured = false;
     uint8_t transmit[8192]{};
     struct RemoteIntent { uint32_t id, size; bool present, used; } remote[64]{};
     struct LocalIntent { uint8_t *data; uint32_t size, fill; } local[16]{};
@@ -47,6 +48,31 @@ struct NabuGlink {
     unsigned pending_head = 0, pending_count = 0;
     struct Response { uint32_t node, port, from, bytes; uint8_t data[1024]; } responses[8]{};
     unsigned response_head = 0, response_count = 0;
+
+    void capture_wlan_crash(const char *phase) {
+        NabuSmemItem item{};
+        // Original MPSS err_smem_log allocates item 611, 4096 bytes, for APPS.
+        // PFR does not guarantee this buffer contains the user-PD exception.
+        if (!memory.find(611, &item)) {
+            nabu_wireless_log("NABU WLAN CRASH: SMEM item611 absent phase=%s\n", phase); return;
+        }
+        unsigned bytes = item.size < 4096 ? item.size : 4096;
+        uint8_t *copy = (uint8_t *)IOMalloc(bytes);
+        if (!copy) return;
+        glink_barrier();
+        for (unsigned i = 0; i < bytes; ++i) copy[i] = memory.data[item.offset + i];
+        IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
+        char property[64]; snprintf(property, sizeof(property), "nabu-wlan-crash-%s", phase);
+        if (chosen) { chosen->setProperty(property, copy, bytes); chosen->release(); }
+        nabu_wireless_log("NABU WLAN CRASH: SMEM item611 offset=%#x bytes=%u phase=%s; producer not yet attributed\n", item.offset, bytes, phase);
+        for (unsigned at = 0; at < bytes;) {
+            unsigned start = at;
+            while (at < bytes && copy[at] >= 32 && copy[at] < 127 && at - start < 160) ++at;
+            if (at - start >= 5) nabu_wireless_log("NABU WLAN CRASH: item611+%#x text=%.*s\n", start, (int)(at - start), copy + start);
+            if (at == start || (at < bytes && (copy[at] < 32 || copy[at] >= 127))) ++at;
+        }
+        IOFree(copy, bytes);
+    }
 
     bool datagram(unsigned type, unsigned from, unsigned node, unsigned port, const void *data, unsigned size) {
         unsigned total = (sizeof(QrtrHeader) + size + 3) & ~3u;
@@ -236,6 +262,9 @@ struct NabuGlink {
                 if(NabuRmtfs::u16(data+at+3)==0x24){
                     unsigned reason_bytes=0;const uint8_t *reason=NabuRmtfs::tlv(data+at,header.size,2,reason_bytes);
                     nabu_wireless_log("NABU SERVREG: PFR from=%u:%u service=%.*s reason=%.*s\n",header.from_node,header.from_port,name?(int)name_bytes:0,name?(const char*)name:"",reason?(int)reason_bytes:0,reason?(const char*)reason:"");
+                    if(name && name_bytes == 12 && !memcmp(name, "wlan_process", 12) && !wlan_crash_captured) {
+                        wlan_crash_captured = true; capture_wlan_crash("pfr");
+                    }
                 }
                 return;
             }
@@ -255,7 +284,10 @@ struct NabuGlink {
             if (service && command == 4) servers++;
             nabu_wireless_log("NABU QRTR: %s service=%u version=%u instance=%u node=%u port=%u\n", command == 4 ? "server" : "removed", service, instance & 255, instance >> 8, node, port);
             if (service == wlfw_service && command == 4) {
-                if(wlfw_port&&(wlfw_node!=node||wlfw_port!=port))nabu_wireless_log("NABU WLFW: endpoint changed old=%u:%u new=%u:%u step=%u complete=%u\n",wlfw_node,wlfw_port,node,port,wlfw.step,wlfw.complete);
+                if(wlfw_port&&(wlfw_node!=node||wlfw_port!=port)) {
+                    nabu_wireless_log("NABU WLFW: endpoint changed old=%u:%u new=%u:%u step=%u complete=%u\n",wlfw_node,wlfw_port,node,port,wlfw.step,wlfw.complete);
+                    if(wlan_crash_captured) capture_wlan_crash("restart");
+                }
                 wlfw_node = node; wlfw_port = port;
             }
         } else if (command == 10 && header.size >= 20) {
@@ -411,6 +443,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-MAC available=%u applied=%u\n",link->wlfw.mac_available,link->wlfw.mac_set);
+    if(link->wlan_crash_captured) link->capture_wlan_crash("end");
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }

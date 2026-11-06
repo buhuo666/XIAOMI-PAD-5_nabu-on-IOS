@@ -12,6 +12,8 @@
 #include <sys/errno.h>
 #include <sys/fcntl.h>
 #include <sys/filio.h>
+#include <sys/kern_control.h>
+#include <sys/socket.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/termios.h>
@@ -21,6 +23,7 @@
 #include <pexpert/pexpert.h>
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IORegistryEntry.h>
+#include <IOKit/IOService.h>
 #include <libkern/c++/OSData.h>
 #include "NabuWirelessLog.h"
 #include "NabuBluetoothTransport.h"
@@ -213,7 +216,7 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     OSData *nvm = OSDynamicCast(OSData, entry->getProperty("nvm"));
     OSData *address = OSDynamicCast(OSData, entry->getProperty("address-hci"));
     if (!patch || !nvm || !address || address->getLength() != 6) { entry->release(); return false; }
-    nabu_wireless_log("NABU BT: loading original crbtfw32 at 115200; nvm uses this board address, sleep disabled\n");
+    nabu_wireless_log("NABU BT: loading original crbtfw32 at 115200; nvm uses this board address, sleep mask bits cleared\n");
     bool ok = download_tlv(uart, patch, "rampatch", true) && download_tlv(uart, nvm, "nvm", false);
     uint8_t reply[256];
     if (ok) {
@@ -244,16 +247,98 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     return ok;
 }
 
+// BEGIN TESTABLE H4 FRAMING
+static unsigned stream_h4_header(uint8_t type)
+{
+    switch (type) { case 1: case 3: return 3; case 2: case 5: return 4; case 4: return 2; default: return 0; }
+}
+static unsigned stream_h4_payload(uint8_t type, const uint8_t *header)
+{
+    if (type == 1 || type == 3) return header[2];
+    if (type == 4) return header[1];
+    unsigned length = header[2] | (unsigned)header[3] << 8;
+    return type == 5 ? length & 0x3fff : length;
+}
+struct StreamH4Rx {
+    uint8_t type, header[4];
+    unsigned header_bytes, remaining;
+    bool boundary() const { return type == 0; }
+    // 1=data, 2=WAKE_IND, 3=WAKE_ACK, 4=SLEEP_IND, -1=invalid H4 type.
+    int take(uint8_t byte) {
+        if (!type) {
+            if (byte == 0xfd) return 2;
+            if (byte == 0xfc) return 3;
+            if (byte == 0xfe) return 4;
+            if (!stream_h4_header(byte)) return -1;
+            type = byte; header_bytes = remaining = 0; return 1;
+        }
+        unsigned need = stream_h4_header(type);
+        if (header_bytes < need) {
+            header[header_bytes++] = byte;
+            if (header_bytes == need) {
+                remaining = stream_h4_payload(type, header);
+                if (!remaining) type = 0;
+            }
+        } else if (!--remaining) type = 0;
+        return 1;
+    }
+};
+struct StreamTxQueue {
+    static constexpr unsigned capacity = 131072;
+    uint8_t data[capacity];
+    unsigned head, count;
+    uint8_t at(unsigned offset) const { return data[(head + offset) % capacity]; }
+    void append(const uint8_t *bytes, unsigned size) {
+        for (unsigned i = 0; i < size; ++i) data[(head + count++) % capacity] = bytes[i];
+    }
+    unsigned peek(uint8_t *bytes, unsigned size) const {
+        if (size > count) size = count;
+        for (unsigned i = 0; i < size; ++i) bytes[i] = at(i);
+        return size;
+    }
+    void consume(unsigned size) { head = (head + size) % capacity; count -= size; }
+    void clear() { head = count = 0; }
+    // Only complete host H4 packets may enter the UART, so IBS cannot split payloads.
+    int packet_size() const {
+        if (!count) return 0;
+        uint8_t type = at(0), header[4];
+        unsigned need = stream_h4_header(type);
+        if (!need || type == 4) return -1;
+        if (count < need + 1) return 0;
+        for (unsigned i = 0; i < need; ++i) header[i] = at(i + 1);
+        unsigned size = 1 + need + stream_h4_payload(type, header);
+        return count >= size ? (int)size : 0;
+    }
+};
+// END TESTABLE H4 FRAMING
+
 static vm_offset_t stream_uart;
 static lck_grp_t *stream_group;
-static lck_mtx_t *stream_rx_lock, *stream_tx_lock, *stream_read_lock;
-static thread_call_t stream_call;
+static lck_mtx_t *stream_rx_lock, *stream_tx_lock, *stream_read_lock, *stream_write_lock;
+static thread_call_t stream_call, stream_tx_call, stream_socket_call;
 static NabuBluetoothRx *stream_rx;
+static StreamTxQueue *stream_tx;
+static StreamH4Rx stream_rx_frame{};
+static bool stream_discard_frame;
 static struct user_termios stream_termios{};
 static unsigned stream_minimum = 1;
 static bool stream_opened;
-static int stream_rx_error;
+static int stream_rx_error, stream_tx_error;
 static uint64_t stream_received, stream_written, stream_overruns;
+static kern_ctl_ref stream_ctl_ref;
+static uint32_t stream_socket_unit;
+static bool stream_socket_closing, stream_socket_enqueuing;
+static IOService *stream_service;
+enum { StreamTxAsleep, StreamTxWaking, StreamTxAwake };
+static unsigned stream_ibs_tx, stream_ibs_pending_acks, stream_ibs_attempts;
+static bool stream_ibs_rx_awake;
+static uint64_t stream_ibs_deadline, stream_ibs_wakes, stream_ibs_acks, stream_ibs_sleeps;
+
+static void stream_clear_rx()
+{
+    stream_rx->clear();
+    stream_discard_frame = !stream_rx_frame.boundary();
+}
 
 // RX ownership transfers here only after the synchronous firmware/HCI sequence.
 // Caller holds stream_rx_lock; the poller and explicit flush are the only readers.
@@ -262,7 +347,7 @@ static void stream_drain_rx(bool discard)
     uint32_t irq = rd(stream_uart + 0x640);
     // GENI FIFO overrun/read errors and UART parity/break indications.
     if (!discard && (irq & ((3u << 24) | (15u << 9)))) {
-        stream_rx_error = EIO; stream_rx->clear(); ++stream_overruns;
+        stream_rx_error = EIO; stream_clear_rx(); ++stream_overruns;
     }
     uint32_t status = rd(stream_uart + 0x804);
     unsigned words = status & 0x01ffffff;
@@ -274,11 +359,104 @@ static void stream_drain_rx(bool discard)
             if (last && last < 4) bytes = last;
         }
         stream_received += bytes;
-        if (!discard && !stream_rx_error && !stream_rx->push_word(data, bytes)) {
-            stream_rx_error = EOVERFLOW; stream_rx->clear(); ++stream_overruns;
+        for (unsigned i = 0; i < bytes; ++i) {
+            uint8_t byte = data >> (i * 8);
+            int kind = stream_rx_frame.take(byte);
+            if (kind == 2) { ++stream_ibs_pending_acks; ++stream_ibs_wakes; stream_ibs_rx_awake = true; }
+            else if (kind == 3) { if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAwake; ++stream_ibs_acks; }
+            else if (kind == 4) { stream_ibs_rx_awake = false; ++stream_ibs_sleeps; }
+            else if (kind < 0) { stream_rx_error = EPROTO; stream_clear_rx(); }
+            else if (!discard && !stream_discard_frame && !stream_rx_error && !stream_rx->push_word(byte, 1)) {
+                stream_rx_error = EOVERFLOW; stream_clear_rx(); ++stream_overruns;
+            }
+            if (stream_rx_frame.boundary()) stream_discard_frame = false;
         }
     }
     wr(stream_uart + 0x648, irq);
+    if (discard) stream_discard_frame = !stream_rx_frame.boundary();
+}
+
+static void stream_tx_work(thread_call_param_t, thread_call_param_t)
+{
+    // Only this worker emits stream bytes/IBS; the RX poller never waits on this lock.
+    lck_mtx_lock(stream_tx_lock);
+    for (unsigned action = 0; action < 8; ++action) {
+        lck_mtx_lock(stream_rx_lock);
+        int packet = stream_tx->packet_size();
+        uint8_t control = 0;
+        if (stream_ibs_pending_acks) control = 0xfc;
+        else if (stream_tx_error) { lck_mtx_unlock(stream_rx_lock); break; }
+        else if (packet < 0) stream_tx_error = EPROTO;
+        else if (stream_ibs_tx == StreamTxAsleep && packet) {
+            stream_ibs_tx = StreamTxWaking; stream_ibs_attempts = 0; control = 0xfd;
+        } else if (stream_ibs_tx == StreamTxWaking) {
+            if (mach_absolute_time() < stream_ibs_deadline) { lck_mtx_unlock(stream_rx_lock); break; }
+            if (stream_ibs_attempts == 10) stream_tx_error = ETIMEDOUT;
+            else control = 0xfd;
+        } else if (!packet) { lck_mtx_unlock(stream_rx_lock); break; }
+        if (stream_tx_error && !control) { wakeup(stream_tx); wakeup(stream_rx); lck_mtx_unlock(stream_rx_lock); break; }
+        if (control == 0xfd) {
+            ++stream_ibs_attempts;
+            clock_interval_to_deadline(100, kMillisecondScale, &stream_ibs_deadline);
+        }
+        lck_mtx_unlock(stream_rx_lock);
+        if (control) {
+            bool ok = transmit(stream_uart, &control, 1, true);
+            lck_mtx_lock(stream_rx_lock);
+            if (ok && control == 0xfc) --stream_ibs_pending_acks;
+            if (!ok) stream_tx_error = EIO;
+            wakeup(stream_tx); wakeup(stream_rx);
+            lck_mtx_unlock(stream_rx_lock);
+            if (!ok) break;
+            continue;
+        }
+        // A complete H4 frame stays indivisible with respect to IBS control bytes.
+        for (unsigned left = (unsigned)packet; left;) {
+            uint8_t bytes[256];
+            lck_mtx_lock(stream_rx_lock);
+            unsigned count = stream_tx->peek(bytes, left < sizeof(bytes) ? left : sizeof(bytes));
+            lck_mtx_unlock(stream_rx_lock);
+            bool ok = transmit(stream_uart, bytes, count, true);
+            lck_mtx_lock(stream_rx_lock);
+            if (ok) { stream_tx->consume(count); stream_written += count; left -= count; }
+            else stream_tx_error = EIO;
+            wakeup(stream_tx); wakeup(stream_rx);
+            lck_mtx_unlock(stream_rx_lock);
+            if (!ok) break;
+        }
+    }
+    lck_mtx_lock(stream_rx_lock);
+    int error = stream_tx_error;
+    lck_mtx_unlock(stream_rx_lock);
+    if (error) {
+        wr(stream_uart + 0x604, 4); wait_bit(stream_uart + 0x40, 1, false, 10000);
+        nabu_wireless_log("NABU BT STREAM: TX error=%d\n", error);
+    }
+    lck_mtx_unlock(stream_tx_lock);
+}
+
+static void stream_socket_deliver(thread_call_param_t, thread_call_param_t)
+{
+    uint8_t data[1024];
+    lck_mtx_lock(stream_rx_lock);
+    if (!stream_socket_unit || stream_socket_closing || stream_socket_enqueuing || stream_ibs_pending_acks || stream_rx_error || !stream_rx->count) {
+        lck_mtx_unlock(stream_rx_lock); return;
+    }
+    uint32_t unit = stream_socket_unit, generation = stream_rx->generation;
+    unsigned bytes = stream_rx->peek(data, sizeof(data));
+    stream_socket_enqueuing = true;
+    lck_mtx_unlock(stream_rx_lock);
+    // ctl_enqueuedata takes socket locks. No driver lock is held across this call.
+    int error = ctl_enqueuedata(stream_ctl_ref, unit, data, bytes, 0);
+    lck_mtx_lock(stream_rx_lock);
+    if (stream_socket_unit == unit && stream_rx->generation == generation) {
+        if (!error) stream_rx->consume(bytes);
+        else if (error != ENOBUFS && error != ENOMEM) stream_rx_error = error;
+    }
+    stream_socket_enqueuing = false; wakeup(&stream_socket_enqueuing);
+    lck_mtx_unlock(stream_rx_lock);
+    if (error && error != ENOBUFS && error != ENOMEM)
+        nabu_wireless_log("NABU BT STREAM: socket RX error=%d unit=%u\n", error, unit);
 }
 
 static void stream_poll(thread_call_param_t, thread_call_param_t)
@@ -289,40 +467,61 @@ static void stream_poll(thread_call_param_t, thread_call_param_t)
     stream_drain_rx(false);
     // Wake only for new data/errors: waking every poll would restart VTIME forever.
     if (stream_rx->count != before || stream_rx_error != previous_error) wakeup(stream_rx);
+    bool tx_needed = stream_ibs_pending_acks ||
+        (!stream_tx_error && ((stream_ibs_tx == StreamTxWaking && mach_absolute_time() >= stream_ibs_deadline) ||
+         (stream_ibs_tx != StreamTxWaking && stream_tx->packet_size() != 0)));
+    bool socket_needed = stream_socket_unit && !stream_socket_closing && !stream_ibs_pending_acks && !stream_rx_error && stream_rx->count;
     lck_mtx_unlock(stream_rx_lock);
+    if (tx_needed) thread_call_enter(stream_tx_call);
+    if (socket_needed) thread_call_enter(stream_socket_call);
     uint64_t deadline;
     clock_interval_to_deadline(1, kMillisecondScale, &deadline);
     thread_call_enter_delayed(stream_call, deadline);
 }
 
-static int stream_open(dev_t, int, int, struct proc *)
+static int stream_acquire(uint32_t unit)
 {
     lck_mtx_lock(stream_tx_lock);
     lck_mtx_lock(stream_rx_lock);
     int error = stream_opened ? EBUSY : 0;
     if (!error) {
-        stream_opened = true; stream_rx_error = 0; stream_rx->clear();
+        stream_opened = true; stream_socket_unit = unit; stream_socket_closing = false;
+        stream_rx_error = stream_tx_error = 0; stream_clear_rx(); stream_tx->clear();
+        if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAsleep;
         stream_drain_rx(true); stream_minimum = 1;
         stream_termios.c_cc[VMIN] = 1; stream_termios.c_cc[VTIME] = 0;
     }
     lck_mtx_unlock(stream_rx_lock);
     lck_mtx_unlock(stream_tx_lock);
-    nabu_wireless_log("NABU BT STREAM: open result=%d\n", error);
+    nabu_wireless_log("NABU BT STREAM: open unit=%u result=%d\n", unit, error);
     return error;
 }
 
-static int stream_close(dev_t, int, int, struct proc *)
+static int stream_open(dev_t, int, int, struct proc *) { return stream_acquire(0); }
+
+static int stream_release(uint32_t unit)
 {
-    lck_mtx_lock(stream_rx_lock);
-    stream_opened = false; stream_rx->clear(); wakeup(stream_rx);
-    uint64_t received = stream_received, overruns = stream_overruns;
-    lck_mtx_unlock(stream_rx_lock);
     lck_mtx_lock(stream_tx_lock);
+    lck_mtx_lock(stream_rx_lock);
+    // connect failure also triggers disconnect; it must not release another owner.
+    if (!stream_opened || stream_socket_unit != unit) { lck_mtx_unlock(stream_rx_lock); lck_mtx_unlock(stream_tx_lock); return 0; }
+    stream_socket_closing = true;
+    while (stream_socket_enqueuing)
+        msleep(&stream_socket_enqueuing, stream_rx_lock, PZERO, "nabu-bt-ctl-close", nullptr);
+    stream_opened = false; stream_socket_unit = 0;
+    stream_clear_rx(); stream_tx->clear(); wakeup(stream_rx); wakeup(stream_tx);
+    if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAsleep;
+    uint64_t received = stream_received, overruns = stream_overruns;
     uint64_t written = stream_written;
+    uint64_t wakes = stream_ibs_wakes, acks = stream_ibs_acks, sleeps = stream_ibs_sleeps;
+    lck_mtx_unlock(stream_rx_lock);
     lck_mtx_unlock(stream_tx_lock);
     nabu_wireless_log("NABU BT STREAM: close rx=%llu tx=%llu overruns=%llu; receiver and supplies retained\n", received, written, overruns);
+    nabu_wireless_log("NABU BT STREAM: IBS received wake=%llu ack=%llu sleep=%llu\n", wakes, acks, sleeps);
     return 0;
 }
+
+static int stream_close(dev_t, int, int, struct proc *) { return stream_release(0); }
 
 static int stream_read(dev_t, struct uio *uio, int ioflag)
 {
@@ -330,7 +529,13 @@ static int stream_read(dev_t, struct uio *uio, int ioflag)
     lck_mtx_lock(stream_read_lock);
     lck_mtx_lock(stream_rx_lock);
     int error = 0;
-    while (stream_opened && !stream_rx_error) {
+    while (stream_opened && !stream_rx_error && !stream_tx_error) {
+        if (stream_ibs_pending_acks) {
+            if (ioflag & IO_NDELAY) { error = EWOULDBLOCK; break; }
+            error = msleep(stream_rx, stream_rx_lock, PZERO | PCATCH, "nabu-bt-ibs", nullptr);
+            if (error) break;
+            continue;
+        }
         unsigned minimum = stream_minimum;
         if (minimum > (uint64_t)uio_resid(uio)) minimum = (unsigned)uio_resid(uio);
         unsigned timeout_ds = stream_termios.c_cc[VTIME];
@@ -344,6 +549,7 @@ static int stream_read(dev_t, struct uio *uio, int ioflag)
     }
     if (!stream_opened) error = ENXIO;
     if (stream_rx_error) error = stream_rx_error;
+    if (stream_tx_error) error = stream_tx_error;
     unsigned available = stream_rx->count;
     if (available > (uint64_t)uio_resid(uio)) available = (unsigned)uio_resid(uio);
     if (error) available = 0;
@@ -366,23 +572,39 @@ static int stream_read(dev_t, struct uio *uio, int ioflag)
     return error;
 }
 
-static int stream_write(dev_t, struct uio *uio, int)
+// Called with the producer lock. The worker consumes without taking that lock.
+static int stream_wait_space(unsigned bytes, bool nonblocking)
 {
-    lck_mtx_lock(stream_tx_lock);
+    if (bytes > StreamTxQueue::capacity) return EMSGSIZE;
+    lck_mtx_lock(stream_rx_lock);
+    int error = 0;
+    while (stream_opened && !stream_rx_error && !stream_tx_error && StreamTxQueue::capacity - stream_tx->count < bytes) {
+        if (nonblocking) { error = EWOULDBLOCK; break; }
+        error = msleep(stream_tx, stream_rx_lock, PZERO | PCATCH, "nabu-bt-tx", nullptr);
+        if (error) break;
+    }
+    if (!stream_opened) error = ENOTCONN;
+    if (stream_rx_error) error = stream_rx_error;
+    if (stream_tx_error) error = stream_tx_error;
+    lck_mtx_unlock(stream_rx_lock);
+    return error;
+}
+
+static int stream_write(dev_t, struct uio *uio, int ioflag)
+{
+    lck_mtx_lock(stream_write_lock);
     int error = 0;
     while (uio_resid(uio)) {
         uint8_t data[256];
         unsigned bytes = uio_resid(uio) < (user_ssize_t)sizeof(data) ? (unsigned)uio_resid(uio) : sizeof(data);
+        error = stream_wait_space(bytes, ioflag & IO_NDELAY);
+        if (error) break;
         error = uiomove((caddr_t)data, bytes, uio);
         if (error) break;
-        if (!transmit(stream_uart, data, bytes, true)) {
-            wr(stream_uart + 0x604, 4);
-            wait_bit(stream_uart + 0x40, 1, false, 10000);
-            error = EIO; break;
-        }
-        stream_written += bytes;
+        lck_mtx_lock(stream_rx_lock); stream_tx->append(data, bytes); lck_mtx_unlock(stream_rx_lock);
+        thread_call_enter(stream_tx_call);
     }
-    lck_mtx_unlock(stream_tx_lock);
+    lck_mtx_unlock(stream_write_lock);
     return error;
 }
 
@@ -400,16 +622,16 @@ static int stream_set_termios(const struct user_termios &settings, bool flush)
     lck_mtx_lock(stream_rx_lock);
     stream_termios = settings; stream_termios.c_ispeed = 115200;
     stream_minimum = settings.c_cc[VMIN];
-    if (flush) { stream_rx->clear(); stream_rx_error = 0; stream_drain_rx(true); }
+    if (flush) { stream_clear_rx(); stream_rx_error = 0; stream_drain_rx(true); }
     wakeup(stream_rx);
     lck_mtx_unlock(stream_rx_lock);
     return 0;
 }
 
-static int stream_ioctl(dev_t, u_long command, caddr_t data, int, struct proc *)
+// Shared by cdev ioctl and native control-socket options; caller holds TX lock.
+static int stream_control(u_long command, caddr_t data)
 {
     int error = 0;
-    lck_mtx_lock(stream_tx_lock);
     switch (command) {
     case TIOCGETA_64:
         lck_mtx_lock(stream_rx_lock); memcpy(data, &stream_termios, sizeof(stream_termios)); lck_mtx_unlock(stream_rx_lock); break;
@@ -427,22 +649,151 @@ static int stream_ioctl(dev_t, u_long command, caddr_t data, int, struct proc *)
         int direction = *(int *)data;
         if (direction & ~(FREAD | FWRITE)) { error = EINVAL; break; }
         if (!direction || (direction & FREAD)) {
-            lck_mtx_lock(stream_rx_lock); stream_rx->clear(); stream_rx_error = 0; stream_drain_rx(true); lck_mtx_unlock(stream_rx_lock);
+            lck_mtx_lock(stream_rx_lock); stream_clear_rx(); stream_rx_error = 0; stream_drain_rx(true); lck_mtx_unlock(stream_rx_lock);
         }
-        // TX is synchronous and this lock has waited for the previous write.
+        if (!direction || (direction & FWRITE)) {
+            lck_mtx_lock(stream_rx_lock); stream_tx->clear(); wakeup(stream_tx); lck_mtx_unlock(stream_rx_lock);
+        }
         break;
     }
     case FIONREAD:
         lck_mtx_lock(stream_rx_lock); *(int *)data = stream_rx->count; lck_mtx_unlock(stream_rx_lock); break;
     case FIONBIO: break; // The VFS passes IO_NDELAY to read.
     case FIOASYNC: if (*(int *)data) error = ENOTSUP; break;
-    case TIOCOUTQ: *(int *)data = 0; break;
+    case TIOCOUTQ:
+        lck_mtx_lock(stream_rx_lock); *(int *)data = stream_tx->count; lck_mtx_unlock(stream_rx_lock); break;
     case TIOCEXCL: case TIOCNXCL: break; // Original UART accepts both; this transport has one owner.
     default: error = ENOTTY; break;
     }
+    return error;
+}
+
+static int stream_ioctl(dev_t, u_long command, caddr_t data, int, struct proc *)
+{
+    if (command == TIOCSETAW_64 || command == TIOCSETAF_64) {
+        lck_mtx_lock(stream_rx_lock);
+        int error = 0;
+        while (stream_opened && stream_tx->count && !stream_tx_error) {
+            error = msleep(stream_tx, stream_rx_lock, PZERO | PCATCH, "nabu-bt-drain", nullptr);
+            if (error) break;
+        }
+        if (stream_tx_error) error = stream_tx_error;
+        if (!stream_opened) error = ENOTCONN;
+        lck_mtx_unlock(stream_rx_lock);
+        if (error) return error;
+    }
+    lck_mtx_lock(stream_tx_lock);
+    int error = stream_control(command, data);
     lck_mtx_unlock(stream_tx_lock);
     nabu_wireless_log("NABU BT STREAM: ioctl=%#lx result=%d\n", command, error);
     return error;
+}
+
+static errno_t stream_ctl_connect(kern_ctl_ref, struct sockaddr_ctl *address, void **unitinfo)
+{
+    int error = stream_acquire(address->sc_unit);
+    if (!error) *unitinfo = stream_rx;
+    return error;
+}
+
+static errno_t stream_ctl_disconnect(kern_ctl_ref, uint32_t unit, void *unitinfo)
+{
+    return unitinfo == stream_rx ? stream_release(unit) : 0;
+}
+
+static bool stream_ctl_owner(uint32_t unit, void *unitinfo)
+{
+    lck_mtx_lock(stream_rx_lock);
+    bool own = unitinfo == stream_rx && stream_opened && unit && stream_socket_unit == unit && !stream_socket_closing;
+    lck_mtx_unlock(stream_rx_lock);
+    return own;
+}
+
+static errno_t stream_ctl_send(kern_ctl_ref, uint32_t unit, void *unitinfo, mbuf_t packet, int flags)
+{
+    int error = 0;
+    if (!stream_ctl_owner(unit, unitinfo)) error = ENOTCONN;
+    else if (flags & MSG_OOB) error = EOPNOTSUPP;
+    unsigned total = 0;
+    for (mbuf_t part = packet; !error && part; part = mbuf_next(part)) {
+        size_t bytes = mbuf_len(part);
+        if (bytes > StreamTxQueue::capacity - total) error = EMSGSIZE;
+        else total += (unsigned)bytes;
+    }
+    if (!error) {
+        lck_mtx_lock(stream_write_lock);
+        // The KPI passes PRUS flags, not the socket's O_NONBLOCK state. Report
+        // pressure rather than blocking this callback on a private queue.
+        error = stream_wait_space(total, true);
+        // Socket uio was already consumed before this callback. EWOULDBLOCK can
+        // be converted to a successful partial write by the VFS, losing data.
+        if (error == EWOULDBLOCK) error = ENOBUFS;
+        if (!error) {
+            lck_mtx_lock(stream_rx_lock);
+            for (mbuf_t part = packet; part; part = mbuf_next(part))
+                stream_tx->append((const uint8_t *)mbuf_data(part), (unsigned)mbuf_len(part));
+            lck_mtx_unlock(stream_rx_lock);
+            thread_call_enter(stream_tx_call);
+        }
+        lck_mtx_unlock(stream_write_lock);
+    }
+    // kern_control transfers ownership on both success and error.
+    mbuf_freem(packet);
+    return error;
+}
+
+static errno_t stream_ctl_setopt(kern_ctl_ref, uint32_t unit, void *unitinfo, int option, void *data, size_t length)
+{
+    if (!stream_ctl_owner(unit, unitinfo)) return ENOTCONN;
+    u_long command = (uint32_t)option;
+    if (command != TIOCSETA_64 && command != 0x80085402 && command != TIOCEXCL && command != TIOCNXCL) return ENOTTY;
+    if (length != IOCPARM_LEN(command) || (length && !data)) return EINVAL;
+    if (command == TIOCSETA_64) {
+        const struct user_termios *settings = (const struct user_termios *)data;
+        // SOCK_STREAM already implements this observed raw read mode. Other tty
+        // VMIN/VTIME policies would require a separate socket buffering contract.
+        if (settings->c_cc[VMIN] != 1 || settings->c_cc[VTIME] != 0) return ENOTSUP;
+    }
+    return stream_ioctl(0, command, (caddr_t)data, 0, nullptr);
+}
+
+static errno_t stream_ctl_getopt(kern_ctl_ref, uint32_t unit, void *unitinfo, int option, void *data, size_t *length)
+{
+    if (!stream_ctl_owner(unit, unitinfo)) return ENOTCONN;
+    u_long command = (uint32_t)option;
+    if (command != TIOCGETA_64 && command != TIOCOUTQ) return ENOTTY;
+    size_t required = IOCPARM_LEN(command);
+    if (!data) { *length = required; return 0; }
+    // XNU checks returned length even on error, so do not increase a short buffer.
+    if (*length < required) return EMSGSIZE;
+    int error = stream_ioctl(0, command, (caddr_t)data, 0, nullptr);
+    if (!error) *length = required;
+    return error;
+}
+
+static void stream_publish_identity()
+{
+    IORegistryEntry *entry = IORegistryEntry::fromPath("/nabu-bluetooth", gIODTPlane);
+    OSData *hci = entry ? OSDynamicCast(OSData, entry->getProperty("address-hci")) : nullptr;
+    if (!hci || hci->getLength() != 6) { if (entry) entry->release(); return; }
+    uint8_t address[6];
+    const uint8_t *source = (const uint8_t *)hci->getBytesNoCopy();
+    for (unsigned i = 0; i < 6; ++i) address[i] = source[5 - i];
+    entry->release();
+    IOService *service = new IOService;
+    if (!service || !service->init()) { if (service) service->release(); return; }
+    service->setName("bluetooth");
+    service->setProperty("local-mac-address", address, sizeof(address));
+    // IORegistryEntry::copyProperty checks the entry itself before plane traversal.
+    // This is the same property/plane/recursive lookup used by bluetoothd.
+    OSObject *object = service->copyProperty("local-mac-address", gIODTPlane, kIORegistryIterateRecursively);
+    OSData *observed = OSDynamicCast(OSData, object);
+    bool matches = observed && observed->getLength() == 6 && !memcmp(observed->getBytesNoCopy(), address, 6);
+    if (object) object->release();
+    if (!matches || !service->attach(IOService::getServiceRoot())) { service->release(); return; }
+    stream_service = service;
+    service->registerService();
+    nabu_wireless_log("NABU BT STREAM: bluetooth IOService published; local-mac-address lookup matched board\n");
 }
 
 static const struct cdevsw stream_cdevsw = {
@@ -458,11 +809,17 @@ static bool stream_start(vm_offset_t uart)
     stream_rx_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
     stream_tx_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
     stream_read_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
+    stream_write_lock = lck_mtx_alloc_init(stream_group, LCK_ATTR_NULL);
     stream_call = thread_call_allocate_with_priority(stream_poll, nullptr, THREAD_CALL_PRIORITY_KERNEL_HIGH);
-    if (!stream_rx_lock || !stream_tx_lock || !stream_read_lock || !stream_call) return false;
+    stream_tx_call = thread_call_allocate_with_options(stream_tx_work, nullptr, THREAD_CALL_PRIORITY_KERNEL, THREAD_CALL_OPTIONS_ONCE);
+    stream_socket_call = thread_call_allocate_with_options(stream_socket_deliver, nullptr, THREAD_CALL_PRIORITY_KERNEL, THREAD_CALL_OPTIONS_ONCE);
+    if (!stream_rx_lock || !stream_tx_lock || !stream_read_lock || !stream_write_lock || !stream_call || !stream_tx_call || !stream_socket_call) return false;
     stream_rx = (NabuBluetoothRx *)IOMalloc(sizeof(*stream_rx));
     if (!stream_rx) return false;
     bzero(stream_rx, sizeof(*stream_rx));
+    stream_tx = (StreamTxQueue *)IOMalloc(sizeof(*stream_tx));
+    if (!stream_tx) return false;
+    bzero(stream_tx, sizeof(*stream_tx));
     stream_uart = uart;
     stream_termios.c_cflag = CS8 | CREAD | CLOCAL | CRTSCTS;
     stream_termios.c_ispeed = stream_termios.c_ospeed = 115200;
@@ -472,8 +829,19 @@ static bool stream_start(vm_offset_t uart)
     if (!devfs_make_node(makedev(major, 0), DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, "uart.bluetooth")) {
         cdevsw_remove(major, &stream_cdevsw); return false;
     }
+    struct kern_ctl_reg registration{};
+    strlcpy(registration.ctl_name, "com.apple.uart.bluetooth", sizeof(registration.ctl_name));
+    // The original bluetoothd and diagnostic run as mobile, not root.
+    registration.ctl_flags = CTL_FLAG_REG_SOCK_STREAM;
+    registration.ctl_sendsize = registration.ctl_recvsize = 65536;
+    registration.ctl_connect = stream_ctl_connect; registration.ctl_disconnect = stream_ctl_disconnect;
+    registration.ctl_send = stream_ctl_send; registration.ctl_setopt = stream_ctl_setopt; registration.ctl_getopt = stream_ctl_getopt;
+    int control_error = ctl_register(&registration, &stream_ctl_ref);
+    nabu_wireless_log("NABU BT STREAM: control=com.apple.uart.bluetooth register=%d id=%u\n", control_error, registration.ctl_id);
     thread_call_enter(stream_call);
+    stream_publish_identity();
     nabu_wireless_log("NABU BT STREAM: /dev/uart.bluetooth major=%d ready; baud=115200 rx-poll=1ms capacity=%u\n", major, NabuBluetoothRx::capacity);
+    nabu_wireless_log("NABU BT STREAM: IBS packet-boundary adapter enabled; TX remains awake after handshake\n");
     return true;
 }
 

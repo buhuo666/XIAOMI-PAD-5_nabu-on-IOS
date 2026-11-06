@@ -307,6 +307,37 @@ decompile程序，实际只有汇编，伪代码全部失败。已改Intel runne
 因此字符设备存在只满足启动路径检查，仍需接入真实socket传输；不把H4配置字符串
 误解释为直接打开字符文件。
 
+第96轮实机结果：用户确认桌面正常，设置蓝牙选项已出现；MG的classic和LE能力均为
+true，`/dev/uart.bluetooth`存在。原生bluetoothd确实启动，但因找不到名为bluetooth的
+IOService及local-mac-address而每10秒重启；chosen地址只解决MG能力，不满足daemon
+自己的查找路径。原版BT_DEVICE_ADDRESS环境入口在本release解析后清零，不采用它。
+下一轮应发布真实IOService/MAC，并按确认的H4:POSIX配置接入control socket。
+
+成组HCI探针实测open、tcgetattr(115200)、write4字节均成功，RX首字节0xfd导致
+H4解析失败；这是Qualcomm IBS唤醒控制字节，不能原样送入原版H4栈，也不能在H4
+payload中直接过滤。NVM清除sleep位未能排除此现象，下一轮实现包边界IBS握手。
+Wi-Fi仍上报同一WLAN RT异常和端点变化，电压对齐没有解决崩溃。第96轮2,754,081
+字节有效日志及完整64MiB槽已备份清空，APFS计数65→66；首次回收在GPT后读时短读，
+原始槽备份保留，Android稳定后重收成功，正式结果位于runtime-log-retry目录。
+
+第97轮候选增加原版`com.apple.uart.bluetooth` stream control socket，复用单一UART
+及收发队列，和字符节点互斥。按确认的72字节termios合同提供get/set选项；不设置
+CTL_FLAG_PRIVILEGED，因为原版bluetoothd为mobile用户。队列满时返回ENOBUFS而非
+会被VFS当成已写入的EWOULDBLOCK。真实IOService发布本机local-mac-address，启动
+配置使用`H4:POSIX:com.apple.uart.bluetooth,115200`，不预设BT_DEVICE_ADDRESS。
+
+IBS适配在H4包边界识别FD/FC/FE，包内相同字节保持原样；独立TX线程负责ACK、
+唤醒及100ms重发，超时明确失败。初期保持已唤醒TX，不主动进入睡眠。生产函数
+测试覆盖包边界、唤醒/重发、所有权、mbuf释放、选项符号扩展及队列背压，ASan/UBSan
+通过。仍有明确限制：公开control KPI无法直接给现有socket置错误/断开；致命UART
+错误会停止私有队列，但阻塞socket读者仍依赖上层关闭。非阻塞探针有独立期限；
+不能据主机测试宣称完整错误恢复或BlueTool厂商脚本兼容。
+
+WLAN诊断同时补原版MPSS `err_smem_log`分配的SMEM item611（4096字节），在PFR、
+端点重建和试验结束各捕获一次，保留原始OSData及USB base64结果。用户PD异常路径
+确有writer调用，但部分分支会跳过，且PFR可能先于写入；需核对PC/进程名后才能
+归属本次WLAN。字段格式含BADVA/LR，可帮助定位MMIO访问；不猜固定内存偏移。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

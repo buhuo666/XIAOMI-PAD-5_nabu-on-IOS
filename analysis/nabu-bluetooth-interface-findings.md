@@ -149,3 +149,120 @@ https://raw.githubusercontent.com/apple-oss-distributions/IOSerialFamily/main/IO
 - `0x10006669c`至`0x100066f90`引用`com.apple.uart.sk.bluetooth`（`0x10006676c`及`0x100066900`）：是Skywalk分支的候选入口。
 
 这些是函数边界与字符串xref静态事实，尚不能推断哪个分支会在Nabu执行，也未证明厂商HCI初始化兼容。父任务已经为两个用户态程序建立独立定向Actions流程；后续应以取回的调用和分支伪代码及首次实机启动日志继续。当前没有进一步改驱动或操作设备。
+
+## 用户态Actions首轮结果与原生socket契约
+
+Actions `42246716289`下载目录为`artifacts/ci/42246716289-attempt-1/bluetooth-userland-analysis-1/`。**工作流结论success不表示反编译成功**：两份`.c`全部是Unresolved。`bluetoothd-ghidra.log:139`和`BlueTool-ghidra.log:75`明确报错 `os/mac_arm_64/decompile does not exist`。有效结果是导入、函数选择和ARM64汇编；本节额外用已有本机可执行文件、Mach-O导入表和Capstone给汇编标注，均为静态证据。父任务已安排Intel runner补跑。
+
+### uart与cu是main的存在检查，不是实际open选择
+
+`bluetoothd`的main在`0x100026374`先`access("/dev/cu.bluetooth", F_OK)`，失败后`0x10002638c`检查`/dev/uart.bluetooth`。任意一个存在即可继续。都不存在时另尝试匹配`marconi-bt`/`bluetooth` IOService。不要把这段误读为实际打开串口的回退代码。
+
+### 可配置的H4路径实际使用内核控制socket
+
+`0x100155f8c`确实调用`getenv("BT_HCI_TRANSPORT")`（`0x100155fec`），按冒号拆分为`transport:driver:options`。第一段查transport表`0x1007fd3e8`，第二段通过`0x10015627c`查driver表`0x1007fd438`，第三段复制到driver描述符的options字段。
+
+解码Mach-O `LC_DYLD_CHAINED_FIXUPS`后，两相关segment的pointer_format均为6；表中指针按镜像基址加编码offset解析，不能直接把文件里的64位值当虚拟地址。
+
+- transport包含`USB`、`H4DS`、`H4BC`、`H4`、`H5`、`APPLEBT`、`VIRT`、`PCIE`、`PCIESW`。
+- driver包含`USB`、`POSIX`、`APPLEBT`、`VIRT`、`PCIE`、`PCIESW`。
+- H4描述符为`0x100844218`，默认POSIX driver为`0x100844138`。**`H4`本身不是driver名称**，只填一个token不能假设得到可用driver。
+- POSIX open函数为`0x10006669c`。options按逗号拆为控制socket名称与波特率；名称默认`com.apple.uart.sk.bluetooth`，并非文件路径。它调用`socket(32, 1, 2)`，即AF_SYSTEM/SOCK_STREAM/SYSPROTO_CONTROL，随后CTLIOCGINFO和connect。
+
+因此有静态依据的非Skywalk候选配置是：
+
+```text
+BT_HCI_TRANSPORT=H4:POSIX:com.apple.uart.bluetooth,115200
+```
+
+必须先提供对应内核控制socket。将第三段设为`/dev/uart.bluetooth`只会让程序拿该字符串查控制socket，并不会打开字符设备。当前字符设备后端本身不足以满足原版POSIX driver。
+
+没有环境变量时，程序调用`0x1000e7088`读取默认选择；其once回调`0x1000e70c8`查`marconi-bt`或`bluetooth`服务，`0x1000e74b0`从IODeviceTree平面读取`transport-encoding` CFData。此路径同样没有发现“现有/dev文件自动决定实际transport”的逻辑。
+
+### 最小明确非Skywalk接口集合
+
+名称与`com.apple.uart.sk.bluetooth`不同会跳过Skywalk channel创建，进入以下路径：
+
+| 操作 | 精确要求与证据 |
+|---|---|
+| control注册/连接 | 注册`com.apple.uart.bluetooth`流式control；让系统control层处理CTLIOCGINFO `0xc0644e03`及sockaddr_ctl连接。程序以mobile身份运行 |
+| get option | `getsockopt(fd, 2, 0x40487413, &termios, &len)`，len=72，调用点`0x100066930`；对应64位TIOCGETA |
+| set option | `cfmakeraw`、`cfsetspeed`后，`setsockopt(fd, 2, 0x80487414, &termios, 72)`，调用点`0x100066c88`；对应64位TIOCSETA |
+| TX | `0x1000670d0`非Skywalk分支在`0x100067178`直接write(fd, buffer, length)，短写后推进并继续；无额外socket封装头 |
+| RX | 接收线程`0x1000673c8`非Skywalk分支在`0x100067580`直接read(fd, buffer, max4096)，交给上层HCI parser；没有额外socket封装头 |
+| disconnect | close控制socket，唤醒/停止对应会话接收；不能因断开关闭WLAN共用供电，也不能留下第二个FIFO读者 |
+
+上述control字节流可以接同一持续UART后端。socket send callback接收到的mbuf链应按完整字节流消费；RX以control入队送回原始H4数据。字符设备与control连接必须共享排他会话和FIFO所有权，不能同时取同一RX FIFO。控制socket本身已有系统层的阻塞read/缓冲机制；这是不同于简单字符设备select回调的路径。
+
+在已观察的非Skywalkopen路径中没有IOSSDATALAT/IOSSIOSPEED私有option；两项termios option是当前最小明确需求，不代表其他生命周期路径永远不会发更多控制命令。Skywalk路径另外使用`0x800c5414`、`0x40105412`及os_channel系列，不属于这个最小实现。
+
+### H4不会自动消除BlueTool生命周期
+
+H4 init `0x100068004`调用通用driver open `0x1000e6390`，建立H4状态机；H4 resync `0x1000689f0`发送标准HCI Reset `0x0c03`。H4BC init `0x100068d34`除类似初始化外，还调用`0x1000665e4`打开btwake。上述两个transport init自身没有直接调用BlueTool。
+
+但全局chipset对象的once构造函数`0x10029a5ec`无条件安装vtable`0x1008038d8`。其首三方法分别为：
+
+- `0x100272b10`：记录Booting chipset，给`0x100271e60`传`boot`。
+- `0x100272b88`：记录Powering on chipset，传`init`。
+- `0x100272c00`：记录Powering off chipset，传`deepsleep`。
+
+`0x100271e60`通过`com.apple.BlueTool`发送`RunBuiltinScript`，字典带script和可选btaddress。transport环境变量只改变transport/driver表选择，未发现它会改掉此chipset对象。因此**不能把H4配置当作“已初始化控制器、跳过厂商脚本”的开关**。具体何时调用这些虚方法、原机选中的脚本以及失败后行为仍需下一轮伪代码和实机日志确认；尚不能断言所有H4启动必然完成或必然失败。
+
+`BlueToolBTResult`位于HWRepair结果覆盖分支（`0x100271eac`起），不是已确认的预初始化控制器配置；不把它设置为成功来替代实际硬件初始化。
+
+### 下一轮精确导出范围
+
+首轮seed只覆盖POSIX open `0x10006669c`与H4BC init `0x100068d34`，以下关键函数未被选中，应显式追加：
+
+```text
+0x100155f8c  0x10015627c  0x1000e7088  0x1000e70c8  0x1000e74b0
+0x1000e6390  0x1000670d0  0x1000673c8  0x100068004  0x1000689f0
+0x100271e60  0x100272b10  0x100272b88  0x100272c00
+0x10029a5ac  0x10029a5ec
+```
+
+需要同时导出指向虚方法的只读数据表和构造赋值，不能只扩展direct callers后宣称已覆盖chipset生命周期。原始Apple可执行文件继续留在本地/临时runner，不作为发布制品。
+
+## BlueTool脚本来源、配置边界与第96轮地址阻塞
+
+### 内置脚本与覆盖文件
+
+`BlueTool`的`RunBuiltinScript`进入`0x1000161a0`（日志字符串`runCommandForCurrentConfig`）。它获取platform、chipset、vendor，通常通过`0x10001510c`在运行时firmwareList中选一项，再执行该项的boot/init/deepsleep脚本。
+
+选择函数按96字节步长遍历记录：platform必须精确匹配，chipset参数非NULL时也必须精确匹配，只有vendor字段允许`ALL`。`getChipset`在普通HCI版本读取后识别CSR、Broadcom和Apple等分支；未匹配的manufacturer返回字符串`ALL`，这本身不表示固件表具有适合所有芯片的脚本。两套firmwareList全局指针/计数在文件中是0，需跟踪运行时初始化才能列出实际记录；未把0值当作“没有脚本”的证据。
+
+覆盖脚本路径只在MG `ReleaseType`为`Vendor`或`Internal`时启用：`0x10001625c`读取，`0x100016474`合并两种比较结果，`0x10001647c`在不匹配时直接跳内置脚本选择。通过时按顺序检查：
+
+```text
+/etc/bluetool/<HWModel>.<boot|init|deepsleep>.script
+/etc/bluetool/<platform>.<boot|init|deepsleep>.script
+```
+
+HWModel来源为MG键`/YYygAofPDbhrwToVsXdeA`，platform由`getPlatform`（`0x100040958`）从MG `ProductHash`的20字节数据构造40字符十六进制字符串。缺少platform会在`runCommandForCurrentConfig:0x100016248..2a4`早退10。不能仅放入覆盖文件便宣称普通20F66会读取，更不应通过伪装ReleaseType来代替Nabu适配。
+
+已观察到`wifibt-external=...`的三个固定平台映射，但它们是特定Apple外设标识，不是任意QCA平台配置入口。`BT_CHIP`也不是任意芯片字符串覆盖：唯一已发现的getenv调用在交互main `0x10001c420`，只比较`ACI BT`并执行`aci -V`，未用于设置getChipset的结果。
+
+### 真正存在的外部命令入口
+
+BlueTool CLI帮助及解析支持`-f <filename>`读取文件、`-c <commands>`执行命令、`-F <sequence>`执行默认sequence。其XPC dispatcher `0x100042024`区分`RunExternalScript`、`RunBuiltinScript`和`RunCommand`。
+
+`RunExternalScript`从`kMsgArgs.script`取得字符串文件路径（`0x100042284..2b8`），调用`runScriptFile` `0x10001c06c`（调用点`0x100042594`）。该函数直接fopen/fgets逐行执行解释器，没有上述ReleaseType条件；但是忽略每一行解释器返回值，正常读完文件后返回0。**其result=0只能说明文件执行路径正常结束，不能单独证明HCI命令成功。**后续如用此入口执行Nabu专用命令，必须解析真实控制器回复或用独立探针核对，不能用空脚本或固定成功回复替代初始化。
+
+bluetoothd当前生命周期调用的是`RunBuiltinScript`，未找到一个已验证偏好可将它自动切换为外部文件。字符串`com.apple.bluetooth.bluetool.script`出现在一组与扫描/广播/升级有关的静态标识表中，未建立它是脚本路径偏好的证据，不能据此写配置。
+
+### 第96轮地址问题的可实施修复方向
+
+父任务实机记录：菜单已经出现，MG classic/LE均true，字符节点存在；bluetoothd反复报告找不到`BT_DEVICE_ADDRESS`、无法匹配`marconi-bt`/`bluetooth`服务以及全零地址。这说明MG身份发布与bluetoothd自己的硬件地址路径不同。
+
+ENV解析语法的确是17字符常规MAC：`0x100026130`检查长度17，`0x10002615c`使用`%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx`。但此20F66程序在sscanf后，`0x100026168`与`0x10002616c`立刻将同一全局6字节清零，然后跳到主校验，不再走IORegistry回退。原因未确定，但静态控制流明确，**不能把注入BT_DEVICE_ADDRESS当作已验证修复**。
+
+有效原版路径是`0x100027194`：
+
+1. `IOServiceNameMatching("bluetooth")`（也先尝试`marconi-bt`）。仅建立私有ADT `/nabu-bluetooth`节点不满足服务匹配。
+2. `IORegistryEntrySearchCFProperty(service, "IODeviceTree", "local-mac-address", allocator, 1)`，调用点`0x100027288`。
+3. 从返回CFData取前6字节，直接存入全局MAC（`0x1000272b0`）；这条路径不将其清零。
+4. 按顺序格式化后自行`setenv("BT_DEVICE_ADDRESS", value, 1)`（`0x100027378`），供后续程序阶段使用。
+
+因此候选应发布名为`bluetooth`的真实IOService及可搜索的6字节`local-mac-address` CFData，使用本机`address-hci[::-1]`常规顺序；不要在服务启动环境中预设BT_DEVICE_ADDRESS以抢先走ENV入口。`transport-encoding`同样由这个服务路径读取，可与已验证的H4/控制socket配置协调。服务名、属性可搜索性、daemon实际读取结果仍需下一轮实机验收，不能以MG=true代替。
+
+建议后续BlueTool定向导出补充：`0x1000161a0`、`0x10001510c`、`0x100040958`、`0x100041094`、`0x100042024`、`0x10001c06c`；bluetoothd补main与`0x100027194`。本次只更新分析记录，不改驱动、不操作设备。

@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     baseline = ROOT / 'artifacts/nabu-bootstrap-v77'
     shutil.copytree(ROOT / 'build/nabu-bootstrap-v77', args.work)
     args.output.mkdir()
@@ -35,7 +36,7 @@ def main():
         job = plistlib.loads((source / (filename + '.plist')).read_bytes())
         job['StandardErrorPath'] = '/dev/console'
         if filename == 'com.apple.bluetoothd':
-            job.setdefault('EnvironmentVariables', {})['OS_ACTIVITY_DT_MODE'] = 'YES'
+            job.setdefault('EnvironmentVariables', {}).update(jobs['environment_overrides'][filename])
         if filename == 'com.apple.bluetoothuserd':
             for field in ('RunAtLoad', 'KeepAlive', 'StartInterval', 'StartCalendarInterval',
                           'WatchPaths', 'QueueDirectories', 'StartOnMount', 'LaunchEvents'):
@@ -67,7 +68,6 @@ def main():
     for item in report['containers']:
         if item['name'] == 'NabuInit.apfs':
             item.update(bytes=image.stat().st_size, sha256=hashlib.sha256(image.read_bytes()).hexdigest())
-    jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     report['jobs_policy_sha256'] = hashlib.sha256((ROOT / 'userland/nabu/jobs.json').read_bytes()).hexdigest()
     report['environment_overrides'] = jobs['environment_overrides']
     report['on_demand_allow'] = jobs['on_demand_allow']
@@ -75,7 +75,8 @@ def main():
         'baseline': str(baseline), 'changed_root_files': changed, 'jobs': policies,
         'boot_and_app_containers_unchanged': True, 'runtime_verified': False}
     report['system_service_probe_update'] = {'ci_run': args.ci_run, 'source': str(args.probe),
-        'baseline': str(baseline), 'actions_added': ['BluetoothInventory', 'BluetoothTransportTrial']}
+        'baseline': str(baseline), 'actions_added': ['BluetoothInventory', 'BluetoothTransportTrial', 'BluetoothSocketTrial'],
+        'wireless_smem611_snapshots': True}
     report['service_restoration'].append({'label': 'com.apple.bluetoothuiservice',
         'operation': 'include-original-job', 'original_conditions_preserved': True})
     report['filesystem_check'] = 'Regenerated NabuInit: apfsck -c -u -w passed; Boot/App copied from qualified v77'
