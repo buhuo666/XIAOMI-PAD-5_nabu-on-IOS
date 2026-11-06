@@ -392,6 +392,12 @@ DMON注册保持原样。0x2c的PWR/PHY_IO/RF字段分别记录valid和原值，
 QCA用户态HCI消费测试也已通过ASan/UBSan；SDK禁止直接调用Mach服务入口的问题已
 按原版实际导出符号改为动态解析，iOS重新构建与统一内核链接、实机结果待确认。
 
+第99轮原生服务Actions42259918375已通过HCI主机测试、arm64 iOS编译和签名检查，
+统一无线内核链接成功。新bootstrap在WSL重新打包并通过apfsck，确认原生BlueTool
+job的ProgramArguments为`/redwood/sbin/nabu-bluetooth-lifecycle`，MachServices和
+mobile身份保留；上一Windows打包尝试在调用Linux apfsck时失败，目录另存未部署。
+本轮准备临时启动，实际生命周期、IBS idle及原生厂商命令仍待实机验证。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。
