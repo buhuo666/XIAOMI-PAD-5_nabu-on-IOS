@@ -4,7 +4,8 @@
 第六十五轮已完成USB取证和日志回收，用户确认桌面正常。
 第六十六轮桌面正常，路径修复28/28通过，Safari界面和“关于本机”由用户确认可用。
 本轮3,260,663字节日志及完整64MiB槽已回收、备份并清空，APFS计数36→37。
-第六十七轮桌面正常，但原版元数据登记请求未返回，应用清单仍未改变；等待回收日志。
+第六十七轮桌面正常，原版元数据登记请求触发探针退出，应用清单仍未改变。
+10,678,028字节日志及完整64MiB槽已备份清空，APFS计数37→38，设备在Android。
 
 ## 已核对的服务覆盖
 
@@ -136,3 +137,26 @@ ICLBundleRecord转为安装字典。App Extension原字典按PluginOwnerBundleID
 
 证据保存在`log/host/services-v67/`，本轮槽14尚待回收。探针下一次构建已加入每个原版
 调用前的阶段日志，以便定位无返回的步骤；这不是绕过失败或扩大自动登记范围。
+
+## 第六十七轮回收与第六十八轮候选
+
+第六十七轮不是元数据工厂一直等待：完整日志第11624行记录探针以
+OS_REASON_LIBSYSTEM（namespace 18、code 2）退出，原因为
+`Failed to execute lookup query for daemon container`。故障之前已保存请求快照；
+没有匹配请求的登记结果，不能沿用上一轮的Inventory回复认定成功。
+
+对本机原版20F66缓存的符号、指令和常量进行定位后，确认原版
+`-[MIDaemonConfiguration init]`在0x1b10d67c4开始创建容器查询，设置class=10、
+identifier=`com.apple.installd`、`CONTAINER_PERSONA_PRIMARY`、flags=0x900000001。
+0x1b10d6824查询无结果时跳至cold.4，0x1b11422cc读取实际容器错误，再进入终止路径。
+这是静态调用证据与实机退出文本的对应；日志没有给出被隐藏的容器错误内容。
+
+原版installd签名声明`com.apple.private.MobileContainerManager.allowed=true`；
+v67探针仅有ad hoc签名、没有权限字典。v68候选仅增加这一容器权限，保留mobile用户，
+并先执行同款原版查询，将成功标志或原版错误描述写入报告。查询失败时返回报告，
+避免再次进入已知终止路径。元数据、签名读取、容器创建和应用登记仍调用原版实现。
+构建将校验产物中实际签入的权限。权限是否足以修复、备忘录是否登记成功，均待实机。
+
+本地证据：`log/host/services-v67/container-analysis/`中的原版installd权限、
+`1b10d631c.asm`、`1b11422b0.asm`；完整日志和清槽记录位于
+`log/device/nabu-boot-20261106-67/runtime-log/`。

@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import plistlib
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,12 +21,19 @@ def main():
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
                '-Wno-deprecated-declarations', str(source), '-framework', 'Foundation', '-o', str(binary)]
     subprocess.run(command, check=True)
-    subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(binary)], check=True)
+    entitlements = ROOT / 'userland/nabu/system-service-probe.entitlements.plist'
+    subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none',
+                    '--entitlements', str(entitlements), str(binary)], check=True)
     subprocess.run(['codesign', '--verify', '--strict', str(binary)], check=True)
+    signed_entitlements = plistlib.loads(subprocess.check_output(
+        ['codesign', '--display', '--entitlements', '-', str(binary)]))
+    assert signed_entitlements == plistlib.loads(entitlements.read_bytes())
     report = {'target': 'arm64-ios16.5', 'source': str(source.relative_to(ROOT)),
               'bytes': binary.stat().st_size, 'command': command, 'default_action': 'inventory',
               'repair_requires_live_paired_host_request': True, 'request_window_seconds': 1200,
-              'network_calls': False, 'runtime_verified': False}
+              'network_calls': False, 'runtime_verified': False,
+              'signed_entitlements': signed_entitlements,
+              'daemon_container_query_diagnostic': True}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 

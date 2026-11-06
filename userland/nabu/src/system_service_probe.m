@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdlib.h>
 #include <sys/attr.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -232,16 +233,58 @@ static NSDictionary *errorInfo(NSError *error) {
     return out;
 }
 
+static NSDictionary *installationDaemonContainer(void) {
+    // Match the original 20F66 MIDaemonConfiguration query, but return its
+    // error instead of entering that initializer's process-abort path.
+    void *library = dlopen("/usr/lib/system/libsystem_containermanager.dylib", RTLD_NOW);
+    void *(*create)(void) = dlsym(library, "container_query_create");
+    void (*setClass)(void *, uint64_t) = dlsym(library, "container_query_set_class");
+    void (*setIdentifiers)(void *, void *) = dlsym(library, "container_query_set_identifiers");
+    void (*setPersona)(void *, const char *) = dlsym(library, "container_query_set_persona_unique_string");
+    void (*setFlags)(void *, uint64_t) = dlsym(library, "container_query_operation_set_flags");
+    void *(*getResult)(void *) = dlsym(library, "container_query_get_single_result");
+    void *(*getError)(void *) = dlsym(library, "container_query_get_last_error");
+    char *(*describeError)(void *) = dlsym(library, "container_error_copy_unlocalized_description");
+    const char *(*getPath)(void *) = dlsym(library, "container_get_path");
+    void (*freeQuery)(void *) = dlsym(library, "container_query_free");
+    const char **primaryPersona = dlsym(library, "CONTAINER_PERSONA_PRIMARY");
+    void *(*createString)(const char *) = dlsym(RTLD_DEFAULT, "xpc_string_create");
+    void (*releaseXPC)(void *) = dlsym(RTLD_DEFAULT, "xpc_release");
+    NSMutableDictionary *result = [@{ @"identifier": @"com.apple.installd", @"class": @10,
+        @"flags": @0x900000001ULL, @"uid": @(getuid()), @"euid": @(geteuid()) } mutableCopy];
+    void *query = create();
+    setClass(query, 10);
+    void *identifier = createString("com.apple.installd");
+    setIdentifiers(query, identifier);
+    releaseXPC(identifier);
+    setPersona(query, *primaryPersona);
+    setFlags(query, 0x900000001ULL);
+    void *container = getResult(query);
+    result[@"query_succeeded"] = @(container != NULL);
+    if (container) result[@"path_present"] = @(getPath(container) != NULL);
+    else {
+        char *description = describeError(getError(query));
+        result[@"error"] = description ? @(description) : @"container query returned no result";
+        free(description);
+    }
+    freeQuery(query);
+    dlclose(library);
+    return result;
+}
+
 static NSDictionary *nativeRegister(LSApplicationWorkspace *workspace, NSString *path, NSString *identifier) {
     // Original 20F66 factory: reads the shipped signature and creates required
     // data/group containers. Never synthesize signer, container or plugin data.
+    NSDictionary *container = installationDaemonContainer();
+    saveReport(container, @"native-container-query.json");
+    if (![container[@"query_succeeded"] boolValue]) return @{@"daemon_container": container};
     NSLog(@"NABU SERVICES: %@ loading original metadata framework", identifier);
     dlopen("/System/Library/PrivateFrameworks/InstalledContentLibrary.framework/InstalledContentLibrary", RTLD_NOW);
     Class bundleClass = NSClassFromString(@"MIExecutableBundle");
     Class gathererClass = NSClassFromString(@"MILaunchServicesDatabaseGatherer");
     Class recordClass = NSClassFromString(@"ICLBundleRecord");
     NSMutableDictionary *result = [@{@"metadata_source": @"original InstalledContentLibrary",
-        @"creates_containers": @YES} mutableCopy];
+        @"creates_containers": @YES, @"daemon_container": container} mutableCopy];
     if (!bundleClass || !gathererClass || !recordClass) {
         result[@"error"] = @"original metadata classes unavailable";
         return result;
