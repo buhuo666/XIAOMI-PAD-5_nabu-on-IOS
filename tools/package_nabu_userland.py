@@ -70,6 +70,7 @@ def main():
     ap.add_argument('--input-bridge', type=Path, help='Source-built backboardd input library directory')
     ap.add_argument('--power-trace', type=Path, help='Read-only IOKit/IOPS timing diagnostic executable')
     ap.add_argument('--capability-scan', type=Path, help='One-shot MobileGestalt/IOKit diagnostic executable')
+    ap.add_argument('--experience-compat', type=Path, help='Nabu display keyboard and bundled wallpaper adapter')
     ap.add_argument('--lockdown-probe', type=Path, help='Enable stock lockdownd and a one-shot local query probe')
     ap.add_argument('--lockdown-stack-sample', type=Path, help='Read-only thread sampler for a stalled stock lockdownd')
     ap.add_argument('--lockdown-timeout', type=Path, help='Bound the original FairPlay HWInfo receive wait in stock lockdownd')
@@ -224,6 +225,14 @@ def main():
         injection+='/redwood/lib/libnabu.fairplay-trace.dylib fairplayd.A2\n'
     if a.lockdown_timeout:
         injection+='/redwood/lib/libnabu.lockdown-timeout.dylib lockdownd\n'
+    if a.experience_compat:
+        target = root/'lib/libnabu.experience.dylib'
+        shutil.copy2(a.experience_compat, target)
+        target.chmod(0o755)
+        injection += ('/redwood/lib/libnabu.experience.dylib SpringBoard Preferences MobileNotes '
+                      'Reminders MobileSafari PaperBoard PosterBoard LegacyPoster LocalTest '
+                      'system-service-probe\n')
+        assert len(injection.encode()) < 512, 'kern.exec_inject has a 512-byte buffer'
     (root/'etc/inject.conf').write_text(injection)
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; nabu-data=1 selects persistent APFS Data\n')
@@ -263,6 +272,7 @@ def main():
             'on_demand_allow': jobs.get('on_demand_allow', []),
             'service_restoration': service_restoration,
             'system_service_probe_enabled': a.system_service_probe is not None,
+            'display_experience_compatibility_enabled': a.experience_compat is not None,
             'app_cryptex': ({'bootstrap_container': 2, 'mount': '/private/preboot/Cryptexes/App',
                              'source': str(a.app_cryptex)} if a.app_cryptex else None),
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
