@@ -209,12 +209,13 @@ struct NabuGlink {
         if (header.to_port != control_port && header.type == 1) {
             if(qmi_enabled&&header.to_port==0x4003&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
                 const uint8_t *qmi=data+at;
-                if(header.size>=7&&qmi[0]==4)nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);
+                if(header.size>=7&&qmi[0]==4){wlfw.receive(qmi,header.size);nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);}
                 else if(wlfw.receive(qmi,header.size)){
                     unsigned n=0;const uint8_t *result=NabuRmtfs::tlv(qmi,header.size,2,n);
                     nabu_wireless_log("NABU WLFW: response message=%#x result=%u error=%u\n",NabuRmtfs::u16(qmi+3),result?NabuRmtfs::u16(result):65535,result?NabuRmtfs::u16(result+2):65535);
                     for(unsigned i=0;i<wlfw.region_count;++i)nabu_wireless_log("NABU WLFW: MSA region=%u address=%#llx size=%#x secure=%u\n",i,wlfw.regions[i].address,wlfw.regions[i].size,wlfw.regions[i].secure);
                     if(wlfw.capability_valid)nabu_wireless_log("NABU WLFW: chip=%#x family=%#x board=%#x soc=%#x fw=%#x build=%s\n",wlfw.chip_id,wlfw.chip_family,wlfw.board_id,wlfw.soc_id,wlfw.fw_version,wlfw.build_id);
+                    if(wlfw.board_sent)nabu_wireless_log("NABU WLFW: board-data acknowledged=%u/%u segments=%u\n",wlfw.board_sent,wlfw.board_bytes,wlfw.board_segment);
                 }
                 return;
             }
@@ -368,6 +369,8 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
         if(registry)link->registry.load((const uint8_t*)registry->getBytesNoCopy(),registry->getLength());
         link->qmi_enabled=firmware_entry->getProperty("wlfw-qmi")!=nullptr;
         link->wlfw.activate=firmware_entry->getProperty("wlfw-msa")!=nullptr;
+        OSData *board=OSDynamicCast(OSData,firmware_entry->getProperty("wlfw-board"));
+        if(board){link->wlfw.board_data=(const uint8_t*)board->getBytesNoCopy();link->wlfw.board_bytes=board->getLength();}
     }
     if (!link->memory.find(478, &link->descriptor) || link->descriptor.size != 32 ||
         !link->memory.find(479, &link->tx) || !link->memory.find(480, &link->rx) ||
@@ -391,6 +394,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
+    if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u\n",link->wlfw.board_sent,link->wlfw.fw_ready);
     if (firmware_entry) firmware_entry->release();
     link->release(); IOFree(link, sizeof(*link));
 }

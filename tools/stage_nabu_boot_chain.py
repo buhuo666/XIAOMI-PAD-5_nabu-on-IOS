@@ -113,6 +113,7 @@ def main():
     ap.add_argument('--servreg',type=Path,help='Original-board JSON service-registry directory')
     ap.add_argument('--wlan-qmi',action='store_true',help='Register WLAN QMI client and query host capability/MSA information')
     ap.add_argument('--wlan-msa',action='store_true',help='Assign returned MSA regions, signal ready and query chipset capabilities')
+    ap.add_argument('--wlan-board',type=Path,help='Original board parameters for QMI download and calibration report')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
@@ -120,6 +121,7 @@ def main():
     assert not a.servreg or a.modem_glink, 'Service registry requires GLINK'
     assert not a.wlan_qmi or a.modem_glink, 'WLAN QMI requires GLINK'
     assert not a.wlan_msa or a.wlan_qmi, 'MSA setup requires WLAN QMI'
+    assert not a.wlan_board or a.wlan_msa, 'Board parameter download requires MSA setup'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -138,6 +140,7 @@ def main():
         if a.servreg: modem_firmware['servreg']=encode_servreg(a.servreg)
         if a.wlan_qmi: modem_firmware['wlfw-qmi']=(1).to_bytes(4,'little')
         if a.wlan_msa: modem_firmware['wlfw-msa']=(1).to_bytes(4,'little')
+        if a.wlan_board: modem_firmware['wlfw-board']=a.wlan_board.read_bytes()
         if a.rmtfs_snapshot:
             for file in json.loads((a.rmtfs_snapshot/'snapshot.json').read_text())['files']:
                 modem_firmware['rmtfs-'+file['partition']] = pack_rmtfs((a.rmtfs_snapshot/file['file']).read_bytes())
