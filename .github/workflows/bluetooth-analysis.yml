@@ -1,5 +1,10 @@
 name: nabu16 - original Bluetooth interface analysis
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/bluetooth-analysis.yml'
+      - 'analysis/bluetooth/**'
   workflow_dispatch:
 permissions:
   contents: read
