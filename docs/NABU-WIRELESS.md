@@ -45,10 +45,25 @@ FDT为准；例如参考SoC的modem预留起点不同，不能直接复制。
 SMEM解析由`tools/check_nabu_wireless.py`进行ASan/UBSan主机测试。
 编译和主机解析通过仍不表示已取得Wi-Fi扫描或蓝牙HCI实机响应。
 
-第76轮候选已本地编译、链接完成，ASan/UBSan测试通过。内核为
+第76轮已正常进入桌面，原生USB及本地激活查询正常，ASan/UBSan测试通过。内核为
 `artifacts/nabu-wireless-v76/kernel.native-apfs.macho`，保留v66源内核与原版组件，
-在原Data/Power/USB模块中增加调查入口；bootstrap继续使用v75。槽14已准备。
-尚未执行临时启动。
+在原Data/Power/USB模块中增加调查入口；bootstrap继续使用v75。
+已回收2,260,552字节日志及完整64MiB槽并清空读回；APFS计数46→47。
+
+本轮实际结果：SMEM v12正常，APPS/MPSS分区为空，428/435/478/479/480通信项均未建立；
+modem尚未启动。RPMh DRV2两个活动TCS均空闲，资源表地址为ldoa1=0x40800、
+ldoa7=0x41f00、ldoc2=0x41d00、ldoc11=0x41a00；cx.lvl=0x30000、mss.lvl=0x30060。
+蓝牙四根引脚仍处于GPIO模式，UART13串行时钟停止。LDO直接SPMI观察读取未成功，
+不能把日志中的零值解释为电源关闭；后续按RPMh接口处理。
+
+第77轮实现了共享无线电源的RPMh电压/模式/使能请求、GCC wrapper2 serial3时钟、
+GENI UART13的FIFO收发、2400/115200波特率电源脉冲与EDL Get Version。
+`nabu-wireless=2`才执行上述写入，不加载radio固件、不进行发现或配对。
+`--bluetooth-version`要求链接报告含真实ROM传输入口。
+驱动把诊断文本发布到`IODeviceTree:/chosen/nabu-wireless-report`，新系统探针的
+`WirelessInventory`可经已有配对USB/AFC通道读取，便于保持iPadOS时查看结果。
+模块已本地编译和链接；探针Actions42214317638成功；bootstrap v77仅在v75基础上
+替换探针，NabuInit重新生成后apfsck通过。第77轮尚待临时启动和实机验收。
 
 ## 后续验收
 
