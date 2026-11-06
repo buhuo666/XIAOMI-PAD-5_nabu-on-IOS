@@ -22,10 +22,131 @@
     "com.apple.pluginkit.pkd",
     "com.apple.SpringBoard"
   ],
-  "additional_deny": ["purplebuddy", "mobileactivation"],
-  "on_demand_allow": ["com.apple.dmd"],
+  "additional_deny": [
+    "purplebuddy",
+    "mobileactivation"
+  ],
+  "on_demand_allow": [
+    "com.apple.dmd",
+    "com.apple.duetexpertd",
+    "com.apple.photoanalysisd"
+  ],
   "environment_overrides": {
-    "com.apple.backboardd": {"CA_FORCE_TIMER": "1"}
+    "com.apple.backboardd": {
+      "CA_FORCE_TIMER": "1"
+    },
+    "com.apple.SpringBoard": {
+      "CG_CONTEXT_SHOW_BACKTRACE": "1"
+    }
   },
-  "scope": "20F66 local software bring-up; dmd is a run65 on-demand candidate for observed application-policy lookup failures"
+  "scope": "20F66 local software service restoration, run70 candidate: two original on-demand dependencies, original passcode-compliance condition, selected local notifications and lifecycle triggers; no cloud/account/hardware trigger expansion",
+  "source_job_allow": [
+    "com.apple.managedconfiguration.passcodenagd"
+  ],
+  "restore_conditions": {
+    "com.apple.chronod": {
+      "fields": [
+        "KeepAlive"
+      ],
+      "events": {
+        "com.apple.distnoted.matching": true,
+        "com.apple.notifyd.matching": true
+      }
+    },
+    "com.apple.assetsd": {
+      "fields": [
+        "KeepAlive"
+      ],
+      "events": {
+        "com.apple.tccd.events": [
+          "com.apple.assetsd"
+        ]
+      }
+    },
+    "com.apple.aggregated": {
+      "fields": [
+        "KeepAlive"
+      ]
+    },
+    "com.apple.mediaserverd": {
+      "fields": [
+        "KeepAlive"
+      ]
+    },
+    "com.apple.dmd": {
+      "events": {
+        "com.apple.ManagedSettings.effective-settings.changed": true,
+        "com.apple.distnoted.matching": true,
+        "com.apple.notifyd.matching": [
+          "SignificantTimeChangeNotification",
+          "com.apple.dmd.budget.didChange",
+          "com.apple.mobile.keybagd.first_unlock"
+        ]
+      }
+    },
+    "com.apple.calaccessd": {
+      "events": {
+        "com.apple.notifyd.matching": [
+          "com.apple.springboard.finishedstartup",
+          "SignificantTimeChangeNotification",
+          "com.apple.mobilecal.timezonechanged",
+          "_CalDatabaseChangedNotification",
+          "kCalEventOccurrenceCacheChangedNotification",
+          "kCalBirthdayDefaultAlarmChangedNote",
+          "com.apple.mobile.keybagd.first_unlock",
+          "com.apple.mobilecal.preference.notification.calendarsExcludedFromNotifications",
+          "com.apple.mobilecal.preference.notification.weekStart",
+          "EKNotificationCountChangedExternallyNotification",
+          "com.apple.eventkit.preference.notification.UnselectedCalendarIdentifiersForFocusMode"
+        ]
+      }
+    },
+    "com.apple.contactsd": {
+      "events": {
+        "com.apple.notifyd.matching": [
+          "__ABDataBaseChangedByOtherProcessNotification",
+          "com.apple.contacts.clientDidDisplayFavorites"
+        ]
+      }
+    },
+    "com.apple.mobiletimerd": {
+      "fields": [
+        "RunAtLoad"
+      ],
+      "events": {
+        "com.apple.alarm": true,
+        "com.apple.distnoted.matching": [
+          "Application Uninstalled"
+        ],
+        "com.apple.notifyd.matching": [
+          "SignificantTimeChange",
+          "com.apple.mobile.keybagd.first_unlock",
+          "com.apple.springboard.finishedstartup",
+          "com.apple.system.powersources.source"
+        ]
+      }
+    },
+    "com.apple.remindd": {
+      "fields": [
+        "RunAtLoad"
+      ],
+      "events": {
+        "com.apple.alarm": true,
+        "com.apple.notifyd.matching": [
+          "PCPreferencesDidChangeNotification",
+          "SignificantTimeChangeNotification"
+        ]
+      }
+    },
+    "com.apple.searchd": {
+      "events": {
+        "com.apple.notifyd.matching": [
+          "com.apple.spotlightui.prefschanged"
+        ],
+        "com.apple.distnoted.matching": [
+          "com.apple.LaunchServices.applicationUnregistered"
+        ]
+      }
+    }
+  }
 }

@@ -11,6 +11,7 @@ import stat
 import struct
 import subprocess
 import sys
+from nabu_service_policy import apply_service_policy
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -128,6 +129,7 @@ def main():
         job['StandardErrorPath'] = '/dev/console'
         job.setdefault('EnvironmentVariables', {})['OS_ACTIVITY_DT_MODE'] = 'YES'
         (root/'LaunchDaemons'/(label+'.plist')).write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
+    service_restoration = apply_service_policy(a.inputs, root/'LaunchDaemons', jobs)
     for label,overrides in jobs.get('environment_overrides',{}).items():
         assert label in jobs['run_at_boot'] and isinstance(overrides,dict)
         assert all(isinstance(k,str) and isinstance(v,str) and k and '=' not in k and
@@ -259,6 +261,7 @@ def main():
             'jobs_policy_sha256':digest(ROOT/'userland/nabu/jobs.json'),
             'environment_overrides':jobs.get('environment_overrides',{}),
             'on_demand_allow': jobs.get('on_demand_allow', []),
+            'service_restoration': service_restoration,
             'system_service_probe_enabled': a.system_service_probe is not None,
             'app_cryptex': ({'bootstrap_container': 2, 'mount': '/private/preboot/Cryptexes/App',
                              'source': str(a.app_cryptex)} if a.app_cryptex else None),

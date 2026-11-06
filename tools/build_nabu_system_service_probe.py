@@ -17,10 +17,11 @@ def main():
     sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
     source = ROOT / 'userland/nabu/src/system_service_probe.m'
     wallpaper_source = ROOT / 'userland/nabu/src/wallpaper_probe.m'
+    sqlite_watch_source = ROOT / 'userland/nabu/src/sqlite_vnode_watch.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source),
                '-framework', 'Foundation', '-framework', 'ImageIO',
                '-framework', 'CoreGraphics', '-o', str(binary)]
     subprocess.run(command, check=True)
@@ -38,6 +39,7 @@ def main():
               'signed_entitlements': signed_entitlements,
               'daemon_container_query_diagnostic': True,
               'wallpaper_source': str(wallpaper_source.relative_to(ROOT)),
+              'sqlite_vnode_observer': str(sqlite_watch_source.relative_to(ROOT)),
               'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request'}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

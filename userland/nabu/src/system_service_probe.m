@@ -36,6 +36,7 @@
 
 static NSString *const reportDirectory = @"/private/var/mobile/Media/NabuServices";
 extern NSDictionary *nabuWallpaperSnapshot(void);
+extern void nabuStartSQLiteVnodeWatch(void);
 
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
@@ -366,6 +367,7 @@ int main(void) {
         NSString *requestPath = [reportDirectory stringByAppendingPathComponent:@"request.plist"];
         // A request belongs only to the current live test, never to a later boot.
         [fm removeItemAtPath:requestPath error:NULL];
+        nabuStartSQLiteVnodeWatch();
         sleep(45);
         dlopen("/System/Library/Frameworks/MobileCoreServices.framework/MobileCoreServices", RTLD_NOW);
         LSApplicationWorkspace *workspace = [NSClassFromString(@"LSApplicationWorkspace") defaultWorkspace];
