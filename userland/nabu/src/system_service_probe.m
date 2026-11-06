@@ -40,6 +40,20 @@ extern void nabuStartSQLiteVnodeWatch(void);
 extern NSDictionary *nabuExperienceSnapshot(void);
 extern void nabuInstallExperienceCompatibility(void);
 
+static NSDictionary *wirelessSnapshot(void) {
+    void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    if (!kit) return @{@"error": @"IOKit unavailable"};
+    uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
+    CFTypeRef (*property)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = dlsym(kit, "IORegistryEntryCreateCFProperty");
+    int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
+    uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
+    id value = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-wireless-report"), NULL, 0)) : nil;
+    if (chosen) release(chosen);
+    dlclose(kit);
+    return @{@"read_only": @YES, @"registry_entry_found": @(chosen != 0),
+             @"report": value ?: NSNull.null};
+}
+
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
     attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
@@ -385,6 +399,10 @@ int main(void) {
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
+                        else if ([action isEqual:@"WirelessInventory"]) {
+                            result[@"read_only"] = @YES;
+                            result[@"wireless"] = wirelessSnapshot();
+                        }
                         else if ([action isEqual:@"ExperienceInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"experience"] = nabuExperienceSnapshot();

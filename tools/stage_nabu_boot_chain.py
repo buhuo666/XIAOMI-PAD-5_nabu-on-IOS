@@ -100,7 +100,9 @@ def main():
     ap.add_argument('--rtc-calibration', type=Path, help='Android time / PM8150 RTC capture from capture_nabu_power.py')
     ap.add_argument('--platform-identity', type=Path, help='Local capture containing the real Qualcomm SoC identity')
     ap.add_argument('--native-usb', action='store_true', help='Select the experimental native Apple USB controller for this staged boot')
-    ap.add_argument('--wireless-survey', action='store_true', help='Enable the compiled Nabu wireless hardware survey')
+    wireless = ap.add_mutually_exclusive_group()
+    wireless.add_argument('--wireless-survey', action='store_true', help='Enable the compiled Nabu wireless hardware survey')
+    wireless.add_argument('--bluetooth-version', action='store_true', help='Enable Nabu wireless power and Bluetooth UART ROM version trial')
     a = ap.parse_args()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
@@ -124,11 +126,13 @@ def main():
     config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
-    if a.wireless_survey:
+    if a.wireless_survey or a.bluetooth_version:
         kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
         assert kernel_report['data_block']['wireless_start'], 'Wireless survey requires its linked Nabu module'
+        if a.bluetooth_version:
+            assert kernel_report['data_block']['bluetooth_trial'], 'Bluetooth trial requires its linked ROM transport'
         old_args=entry['args']
-        entry['args'] += ' nabu-wireless=1'
+        entry['args'] += ' nabu-wireless=' + ('2' if a.bluetooth_version else '1')
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:

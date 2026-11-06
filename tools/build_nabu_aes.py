@@ -47,7 +47,9 @@ def main():
     if a.usb or a.native_usb: sources.append(('NabuUsbCaptureCdc',ROOT/'patches/nabu-usb/NabuUsbCaptureCdc.cpp'))
     if a.native_usb: sources.append(('NabuUsbNativeController',ROOT/'patches/nabu-usb/NabuUsbNativeController.cpp'))
     if a.usb_reference or a.native_usb: sources.append(('NativeUsbReference',ROOT/'patches/nabu-usb/NativeUsbReference.cpp'))
-    if a.wireless: sources.append(('NabuWireless',ROOT/'patches/nabu-wireless/NabuWireless.cpp'))
+    if a.wireless:
+        sources.append(('NabuWireless',ROOT/'patches/nabu-wireless/NabuWireless.cpp'))
+        sources.append(('NabuBluetooth',ROOT/'patches/nabu-wireless/NabuBluetooth.cpp'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

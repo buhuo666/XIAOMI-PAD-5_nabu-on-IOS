@@ -390,7 +390,8 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
     struct.pack_into('<QQI', output, info['sections'][0]['command_offset'] + 32, info['va'], info_size, info_at)
     detail = {'bundle': BUNDLE, 'storage_class': storage, 'aes_class': aes, 'usb_class': usb, 'segments': layouts, 'kmod_info': kmod,
               'start': definitions.get('_nabu_data_block_start'),
-              'wireless_start': definitions.get('_nabu_wireless_start'), 'relocations': relocation_counts,
+              'wireless_start': definitions.get('_nabu_wireless_start'),
+              'bluetooth_trial': definitions.get('_nabu_bluetooth_version_trial'), 'relocations': relocation_counts,
               'pointer_sites_added': len(pointer_sites), 'sparse_headers': headers,
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
               'imports': {s['name']: definitions[s['name']] for obj in objects for s in obj.symbols

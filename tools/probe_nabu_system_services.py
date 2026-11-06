@@ -33,7 +33,7 @@ def afc_read(afc, path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--action', choices=['Inventory', 'WallpaperInventory', 'ExperienceInventory', 'ExperienceCompatibilityTrial',
+    parser.add_argument('--action', choices=['Inventory', 'WirelessInventory', 'WallpaperInventory', 'ExperienceInventory', 'ExperienceCompatibilityTrial',
                                            'RegisterMissingStaged', 'RegisterNativeStaged'])
     parser.add_argument('--bundle-id', action='append', default=[])
     args = parser.parse_args()
