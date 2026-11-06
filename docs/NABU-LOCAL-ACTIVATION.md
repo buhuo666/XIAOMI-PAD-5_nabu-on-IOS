@@ -71,3 +71,16 @@ Lookup返回org.nabu.LocalTest的应用路径与独立Data容器。用户确认�
 跨重启激活态、应用和数据保留仍需下一轮验证；不能据此宣称任意第三方IPA均可安装。
 主机证据在ignored `log/host/activation-v62/host-probe/activation.json`及
 `test-app-install/install.json`。
+
+第六十二轮已回收1,624,294字节连续日志及完整槽并清空槽14；记录状态首次创建和
+F_FULLFSYNC成功，协议32项中4项状态回复、28项明确不支持。SpringBoard进程5和
+Lockdown均实际查询该服务。测试应用有前台运行及正常exit(0)记录，APFS计数32→33。
+
+第六十三轮沿用完全相同的内核/bootstrap，未经重装先查询：Activated及BrickState=false
+保留，原生AMDevice会话成功，应用路径与Data容器UUID均与安装时一致。经原版
+house_arrest的VendContainer和AFC读回Documents/counts.plist，SaveCount=1、
+LaunchCount=2，证明已有应用数据跨重启保留。用户屏幕计数反馈和本轮日志回收待完成。
+
+后续候选让setup_compat在nabu-local-activation=1时将brickedDevice交回原版方法，
+继续保留跳过首次设置的界面策略，实测系统激活判断能够承担这条路径；对应10项
+实际包装器主机检查和arm64构建通过Actions42156474592。候选尚未部署。
