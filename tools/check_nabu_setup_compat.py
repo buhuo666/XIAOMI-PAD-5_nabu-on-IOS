@@ -48,13 +48,20 @@ int main(void) {
             assert(calls == 1 && received_reason == (on ? 0 : UINT64_MAX));
         }
     }
-    puts("8 wrapper behavior cases passed");
+    activation_from_service = true;
+    atomic_store(&enabled, true);
+    for (unsigned value = 0; value < 2; value++) {
+        result = value; calls = 0;
+        assert(nabu_bricked_device((id)1, (SEL)2) == value);
+        assert(calls == 1);
+    }
+    puts("10 wrapper behavior cases passed, including original local-activation state");
 }
 ''', encoding='utf-8')
     subprocess.run(host_command(['clang', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
         '-fsanitize=address,undefined', host_path(harness), '-o', host_path(binary)]), check=True)
     result = subprocess.check_output(host_command([host_path(binary)]), text=True).strip()
-    report = {'passed': True, 'source_sha256_lf': sha256_lf(SOURCE), 'cases': 8,
+    report = {'passed': True, 'source_sha256_lf': sha256_lf(SOURCE), 'cases': 10,
               'result': result, 'scope': 'Actual wrapper behavior with stub original methods; no device execution'}
     (a.output/'report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))

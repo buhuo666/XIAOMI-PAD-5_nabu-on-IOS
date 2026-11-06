@@ -14,9 +14,10 @@
 static BOOL (*original_bricked)(id, SEL);
 static BOOL (*original_reason)(id, SEL, uint64_t);
 static atomic_bool enabled = false;
+static bool activation_from_service = false;
 
 static BOOL nabu_bricked_device(id self, SEL selector) {
-    if (!atomic_load_explicit(&enabled, memory_order_acquire))
+    if (!atomic_load_explicit(&enabled, memory_order_acquire) || activation_from_service)
         return original_bricked(self, selector);
     return (BOOL)0;
 }
@@ -36,8 +37,10 @@ __attribute__((constructor)) static void nabu_setup_compat_constructor(void) {
     bool requested = false;
     char *state;
     for (char *arg = strtok_r(arguments, " \t\r\n", &state); arg;
-            arg = strtok_r(NULL, " \t\r\n", &state))
+            arg = strtok_r(NULL, " \t\r\n", &state)) {
         if (strcmp(arg, "nabu-setup-compat=1") == 0) requested = true;
+        if (strcmp(arg, "nabu-local-activation=1") == 0) activation_from_service = true;
+    }
     if (!requested) return;
 
     Method bricked = class_getInstanceMethod(objc_getClass("SBLockdownManager"),
@@ -54,5 +57,7 @@ __attribute__((constructor)) static void nabu_setup_compat_constructor(void) {
     method_setImplementation(reason, (IMP)nabu_set_setup_reason);
     atomic_store_explicit(&enabled, true, memory_order_release);
     fprintf(stderr, "NABU SETUP: local UI policy installed\n");
+    if (activation_from_service)
+        fprintf(stderr, "NABU SETUP: brickedDevice uses original system activation state\n");
 }
 #endif

@@ -61,7 +61,8 @@ def main():
                     report['services'][name]['lookup'] = exchange(service, {
                         'Command': 'Lookup', 'ClientOptions': {
                             'BundleIDs': ['org.nabu.LocalTest'],
-                            'ReturnAttributes': ['CFBundleIdentifier', 'CFBundleDisplayName']}})
+                            'ReturnAttributes': ['CFBundleIdentifier', 'CFBundleDisplayName',
+                                                 'Path', 'Container']}})
                 save()
             finally:
                 service.close()
