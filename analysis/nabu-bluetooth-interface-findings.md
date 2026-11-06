@@ -384,3 +384,151 @@ MGGetProductType返回: 0xd9472b31
 - result必须反映该次阶段动作；manufacturer应按真实模块供应商/明确未知语义提供，绝非SIG号；firmware空串由原版允许，非空必须由真实证据生成。每个字段的兼容性和阶段延迟仍要用原生日志验证。
 
 本轮仅更新本分析文件；未操作设备、未改代码或提交。当前优先验收product-id候选是否消除`invalid product id`，再按下一条真实失败收窄适配范围。
+
+## 第98轮前：j171ap固件表已解析，先观察匹配门槛
+
+父任务决定第98轮只补上述product-id，复用第97轮内核/bootstrap。本节是静态预期及日志判读依据，不是第98轮已执行结果；未设置WifiVendor、未改变BlueTool响应。
+
+### 两条真实注册记录
+
+BlueTool字符串`0x10091e601`等于原始j171ap的40字符产品标识。`__init_offsets`的`0x100048b64`和`0x100048b6c`分别指向注册函数`0x100022c9c`、`0x100022d28`；它们调用`0x100014cf4`将如下记录实际加入96字节firmwareList。相邻initializer `0x100022d10`/`0x100022d9c`调用另一个平台校准注册函数`0x100017a14`，不能误计为额外固件记录。
+
+| 平台 | chip | vendor | boot | init | deepsleep | 固件文件名 |
+|---|---|---|---|---|---|---|
+| 4d013e8fae976e61a7b3b69cdb5a015fa7ff04bb | BCM4355C1 | MUR | 0x1000317cc | 0x100031994 | 0x1000319a4 | BCM4355C1_20.3.170.1323_RudderA_OS_MUR_MCC_TRS_20221017.hcd |
+| 同上 | BCM4355C1 | USI | 0x100031a2c | 0x100031bf4 | 0x100031c04 | BCM4355C1_20.3.170.1324_RudderA_OS_USI_MCC_TRS_20221017.hcd |
+
+关键门槛是`0x10001510c`的比较方向：platform精确匹配；chip实参非NULL时精确匹配；vendor要求**实参等于记录vendor，或记录vendor本身为ALL**。实参为ALL并不匹配MUR/USI。因此，Nabu的WifiVendor若缺失或为未识别的Qualcomm文本，`0x100014fb8`会给选择器传ALL，以上两条均不匹配。此时直接走`Error - no firmware for this platform`，尚未运行Broadcom boot。
+
+`runCommandForCurrentConfig`先取得platform，再调用getChipset及getManufacturer/getVendor。`getChipset:0x100041094`在非Apple专用传输下调用`0x100018ddc`读取版本；如果BlueTool尚未`device`打开控制器，后者只报`Device not open yet, use 'device' to open it.`并返回3，getChipset返回NULL，选择器会跳过chip比较。**这里的chip=NULL不是前一轮的无效product-id错误**，也不表示一次HCI读已经失败。
+
+不得为了跨过匹配门槛把Nabu的WifiVendor伪装为MUR或USI：这会选中真实Broadcom固件烧写脚本，而非通用预加载控制器模式。
+
+### 该记录的boot/init/deepsleep具体做什么
+
+两个vendor版本的阶段动作序列相同，固件数据不同。boot `0x1000317cc`/`0x100031a2c`依次调用解释器，每条返回非零就立即结束：
+
+```text
+device -D
+wake on
+power off
+msleep 100
+power on
+msleep 100
+hci reset
+bcm -B
+msleep 200
+bcm -W
+msleep 200
+device -s 115200
+msleep 200
+bcm -B
+msleep 200
+bcm -A
+bcm -N
+bcm -Q
+bcm -x
+bcm -s 0x01,0x00,0x00,0x01,0x01,0x00,0x01,0x00,0x00,0x00,0x00,0x01
+msleep 200
+quit
+```
+
+**这两个init函数只执行`quit`**，并非再次烧写或复位；与前节概括的“init阶段必须满足就绪条件”区分。原版`quit`的`handleQuit:0x10001bf64`会先wake off，然后若device已打开则调用其close；XPC `-R`模式下返回处理结果，交互模式才exit。不能通过该事实推出QCA适配无需任何状态确认。
+
+deepsleep `0x1000319a4`/`0x100031c04`依次执行：`device -D -S`→`wake on`→`hci reset`→上述`bcm -s ...`→`wake off`→`quit`。因此只是按供体实现，不能把此序列当作QCA睡眠命令。
+
+非PCIe/非Apple专用传输的节点语义：
+
+- `device -D`经`0x10001cc80`读取环境`BT_UART`，缺省为control名`com.apple.uart.bluetooth`；`0x10001dc34`用AF_SYSTEM控制socket，不open `/dev/cu.bluetooth`。默认115200。BlueTool自己的这条路径不读取daemon的`BT_HCI_TRANSPORT`环境覆盖。
+- `wake on:0x10003fa34`以O_RDONLY打开`/dev/btwake`并持有；`wake off:0x10003fad8`关闭它。仅记录open/close成功不等于QCA IBS握手完成。
+- `power off:0x1000400ec`以O_RDONLY打开`/dev/btpoweroff`并持有；`power on:0x10003ff20`关闭它。`bluetool_command_power:0x10003eec8`在普通传输且节点不存在时有直接返回0路径，故脚本成功也不能替代供电验证。
+- `/dev/btreset`由独立`0x10003fd34`打开保持复位、另一释放路径close。以上j171ap boot/deepsleep文本没有调用这个硬件reset命令；其中`hci reset`是串行HCI命令，不应误判为打开btreset。
+- BlueTool的`getHCITransport:0x10003e4f4`独立从`marconi-bt`/`bluetooth`的IODeviceTree平面读4字节`transport-encoding`；缺失为8。8仍进入上述普通UART分支，所以不能仅凭缺少该属性断言BlueTool打不开UART。
+- `device -S`先看`BT_BAUDRATE`，再取服务的4字节`transport-speed`。缺失/无效返回0，`0x10001d24c..254`把0替换为2400000。第97轮只支持115200；这是**如果走到deepsleep才有的明确后续不兼容**，当前不提前改属性或波特率。
+
+### 第98轮无需扰动控制器的观察点
+
+优先复用`tools/capture_nabu_syslog.py --output <本轮路径> --seconds 60`的配对USB被动采集，以及现有`BluetoothInventory`/`WirelessInventory`（节点stat、MG能力、进程和驱动报告）。当前`BluetoothInventory`只取bluetooth、bluetooth-le、BluetoothAddress，不能从其结果宣称已经读取ProductHash或WifiVendor。
+
+按同一PID和时间顺序识别阶段：
+
+| 首个关键日志/现象 | 可以支持的结论 |
+|---|---|
+| 不再出现`invalid product id`/`Unknown platform 0xffffffff`，有`Booting chipset` | 平台缺项已越过，开始芯片生命周期 |
+| `Opening XPC Connection com.apple.BlueTool`，随后`Running xpcRunBuiltinScript`、`get arg = boot` | 原生XPC作业已启动并收到boot请求 |
+| `platform = 4d013...04bb`、`chip = ...`、`vendor = ...`、`getFirmwarePosForPlatform fwPos = ...` | 直接定位固件表匹配输入及结果；chip NULL须按上文判读 |
+| `Error - no firmware for this platform`、`builtin script completed with result 13/10` | 当前是静态表不支持/供应商缺失；不能改成假MUR/USI |
+| `running boot builtin script...`后才出现device/wake/power/HCI错误 | 已真正进入供体脚本，按最后一条实际成功动作继续定位；不要把表不匹配与节点失败混合 |
+| `BlueTool timed out! Exiting...`约30秒后连接错误 | BlueTool watchdog，不等于daemon主动socket EOF；结合之前的阶段日志判断 |
+| `BlueTool finished running boot script`后出现`Powering on chipset`或`Starting up StackManager` | 生命周期推进；仍需要检查实际HCI opcode/返回，不能以菜单出现验收QCA兼容 |
+
+必要的下一版只读诊断是附加MG `ProductHash`（记录原始20字节）、`WifiVendor`（原始CF类型/值）与`_MGGetProductType`，以及IORegistry的`transport-encoding`/`transport-speed`原始数据。它们是缺项定位，不是注入值。若原生日志已充分给出这些输入，无需重编探针。
+
+需要尸体/崩溃证据时先保存当前syslog的PID、fault、exception、退出原因和时间。当前`mkjobs.py`的DENY含`ReportCrash`及`osanalytics`，所以不能假设一定生成`.ips`或`crashreportcopymobile`能取到报告。父任务回Android采集完整runtime日志后，可以复用已有用户态栈符号化流程读取保存的PC/LR并按实际image slide还原；不能凭“corpse”一词推断栈顶或重跑控制器脚本制造样本。本分析没有启动ReportCrash、BlueTool命令或操作设备。
+
+## 第98轮实机后的源码QCA生命周期设计
+
+### 已发生的阻塞与结论修正
+
+`log/host/wireless-v98/bluetooth-syslog.txt`记录了真实BlueTool boot事务。product-id空值错误已经越过，不能再作为当前故障解释。以PID77为例：
+
+- `00:59:58`及`01:00:03`先后出现MG `failed to fetch wifi vendor (no AppleOLYHAL node)`；每次调用等待约5秒。
+- `01:00:03`记录manufacturer=-1、chip=NULL、vendor=ALL、Vendor/Internal均0、fwPos=-1，进入`No WiFi - Iteration 0`（该文件20540行起）。
+- 匹配重试再次获取manufacturer/vendor，每次仍触发MG等待；`01:00:13`才到Iteration1。
+- `01:00:23`命中`BlueTool timed out! Exiting...`，daemon报告XPC interrupted、boot timeout并立即再次Booting chipset；新BlueTool PID161接管下一次boot（51020行起）。
+
+因此实际没有走到前节静态分析的“正常返回13”终点：30秒watchdog先结束了进程。这也解释了为什么单纯补一个不存在的AppleOLYHAL服务、伪造WifiVendor或固定返回0都不是QCA适配。
+
+### 可实施的launchd重定向与权限
+
+最小源码边界是提供独立的`/redwood/sbin/nabu-bluetooth-lifecycle`，在**生成的**`/redwood/LaunchDaemons/com.apple.BlueTool.plist`上替换ProgramArguments，保留`Label=com.apple.BlueTool`、`MachServices={com.apple.BlueTool:true}`及`UserName=mobile`。保持按Mach请求启动；不需要把它加入run_at_boot，也不新增第二个拥有相同Mach端点的job。原版`/usr/sbin/BlueTool`继续保留在供体OS中。
+
+原版plist来源`build/nabu-userland-inputs-v1/rootfs/System/Library/LaunchDaemons/com.apple.BlueTool.plist`；原始参数是`[/usr/sbin/BlueTool,-R]`，另有ThrottleInterval=0、Adaptive及EnablePressuredExit。打包改动可仿照`tools/package_nabu_userland.py`现有源码工具的copy2/独立参数入口，复制helper并修改这一份已生成job。现有`environment_overrides`只接受run_at_boot成员，不能滥用该入口重定向此按需服务。
+
+服务使用原版已经证明的raw XPC模式：`xpc_connection_create_mach_service("com.apple.BlueTool", queue, XPC_CONNECTION_MACH_SERVICE_LISTENER)`，接收connection后设置串行处理队列，再接收字典并`xpc_dictionary_create_reply`。原版入口`0x100041e44`及connection handler `0x100041ea0`没有peer entitlement判断；这不能推断所有系统服务都无鉴权，但当前协议不依赖额外BlueTool私有握手。
+
+必要访问是既有control socket、IORegistry本机MAC和本地日志。第97轮mobile探针已实际通过同一socket，当前control注册没有CTL_FLAG_PRIVILEGED；所以此设计不需要root，也不需要沿用Apple程序的整套私有entitlements。按项目已有arm64-ios16.5编译/签名/纳入bootstrap流程制作源码工具；不能把“可读取IORegistry”扩展为可向任意硬件user client发命令。新的helper没有必要调用MG WifiVendor或伪造AppleOLYHAL。
+
+只实现已观察到的`RunBuiltinScript`三种阶段及原版reply字段；未知消息/阶段明确返回非零，不执行任意字符串脚本。`result=0`必须来自当前阶段动作；通用失败可用1，另将真实errno及失败opcode写入本地诊断。`manufacturer=-1`保留v98已证实的模块供应商未知状态，`firmware=""`保留原版允许的未知固件字符串；不要把SIG manufacturer或BCM名字填进去。原版daemon仍会从实际HCI版本读取控制器信息。
+
+### 会话所有权与各阶段实际动作
+
+服务每个事务重新独占`com.apple.uart.bluetooth`，配置已验证的72字节raw termios/115200；使用O_NONBLOCK和明确阶段时限，因为已知驱动fatal-error无法主动使原生socket阻塞read返回。解析器保留跨read/跨命令缓冲，并按H4长度、Command Complete/Status的opcode及status判断。现有分块探针验证可复用，不把某一次read误当完整事件。
+
+| 阶段 | 最小真实动作及完成条件 | 所有权交接 |
+|---|---|---|
+| boot | 当前内核已负责原版QCA patch/NVM加载；取得会话后实际发送HCI Reset(0x0c03)，核对status0，再Read BD_ADDR(0x1009)与本机MAC比对、Read Local Version(0x1001)取得真实版本。没有成功响应不得将旧初始化日志视为本次成功；需要重新装载时应进入真正的驱动装载接口，不能在helper猜写厂商命令 | 读到本阶段所有回应，close完成后才发XPC成功，随后daemon才启动自己的transport |
+| init | 根据当前QCA后端就绪策略执行实际Reset/地址/版本核对，或复用同一明确的验证函数。原版供体init仅quit并不构成QCA就绪证据；helper可以验证已经加载的控制器而不重复刷NVM | 同boot；不能持有socket返回成功，否则daemon会遇到EBUSY |
+| deepsleep | 正常off先由daemon停栈。helper取得排他会话后用真实HCI Reset完成射频状态清理，再调用内核的排空与IBS空闲动作；只有UART TX真正排空、主机FE已发出、控制器RX方向已进入asleep且无传输错误，才返回成功 | 完成状态读取并close后reply；connect=EBUSY就报告controller_in_use，不停掉daemon、不抢其RX FIFO |
+
+上述deepsleep在本阶段只声称**已验证的IBS空闲**，不声称切断芯片电源或进入硬件深度掉电。QCA工作线程和供电仍与Wi-Fi约束一致。正常off调用顺序已静态证明为StackManager shutdown成功→deepsleep；但初始pref-off与StackManager启动失败回退也会调用它，因此不能只假设所有deepsleep入口都已有空闲socket。
+
+transport子任务与父任务已商定一个源码共享`NabuBluetoothControl.h`接口：`0x4e420001`执行drain-and-sleep（uint32 version=1，固定总期限2000ms），`0x4e420002`读取32字节真实状态/计数。这里记录设计约定，最终布局以实现头文件为准。helper不能直接把FE字节塞进现有H4发送流；IBS必须仍由内核串行TX工作线程控制，在完整H4包边界发送，并协调RX wake响应。请求失败/超时保留真实errno，不修改HCI返回内容。
+
+该方案有本项目已保存原机代码依据：`log/host/wireless-v76/source/drivers/bluetooth/hci_qca.c:489`的idle路径发送HCI_IBS_SLEEP_IND后转TX_ASLEEP；`:2630`起suspend路径取消wake工作、发送FE、等待UART写完，最后等待**另一方向**的RX_ASLEEP。TX/RX是独立状态，看到主机已发FE不等于控制器TX已睡眠。`:2660`附近的注释明确要求等待控制器自己的SLEEP_IND。
+
+同目录`btqca.c:443`设置NVM tag17 bit7启用IBS，`:460`设置tag27 bit0启用深睡；当前v78 NVM曾清除这两位。transport子任务报告v97实际已有wake=1、ack=1、sleep=1，所以本轮只验证当前配置能否达到IBS空闲，不凭协议空闲宣称深度掉电，也不在未验收的情况下同时修改NVM。
+
+### daemon下一层确实仍使用Broadcom VSC表
+
+不能把源码BlueTool helper完成视为整栈QCA兼容。`bluetoothd:0x100166830`按芯片枚举分派：1..1999进入`0x10012ff9c`，把`0x1007fc5b8`的0x750字节Broadcom函数表复制到`0x100850020`；2000..3999走Apple表。iPad7,11的13必然进入Broadcom分支。原版函数内的断言字符串明确包含`MobileBluetooth_base/Stack/vsc/bcm/bcm_vsc.c`。
+
+还不能把枚举简单改成0以规避：`0x100283dd0`在core setup调用`0x100166aa0`，后者只接受1..3999；0返回0x65，随后core setup报失败。原版名字表虽有THIRD_PARTY_DONGLE，不能据名字推出该路径在本启动流程可用。
+
+以下是可以直接用于下一轮trace的确切opcode对照，来自被安装函数表、对应_BCM函数和共同发送器`0x1001669ac`（把OCF OR 0xfc00后调用`OI_HCI_VendorCmd`），不是推测的厂商码：
+
+| Broadcom动作 | 函数 | opcode | 已有调用证据 |
+|---|---|---:|---|
+| Olympic Read WBS Support | 0x100132d40 | 0xfce2，subcommand 5 | wrapper 0x100166d34，经0x100266b2c |
+| Olympic Write LE Settings / Read LE Settings | 0x100132e44 / 0x100132fc4 | 0xfce2，subcommand 11 / 10 | wrappers 0x100166e44 / 0x100166dbc |
+| LEMetaEnableFeatures | 0x100137da4 | 0xfce9 | `0x10025aaf0:0x10025ac64`调用wrapper 0x10016844c |
+| WritePCMConfig | 0x100129834 | 0xfc61 | wrapper 0x10016a500，经0x100266ea8 |
+| WriteSleepMode | 0x10012aa98 | 0xfc27 | wrapper 0x10016abf8，经0x1002680cc |
+| PowerLDODuringSleep | 0x10012ac3c | 0xfd81 | Broadcom表slot0x360 |
+| WriteLELocalSupportedFeatures | 0x10012e76c | 0xfd3c | wrapper 0x10016b748，经0x1000f995c及0x10025fc3c |
+
+这些是静态可达/安装的命令，**尚未证明下一轮的首次发送顺序或每条均必发**。220项能力名字在`0x100804a28`，能力配置`0x100282fac`还会依芯片枚举及部分firmware字符串改变开关；动态callback和实际HCI能力可影响后续执行。
+
+因此下一版最小额外诊断是driver层有界记录完整H4命令的opcode/参数长度、Command Complete/Status的对应opcode/status及IBS状态变化，保留真实QCA返回；不需要复制所有ACL数据或私密负载。先以第一个实际必需且失败的VSC收窄后续适配。不要统一模拟成功/改写QCA错误，也不要在未见真实失败前添加大量BCM到QCA的猜测翻译。
+
+本轮设计分析仅追加本文件。源码helper、kernel sockopt及实际验收由父任务与transport子任务实施；本子任务未改主代码、未操作设备。

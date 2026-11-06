@@ -363,6 +363,14 @@ WLAN并行分析定位到PD ELF转储前的security-debug门槛：固件读取DS
 依据，故第98轮不增加此MMIO读取、不改变安全位。SMEM611全零及没有/ramdumps
 请求仍是实测结果；安全门槛只是待验证解释，详见既有wlan-fault-analysis记录。
 
+第98轮用户确认桌面正常，平台缺项已越过，原生BlueTool实际收到boot请求。
+MG WifiVendor每次等待约5秒后报告`no AppleOLYHAL node`，manufacturer=-1、vendor=ALL、
+fwPos=-1；随后`No WiFi - Iteration`重试，30秒watchdog退出，bluetoothd继续boot。
+这次没有正常返回result13，也没有执行供体Broadcom烧写。下一步为源码QCA生命周期
+适配及实际厂商命令轨迹，不能填假MUR/USI来选中原版固件。
+Wi-Fi仍同PC异常且三阶段611全零。首次Android回收短读，保留未完整备份后重收成功；
+2,684,618字节有效日志与完整64MiB槽已备份清空，APFS计数67→68，fullfsync成功。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

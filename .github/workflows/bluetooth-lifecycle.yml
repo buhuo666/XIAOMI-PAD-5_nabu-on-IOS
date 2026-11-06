@@ -1,0 +1,31 @@
+name: nabu16 - QCA Bluetooth lifecycle
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/bluetooth-lifecycle.yml'
+      - 'tools/build_nabu_bluetooth_lifecycle.py'
+      - 'tools/test_nabu_bluetooth_lifecycle.c'
+      - 'userland/nabu/src/bluetooth_lifecycle.c'
+      - 'patches/nabu-wireless/NabuBluetoothControl.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bluetooth-lifecycle:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Exercise HCI consumer and compile the iOS lifecycle service
+        run: python3 tools/build_nabu_bluetooth_lifecycle.py --output artifacts/nabu-bluetooth-lifecycle
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-bluetooth-lifecycle-${{ github.run_number }}
+          path: artifacts/nabu-bluetooth-lifecycle/
+          retention-days: 14
