@@ -214,6 +214,21 @@ FW_READY；modem停止和MSA/RMTFS回收成功。完整64MiB槽及2,241,578字�
 生产QMI测试覆盖状态刷新、缺少状态字段时清除旧值、两种就绪通知及既有分段请求，
 ASan/UBSan通过；GLINK协议测试及候选编译链接通过，实机状态待验证。
 
+第90轮桌面/配对USB正常，板级参数、校准及第二次0x20查询均返回成功。初次及校准后
+fw_status字段均存在但值为0，没有0x21或0x38通知。GLINK完整结束，MSA两区及RMTFS
+均回收成功；实时证据为`log/host/wireless-v90/firmware-status-result.json`。Android已
+回收2,851,259字节有效日志和完整64MiB槽并清空；APFS计数59→60，fullfsync成功。
+校准响应44.270720秒，状态复查46.541169秒为0，诊断结束77.050873秒仍无就绪通知。
+
+第91轮准备纠正BDF选型：原机本次Android的cnss-daemon日志明确记录加载
+`bd_k82c.bin`成功，通用`bdwlan.bin`并非这台Xiaomi实际选用的文件。已从原机只读
+提取`/vendor/firmware_mnt/image/bd_k82c.bin`，同为26,328字节，与通用文件有4,176字节
+不同。本轮沿用v90内核/QMI流程，仅更换部署的板级参数，验证是否解除固件就绪阻塞。
+Android日志另显示regdb.bin缺失后仍正常启动WLAN，因此当前不把REGDB作为必要条件。
+能力日志的board0尚未记录字段有效性，不能据此覆盖原机守护进程的实际BDF选择。
+本地REA识别原机cnss-daemon为ARM64 ELF，但本地反编译provider不可用；上述选型依据
+是原机实际运行日志和文件内容，不是反编译推断。原机文件仅本地保留。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。
