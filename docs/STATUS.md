@@ -4,8 +4,12 @@
 
 用户已确定[基本技术路线](BASIC-TECHNICAL-ROADMAP.md)：先完成系统和应用体验，
 首先实现系统级本地激活态及PC应用安装，再进入软硬件协同驱动修复。当前不接入
-Apple官方服务器激活、Apple ID、App Store、iCloud等服务。正在核对原版激活服务
-和系统消费者，尚未修改或验证系统激活态；当前设备与可用基线仍为下述第六十一轮。
+Apple官方服务器激活、Apple ID、App Store、iCloud等服务。
+
+第六十二轮首启：桌面正常，系统原版查询返回Activated/BrickState=false，安装服务
+及SpringBoard服务正常启动；自有Nabu Test IPA经原版安装代理成功安装，用户确认
+启动次数1、按钮保存次数1。候选是v61内核/bootstrap v62-final，原生构建及状态持久化
+主机测试通过，跨重启实机验收待进行。详见[本地激活兼容](NABU-LOCAL-ACTIVATION.md)。
 
 当前可用基线：第六十一轮v61内核/bootstrap v58。桌面正常，40hex板级USB身份修复
 通过实机，Windows原版AMDeviceValidatePairing和StartSession均成功，沿用已有用户

@@ -53,3 +53,21 @@ F_FULLFSYNC失败、重复失败、恢复成功、持久记录重读、设备身
 Activated、BrickState=false，原生配对会话继续可用，installation_proxy和
 springboardservices实际启动，原版客户端Lookup有响应；之后验证再次启动仍保留。
 `tools/probe_nabu_activation.py`保存这些查询与服务结果，不把服务启动等同于IPA安装。
+
+## 第六十二轮首启实测
+
+用户确认桌面正常。通过上一轮保留的配对证书建立TLS会话，原版Lockdown返回
+ActivationState=Activated、BrickState=false、PasswordProtected=false、BuildVersion=20F66。
+ActivationStateAcknowledged仍返回MissingValue，保持与实际状态分开记录。
+installation_proxy启动并完成Lookup，springboardservices启动并完成服务TLS连接。
+
+自有无网络UIKit测试IPA由Actions42155209120构建，普通arm64/iOS16.5、ad hoc签名，
+没有provisioning profile或假证书。`tools/install_nabu_test_app.py`经原版AFC上传，
+原版安装代理依次返回验证、容器创建、安装、沙箱、应用映射和InstallComplete/Complete；
+Lookup返回org.nabu.LocalTest的应用路径与独立Data容器。用户确认桌面图标可打开，
+界面显示启动次数1，点击“累加并保存”后保存次数1。无需修改安装代理的验证返回值。
+
+此结果验证本轮本地激活状态、原版安装服务和该测试应用安装/运行/写数据。
+跨重启激活态、应用和数据保留仍需下一轮验证；不能据此宣称任意第三方IPA均可安装。
+主机证据在ignored `log/host/activation-v62/host-probe/activation.json`及
+`test-app-install/install.json`。
