@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -31,13 +32,31 @@ static void initialize_optional_reporting(void *record) {
 
 #ifndef NABU_BT_COMPAT_TEST
 __attribute__((constructor)) static void install_bluetooth_compatibility(void) {
+    /* On this iOS dyld, inserted libraries precede the executable (run100).
+     * Select the exact executable as the existing FairPlay observer does.
+     */
+    uint32_t index, images = _dyld_image_count();
+    for (index = 0; index < images; ++index) {
+        const char *name = _dyld_get_image_name(index);
+        if (name && !strcmp(name, "/usr/sbin/bluetoothd")) break;
+    }
+    if (index == images) {
+        fprintf(stderr, "NABU BT COMPAT: executable /usr/sbin/bluetoothd not found\n");
+        return;
+    }
     /* Exact ordinary-arm64 20F66 image; addresses/ABI in the v99 analysis. */
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    intptr_t slide = _dyld_get_image_vmaddr_slide(index);
     void (**slot)(void *) = (void (**)(void *))(slide + 0x1007fbde0ULL);
     supported_commands = (const uint8_t *)(slide + 0x100863928ULL);
     active_sequence = (void **)(slide + 0x10084f588ULL);
     advance_sequence = (void (*)(void *))(slide + 0x1001c204cULL);
     original_initialize = *slot; /* Loaded chained rebase, not the file encoding. */
+    fprintf(stderr, "NABU BT COMPAT: image-index=%u slide=%#lx slot-original=%p expected=%p\n",
+            index, (unsigned long)slide, (void *)original_initialize, (void *)(slide + 0x10010b970ULL));
+    if ((uintptr_t)original_initialize != (uintptr_t)(slide + 0x10010b970ULL)) {
+        fprintf(stderr, "NABU BT COMPAT: initializer slot does not point to the known original; no write\n");
+        return;
+    }
 
     vm_address_t region = (vm_address_t)slot;
     vm_size_t region_bytes = 0;
@@ -68,6 +87,7 @@ __attribute__((constructor)) static void install_bluetooth_compatibility(void) {
         if (result != KERN_SUCCESS)
             fprintf(stderr, "NABU BT COMPAT: restoring initializer data-page protection failed: %d\n", result);
     }
-    fprintf(stderr, "NABU BT COMPAT: installed optional initializer slot24; protection=%#x; controller support read at invocation\n", info.protection);
+    fprintf(stderr, "NABU BT COMPAT: installed optional initializer slot24; protection=%#x readback=%p handler=%p; controller support read at invocation\n",
+            info.protection, (void *)*slot, (void *)initialize_optional_reporting);
 }
 #endif
