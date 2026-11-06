@@ -99,8 +99,12 @@ def main():
                         report['request_result_collected'] = True
                         break
                 except RuntimeError as error:
-                    if str(error) != 'AFC status 8':
+                    # Run68 returned status 1 during report publication; the
+                    # same request's complete result was readable afterward.
+                    if str(error) not in ('AFC status 8', 'AFC status 1'):
                         raise
+                    errors = report.setdefault('request_read_errors', {})
+                    errors[str(error)] = errors.get(str(error), 0) + 1
                 time.sleep(3)
             else:
                 report['request_timeout'] = True

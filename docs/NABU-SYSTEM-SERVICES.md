@@ -7,6 +7,10 @@
 第六十七轮桌面正常，原版元数据登记请求触发探针退出，应用清单仍未改变。
 10,678,028字节日志及完整64MiB槽已备份清空，APFS计数37→38，设备在Android。
 
+第六十八轮28/28预装应用经原版元数据工厂登记成功；安装代理总数155，桌面出现27项。
+备忘录本机保存、文件/日历/时钟打开和秒表启停通过用户实测。完整日志已备份清空。
+同镜像跨重启验证待第六十九轮完成。
+
 ## 已核对的服务覆盖
 
 原版20F66有487份LaunchDaemons/LaunchAngels plist。v64启动包有391项：
@@ -160,3 +164,28 @@ v67探针仅有ad hoc签名、没有权限字典。v68候选仅增加这一容�
 本地证据：`log/host/services-v67/container-analysis/`中的原版installd权限、
 `1b10d631c.asm`、`1b11422b0.asm`；完整日志和清槽记录位于
 `log/device/nabu-boot-20261106-67/runtime-log/`。
+
+## 第六十八轮实机结果
+
+候选以CI42185274416编译，通过原生签名检查及签入权限字典回读校验。
+沿用v66内核/bootstrap v68，用户确认桌面正常；原版配对TLS、本地Activated正常。
+只增加探针MobileContainerManager.allowed权限后，同款com.apple.installd查询通过，
+原版元数据工厂顺利返回；日志没有v67的探针退出事件。
+
+先登记备忘录，再登记文件/日历/时钟，最后逐项登记另外24项：全部28项原版
+registerApplicationDictionary返回true，包含97个原版扩展记录。安装代理Lookup
+127→155并包含全部28项；SpringBoard图标清单包含其中27项。Photo Booth已经登记，
+但图标未出现在清单；它保留原版front-facing-camera/ipad标签，摄像头能力及确切
+隐藏原因尚未实测，不删除标签或将其算作已可用。
+
+用户确认：备忘录可新建并保存本机文字；文件、日历、时钟均可进入界面；秒表能
+启动和停止。其他应用目前仅证明登记，不能据此证明联网或硬件功能可用。
+
+首次读取备忘录结果遇到AFC status1，随后读到同一请求ID的完整成功结果，独立
+Lookup与图标清单再次确认。主机脚本已将这一实际出现的读取错误纳入原有90秒
+轮询，并记录发生次数；仍只接受匹配请求ID的报告，不重复提交登记请求。
+
+本轮完整日志3,343,521字节、64MiB槽已备份并清空；APFS计数38→39、fullfsync成功。
+证据位于log/host/services-v68/{live-summary.json,live-diagnostic,native-core-apps,
+native-remaining-apps}及log/device/nabu-boot-20261106-68/runtime-log。
+接下来第六十九轮沿用同一内核/bootstrap，只查询登记状态并人工检查既有备忘录。
