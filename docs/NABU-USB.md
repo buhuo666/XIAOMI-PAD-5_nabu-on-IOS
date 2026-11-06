@@ -29,6 +29,11 @@ Write/Read/Close。测试文件1,048,603字节写入后关闭并重开，逐字�
 APFS计数31→32、fullfsync成功，GPT及引导分区一致，当前设备在Android，无下一轮
 启动暂存。桌面/配对/传输结果与证据索引已保存在v61/continuation.json。
 
+后续核查PC应用安装：同轮日志11209–11214、11365–11369明确记录devinfo/getapplist
+请求com.apple.mobile.installation_proxy，原版Lockdown以“device is not activated”
+拒绝启动并返回ServiceProhibited。因此当前PC原生IPA安装路径被激活状态检查阻塞，
+不能从AFC传输成功推导出应用可安装。尚未验证测试IPA安装、桌面注册或应用启动。
+
 ## 第六十轮：配对持久化、TLS会话和AFC文件传输
 
 沿用v59内核/bootstrap v58，用户确认桌面正常。未经重新Pair，直接使用Windows
