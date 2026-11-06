@@ -266,3 +266,121 @@ ENV解析语法的确是17字符常规MAC：`0x100026130`检查长度17，`0x100
 因此候选应发布名为`bluetooth`的真实IOService及可搜索的6字节`local-mac-address` CFData，使用本机`address-hci[::-1]`常规顺序；不要在服务启动环境中预设BT_DEVICE_ADDRESS以抢先走ENV入口。`transport-encoding`同样由这个服务路径读取，可与已验证的H4/控制socket配置协调。服务名、属性可搜索性、daemon实际读取结果仍需下一轮实机验收，不能以MG=true代替。
 
 建议后续BlueTool定向导出补充：`0x1000161a0`、`0x10001510c`、`0x100040958`、`0x100041094`、`0x100042024`、`0x10001c06c`；bluetoothd补main与`0x100027194`。本次只更新分析记录，不改驱动、不操作设备。
+
+## 第97轮：实际反编译结果、XPC生命周期及平台身份阻塞
+
+Actions `42252093425`成功产物在`artifacts/ci/42252093425-attempt-1/bluetooth-userland-analysis-4/`。两份`*-decompilation.json`分别为bluetoothd `selected=130,decompiled=130`、BlueTool `selected=83,decompiled=83`。这是选中函数（含导入桩）的完成计数，不是全程序反编译覆盖。以下引用这次有效`.c`；未被选中的block及虚调用上层用已有原版可执行文件、原始函数起始表和导入标注汇编补证，没有重新下载或进行哈希审计。
+
+### BlueTool消息的精确边界
+
+`bluetoothd:0x1001d5630`从`0x1007fe490`的两个字符串指针构造外层字典：`kMsgId`和`kMsgArgs`。`0x1001d5540:0x1001d5568`实际使用`xpc_connection_send_message_with_reply_sync`；任务在上层可被异步派发，但单次BlueTool事务同步等待回复。`0x100271e60`先建立电源assertion，再请求，结束后释放。
+
+| 请求 | `kMsgArgs` | 原版回复 |
+|---|---|---|
+| `RunBuiltinScript` | 必需string `script`，精确取`boot`、`init`、`deepsleep`之一；可选string `btaddress` | 顶层int64 `result`、int64 `manufacturer`、string `firmware`；缺少固件字符串时仍发送空串 |
+| `RunExternalScript` | 必需string `script`，值是文件路径 | 顶层int64 `result`；没有内置请求的manufacturer/firmware扩展 |
+| `RunCommand` | 必需string `command`，换行分隔命令 | 顶层int64 `result`，有收集到输出时附string `output` |
+
+证据：`BlueTool.c:3211`起dispatcher `0x100042024`；builtin reply在`BlueTool.c:3766`起。`btaddress`只在bluetoothd对象已有非零地址时附带，格式化函数`0x10039502c`用`%02X:%02X:%02X:%02X:%02X:%02X`。BlueTool将其复制到全局地址文本；这一动作本身没有设置/核实控制器地址。
+
+BlueTool把script映射为1/2/3；builtin watchdog分别为boot/init 30秒、deepsleep 4秒。超时block `0x10004362c`记录`BlueTool timed out! Exiting...`并`exit(1)`，不会发伪成功。外部脚本和RunCommand各有30秒watchdog。builtin普通路径只尝试一次；transport枚举7且script=boot才尝试两次，失败间隔500ms，并可标记下次整颗Wi-Fi/BT芯片powercycle；此特例不能搬到Nabu共用供电。
+
+`RunCommand`在首个非零解释器结果停止并返回该结果。相比之下，`runScriptFile:0x10001c06c`和Vendor/Internal的覆盖文件循环都忽略逐行解释器结果；文件读完（甚至已打开但分配失败的路径）会返回0。开放文件失败返回3，参数无效返回1。因此“外部脚本result=0”不证明任何HCI操作成功。
+
+### 返回值如何驱动daemon
+
+reply block `bluetoothd:0x1002722c8`的控制流如下：
+
+| 实际回复 | `runBlueTool`返回 | 对象`+0x78`状态 |
+|---|---:|---:|
+| 字典，result=0 | 0 | 0 |
+| 字典，result=10或13 | 2 | 2 |
+| 字典，其余非零result | 1 | 1 |
+| 非字典XPC错误 | 1 | 0xd5 |
+
+原版不检查result键是否存在，不能利用XPC缺省0来制造成功。result原值还进入统计；规范适配应显式提供真实结果。`controllerInfo:0x10004bf64`把状态2显示为`Bluetooth chipboot FW Update not implemented`，0xd5显示chipboot timeout，1为Bluetooth error。
+
+`BlueTool:0x1000161a0`的原始结果边界：缺少platform直接10；匹配不到firmware记录时，module manufacturer仍为-1返回13，否则10；对应阶段函数指针为空返回5；非法阶段返回15；找到阶段函数则返回该函数的真实结果。不要把这些内部原始码直接当errno。
+
+调用时机已由虚表和上层汇编串联：
+
+- `bluetoothd:0x1003a5198`（日志`Beginning asynchronous power init`）先调用`0x1003a5f54`，其调用芯片虚表第0项，即`0x100272b10`→`boot`。
+- 该初始流程之后按保存的蓝牙电源偏好决定开启。开启路径`0x1003a5614`调用虚表+8，即`0x100272b88`→`init`；成功后才调用`StackManager`启动函数`0x1003c8138`。如果init失败，记录`Power on failed`，调用boot恢复再重试init。
+- 初始流程选择保持关闭时，`0x1003a5408..5424`仍依次调用init和deepsleep，再发布powerstate=0，不能只实现boot。
+- 正常关闭路径`0x1003a5968`先调用`StackManager`停止函数`0x1003ca1c4`；停止成功后调用虚表+0x10，即`0x100272c00`→`deepsleep`，成功才记录状态0。协议栈开启失败的回退也调用deepsleep。
+- boot恢复函数`0x1003a5f54`对返回2记录`Unknown platform/chipset/manufacturer combination, restarting`，报告错误，`usleep(1000000)`后`_exit(1)`；一般失败继续boot重试。其返回0才让后续电源/协议栈流程继续。
+
+### manufacturer是模块供应商编码，firmware会影响部分VSC能力
+
+**回复manufacturer不是Bluetooth SIG的16位HCI manufacturer。** `BlueTool:0x1000403a4`（`BlueTool.c:6409`）对四个特定MG产品返回内部Apple码，其余从MG `WifiVendor`取得模块供应商文本并映射：
+
+| 文本/类别 | 原版内部值 |
+|---|---:|
+| Apple特定产品 | 0x6170706c |
+| Murata / V=m | 0x6d757261 |
+| USI / V=u | 0x20757369 |
+| Mitsumi / V=i | 0x6d697473 |
+| Semco / V=s | 0x736d636f |
+| TDK / V=t | 0x2074646b |
+| Taiyo / V=y | 0x20207479 |
+| STATS / V=g | 0x73746174 |
+| 非空但未识别文本 | 0 |
+| 空文本/尚未取得值 | -1 |
+
+reply callback读取manufacturer后仅用于`%lld/%s`组合的诊断/统计文本；完整block没有把它写到控制器芯片枚举。不能通过给该字段填QCA的SIG号来选择QCA处理。
+
+firmware则复制到芯片生命周期对象`+0x58`。getter `0x100272f10`（虚表+0x40）对空串返回0xcb；非空复制给调用者。原版BlueTool getter `0x1000179f0`只返回其全局字符串`0x10093130c`，不等于HCI Local Version原始结构。
+
+已定位的daemon消费者包括ControllerInfo、`FW Version:`诊断、AWD/CoreAnalytics `FirmwareVersion`，以及已存在芯片枚举基础上的能力判断：
+
+- `0x100259868`/`0x100259a14`对枚举0x16（BCM_4387）分别寻找`C0`/`C2`；`0x100259bc0`对0x17（BCM_4388）寻找`B0`。
+- `0x10025aaf0`对枚举9（BCM_43430）搜索`B0`，命中会清掉已启用特性位0x100000。
+- `0x100282fac`在特定BCM枚举分支中用`B1`区分43430B1，并搜索`Joy/Anger/Fear/Elsa/Kristoff/Olaf/Sven`、`Bacchus`、`Figaro/Rudder`启用Wireless Splitter等VSC能力。该函数先读控制器`+0x260`现有枚举，然后设置相应VSC特性；回复manufacturer不进入这一选择。
+
+因此保留原版允许的空firmware有静态依据，不能冒充BCM固件名。若未来适配给出QCA描述，应来自真实加载/版本证据，并使用明确的QCA描述；这仍不自动改变daemon按供体平台选择的Broadcom芯片对象。
+
+### 第97轮当前失败：/product/product-id缺失
+
+父任务实际日志`log/host/wireless-v97/bluetooth-syslog.txt:511..512`先出现`invalid product id '(null)'`，随后`Unknown platform 0xffffffff detected`，之后约10秒重启。此时还没进入上述BlueTool生命周期。父任务同时确认控制socket、72字节termios和八次分块HCI查询均成功，MAC服务及H4/POSIX选择通过；平台失败不能再归因于这些已通过项。
+
+MobileGestalt原版DSC路径：
+
+1. `_MGGetProductType:0x19c49c5f4`经once block `0x19c49da34`取得20字节产品标识。
+2. 标识缓存初始化`0x19c49c494`在`0x19c49c4a8..4bc`读取`IODeviceTree:/product`的`product-id`。必须CFData且长度恰为0x14；缺失、类型不对、长度不对都到`device_map.c:58`的`invalid product id '%@'`路径并清NULL。root `model`和`platform-name`没有用于此检查。
+3. `0x19c49da34`按32字节步长扫描`0x19c4ee568`开始的0x16b（363）条记录，逐字节比较前20字节；命中后`_MGGetProductType`返回条目+0x18的值，未命中返回-1。
+
+直接来自同一20F66供体的确值：
+
+```text
+来源IM4P: OS/ipados/16.5-20F66-iPad7_11/extracted/Firmware/all_flash/DeviceTree.j171ap.im4p
+已有解压ADT: log/host/native-usb-v44/windows/DeviceTree.j171ap.adt
+解压ADT长度/解析结束: 156448 / 156448
+根model: iPad7,11\0
+根compatible: J171AP\0iPad7,11\0AppleARM\0
+属性: /product/product-id
+解压ADT属性值偏移: 0x22a80
+长度: 20
+十六进制: 4d013e8fae976e61a7b3b69cdb5a015fa7ff04bb
+MG表下标: 74（从0计）
+MG表地址: 0x19c4eeea8
+MGGetProductType返回: 0xd9472b31
+```
+
+已有`DeviceTree.j171ap.usb.json`和USB分析记录把该解压ADT关联到原版IM4P；本次复用结果而未重做哈希审计。BuildManifest的20F66 j171ap Erase/Update两个身份均选择这个DeviceTree。以上20字节是原始供体属性，不是通过产品名猜算的哈希。
+
+最小候选是只在现有`userland_model == 'iPad7,11'`兼容模式下，在`tools/make_nabu_adt.py`的product节点附加上述原始20字节二进制属性。不要传40字符十六进制字符串或附加NUL，不要更改Nabu根platform-name、寄存器或QCA硬件描述。此处只是分析建议，未改生成器。
+
+**必须保留的下一阶段限制：iPad7,11会选择BCM_4355C1。** bluetoothd硬件对象构造`0x10029aa14`在`0x10029af20`取该产品标识前16字节，`0x10029af2c..34`补原始末四字节；`0x10029afd8`传入MGIsDeviceOneOfType。命中在`0x10029afec`传枚举13到`0x1002597f0`；名字表`0x100282d50`明确为`BCM_4355C1`。所以补product-id可解决当前平台NULL崩溃，却会继续进入供体Broadcom命令能力路径。不能把平台身份恢复或BlueTool成功回复当成原生QCA协议栈兼容验收。
+
+### 源代码适配最小边界与真实验收条件
+
+在已检查的release路径没有一个被证明可配置为“QCA已预加载、跳过厂商生命周期”的公开开关：H4只改变transport，BT_CHIP的ACI特例不是QCA接口，ReleaseType覆盖有门控且逐行失败会被吞掉。若实机确认接下来的失败来自BlueTool，应在项目拥有的源码边界实现QCA生命周期动作与原版XPC契约（例如专用服务/原生适配层），并继续判断daemon按平台选出的BCM命令集是否另需适配。单独替换服务不能预先保证全部兼容。
+
+最低真实动作不能简化为固定result=0：
+
+- boot：验证本次控制器的patch/NVM状态、本机地址及实际固件版本。当前驱动源码`nabu_bluetooth_load_firmware`已有原始TLV回应→HCI Reset→Read BD_ADDR比对→Read Local Version链；持久化阶段能复用明确的初始化状态，但需要当前会话的真实HCI读回应，不能只凭节点存在或旧日志成功。需要重载时必须在排他RX所有权下调用真实QCA装载流程。
+- init：真正取得UART会话、完成需要的唤醒/IBS握手，得到有效HCI Reset/版本/地址回应并完整交回transport，然后才回复成功让daemon开启协议栈。不能虚构Command Complete，也不能留下并发FIFO读者。重复init、boot恢复后init及关闭后再开都要实测。
+- deepsleep：在daemon停栈释放会话后执行明确的QCA停止/睡眠动作并验证，保留WLAN共用电源。没有实现睡眠就返回真实不支持/失败，不能把空脚本或仅关闭fd称为硬件已睡眠。
+- result必须反映该次阶段动作；manufacturer应按真实模块供应商/明确未知语义提供，绝非SIG号；firmware空串由原版允许，非空必须由真实证据生成。每个字段的兼容性和阶段延迟仍要用原生日志验证。
+
+本轮仅更新本分析文件；未操作设备、未改代码或提交。当前优先验收product-id候选是否消除`invalid product id`，再按下一条真实失败收窄适配范围。

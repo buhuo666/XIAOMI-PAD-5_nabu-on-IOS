@@ -98,6 +98,13 @@ ASan/UBSan通过；WLAN同步增加有固件依据的SMEM611三阶段异常快�
 探针因iPhoneOS SDK省略control头文件而首次编译失败，已按XNU8796 ABI补声明重建。
 修正版探针Actions42253896974成功，第97轮内核链接及bootstrap apfsck通过，准备
 临时启动验证原生socket/HCI与WLAN异常快照；当前仍未取得扫描、连接或配对成功。
+第97轮原生socket、termios与8/8真实HCI查询均通过，IBS wake/ack/sleep均正确处理，
+零溢出；bluetoothd已读到本机地址并选中H4/POSIX，下一阻塞为原版product-id缺失。
+WLAN仍同PC崩溃，SMEM611三阶段快照全零。2,697,820字节及完整槽已回收清空，
+APFS计数66→67，设备已回Android。原版用户态定向反编译42252093425实际通过。
+第98轮候选补经原版ADT和MG表确认的20字节product-id，限定iPad7,11用户态模式。
+复用第97轮内核/bootstrap；验证平台查找及BlueTool后续初始化，尚未宣称QCA兼容。
+WLAN并行定位到转储安全门槛，但缺少APPS读取依据，保留现有采集并继续静态分析。
 
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。

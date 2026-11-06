@@ -338,6 +338,31 @@ WLAN诊断同时补原版MPSS `err_smem_log`分配的SMEM item611（4096字节�
 确有writer调用，但部分分支会跳过，且PFR可能先于写入；需核对PC/进程名后才能
 归属本次WLAN。字段格式含BADVA/LR，可帮助定位MMIO访问；不猜固定内存偏移。
 
+第97轮实机已通过原生control socket：mobile探针完成控制器查找、连接、72字节
+termios读写及8次HCI版本/功能/缓冲区/LE功能查询，全部status0；1/2/7/31字节分片
+读取都匹配，32字节HCI命令发送、121字节接收（含IBS），零溢出。IBS真实收到wake、
+ack、sleep各1次，未进入H4数据流。原生bluetoothd成功读取本机MAC并选中H4/POSIX，
+随后因MobileGestalt缺少`/product/product-id`而报Unknown platform并退出；还没有
+进入可配对状态。该20字节属性属于原版软件平台目录，正在从原始j171ap ADT核对。
+
+WLAN仍同PC崩溃，SMEM611三份4096字节快照全部为0；不能由此伪造BADVA/LR。
+第97轮2,697,820字节有效日志及完整64MiB槽已回收清空，APFS计数66→67。
+用户态反编译在Actions42252093425通过：BlueTool83/83、bluetoothd130/130个所选
+函数实际生成伪代码，产物已下载。此结果确认H4配置、MAC查找和BlueTool协议边界，
+不等于原版Broadcom生命周期已兼容QCA控制器。
+
+第98轮候选仅在已选`iPad7,11`用户态模式下补原版j171ap的20字节
+`product/product-id=4d013e8fae976e61a7b3b69cdb5a015fa7ff04bb`。
+来源为既有20F66解压ADT的0x22a80，MG映射表第74项，预期产品枚举0xd9472b31。
+生成器检查确认未选兼容模式时不发布该属性，Nabu平台及Qualcomm硬件节点继续保留。
+复用第97轮内核/bootstrap及完整WLAN采集，实测待确认平台错误是否消失和BlueTool
+后续行为；此供体身份会选择BCM_4355C1，不能据此宣称QCA初始化、扫描或配对通过。
+
+WLAN并行分析定位到PD ELF转储前的security-debug门槛：固件读取DSP虚拟
+0xa19d400c的bit0，原机HWIO表映射为物理0x01fd400c。但尚无APPS访问该偏移的
+依据，故第98轮不增加此MMIO读取、不改变安全位。SMEM611全零及没有/ramdumps
+请求仍是实测结果；安全门槛只是待验证解释，详见既有wlan-fault-analysis记录。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

@@ -146,6 +146,13 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
                                         'product-description': STR('Xiaomi Pad 5'),
                                         'artwork-device-idiom': STR('pad'),
                                         'artwork-scale-factor': U32(2)})])
+    if userland_model == 'iPad7,11':
+        # Original 20F66 j171ap /product/product-id: MG requires 20 binary
+        # bytes for its software platform table, independently of root model.
+        # This selects donor software behavior, including Broadcom BT paths;
+        # it does not describe or initialize the Nabu Qualcomm controller.
+        product = next(n for n in tree.children if n.props['name'] == STR('product'))
+        product.props['product-id'] = bytes.fromhex('4d013e8fae976e61a7b3b69cdb5a015fa7ff04bb')
     if userland_serial is not None:
         # IOPlatformExpertDevice publishes this NUL-terminated ADT data as
         # IOPlatformSerialNumber. Keep the value local and explicit.
