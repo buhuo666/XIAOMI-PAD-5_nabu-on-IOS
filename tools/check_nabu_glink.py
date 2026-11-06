@@ -21,6 +21,8 @@ using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }
 static void IOSleep(unsigned) {}
+static bool nabu_rmtfs_available() { return false; }
+static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { return 0; }
 static void nabu_wireless_log(const char *format, ...) {
     va_list args; va_start(args,format); vprintf(format,args); va_end(args);
 }

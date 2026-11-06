@@ -144,6 +144,18 @@ instance180，提供`kernel/elf_loader`、`tms/servreg`、`wlan/fw`。
 窗口1、确认和重传；其余文件明确返回不存在，写入返回只读。轮询30秒后关闭modem。
 主机TFTP和GLINK生产代码ASan/UBSan通过；原固件服务请求和WLAN服务出现仍待实测。
 
+第82轮桌面/USB和GLINK均正常，正常关闭后broken=0；TFTP服务供给4,331,136字节固件，
+但实际请求0、完成0，仍仅有43/66服务。因此不能记为WLAN固件已加载。完整64MiB槽及
+2,325,089字节日志已回收清空，APFS计数52→53。Android对照显示启动早期先经RMTFS
+打开modem_fs1/fs2/fsg并读取配置；共享UIO区3MiB（本次动态地址0xfdb01000，不能当成
+固定预留区）。本地快照位于忽略的`device/nabu-rmtfs-v83`，不发布内容。
+
+第83轮候选增加QMI RMTFS服务14，使用本机modemst1/modemst2/fsg/fsc快照的内存副本；
+读写请求只改变内存，绝不写原分区。32位传输地址使用Android FDT明确预留且本轮不
+启动的CDSP区0x99100000前3MiB，经TrustZone授权HLOS3/MSS15共享，modem停止后收回。
+不采用参考板CDSP地址或Android动态分配地址。生产QMI解析和GLINK主机ASan/UBSan
+测试通过，编译链接通过；共享授权与真实文件请求待实测。
+
 ## 后续验收
 
 1. 取得第76轮Nabu共享内存、供电和UART时钟实测值，确认当前启动链留下的状态。

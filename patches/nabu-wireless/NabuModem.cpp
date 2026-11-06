@@ -20,6 +20,8 @@ extern "C" lck_mtx_t hakios_aop_mailbox_lock;
 extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
 extern "C" void nabu_glink_trial(vm_offset_t, vm_offset_t);
+extern "C" bool nabu_rmtfs_prepare(IORegistryEntry *);
+extern "C" void nabu_rmtfs_finish();
 
 static vm_offset_t aop, ipc, rsc, smem_va;
 static uint32_t mailbox, our_item;
@@ -252,7 +254,7 @@ extern "C" void nabu_modem_start_trial() {
         file_bytes += bytes; memory_bytes += mem; loaded++;
     }
     nabu_wireless_log("NABU MODEM: copied=%u segments=%u file-bytes=%llu memory-bytes=%llu\n", copied, loaded, file_bytes, memory_bytes);
-    bool started = copied && qmp_send(true) && scm(5, 1, 4, 0, 0);
+    bool started = copied && nabu_rmtfs_prepare(entry) && qmp_send(true) && scm(5, 1, 4, 0, 0);
     uint32_t state = 0;
     if (started) {
         for (unsigned i = 0; i < 1500; ++i) { state = modem_state(smem, false); if (state & 3) break; IOSleep(10); }
@@ -269,7 +271,7 @@ extern "C" void nabu_modem_start_trial() {
             nabu_wireless_log("NABU MODEM: stop-ack=%u state=%#x\n", !!(state & 8), state);
             wr(smem_va + our_item + 36, 0); wr(ipc, 1u << 14);
         }
-        if (scm(6, 1, 4, 0, 0)) qmp_send(false);
+        if (scm(6, 1, 4, 0, 0)) { qmp_send(false); nabu_rmtfs_finish(); }
     }
     IOFreeContiguous(header, 16384);
     entry->release();

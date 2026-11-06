@@ -8,6 +8,8 @@
 #include "NabuSmem.h"
 #include "NabuWirelessLog.h"
 #include "NabuTftp.h"
+extern "C" bool nabu_rmtfs_available();
+extern "C" unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *);
 
 struct GlinkMessage { uint16_t command, channel; uint32_t value; };
 struct QrtrHeader { uint32_t version, type, from_node, from_port, confirm, size, to_node, to_port; };
@@ -34,6 +36,8 @@ struct NabuGlink {
     unsigned local_count = 0;
     struct Pending { QrtrHeader header; QrtrControl control; } pending[16]{};
     unsigned pending_head = 0, pending_count = 0;
+    struct Response { uint32_t node, port, bytes; uint8_t data[64]; } responses[8]{};
+    unsigned response_head = 0, response_count = 0;
 
     bool datagram(unsigned type, unsigned from, unsigned node, unsigned port, const void *data, unsigned size) {
         unsigned total = (sizeof(QrtrHeader) + size + 3) & ~3u;
@@ -53,6 +57,7 @@ struct NabuGlink {
         remote[selected].used = true; return true;
     }
     void announce_tftp(unsigned node) {
+        if (nabu_rmtfs_available()) { uint32_t server[4] = {14, 1, 1, 0x4001}; queue_control(4, node, control_port, server); }
         if (!wlan_firmware) return;
         uint32_t server[4] = {4096, 1, 1, 0x4000}; queue_control(4, node, control_port, server);
     }
@@ -77,6 +82,11 @@ struct NabuGlink {
     }
     void tftp_flush() {
         if (!opened || broken || closing) return;
+        while (response_count) {
+            Response &r = responses[response_head];
+            if (!datagram(1, 0x4001, r.node, r.port, r.data, r.bytes)) break;
+            response_head = (response_head+1)%8; --response_count;
+        }
         for (auto &t : transfers) {
             if (t.pending && datagram(1, t.local_port, t.node, t.peer_port, t.payload, t.payload_bytes)) t.sent();
         }
@@ -167,6 +177,12 @@ struct NabuGlink {
         }
         unsigned command = packet.u32(at);
         if (header.to_port != control_port && header.type == 1) {
+            if (header.to_port == 0x4001 && nabu_rmtfs_available()) {
+                if (response_count == 8) { broken = true; return; }
+                Response &r = responses[(response_head+response_count)%8]; r.node = header.from_node; r.port = header.from_port;
+                r.bytes = nabu_rmtfs_request(data+at, header.size, r.data); if (r.bytes) ++response_count;
+                return;
+            }
             if (wlan_firmware && header.to_port >= 0x4000 && header.to_port <= 0x4011) {
                 tftp(header.from_node, header.from_port, header.to_port, data + at, header.size); return;
             }
@@ -185,7 +201,7 @@ struct NabuGlink {
             if (service == wlfw_service && command == 4) { wlfw_node = node; wlfw_port = port; }
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
-            if (wlan_firmware && (packet.u32(at + 4) == 0 || packet.u32(at + 4) == 4096)) announce_tftp(header.from_node);
+            if (packet.u32(at+4) == 0 || packet.u32(at+4) == 4096 || packet.u32(at+4) == 14) announce_tftp(header.from_node);
             queue_control(4, header.from_node, header.from_port);
         } else if (command == 3) {
             nabu_wireless_log("NABU QRTR: peer BYE\n"); broken = true;

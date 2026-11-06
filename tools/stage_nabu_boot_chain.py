@@ -107,9 +107,11 @@ def main():
     ap.add_argument('--modem-firmware', type=Path, help='Prepared Nabu modem metadata/segments for the bounded PAS boot trial')
     ap.add_argument('--modem-glink', action='store_true', help='Negotiate GLINK/IPCRTR and inventory QRTR services before stopping the modem')
     ap.add_argument('--wlan-firmware', type=Path, help='Original wlanmdsp.mbn served read-only over QRTR TFTP')
+    ap.add_argument('--rmtfs-snapshot', type=Path, help='This board modem storage snapshots for RAM-only RMTFS')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
+    assert not a.rmtfs_snapshot or a.modem_glink, 'RMTFS requires GLINK'
     bluetooth_firmware = None
     if a.bluetooth_firmware:
         meta = json.loads((a.bluetooth_firmware/'firmware.json').read_text())
@@ -125,6 +127,9 @@ def main():
             if segment['file']:
                 modem_firmware[f"segment-{segment['index']:02}"] = (a.modem_firmware/segment['file']).read_bytes()
         if a.wlan_firmware: modem_firmware['wlanmdsp'] = a.wlan_firmware.read_bytes()
+        if a.rmtfs_snapshot:
+            for file in json.loads((a.rmtfs_snapshot/'snapshot.json').read_text())['files']:
+                modem_firmware['rmtfs-'+file['partition']] = (a.rmtfs_snapshot/file['file']).read_bytes()
     platform_identity = json.loads(a.platform_identity.read_text()) if a.platform_identity else None
     platform_uuid = platform_uuid_from_soc(platform_identity['soc_identity']) if platform_identity else None
     rtc_calibration = json.loads(a.rtc_calibration.read_text()) if a.rtc_calibration else None
