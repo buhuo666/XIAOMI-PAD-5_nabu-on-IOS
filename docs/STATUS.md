@@ -2,7 +2,7 @@
 
 更新：2026-11-07，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。设备在Android，正在根据本机ICNSS及
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第105轮已发送临时启动，等待设备反馈；根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
@@ -161,7 +161,8 @@ DIAG协商与BT slot18候选已另存patch并从本轮工作树撤出；当前An
 第105轮消除GLINK/WLFW及TFTP聚合临时对象，实际ARM64栈帧6816→160、4480→240字节；
 生产协议ASan/UBSan通过。新增首次loader_return来源记录，独立复核及4种入口回放
 通过，联合内核已链接并离线打补丁；仍未证实栈溢出是HALTED原因。继续复用v102
-蓝牙bootstrap，准备临时启动。详见[返回诊断](../analysis/nabu-halted-return-v105.md)。
+蓝牙bootstrap；部署回读和fastboot boot均通过，源码/产物快照已保存，等待用户反馈，
+主机USB服务探针尚未开启。详见[返回诊断](../analysis/nabu-halted-return-v105.md)。
 
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。

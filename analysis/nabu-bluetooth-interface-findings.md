@@ -851,3 +851,20 @@ Reset(status0) → 正常Version/BDADDR验证与会话释放
 另一个应保留的要求是：正文建议支持Extended Advertising feature的controller应由Host使用extended命令。当前若选择完整legacy路径，只能作为明确记录的临时host能力降级；长期标准HCI适配应统一广告、扫描及连接路径的extended选择。不能仅将200b替换成2041，却继续发送2007等legacy命令；也不能通过改写控制器真实feature/support位来制造“不支持extended”的假象。
 
 本次仍不修改兼容库；官方原文现已支持family分类、两种顺序互斥及Reset边界，第102轮仅需进一步验证该QCA硬件对受控顺序的实际行为。
+
+### 第103轮实测与第105轮候选复核
+
+第103轮Reset隔离诊断实际取得A/B/C=0/0/12，三次Reset和最终版本/地址核对均成功。
+这支持204a之后legacy扫描参数因命令族状态被拒绝，不能据此宣称发现/配对通过。
+证据见`log/host/wireless-v103/le-family-first-boot.txt`。
+
+第105轮复核保存的slot18候选时，发现六项host选择未包括独立的Enhanced Connections
+byte `0x100855919`。它由`0x1001881bc`写入；`0x100183cbc`与`0x10018445c`
+起的两条消费者路径在非零时发送descriptor d9=2043，为零时选200d。平台getter
+`0x1002e1350`最终读取芯片方法`0x10025a328`：枚举19..23为true，当前13为false；
+第103轮日志也记录该选项disabled。因此这不是当前扫描失败的新根因，但下一次
+候选应补读、记录及测试第七项，不能以原六项全零概括完整legacy策略。
+
+周期同步传输205c/205d的独立选择及后续间接路径尚未穷尽，七项本身也不是完整
+命令族适配证明。第105轮保留v102 bootstrap专注HALTED诊断，没有纳入slot18候选。
+原版指令、调用点、当前配置与局限保存在`log/host/wireless-v105/bluetooth-next-review.md`。

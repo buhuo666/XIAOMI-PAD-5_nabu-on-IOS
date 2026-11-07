@@ -42,6 +42,8 @@ LR、FP、SP、MPIDR及ESR/FAR/ELR，通过原子状态仅保留第一份记录�
 通用寄存器和NZCV。终端仍调用原storage report，再经已有loader logger追加
 `NABU RETURN FIRST`，最终继续原reason0/code0的loader_jump。
 不增加设备写入路径、分配、锁、栈遍历或指针解引用。
+若运行时writer已停止，磁盘有效前缀可能仍不包含新增记录；本轮首先观察HALTED
+屏幕上的loader尾部，不能保证已停止的磁盘写入会保存它。
 
 四种入口标量回放检查首次、正在记录、已有记录及一次exclusive失败；正式候选
 的目标地址和终端调用均已解码验证。回放不是完整ARM仿真，也不是硬件并发验证。
@@ -57,3 +59,7 @@ CAL_REPORT字段。新增变化只有栈开销修正与返回来源诊断。临�
 回收日志槽。Wi-Fi扫描/联网、蓝牙发现/配对及共同使用仍未通过。
 
 蓝牙的LE命令族策略继续单独复核，slot18候选仍保存在patch中。本轮不纳入该候选。
+
+第105轮部署回读及fastboot boot已成功，源码提交为`1a38097`；完整产物快照位于
+`log/device/nabu-boot-20261107-105`，接续状态在`log/host/wireless-v105/continuation.json`。
+当前仅确认启动命令发送成功，等待用户反馈；主机USB服务探针尚未开启。
