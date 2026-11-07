@@ -6,6 +6,8 @@
 struct NabuWlanDma {
     static constexpr unsigned block_bytes=65536, block_count=128, table_bytes=65536;
     static constexpr uint64_t iova_base=0xa0000000ULL;
+    // Neither WLAN SID matches qcom,actlr; the vendor writes zero for this CB.
+    static constexpr uint32_t wlan_actlr=0;
     struct Memory { void *cpu=nullptr;uint64_t physical=0; };
     struct Buffer { void *cpu=nullptr;uint32_t iova=0,bytes=0; };
     struct Platform {
@@ -27,7 +29,7 @@ struct NabuWlanDma {
     ArmSmmu4KStreamResult stream_result{};
     ArmSmmu4KStream routes[2]{};
     uint32_t old_smr[2]{},old_s2cr[2]{};
-    unsigned allocated=0,cursor=0,bank=0;
+    unsigned allocated=0,cursor=0,bank=0,bank_offset=0,attach_phase=0;
     enum State { Empty, Prepared, Active, Retained } state=Empty;
     enum PrepareFailure { None, BlockAllocation, TableAllocation, TableBuild } prepare_failure=None;
     unsigned failed_block=0;
@@ -38,9 +40,9 @@ struct NabuWlanDma {
         uint32_t first_value=0,scr0=0,id0=0,id1=0,id2=0,gfsr=0;
         unsigned conflict_slot=0;
         uint32_t conflict_smr=0,conflict_s2cr=0;
-        uint32_t selected_sctlr=0,selected_actlr=0;
+        uint32_t selected_sctlr=0,selected_actlr=0,actlr_readback=0;
     } selection{};
-    bool read_failed=false,mutated=false;
+    bool read_failed=false,mutated=false,context_started=false;
     void (*remove_fault_handler)(void *,unsigned)=nullptr;
     void *fault_cookie=nullptr;
     ArmSmmu4KStatus status=ArmSmmu4KSuccess;
@@ -59,7 +61,8 @@ struct NabuWlanDma {
     }
     bool prepare(const Platform &ops) {
         if(state!=Empty||allocated)return false;
-        platform=ops;cursor=0;read_failed=false;mutated=false;
+        platform=ops;cursor=0;read_failed=false;mutated=false;context_started=false;
+        remove_fault_handler=nullptr;fault_cookie=nullptr;
         streams={};program={};stream_result={};status=ArmSmmu4KSuccess;
         prepare_failure=None;failed_block=0;
         for(;allocated<block_count;++allocated) {
@@ -128,9 +131,10 @@ struct NabuWlanDma {
             // 0x377d631e. Like the existing UFS planner, lease an unreferenced
             // disabled bank, not an all-zero register image. The programmer
             // disables it and replaces CBAR/CBA2R/TCR/TTBR/MAIR before enable.
-            // Keep the platform ACTLR requirement used by the fault registrar.
+            // v120 ACTLR reads 3 before platform initialization. Accept that
+            // observed initial value; unknown platform configurations stay out.
             uint32_t sctlr=read(cb),actlr=read(cb+4);
-            if((sctlr&1)||actlr) {
+            if((sctlr&1)||(actlr!=wlan_actlr&&actlr!=3)) {
                 if(!selection.blocked_banks) {
                     selection.first_bank=b;selection.first_offset=(sctlr&1)?cb:cb+4;
                     selection.first_value=(sctlr&1)?sctlr:actlr;
@@ -145,8 +149,9 @@ struct NabuWlanDma {
                 }
             }
             if(collision){++selection.asid_conflicts;continue;}
-            bank=b;context.asid=asid;context.id0=info.idr0;context.id2=info.idr2;
+            bank=b;bank_offset=cb;context.asid=asid;context.id0=info.idr0;context.id2=info.idr2;
             selection.selected_sctlr=sctlr;selection.selected_actlr=actlr;
+            selection.actlr_readback=actlr;
             selection.stage=5;
             if(read_failed)status=ArmSmmu4KIoError;
             return !read_failed;
@@ -157,21 +162,45 @@ struct NabuWlanDma {
     // Caller keeps WLAN stopped/mission mode OFF. registrar must install real
     // bank/global fault handling and confirm platform ACTLR/security setup.
     // No default registrar exists: a guessed readiness flag cannot activate it.
+    bool restore_actlr() {
+        return write(bank_offset+4,selection.selected_actlr)&&
+            read(bank_offset+4)==selection.selected_actlr&&!read_failed;
+    }
     bool attach(int (*registrar)(void *,unsigned,const ArmSmmu4KIo *),
                 void (*unregister)(void *,unsigned),void *cookie) {
         if(state!=Prepared||!registrar||!unregister)return false;
         platform.lock(platform.cookie);
-        bool ok=select();
-        if(ok)ok=registrar(cookie,bank,&platform.io)==0;
+        attach_phase=1;bool ok=select();
+        if(ok&&selection.selected_actlr!=wlan_actlr) {
+            attach_phase=2;
+            state=Retained;mutated=true;
+            ok=write(bank_offset+4,wlan_actlr);
+            if(!ok)status=ArmSmmu4KIoError;
+            else {
+                selection.actlr_readback=read(bank_offset+4);
+                ok=!read_failed&&selection.actlr_readback==wlan_actlr;
+                if(!ok)status=read_failed?ArmSmmu4KIoError:ArmSmmu4KStateMismatch;
+            }
+        }
+        if(ok) {
+            attach_phase=3;
+            ok=registrar(cookie,bank,&platform.io)==0;
+            if(!ok)status=ArmSmmu4KBusy;
+        }
+        // No routes or context registers have been programmed yet. Undo just
+        // the platform initialization if it or IRQ registration failed.
+        if(!ok&&mutated&&restore_actlr()){mutated=false;state=Prepared;}
         if(ok) {
             remove_fault_handler=unregister;fault_cookie=cookie;
             state=Retained;mutated=true;
+            attach_phase=4;
             for(unsigned i=0;i<2&&ok;++i)ok=write(0xc00+4*routes[i].slot,0x20000);
-            if(ok){status=ArmSmmu4KCheckFaultedStreams(&platform.io,routes,2,bank,
+            if(!ok)status=ArmSmmu4KIoError;
+            if(ok){attach_phase=5;status=ArmSmmu4KCheckFaultedStreams(&platform.io,routes,2,bank,
                 ArmSmmu4KShareabilityFromTransaction,&stream_result);ok=status==0;}
-            if(ok){status=ArmSmmu4KProgramDisabledContext(&platform.io,bank,&context,10000,&program);ok=status==0;}
-            if(ok){status=ArmSmmu4KAttachStreams(&platform.io,&streams,routes,2,bank,&context,&stream_result);ok=status==0;}
-            if(ok)state=Active;
+            if(ok){attach_phase=6;context_started=true;status=ArmSmmu4KProgramDisabledContext(&platform.io,bank,&context,10000,&program);ok=status==0;}
+            if(ok){attach_phase=7;status=ArmSmmu4KAttachStreams(&platform.io,&streams,routes,2,bank,&context,&stream_result);ok=status==0;}
+            if(ok){attach_phase=8;state=Active;}
         }
         platform.unlock(platform.cookie);return ok;
     }
@@ -181,6 +210,8 @@ struct NabuWlanDma {
         if(state!=Active)return false;
         platform.lock(platform.cookie);
         status=ArmSmmu4KObserveOwnedStreams(&platform.io,&streams,&context,&stream_result);
+        if(!status&&read(bank_offset+4)!=wlan_actlr)status=ArmSmmu4KStateMismatch;
+        if(read_failed)status=ArmSmmu4KIoError;
         platform.unlock(platform.cookie);
         if(status)state=Retained;return status==0;
     }
@@ -196,9 +227,12 @@ struct NabuWlanDma {
             if((smr!=old_smr[i]&&smr!=(0x80000000u|routes[i].sid))||
                (s2cr!=bank&&s2cr!=0x20000&&s2cr!=old_s2cr[i]))ok=false;
         }
+        if(context_started) {
+            if(read(bank_offset+4)!=wlan_actlr)ok=false;
+        } else if(read(bank_offset)&1)ok=false;
         if(read_failed)ok=false;
         if(ok)for(unsigned i=0;i<2&&ok;++i)ok=write(0xc00+4*routes[i].slot,0x20000);
-        if(ok) {
+        if(ok&&context_started) {
             status=ArmSmmu4KDisableOwnedContext(&platform.io,bank,&context,10000,&program);
             ok=status==0&&!program.must_retain_tables;
         }
@@ -209,13 +243,15 @@ struct NabuWlanDma {
             }
         }
         if(ok) {
-            remove_fault_handler(fault_cookie,bank);
-            unsigned cb=(unsigned)program.context_offset;
-            const unsigned offsets[]={4,0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
-            for(unsigned offset:offsets)if(!write(cb+offset,0))ok=false;
-            if(!write(0x1000+bank*4,0)||!write(0x1800+bank*4,0))ok=false;
-            for(unsigned offset:offsets)if(read(cb+offset))ok=false;
-            if(read(0x1000+bank*4)||read(0x1800+bank*4)||read_failed)ok=false;
+            if(remove_fault_handler){remove_fault_handler(fault_cookie,bank);remove_fault_handler=nullptr;}
+            if(context_started) {
+                const unsigned offsets[]={0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
+                for(unsigned offset:offsets)if(!write(bank_offset+offset,0))ok=false;
+                if(!write(0x1000+bank*4,0)||!write(0x1800+bank*4,0))ok=false;
+                for(unsigned offset:offsets)if(read(bank_offset+offset))ok=false;
+                if(read(0x1000+bank*4)||read(0x1800+bank*4)||read_failed)ok=false;
+            }
+            if(ok&&!restore_actlr())ok=false;
         }
         platform.unlock(platform.cookie);
         if(ok){mutated=false;release_memory();}

@@ -56,8 +56,14 @@ extern "C" bool nabu_wlan_runtime_prepare() {
         const auto &s=dma->selection;
         nabu_wireless_log("NABU WLAN DMA: selection stage=%u id=%#x/%#x/%#x scr0=%#x gfsr=%#x free-slots=%u used-banks=%u blocked-banks=%u asid-conflicts=%u\n",
             s.stage,s.id0,s.id1,s.id2,s.scr0,s.gfsr,s.free_slots,s.used_banks,s.blocked_banks,s.asid_conflicts);
-        nabu_wireless_log("NABU WLAN DMA: selection first-bank=%u offset=%#x value=%#x conflict-slot=%u smr=%#x s2cr=%#x\n",
-            s.first_bank,s.first_offset,s.first_value,s.conflict_slot,s.conflict_smr,s.conflict_s2cr);
+        nabu_wireless_log("NABU WLAN DMA: selection first-bank=%u offset=%#x value=%#x conflict-slot=%u smr=%#x s2cr=%#x selected-actlr=%#x actlr-readback=%#x\n",
+            s.first_bank,s.first_offset,s.first_value,s.conflict_slot,s.conflict_smr,s.conflict_s2cr,
+            s.selected_actlr,s.actlr_readback);
+        const auto &p=dma->program;
+        nabu_wireless_log("NABU WLAN DMA: attach-phase=%u program-phase=%u writes=%u polls=%u fault=%#x readback-valid=%u sctlr=%#x cbar=%#x cba2r=%#x tcr=%#x tcr2=%#x ttbr=%#llx/%#llx mair=%#x/%#x stream-phase=%u\n",
+            dma->attach_phase,p.phase,p.writes,p.poll_reads,p.fault_status,p.readback_valid,
+            p.readback.sctlr,p.readback.cbar,p.readback.cba2r,p.readback.tcr,p.readback.tcr2,
+            p.readback.ttbr0,p.readback.ttbr1,p.readback.mair0,p.readback.mair1,dma->stream_result.phase);
         native_failed=true;nabu_wireless_log("NABU WLAN DMA: native attachment failed state=%u status=%u bank=%u; allocations retained until confirmed stop\n",
             dma->state,dma->status,dma->bank);return false;
     }

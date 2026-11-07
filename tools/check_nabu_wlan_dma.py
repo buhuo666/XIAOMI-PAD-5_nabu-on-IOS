@@ -37,7 +37,8 @@ struct Peer {
     std::map<unsigned,uint32_t> regs;
     std::map<void *,uint64_t> memory;
     unsigned allocations=0,releases=0,published=0,writes=0,locks=0,installed=0,removed=0,fail_alloc=0;
-    bool locked=false,timeout=false,bad_pa=false;
+    bool locked=false,timeout=false,bad_pa=false,fail_install=false;
+    bool ignore_actlr_zero=false,fail_actlr_restore=false;
     std::vector<unsigned> write_addresses;
     Peer() {
         regs[0]=0x2e0406;regs[0x20]=0x4c017e5e;
@@ -67,13 +68,20 @@ struct Peer {
                 *v=(uint64_t)s.regs[at]|(uint64_t)s.regs[at+4]<<32;return 0;},
             [](void *x,size_t at,uint32_t v){auto &s=*(Peer *)x;assert(s.locked);
                 ++s.writes;s.write_addresses.push_back(at);
+                if(at>=128*4096&&(at&4095)==4) {
+                    if(s.ignore_actlr_zero&&v==0)return 0;
+                    if(s.fail_actlr_restore&&v==3)return 1;
+                }
                 s.regs[at]=((at&4095)==0x58)?0:v;return 0;},
             [](void *x,size_t at,uint64_t v){auto &s=*(Peer *)x;assert(s.locked);
                 ++s.writes;s.write_addresses.push_back(at);s.regs[at]=v;s.regs[at+4]=v>>32;return 0;},
             [](void *){return 0;}};
         return p;
     }
-    static int install(void *x,unsigned,const ArmSmmu4KIo *){++((Peer *)x)->installed;return 0;}
+    static int install(void *x,unsigned bank,const ArmSmmu4KIo *) {
+        auto &p=*(Peer *)x;assert(p.regs[(128+bank)*4096+4]==NabuWlanDma::wlan_actlr);
+        ++p.installed;return p.fail_install?1:0;
+    }
     static void remove(void *x,unsigned){++((Peer *)x)->removed;}
     void foreign_unchanged() {
         assert(regs[0x800]==0x80000140&&regs[0xc00]==3&&regs[0x804]==0x80000300&&regs[0xc04]==4);
@@ -147,14 +155,18 @@ int main() {
         // was unreferenced with SCTLR=0x377d631e, not an all-zero image.
         unsigned cb54=(128+54)*4096,cb55=(128+55)*4096;
         p.regs[0x808]=0x80000060;p.regs[0xc08]=55;p.regs[cb55]=0;
-        for(unsigned b=1;b<55;++b)if(b!=3&&b!=4)p.regs[(128+b)*4096]=0x377d631e;
+        for(unsigned b=1;b<55;++b)if(b!=3&&b!=4) {
+            p.regs[(128+b)*4096]=0x377d631e;p.regs[(128+b)*4096+4]=3; // v120 ACTLR.
+        }
         p.regs[cb54]=0x377d631e;p.regs[cb54+0x10]=0x50;
         p.regs[cb54+0x20]=0x12345000;p.regs[cb54+0x24]=0x77770000;
         p.regs[cb54+0x30]=0x1234;p.regs[cb54+0x38]=0xff;
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54&&d.observe());
-        assert(d.selection.selected_sctlr==0x377d631e&&d.selection.selected_actlr==0);
+        assert(d.selection.selected_sctlr==0x377d631e&&d.selection.selected_actlr==3);
+        assert(d.selection.actlr_readback==0&&p.regs[cb54+4]==0);
         assert(p.regs[cb54+0x20]==(uint32_t)d.tables.physical&&p.regs[cb54+0x38]==0xff44);
         assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();
+        assert(p.regs[cb54+4]==3);
         assert(p.regs[0x808]==0x80000060&&p.regs[0xc08]==55&&p.regs[cb55]==0);
         for(unsigned at:p.write_addresses)assert(at!=0x808&&at!=0xc08&&
             !(at>=cb55&&at<cb55+4096)&&at!=0x1000+55*4&&at!=0x1800+55*4);
@@ -170,15 +182,35 @@ int main() {
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54);
         assert(d.selection.first_offset==cb55+4&&d.selection.first_value==0x103);
         assert(d.release_after_stop()&&p.regs[cb55+4]==0x103&&p.memory.empty());}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));unsigned cb55=(128+55)*4096;
+        p.regs[cb55+4]=3;p.ignore_actlr_zero=true;
+        assert(!d.attach(Peer::install,Peer::remove,&p)&&p.installed==0);
+        assert(d.selection.actlr_readback==3&&d.status==ArmSmmu4KStateMismatch&&d.state==NabuWlanDma::Prepared);
+        assert(p.write_addresses==std::vector<unsigned>({cb55+4,cb55+4}));
+        assert(d.release_after_stop()&&p.regs[cb55+4]==3&&p.memory.empty());}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));unsigned cb55=(128+55)*4096;
+        p.regs[cb55+4]=3;p.fail_install=true;
+        assert(!d.attach(Peer::install,Peer::remove,&p)&&p.installed==1&&p.removed==0);
+        assert(d.state==NabuWlanDma::Prepared&&!d.mutated&&p.regs[cb55+4]==3);
+        assert(p.write_addresses==std::vector<unsigned>({cb55+4,cb55+4}));
+        assert(d.release_after_stop()&&p.memory.empty());}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));unsigned cb55=(128+55)*4096;
+        p.regs[cb55]=0x377d631e;p.regs[cb55+4]=3;p.regs[cb55+0x20]=0x12345000;
+        p.fail_install=true;p.fail_actlr_restore=true;
+        assert(!d.attach(Peer::install,Peer::remove,&p)&&d.state==NabuWlanDma::Retained);
+        assert(d.mutated&&!d.context_started&&p.releases==0&&p.removed==0);
+        p.fail_actlr_restore=false;
+        assert(d.release_after_stop()&&p.memory.empty()&&p.regs[cb55+4]==3);
+        assert(p.regs[cb55]==0x377d631e&&p.regs[cb55+0x20]==0x12345000&&p.removed==0);p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
         p.regs[(128+3)*4096+0x24]=56u<<16; // Active USB context owns candidate ASID.
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54&&d.context.asid==55);
         p.regs[(128+d.bank)*4096+0x58]=2; // A real context fault withdraws readiness.
         assert(!d.observe()&&d.state==NabuWlanDma::Retained&&p.releases==0);
         assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();}
-    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));p.timeout=true;
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));p.timeout=true;p.regs[(128+55)*4096+4]=3;
         assert(!d.attach(Peer::install,Peer::remove,&p)&&d.state==NabuWlanDma::Retained&&p.releases==0);
-        p.timeout=false;assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();}
+        p.timeout=false;assert(d.release_after_stop()&&p.memory.empty()&&p.regs[(128+55)*4096+4]==3);p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
