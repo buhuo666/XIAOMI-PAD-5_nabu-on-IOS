@@ -49,7 +49,7 @@ extern NSDictionary *nabuBluetoothSocketTrial(void);
 static NSDictionary *wirelessSnapshot(void) {
     NSMutableDictionary *software = [NSMutableDictionary dictionary];
     NSMutableArray *jobs = [NSMutableArray array];
-    for (NSString *path in @[@"/LaunchDaemons/com.apple.wifid.plist",
+    for (NSString *path in @[@"/redwood/LaunchDaemons/com.apple.wifid.plist",
                             @"/System/Library/LaunchDaemons/com.apple.wifid.plist"]) {
         NSDictionary *job = [NSDictionary dictionaryWithContentsOfFile:path];
         [jobs addObject:@{@"path": path,
