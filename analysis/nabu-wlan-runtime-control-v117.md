@@ -90,3 +90,5 @@ Link the new NabuWlanRuntime object alongside NabuWlanDma, NabuWlanController an
 the four ArmSmmu4K dependencies described in the DMA owner report. Existing USB
 and UFS code are unchanged. Device SMMU/IRQ availability, CE/HTC success and all
 network operations remain separate hardware acceptance gates.
+
+Native adapter allocates the zero-initialized transport control state once with IOMalloc; retaining its counters through PAS shutdown avoids expanding the existing prelinked __DATA area. DMA buffers remain separately stop/TLB gated.

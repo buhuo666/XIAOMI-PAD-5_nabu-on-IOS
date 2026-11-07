@@ -7,7 +7,7 @@
 #include "NabuWirelessLog.h"
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t,vm_size_t,unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t,vm_size_t);
-static NabuWlanTransport transport;
+static NabuWlanTransport *transport;
 static NabuWlanDma *dma;
 static vm_offset_t registers,aliases[13];
 static unsigned alias_count;
@@ -26,11 +26,16 @@ static bool faults_pending() {
             global.interrupt,global.status,global.syndrome0,global.syndrome1,global.syndrome2,global.io_error);
         recorded_faults=flags;
     }
-    if(flags){native_failed=true;transport.lost();return true;}
+    if(flags){native_failed=true;transport->lost();return true;}
     return false;
 }
 extern "C" bool nabu_wlan_runtime_prepare() {
-    if(dma||transport.phase!=NabuWlanTransport::Empty)return false;
+    if(transport)return false;
+    // All transport defaults are zero. Keep this boot's control state/statistics
+    // on the kernel heap instead of exhausting the prelinked static data area.
+    transport=(NabuWlanTransport *)IOMalloc(sizeof(NabuWlanTransport));
+    if(!transport){native_failed=true;return false;}
+    bzero(transport,sizeof(*transport));
     dma=nabu_wlan_dma_prepare();
     if(!dma){native_failed=true;nabu_wireless_log("NABU WLAN DMA: allocation/table preparation failed\n");return false;}
     NabuWlanTransport::Ops ops{};
@@ -46,7 +51,7 @@ extern "C" bool nabu_wlan_runtime_prepare() {
     ops.write=[](void *,unsigned offset,uint32_t value){*(volatile uint32_t *)(registers+offset)=value;runtime_barrier();};
     ops.barrier=[](void *){runtime_barrier();};
     ops.event=[](void *,const char *event,unsigned a,unsigned b){nabu_wireless_log("NABU WLAN CE: %s a=%#x b=%#x\n",event,a,b);};
-    if(!transport.prepare(ops)){native_failed=true;return false;}
+    if(!transport->prepare(ops)){native_failed=true;return false;}
     if(!nabu_wlan_dma_attach_native(dma)) {
         native_failed=true;nabu_wireless_log("NABU WLAN DMA: native attachment failed state=%u status=%u bank=%u; allocations retained until confirmed stop\n",
             dma->state,dma->status,dma->bank);return false;
@@ -57,35 +62,36 @@ extern "C" bool nabu_wlan_runtime_prepare() {
 }
 extern "C" bool nabu_wlan_runtime_resources_ready() {
     return dma&&!native_failed&&dma->state==NabuWlanDma::Active&&
-        (transport.phase==NabuWlanTransport::Prepared||transport.phase==NabuWlanTransport::Running)&&!faults_pending();
+        (transport->phase==NabuWlanTransport::Prepared||transport->phase==NabuWlanTransport::Running)&&!faults_pending();
 }
 extern "C" bool nabu_wlan_runtime_start() {
-    if(!nabu_wlan_runtime_resources_ready()||transport.phase!=NabuWlanTransport::Prepared)return false;
-    if(!dma->observe()){native_failed=true;transport.lost();return false;}
+    if(!nabu_wlan_runtime_resources_ready()||transport->phase!=NabuWlanTransport::Prepared)return false;
+    if(!dma->observe()){native_failed=true;transport->lost();return false;}
     registers=ml_io_map_unmappable(0x18800000,0x800000,VM_WIMG_IO);
-    if(!registers){native_failed=true;transport.fail("wlan-mmio-map");return false;}
-    bool ok=transport.start();if(!ok)native_failed=true;return ok;
+    if(!registers){native_failed=true;transport->fail("wlan-mmio-map");return false;}
+    bool ok=transport->start();if(!ok)native_failed=true;return ok;
 }
 extern "C" bool nabu_wlan_runtime_failed() {
-    return native_failed||transport.phase==NabuWlanTransport::Failed;
+    return native_failed||(transport&&transport->phase==NabuWlanTransport::Failed);
 }
 extern "C" void nabu_wlan_runtime_poll() {
     if(!dma||native_failed||faults_pending())return;
-    if(transport.phase!=NabuWlanTransport::Running)return;
-    if(transport.ticks&&transport.ticks%1000==0&&!dma->observe()) {
-        native_failed=true;transport.lost();nabu_wireless_log("NABU WLAN DMA: context observation failed status=%u\n",dma->status);return;
+    if(transport->phase!=NabuWlanTransport::Running)return;
+    if(transport->ticks&&transport->ticks%1000==0&&!dma->observe()) {
+        native_failed=true;transport->lost();nabu_wireless_log("NABU WLAN DMA: context observation failed status=%u\n",dma->status);return;
     }
-    transport.poll();
+    transport->poll();
 }
 extern "C" void nabu_wlan_runtime_lost() {
-    if(transport.phase==NabuWlanTransport::Empty)return;
-    transport.lost();if(dma)dma->lost();
+    if(!transport||transport->phase==NabuWlanTransport::Empty)return;
+    transport->lost();if(dma)dma->lost();
 }
 extern "C" void nabu_wlan_runtime_summary() {
+    if(!transport)return;
     nabu_wireless_log("NABU WLAN RUNTIME: phase=%u native-failed=%u ticks=%u tx=%u tx-completed=%u rx=%u htc=%u wmi=%u other=%u rejected=%u htc-ready=%u wmi-connected=%u last-wmi=%#x; HTT/setup and scan/data are not enabled\n",
-        transport.phase,native_failed,transport.ticks,transport.tx_packets,transport.tx_completed,
-        transport.rx_packets,transport.htc_packets,transport.wmi_packets,transport.other_packets,transport.malformed,
-        transport.htc_ready_seen,transport.wmi_connected_seen,transport.last_wmi_event);
+        transport->phase,native_failed,transport->ticks,transport->tx_packets,transport->tx_completed,
+        transport->rx_packets,transport->htc_packets,transport->wmi_packets,transport->other_packets,transport->malformed,
+        transport->htc_ready_seen,transport->wmi_connected_seen,transport->last_wmi_event);
 }
 extern "C" void nabu_wlan_runtime_stop() {
     // Caller has already confirmed PAS shutdown. Do not touch stopped WLAN MMIO.
