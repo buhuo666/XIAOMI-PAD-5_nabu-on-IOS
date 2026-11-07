@@ -45,6 +45,14 @@ struct NabuWlanDma {
         uint32_t conflict_smr=0,conflict_s2cr=0;
         uint32_t selected_sctlr=0,selected_actlr=0,actlr_readback=0;
     } selection{};
+    enum StopPhase { StopNone, StopOwnership, StopFaultRoutes, StopDisableContext,
+        StopRestoreRoutes, StopClearContext, StopRestoreActlr, StopComplete };
+    struct StopTrace {
+        StopPhase phase=StopNone;
+        unsigned offset=0;
+        uint32_t expected=0,actual=0;
+        bool readback_valid=false;
+    } stop{};
     bool read_failed=false,mutated=false,context_started=false;
     void (*remove_fault_handler)(void *,unsigned)=nullptr;
     void *fault_cookie=nullptr;
@@ -270,46 +278,74 @@ struct NabuWlanDma {
         platform.unlock(platform.cookie);
         if(status)state=Retained;return status==0;
     }
+    bool stop_mismatch(unsigned at,uint32_t expected,uint32_t actual) {
+        stop.offset=at;stop.expected=expected;stop.actual=actual;stop.readback_valid=!read_failed;
+        status=read_failed?ArmSmmu4KIoError:ArmSmmu4KStateMismatch;return false;
+    }
+    bool stop_register(unsigned at,uint32_t expected,uint32_t allowed_set=0) {
+        stop.offset=at;stop.expected=expected;stop.actual=0;stop.readback_valid=false;
+        if(!write(at,expected)){status=ArmSmmu4KIoError;return false;}
+        stop.actual=read(at);stop.readback_valid=!read_failed;
+        if(read_failed||(stop.actual&~allowed_set)!=expected)
+            return stop_mismatch(at,expected,stop.actual);
+        return true;
+    }
     // Only call after PAS shutdown or an equally strong actual hardware stop.
     // Failure retains every allocation and the lease, never restores foreign state.
     bool release_after_stop() {
+        stop={};status=ArmSmmu4KSuccess;read_failed=false;
         if(state==Empty)return true;
         if(!mutated){release_memory();return true;}
         platform.lock(platform.cookie);
-        bool ok=true;
-        for(unsigned i=0;i<2;++i) {
-            uint32_t smr=read(0x800+4*routes[i].slot),s2cr=read(0xc00+4*routes[i].slot);
-            if((smr!=old_smr[i]&&smr!=(0x80000000u|routes[i].sid))||
-               (s2cr!=bank&&s2cr!=0x20000&&s2cr!=old_s2cr[i]))ok=false;
-        }
-        if(context_started) {
-            if(read(bank_offset+4)!=wlan_actlr)ok=false;
-        } else if(read(bank_offset)&1)ok=false;
-        if(read_failed)ok=false;
-        if(ok)for(unsigned i=0;i<2&&ok;++i)ok=write(0xc00+4*routes[i].slot,0x20000);
-        if(ok&&context_started) {
-            status=ArmSmmu4KDisableOwnedContext(&platform.io,bank,&context,10000,&program);
-            ok=status==0&&!program.must_retain_tables;
+        bool ok=true;stop.phase=StopOwnership;
+        for(unsigned i=0;i<2&&ok;++i) {
+            unsigned at=0x800+4*routes[i].slot;uint32_t v=read(at);
+            if(read_failed||(v!=old_smr[i]&&v!=(0x80000000u|routes[i].sid)))
+                ok=stop_mismatch(at,0x80000000u|routes[i].sid,v);
+            if(!ok)break;
+            at=0xc00+4*routes[i].slot;v=read(at);
+            if(read_failed||(v!=bank&&v!=0x20000&&v!=old_s2cr[i]))ok=stop_mismatch(at,bank,v);
         }
         if(ok) {
+            unsigned at=bank_offset+(context_started?4:0);uint32_t v=read(at);
+            if(read_failed||(context_started?v!=wlan_actlr:(v&1)!=0))ok=stop_mismatch(at,0,v);
+        }
+        if(ok) {
+            stop.phase=StopFaultRoutes;
+            for(unsigned i=0;i<2&&ok;++i)ok=stop_register(0xc00+4*routes[i].slot,0x20000);
+        }
+        if(ok&&context_started) {
+            stop={};stop.phase=StopDisableContext;
+            status=ArmSmmu4KDisableOwnedContext(&platform.io,bank,&context,10000,&program);
+            ok=status==0&&!program.must_retain_tables;
+            if(!ok&&status==0)status=ArmSmmu4KStateMismatch;
+        }
+        if(ok) {
+            stop.phase=StopRestoreRoutes;
             for(unsigned i=0;i<2&&ok;++i) {
-                ok=write(0x800+4*routes[i].slot,old_smr[i])&&
-                   write(0xc00+4*routes[i].slot,old_s2cr[i]);
+                ok=stop_register(0x800+4*routes[i].slot,old_smr[i])&&
+                   stop_register(0xc00+4*routes[i].slot,old_s2cr[i]);
             }
         }
         if(ok) {
             if(remove_fault_handler){remove_fault_handler(fault_cookie,bank);remove_fault_handler=nullptr;}
             if(context_started) {
+                stop.phase=StopClearContext;
                 const unsigned offsets[]={0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
-                for(unsigned offset:offsets)if(!write(bank_offset+offset,0))ok=false;
-                if(!write(0x1000+bank*4,0)||!write(0x1800+bank*4,0))ok=false;
-                for(unsigned offset:offsets)if(read(bank_offset+offset))ok=false;
-                if(read(0x1000+bank*4)||read(0x1800+bank*4)||read_failed)ok=false;
+                // Match ArmSmmu4KValidateContextReadback: only TCR2.TBI0/1
+                // may read as one. Context disable and TLBSYNC already passed.
+                for(unsigned offset:offsets) {
+                    if(!stop_register(bank_offset+offset,0,offset==0x10?0x60:0)){ok=false;break;}
+                }
+                if(ok)ok=stop_register(0x1000+bank*4,0)&&stop_register(0x1800+bank*4,0);
             }
-            if(ok&&!restore_actlr())ok=false;
+            if(ok) {
+                stop.phase=StopRestoreActlr;
+                ok=stop_register(bank_offset+4,selection.selected_actlr);
+            }
         }
         platform.unlock(platform.cookie);
-        if(ok){mutated=false;release_memory();}
+        if(ok){stop.phase=StopComplete;mutated=false;release_memory();}
         return ok;
     }
 };

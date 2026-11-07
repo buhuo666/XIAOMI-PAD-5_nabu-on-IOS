@@ -45,3 +45,29 @@ MSA_READY事务3及CAP事务4。BDF分片、官方CAL字节、MAC、真实ready�
 失效及迟到回复测试保持通过。
 证据：`log/host/wireless-v123/{wlfw-before-fix,wlfw-test,glink-test}`。
 arm64构建、完整CI与下一轮实机结果另记。
+
+## v123实机结果与回收
+
+源码2b17b8d，完整CI 42398403753两个job均成功后临时启动。用户确认桌面和
+USB正常。真实请求已按KNEL注册直接进入MSA，没有发送额外HOST_CAP；SMMU
+仍成功接入bank54/ASID55、slots6/7，128个DMA块全部位于4GiB以上。
+PAS启动及BDF/CAL/MAC请求成功，但45.132167秒仍报告
+`EX:wlan_process:0x1:WLAN RT:0x14b:PC=0xb019b9bc`。
+FW_READY和INIT_DONE均为0，CE、HTC/WMI未启动，Wi-Fi尚不能扫描或连接。
+因此取消额外HOST_CAP没有解决原固件异常，不能据此继续猜测BDF或电源改动。
+
+76.971430秒PAS命令6成功，随后DMA清理返回false而旧status仍为0，资源被
+保留。该日志没有指出失败寄存器；v124单独修复离线已证明的清理读回不一致，
+并记录失败阶段、偏移、期望值和实际值。清理问题发生在首个PFR之后，不能
+将其当作这次首次固件异常的解释。
+
+蓝牙UART服务和0x2005/0x200b/0x200c成功响应保留，0x200b的一次status12及
+后续成功均按原始日志记录。本轮耳机留盒，没有新增耳机配对/回连操作验收。
+软件清单仍无wifid job、IO80211/IONetwork接口，BSD只有lo0/utun。
+
+用户返回Android且蓝牙关闭后，回收2,910,094字节连续日志及完整64MiB原始槽，
+清空回读成功，boot分区未改变。日志缺少最终提交头，complete=false；APFS
+计数92→93、fullfsync成功。611在PFR、重启、结束三个阶段均为4096字节全零，
+TFTP没有新增转储请求，仍未取得BADVA/LR或完整异常上下文。
+证据：`log/host/wireless-v123/result-summary.json`及
+`log/device/nabu-boot-20261108-123/runtime-log/runtime.log`。

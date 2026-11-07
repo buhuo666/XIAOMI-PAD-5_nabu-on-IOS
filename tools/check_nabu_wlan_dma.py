@@ -39,8 +39,9 @@ struct Peer {
     unsigned allocations=0,releases=0,published=0,writes=0,locks=0,installed=0,removed=0,fail_alloc=0;
     bool locked=false,timeout=false,bad_pa=false,fail_install=false;
     bool ignore_actlr_zero=false,fail_actlr_restore=false;
-    bool qcom_fault_quirk=false;
-    unsigned ignore_fault_writes=0;
+    bool qcom_fault_quirk=false,tcr2_read_as_one=false;
+    unsigned ignore_fault_writes=0,ignore_write_at=0,fail_read_at=0;
+    uint32_t tcr2_clear_bits=0;
     bool fail_translation=false;
     std::vector<unsigned> write_addresses;
     std::vector<std::pair<unsigned,uint32_t>> write_values;
@@ -67,12 +68,17 @@ struct Peer {
         p.unlock=[](void *x){auto &s=*(Peer *)x;assert(s.locked);s.locked=false;};
         p.io={this,0x100000,
             [](void *x,size_t at,uint32_t *v){auto &s=*(Peer *)x;assert(s.locked);
-                *v=(s.timeout&&(at&4095)==0x7f4)?1:s.regs[at];return 0;},
+                if(s.fail_read_at&&s.fail_read_at==at)return 1;
+                *v=(s.timeout&&(at&4095)==0x7f4)?1:s.regs[at];
+                if(s.tcr2_read_as_one&&at>=128*4096&&(at&4095)==0x10)*v|=0x60;
+                return 0;},
             [](void *x,size_t at,uint64_t *v){auto &s=*(Peer *)x;assert(s.locked);
                 *v=(uint64_t)s.regs[at]|(uint64_t)s.regs[at+4]<<32;return 0;},
             [](void *x,size_t at,uint32_t v){auto &s=*(Peer *)x;assert(s.locked);
                 ++s.writes;s.write_addresses.push_back(at);
                 s.write_values.push_back({at,v});
+                if(s.ignore_write_at&&s.ignore_write_at==at)return 0;
+                if(at>=128*4096&&(at&4095)==0x10&&v==0)v|=s.tcr2_clear_bits;
                 if(at>=128*4096&&(at&4095)==4) {
                     if(s.ignore_actlr_zero&&v==0)return 0;
                     if(s.fail_actlr_restore&&v==3)return 1;
@@ -112,6 +118,72 @@ static uint64_t walk(const NabuWlanDma &d,uint64_t va) {
     abort();
 }
 int main() {
+    {Peer p;NabuWlanDma d;p.tcr2_read_as_one=true;p.qcom_fault_quirk=true;
+        p.regs[0xc08]=0x200ff;p.regs[0xc0c]=0x200ff;p.regs[(128+55)*4096+4]=3;
+        assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
+        assert(d.qcom_fault_encoding&&d.fault_direct[0]==0x200ff);
+        d.lost();assert(p.releases==0);
+        // ArmSmmu4K accepts TCR2.TBI0/TBI1 read-as-one. Shutdown must not
+        // reject the same readback after actual disable and TLB completion.
+        assert(d.release_after_stop()&&p.memory.empty()&&p.releases==129);
+        assert(d.stop.phase==NabuWlanDma::StopComplete&&d.status==ArmSmmu4KSuccess);
+        assert(d.program.disabled_verified&&d.program.tlb_synchronized&&!d.program.must_retain_tables);
+        assert(p.regs[d.bank_offset]==0&&p.regs[d.bank_offset+4]==3);
+        assert(p.regs[0x808]==0&&p.regs[0x80c]==0&&p.regs[0xc08]==0x200ff&&p.regs[0xc0c]==0x200ff);
+        p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        unsigned writes=p.writes;p.regs[0x808]=0x80000700;
+        assert(!d.release_after_stop()&&p.releases==0&&p.writes==writes);
+        assert(d.stop.phase==NabuWlanDma::StopOwnership&&d.stop.offset==0x808&&
+            d.stop.expected==0x80000640&&d.stop.actual==0x80000700&&d.stop.readback_valid);
+        assert(d.status==ArmSmmu4KStateMismatch);
+        p.regs[0x808]=0x80000640;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        unsigned writes=p.writes;p.fail_read_at=0x808;
+        assert(!d.release_after_stop()&&p.releases==0&&p.writes==writes);
+        assert(d.stop.phase==NabuWlanDma::StopOwnership&&d.stop.offset==0x808&&
+            !d.stop.readback_valid&&d.status==ArmSmmu4KIoError);
+        p.fail_read_at=0;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        p.ignore_write_at=0xc08;
+        assert(!d.release_after_stop()&&p.releases==0);
+        assert(d.stop.phase==NabuWlanDma::StopFaultRoutes&&d.stop.offset==0xc08&&
+            d.stop.expected==0x20000&&d.stop.actual==d.bank&&d.stop.readback_valid);
+        assert(d.status==ArmSmmu4KStateMismatch&&(p.regs[d.bank_offset]&1));
+        p.ignore_write_at=0;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        unsigned root=p.regs[d.bank_offset+0x20];p.regs[d.bank_offset+0x20]^=0x1000;
+        assert(!d.release_after_stop()&&p.releases==0);
+        assert(d.stop.phase==NabuWlanDma::StopDisableContext&&d.status==ArmSmmu4KStateMismatch);
+        assert(d.program.must_retain_tables&&!d.program.disabled_verified&&(p.regs[d.bank_offset]&1));
+        assert(p.regs[d.bank_offset+0x20]==(root^0x1000));
+        p.regs[d.bank_offset+0x20]=root;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        p.ignore_write_at=d.bank_offset;
+        assert(!d.release_after_stop()&&p.releases==0);
+        assert(d.stop.phase==NabuWlanDma::StopDisableContext&&d.status==ArmSmmu4KStateMismatch);
+        assert(d.program.must_retain_tables&&!d.program.disabled_verified&&!d.program.tlb_synchronized);
+        p.ignore_write_at=0;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        unsigned tcr2=p.regs[d.bank_offset+0x10];p.tcr2_clear_bits=0x80;
+        assert(!d.release_after_stop()&&p.releases==0&&d.allocated==128);
+        assert(d.stop.phase==NabuWlanDma::StopClearContext&&d.stop.offset==d.bank_offset+0x10&&
+            d.stop.expected==0&&d.stop.actual==0x80&&d.stop.readback_valid);
+        assert(d.status==ArmSmmu4KStateMismatch&&d.program.disabled_verified&&d.program.tlb_synchronized);
+        // Repair the simulated register image to dispose of retained test memory.
+        p.tcr2_clear_bits=0;p.regs[d.bank_offset+0x10]=tcr2;
+        assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;p.regs[(128+55)*4096+4]=3;
+        assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        auto owned_regs=p.regs;p.fail_actlr_restore=true;
+        assert(!d.release_after_stop()&&p.releases==0&&d.allocated==128);
+        assert(d.stop.phase==NabuWlanDma::StopRestoreActlr&&d.stop.offset==d.bank_offset+4&&
+            d.stop.expected==3&&!d.stop.readback_valid&&d.status==ArmSmmu4KIoError);
+        assert(d.program.disabled_verified&&d.program.tlb_synchronized&&!d.program.must_retain_tables);
+        // Restore only the test peer image for disposal; production retained
+        // resources are not retried after a partially cleared context.
+        p.fail_actlr_restore=false;p.regs=owned_regs;
+        assert(d.release_after_stop());p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;p.qcom_fault_quirk=true;
         p.regs[0xc08]=0x100;p.regs[0xc0c]=0x100;
         assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
@@ -173,6 +245,8 @@ int main() {
         assert(p.regs[0xc08]==d.bank&&p.regs[0xc0c]==d.bank&&d.observe());p.foreign_unchanged();
         d.lost();assert(!d.buffer(64,64,a)&&!d.observe()&&p.releases==0);
         p.timeout=true;assert(!d.release_after_stop()&&p.releases==0&&d.allocated==128);
+        assert(d.stop.phase==NabuWlanDma::StopDisableContext&&d.status==ArmSmmu4KTimeout&&
+            d.program.disabled_verified&&!d.program.tlb_synchronized&&d.program.must_retain_tables);
         p.timeout=false;assert(d.release_after_stop()&&p.memory.empty()&&p.releases==129&&p.removed==1);
         assert(p.regs[0x808]==0&&p.regs[0xc08]==0&&p.regs[0x80c]==0&&p.regs[0xc0c]==0);
         assert(p.regs[0x1000+d.bank*4]==0&&p.regs[0x1800+d.bank*4]==0);p.foreign_unchanged();
@@ -245,7 +319,7 @@ int main() {
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
-    puts("WLAN DMA production allocation callbacks above 4GiB, allocation/table failure diagnostics, 2048 independent 4K translations, 0x640/641 exact routing, foreign USB/UFS isolation, PFR retention and stop/TLB-gated release passed");
+    puts("WLAN DMA production allocation callbacks above 4GiB, 2048 independent 4K translations, Qualcomm fault encoding, TCR2 read-as-one cleanup, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB-gated release passed");
 }
 '''
 def main():

@@ -740,3 +740,14 @@ FAULT检查Busy，尚未编程页表或启动PAS。第122轮依据Linux Qualcomm
 已通过的SMMU、供电及其他QMI内容；WLFW/生产GLINK回放通过，实机待验。
 第122轮2,944,627字节日志及完整槽已备份清空，计数92。
 详见[原机初始化顺序对照](../analysis/nabu-wlan-original-startup-v123.md)。
+
+## 第123轮对照结果与第124轮清理修正（2026-11-08）
+
+第123轮2b17b8d及完整CI42398403753通过后实机桌面/USB正常。取消HOST_CAP
+没有消除0xb019b9bc固件异常；SMMU接入和PAS启动仍成功，FW_READY/INIT_DONE
+均未收到。PAS停止成功后又发现DMA清理返回失败，资源保留；旧日志status=0
+不能定位失败步骤。第124轮针对已证明的TCR2读回判断不一致修正并补精确诊断，
+不把停止阶段问题当作首个PFR原因。蓝牙HCI基线保留，本轮未操作耳机。
+第123轮2,910,094字节日志及完整64MiB槽已备份清空，日志未封口，APFS计数93。
+详见[第123轮实测](../analysis/nabu-wlan-original-startup-v123.md)与
+[停止清理修正](../analysis/nabu-wlan-stop-cleanup-v124.md)。

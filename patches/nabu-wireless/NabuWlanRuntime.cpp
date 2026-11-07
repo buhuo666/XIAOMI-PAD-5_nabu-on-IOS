@@ -117,7 +117,12 @@ extern "C" void nabu_wlan_runtime_stop() {
     while(alias_count)ml_io_unmap(aliases[--alias_count],65536);
     if(registers){ml_io_unmap(registers,0x800000);registers=0;}
     if(dma&&!dma->release_after_stop()) {
-        native_failed=true;nabu_wireless_log("NABU WLAN DMA: stop cleanup incomplete; bank/tables/buffers retained status=%u\n",dma->status);return;
+        native_failed=true;
+        nabu_wireless_log("NABU WLAN DMA: stop cleanup incomplete; bank/tables/buffers retained status=%u phase=%u offset=%#x expected=%#x actual=%#x readback=%u bank=%u program-phase=%u disabled=%u tlb-sync=%u retain=%u\n",
+            dma->status,dma->stop.phase,dma->stop.offset,dma->stop.expected,dma->stop.actual,
+            dma->stop.readback_valid,dma->bank,dma->program.phase,dma->program.disabled_verified,
+            dma->program.tlb_synchronized,dma->program.must_retain_tables);
+        return;
     }
     dma=nullptr;
     nabu_wireless_log("NABU WLAN DMA: stopped mappings and allocations released\n");
