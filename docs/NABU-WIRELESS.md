@@ -578,3 +578,14 @@ APFS计数77→78、fullfsync成功。同一Reset区间中2005、200b、200c实�
 第109轮将复用v108内核/bootstrap验证蓝牙原生偏好和耳机配对的跨重启保留；
 Wi-Fi同步追踪可恢复异常的上下文消费者，暂未形成新的实机修改候选。
 详见[第108轮回收结果](../analysis/nabu-bluetooth-single-advertising-v108.md)。
+
+第109轮桌面/USB正常，单广告偏好无需重写即保留；原生启动2005/200b/200c均
+status0，PID62扫描55及315条广播、0 dropped。用户确认耳机配对条目保留，
+首次重连失败：ACL先成功，原生Found link key，随后pairing result705/client158、
+L2CAP配置超时。用户确认该耳机也在同一平板Android配对过；同地址配对记录冲突
+只是待验证假设，705本身不能定位根因。重新配对及本次启动内耳机关开重连均成功，
+原生A2DP/AVRCP/HFP/GATT连接及AAC协商通过。声音播放仍留到声音服务阶段。
+已回Android，5,566,941字节连续日志及完整64MiB槽已备份清空回读，未封口；
+APFS计数78→79、fullfsync成功。用户确认耳机留盒、Android蓝牙关闭，设置读回0；
+第110轮复用同版本验证这一条件下原有配对的跨重启重连。Wi-Fi仍同PC异常，
+上下文递交/32字节记录及PFR字段解析见[第109轮静态分析](../analysis/nabu-wlan-context-handoff-v109.md)。
