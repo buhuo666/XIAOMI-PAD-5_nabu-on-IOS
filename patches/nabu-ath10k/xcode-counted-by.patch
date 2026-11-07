@@ -1,0 +1,9 @@
+--- a/sys/compat/linuxkpi/common/include/linux/compiler.h
++++ b/sys/compat/linuxkpi/common/include/linux/compiler.h
+@@ -48,3 +48,5 @@
+-#if __has_attribute(__counted_by__)
++/* Xcode 16.4 accepts the annotation but rejects typeof on counted arrays,
++ * which kzalloc_flex uses. Keep its allocation arithmetic unchanged. */
++#if __has_attribute(__counted_by__) && !defined(__apple_build_version__)
+ #define	__counted_by(_x)		__attribute__((__counted_by__(_x)))
+ #else

@@ -114,3 +114,12 @@ macOS CI 使用 `--reference build/nabu-ath10k/reference --nabu-platform --proxy
 交接测试执行真实函数体，覆盖事务初始化/发送/等待失败、QMI 拒绝、缺失状态、错误状态位、
 旧 ready 残留、CAP 失败、成功与 XO CAL 配置，两组分别启用/关闭 `no_msa_ready_indicator`。
 它验证主机控制流程；不替代 QMI 线协议编解码、设备 DMA、中断或无线收发验证。
+
+## Xcode 16.4 首次CI差异
+
+CI42411277182的协议测试已通过；ath10k编译在ce.c四处kzalloc_flex失败。
+Apple clang接受`__counted_by`属性，却不支持对带该属性的flexible array执行
+typeof；FreeBSD的flex_array_size恰好依赖该操作。本机clang18没有启用该属性，
+所以此前本地编译未遇到问题。新增xcode-counted-by.patch，仅在Apple编译器
+禁用该可选注解，保留原有分配尺寸计算及运行时代码，不增加驱动桩。
+隔离源码目录改为ready-only-v128-xcode，保留首次CI和本地构建证据。
