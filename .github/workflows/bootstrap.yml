@@ -42,6 +42,7 @@ jobs:
           sudo apt-get install -y clang-18
       - name: Replay WLFW, DIAG framing and production GLINK with sanitizers
         run: |
+          python3 tools/check_nabu_modem_power.py --output log/ci/nabu-modem-power
           python3 tools/check_nabu_wlfw.py --output log/ci/nabu-wlfw
           python3 tools/check_nabu_diag_frames.py --output log/ci/nabu-diag-frames
           python3 tools/check_nabu_glink.py --output log/ci/nabu-glink

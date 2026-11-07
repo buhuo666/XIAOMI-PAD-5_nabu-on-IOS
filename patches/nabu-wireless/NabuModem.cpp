@@ -97,15 +97,22 @@ static bool qmp_send(bool on) {
 static bool proxy_power() {
     NabuSmem db{(const volatile uint8_t *)map_region("command-db", 0x85f20000, 0x20000, VM_WIMG_IO), 0x20000};
     if (!db.data || db.u32(4) != 0x0c0330db) return false;
-    const char *names[] = {"cx.lvl", "mss.lvl"};
-    uint32_t addresses[2] = {}, positions[2] = {};
+    const char *names[] = {"cx.lvl", "mss.lvl", "xo.lvl"};
+    uint32_t addresses[3] = {}, positions[3] = {};
     for (unsigned s = 0; s < 8; ++s) {
         uint32_t slave = 8 + 16 * s, first = 144 + db.u16(slave + 2), count = db.u16(slave + 6);
         if (!db.u16(slave) || !db.span(first, count * 24)) continue;
         for (unsigned i = 0; i < count; ++i) {
             unsigned at = first + i * 24;
             char name[9] = {}; for (unsigned j = 0; j < 8; ++j) name[j] = db.data[at + j];
-            for (unsigned rail = 0; rail < 2; ++rail) if (!strcmp(name, names[rail])) {
+            for (unsigned rail = 0; rail < 3; ++rail) if (!strcmp(name, names[rail])) {
+                // The modem DT's proxy clock is RPMH_CXO_CLK. Stock SM8150
+                // clk-rpmh uses ARC offset 0 and on-value 3, not an OPP index.
+                if (rail == 2) {
+                    addresses[rail] = db.u32(at + 16); positions[rail] = 3;
+                    nabu_wireless_log("NABU MODEM: proxy clock xo.lvl resource=%#x value=3\n", addresses[rail]);
+                    continue;
+                }
                 unsigned aux = 144 + db.u16(slave + 4) + db.u16(at + 22), length = db.u16(at + 20);
                 if (!db.span(aux, length)) return false;
                 for (unsigned level = 0; level < length / 2; ++level) if (db.u16(aux + level * 2) >= 384) {
@@ -116,23 +123,23 @@ static bool proxy_power() {
             }
         }
     }
-    if (!addresses[0] || !addresses[1]) return false;
+    if (!addresses[0] || !addresses[1] || !addresses[2]) return false;
     lck_mtx_lock(&hakios_rsc_lock);
     vm_offset_t tcs = rsc + 0xd00;
     if (!rd(tcs + 0x18) || rd(tcs + 0x1c)) { lck_mtx_unlock(&hakios_rsc_lock); return false; }
     wr(rsc + 0xd08, 1);
-    for (unsigned i = 0; i < 2; ++i) {
+    for (unsigned i = 0; i < 3; ++i) {
         wr(tcs + 0x30 + i * 20, 0x10108); wr(tcs + 0x34 + i * 20, addresses[i]); wr(tcs + 0x38 + i * 20, positions[i]);
     }
-    wr(tcs + 0x10, 3); wr(tcs + 0x1c, 3); wr(tcs + 0x14, 1u << 16); wr(tcs + 0x14, (1u << 16) | (1u << 24));
+    wr(tcs + 0x10, 7); wr(tcs + 0x1c, 7); wr(tcs + 0x14, 1u << 16); wr(tcs + 0x14, (1u << 16) | (1u << 24));
     bool done = false;
     for (unsigned i = 0; i < 5000; ++i) { if (rd(rsc + 0xd04) & 1) { done = true; break; } IODelay(10); }
-    uint32_t a = rd(tcs + 0x3c), b = rd(tcs + 0x50);
+    uint32_t a = rd(tcs + 0x3c), b = rd(tcs + 0x50), c = rd(tcs + 0x64);
     wr(tcs + 0x14, 0); wr(tcs + 0x1c, 0); wr(tcs + 0x10, 0); wr(rsc + 0xd08, 1);
     lck_mtx_unlock(&hakios_rsc_lock);
-    nabu_wireless_log("NABU MODEM: proxy RPMh completed=%u status=%#x,%#x\n", done, a, b);
-    // Keep the APPS CX vote until reboot: no general CX consumer accounting exists yet.
-    return done && (a & 0x10000) && (b & 0x10000);
+    nabu_wireless_log("NABU MODEM: proxy RPMh completed=%u status=%#x,%#x,%#x; CX/MSS/XO active votes\n", done, a, b, c);
+    // Keep APPS proxy votes until reboot: shared consumer accounting is not yet present.
+    return done && (a & 0x10000) && (b & 0x10000) && (c & 0x10000);
 }
 
 static bool allocate_item(NabuSmem &smem, uint16_t id, uint32_t bytes, uint32_t *offset) {
