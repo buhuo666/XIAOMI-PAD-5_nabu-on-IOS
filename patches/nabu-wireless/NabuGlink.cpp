@@ -13,6 +13,9 @@
 #include "NabuDiagFrames.h"
 #include "NabuWlanConfig.h"
 #include "NabuWlanRuntime.h"
+#ifdef NABU_ATH10K_SERVICE
+#include "NabuAth10kQrtr.api.h"
+#endif
 extern "C" bool nabu_rmtfs_available();
 extern "C" unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *);
 extern "C" bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned);
@@ -47,9 +50,11 @@ struct NabuGlink {
     NabuWlfw wlfw;
     NabuWlanConfig wlan_config;
     bool wlan_runtime=false;
+    bool ath10k_runtime=false,ath10k_started=false;
+    unsigned ath10k_retired_ports=0;
     bool qmi_enabled = false;
     bool wlan_crash_captured = false;
-    uint8_t transmit[8192]{};
+    uint8_t transmit[8192+sizeof(QrtrHeader)]{};
     struct RemoteIntent { uint32_t id, size; bool present, used; } remote[64]{};
     struct LocalIntent { uint8_t *data; uint32_t size, fill; } local[16]{};
     unsigned local_count = 0;
@@ -413,6 +418,9 @@ struct NabuGlink {
         nabu_wireless_log("NABU WLFW: session invalidated reason=%s endpoint=%u:%u previous-step=%u previous-setup-complete=%u previous-fw-ready=%u previous-init-done=%u; no automatic restart or MSA regrant\n",
             reason, wlfw_node, wlfw_port, wlfw.step, wlfw.complete, wlfw.fw_ready, wlfw.init_done);
         wlfw.invalidate(); wlan_config.invalidate();
+#ifdef NABU_ATH10K_SERVICE
+        if(ath10k_runtime)nabu_ath10k_qrtr_invalidate();
+#endif
         if(wlan_runtime)nabu_wlan_runtime_lost();
         retire_ulog();
     }
@@ -420,15 +428,44 @@ struct NabuGlink {
         if(!wlan_runtime)return;
         if(wlfw.fw_ready||wlfw.init_done||wlfw.instance_lost)
             nabu_wireless_queue_bluetooth(wlfw.instance_lost ? "wlan-instance-lost" : "wlan-ready");
-        wlan_config.tick(); nabu_wlan_runtime_poll();
+        if(!ath10k_runtime)wlan_config.tick();
+#ifdef NABU_ATH10K_SERVICE
+        if(ath10k_runtime) {
+            if(!ath10k_started&&wlfw.complete&&wlfw.fw_ready&&!wlfw.failed&&!wlfw.instance_lost) {
+                // Retire bootstrap KNEL and DMON on the same FIFO before the
+                // driver's KNEL registration. Failed writes retry next tick.
+                while(ath10k_retired_ports<2) {
+                    uint32_t local=0x4003+ath10k_retired_ports;
+                    uint32_t gone[5]={6,1,local,0,0};
+                    if(!datagram(6,local,wlfw_node,control_port,gone,sizeof(gone)))break;
+                    ++ath10k_retired_ports;
+                    nabu_wireless_log("NABU ATH10K: bootstrap QRTR port=%#x DEL_CLIENT queued before handoff\n",local);
+                }
+                if(ath10k_retired_ports==2) {
+                    ath10k_started=true;
+                    if(!nabu_wlan_runtime_start())invalidate_wlfw("ath10k-start-failed");
+                }
+            }
+            ath10k_poll();
+        }
+#endif
+        nabu_wlan_runtime_poll();
         if(!wlfw.instance_lost&&(wlan_config.phase==NabuWlanConfig::Failed||nabu_wlan_runtime_failed()))
             invalidate_wlfw("runtime-failed");
     }
     bool keep_running(unsigned ticks) const {
         return ticks<30000 || (wlan_runtime&&!wlfw.instance_lost&&!wlfw.failed&&
-            (wlfw.fw_ready||wlfw.init_done)&&wlan_config.phase==NabuWlanConfig::Enabled&&
+            (wlfw.fw_ready||wlfw.init_done)&&(ath10k_runtime?ath10k_started:wlan_config.phase==NabuWlanConfig::Enabled)&&
             !nabu_wlan_runtime_failed());
     }
+#ifdef NABU_ATH10K_SERVICE
+    void ath10k_poll() {
+        nabu_ath10k_qrtr_poll([](void *cookie,uint32_t type,uint32_t from,uint32_t node,uint32_t port,const void *data,size_t bytes) {
+            auto *g=(NabuGlink *)cookie;
+            return g->opened&&!g->broken&&g->datagram(type,from,node,port,data,(unsigned)bytes);
+        },this);
+    }
+#endif
     static void ulog_payload_callback(void *context, const uint8_t *data, unsigned bytes) {
         ((NabuGlink *)context)->receive_ulog_payload(data, bytes);
     }
@@ -676,7 +713,7 @@ struct NabuGlink {
                 }
             }
         }
-        if(qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete&&!wlfw.rejuvenate_ack_finished){
+        if(!ath10k_retired_ports&&qmi_enabled&&wlfw_port&&!wlfw.waiting&&!wlfw.failed&&!wlfw.complete&&!wlfw.rejuvenate_ack_finished){
             if (hold_cal_for_ulog()) return;
             if(!wlfw.rejuvenate_count&&wlfw.activate&&wlfw.step==3&&!wlfw.permissions_ready){
                 wlfw.permissions_ready=nabu_msa_prepare(wlfw.regions,wlfw.region_count);
@@ -687,7 +724,7 @@ struct NabuGlink {
                 wlfw.sent();nabu_wireless_log("NABU WLFW: request message=%#x transaction=%u bytes=%u client-port=%#x\n",wlfw.message,wlfw.transaction,wlfw.bytes,wlfw.local_port());
             }
         }
-        if(wlan_runtime&&wlfw_port&&wlfw.complete&&!wlfw.instance_lost&&!wlfw.failed&&
+        if(!ath10k_runtime&&wlan_runtime&&wlfw_port&&wlfw.complete&&!wlfw.instance_lost&&!wlfw.failed&&
            !wlfw.rejuvenate_count&&(wlfw.fw_ready||wlfw.init_done)) {
             if(wlan_config.phase==NabuWlanConfig::Idle)
                 wlan_config.begin(true,nabu_wlan_runtime_resources_ready(),wlfw.transaction+1);
@@ -794,7 +831,12 @@ struct NabuGlink {
         }
         unsigned command = packet.u32(at);
         if (header.to_port != control_port && header.type == 1) {
+#ifdef NABU_ATH10K_SERVICE
+            if(ath10k_runtime&&header.to_node==1&&
+                nabu_ath10k_qrtr_receive(header.to_port,header.from_node,header.from_port,data+at,header.size))return;
+#endif
             if(qmi_enabled&&(header.to_port==0x4003||header.to_port==0x4004)&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
+                if(ath10k_runtime&&header.to_port<0x4003+ath10k_retired_ports)return;
                 const uint8_t *qmi=data+at;
                 if(wlan_runtime&&header.to_port==0x4003&&wlan_config.receive(qmi,header.size)) {
                     nabu_wireless_log("NABU WLAN: runtime QMI response=%#x phase=%u error=%u\n",wlan_config.message,(unsigned)wlan_config.phase,wlan_config.error);
@@ -806,7 +848,12 @@ struct NabuGlink {
                     unsigned pin_count=wlfw.pin_result_count;
                     unsigned rejuvenate_count=wlfw.rejuvenate_count;
                     wlfw.receive(qmi,header.size);
-                    if(wlan_runtime&&wlfw.rejuvenate_count!=rejuvenate_count){wlan_config.invalidate();nabu_wlan_runtime_lost();}
+                    if(wlan_runtime&&wlfw.rejuvenate_count!=rejuvenate_count){
+                        wlan_config.invalidate();nabu_wlan_runtime_lost();
+#ifdef NABU_ATH10K_SERVICE
+                        if(ath10k_runtime)nabu_ath10k_qrtr_invalidate();
+#endif
+                    }
                     nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);
                     if(wlfw.pin_result_count!=pin_count)nabu_wireless_log("NABU WLFW: pin-connect count=%u step=%u request=%#x waiting=%u client-port=%#x pwr-valid=%u pwr=%#x phy-io-valid=%u phy-io=%#x rf-valid=%u rf=%#x\n",
                         wlfw.pin_result_count,wlfw.pin_result_step,wlfw.message,wlfw.waiting,header.to_port,
@@ -887,6 +934,10 @@ struct NabuGlink {
                     if(wlfw.rejuvenate_count){wlfw.failed=true;wlfw.waiting=false;wlfw.bytes=0;nabu_wireless_log("NABU WLFW: rejuvenate ACK cancelled after endpoint change; ending trial\n");}
                 }
                 wlfw_node = node; wlfw_port = port;
+#ifdef NABU_ATH10K_SERVICE
+                if(ath10k_runtime&&!wlfw.instance_lost&&((instance&255)==1))
+                    nabu_ath10k_qrtr_announce(service,instance&255,instance>>8,node,port);
+#endif
             } else if(service==wlfw_service&&command==5&&node==wlfw_node&&port==wlfw_port) {
                 invalidate_wlfw("endpoint-removed"); wlfw_port=0;
                 nabu_wireless_log("NABU WLFW: endpoint removed; ending this firmware session\n");
@@ -986,7 +1037,7 @@ struct NabuGlink {
             if (agreed && !requested) { command(2, 1, 7, "IPCRTR", 7); requested = true; }
             if (remote_channel && acknowledged && !opened && !broken && !closing) {
                 opened = true; nabu_wireless_log("NABU GLINK: IPCRTR open local=1 remote=%u\n", remote_channel);
-                for (unsigned i = 0; i < 4; ++i) if (!offer(8192)) { broken = true; break; }
+                for (unsigned i = 0; i < 4; ++i) if (!offer(sizeof(transmit))) { broken = true; break; }
                 if (!hello_queued) { queue_control(2, 0xffffffff, control_port); hello_queued = true; }
             }
             flush();
@@ -1032,6 +1083,15 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
         if (firmware_entry) firmware_entry->release(); IOFree(link, sizeof(*link)); return;
     }
     nabu_wireless_log("NABU GLINK: queues ready tx-head=%u rx-head=%u; begin version1\n", link->word(4), link->word(12));
+#ifdef NABU_ATH10K_SERVICE
+    if(link->wlan_runtime) {
+        if(!nabu_ath10k_qrtr_prepare()||!nabu_ath10k_qrtr_start_instance()) {
+            nabu_wireless_log("NABU ATH10K: QRTR owner preparation failed\n");
+            if(firmware_entry)firmware_entry->release();IOFree(link,sizeof(*link));return;
+        }
+        link->ath10k_runtime=true;
+    }
+#endif
     link->command(0, 1, 1);
     for (unsigned i = 0; link->keep_running(i) && !link->broken; ++i) {
         link->pump(); for (auto &t : link->transfers) t.tick(); link->wlfw.tick(); link->tick_ulog();link->runtime_tick(); IOSleep(1);
@@ -1040,6 +1100,19 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     }
     bool was_open = link->opened;
     if(link->wlan_runtime){nabu_wlan_runtime_summary();nabu_wlan_runtime_lost();}
+#ifdef NABU_ATH10K_SERVICE
+    if(link->ath10k_runtime) {
+        link->wlfw.invalidate();nabu_ath10k_qrtr_invalidate();
+        // Keep the sole GLINK owner servicing callbacks while ath10k's worker
+        // drains work and releases QMI. Never free DMA under an active worker.
+        for(unsigned i=0;!nabu_wlan_runtime_quiesced();++i) {
+            if(!link->broken)link->pump();
+            link->ath10k_poll();IOSleep(1);
+            if(i%5000==4999){nabu_wlan_runtime_summary();nabu_wireless_publish();}
+        }
+        link->ath10k_poll();nabu_ath10k_qrtr_shutdown();
+    }
+#endif
     if (link->opened && !link->broken) {
         link->closing = true;
         link->command(3, 1, 0);

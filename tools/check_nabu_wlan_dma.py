@@ -17,25 +17,30 @@ HARNESS=r'''
 using IOPhysicalAddress=uint64_t;
 using vm_offset_t=uintptr_t;
 static std::map<void *,uint64_t> native_memory;
+static std::map<void *,unsigned> native_sizes;
+static uint64_t native_next_pa=0x200020000ULL;
 static unsigned native_allocations=0,native_releases=0,native_fail_alloc=0;
 static void *IOMallocContiguous(unsigned bytes,unsigned alignment,IOPhysicalAddress *physical) {
-    assert(bytes==65536&&alignment==16384);
+    assert((bytes==65536||bytes==NabuWlanDma::ath10k_bytes||bytes==NabuWlanDma::ath10k_table_bytes)&&alignment==16384);
     ++native_allocations;
     // XNU's physical-output branch applies a 32-bit mask. The v117 kernel
     // found no low pages; unconstrained contiguous pages are above 4 GiB.
     if(physical||native_allocations==native_fail_alloc)return nullptr;
     void *cpu=aligned_alloc(alignment,bytes);assert(cpu);memset(cpu,0xa5,bytes);
-    native_memory[cpu]=0x200000000ULL+(uint64_t)native_allocations*0x20000;
+    native_memory[cpu]=native_next_pa;native_sizes[cpu]=bytes;native_next_pa+=bytes+65536;
     return cpu;
 }
 static vm_offset_t ml_vtophys(vm_offset_t cpu){return native_memory.at((void *)cpu);}
 static void IOFreeContiguous(void *cpu,unsigned bytes) {
-    assert(bytes==65536&&native_memory.erase(cpu)==1);++native_releases;free(cpu);
+    assert(native_sizes.at(cpu)==bytes&&native_memory.erase(cpu)==1);
+    native_sizes.erase(cpu);++native_releases;free(cpu);
 }
 // NATIVE_ALLOCATION_CALLBACKS
 struct Peer {
     std::map<unsigned,uint32_t> regs;
     std::map<void *,uint64_t> memory;
+    std::map<void *,unsigned> sizes;
+    uint64_t next_pa=0x120020000ULL;
     unsigned allocations=0,releases=0,published=0,writes=0,locks=0,installed=0,removed=0,fail_alloc=0;
     bool locked=false,timeout=false,bad_pa=false,fail_install=false;
     bool ignore_actlr_zero=false,fail_actlr_restore=false;
@@ -57,11 +62,12 @@ struct Peer {
         p.allocate=[](void *x,unsigned bytes){auto &s=*(Peer *)x;++s.allocations;
             if(s.allocations==s.fail_alloc)return NabuWlanDma::Memory{};
             void *cpu=aligned_alloc(16384,bytes);assert(cpu);memset(cpu,0,bytes);
-            uint64_t pa=0x120000000ULL+(uint64_t)s.allocations*0x20000;
+            uint64_t pa=s.next_pa;s.next_pa+=bytes+65536;
             if(s.bad_pa)pa+=1;
-            s.memory[cpu]=pa;return NabuWlanDma::Memory{cpu,pa};};
-        p.release=[](void *x,NabuWlanDma::Memory m,unsigned){auto &s=*(Peer *)x;
-            assert(s.memory.erase(m.cpu)==1);++s.releases;free(m.cpu);};
+            s.memory[cpu]=pa;s.sizes[cpu]=bytes;return NabuWlanDma::Memory{cpu,pa};};
+        p.release=[](void *x,NabuWlanDma::Memory m,unsigned bytes){auto &s=*(Peer *)x;
+            assert(s.memory.at(m.cpu)==m.physical&&s.sizes.at(m.cpu)==bytes);
+            assert(s.memory.erase(m.cpu)==1);s.sizes.erase(m.cpu);++s.releases;free(m.cpu);};
         p.publish=[](void *x,void *,unsigned){++((Peer *)x)->published;};
         p.lock=[](void *x){auto &s=*(Peer *)x;assert(!s.locked);s.locked=true;++s.locks;};
         p.unlock=[](void *x){auto &s=*(Peer *)x;assert(s.locked);s.locked=false;};
@@ -245,6 +251,45 @@ int main() {
         assert(!d.prepare(ops)&&native_memory.empty()&&native_releases==135&&p.writes==0);
         assert(d.prepare_failure==NabuWlanDma::BlockAllocation&&d.failed_block==6);
     }
+    {Peer p;NabuWlanDma d;auto ops=p.ops();ops.allocate=native_allocate;ops.release=native_release;
+        unsigned before=native_allocations,released=native_releases;
+        assert(d.prepare_ath10k(ops)&&native_allocations==before+2&&native_memory.size()==2);
+        assert(d.ath10k_arena.physical>UINT32_MAX&&d.tables.physical>=d.ath10k_arena.physical+d.ath10k_bytes);
+        assert(d.built.leaf_pages==11264&&d.built.table_pages==24&&d.table_allocation_bytes==131072);
+        for(unsigned off=0;off<d.ath10k_bytes;off+=4096) {
+            assert(walk(d,d.iova_base+off)==d.ath10k_arena.physical+off);
+            assert(((uint8_t *)d.ath10k_arena.cpu)[off]==0);
+        }
+        assert(p.writes==0&&d.release_after_stop()&&native_memory.empty()&&native_sizes.empty());
+        assert(native_releases==released+2);
+    }
+    {Peer p;NabuWlanDma d;p.qcom_fault_quirk=true;p.ignore_cbar_clear=true;
+        assert(d.prepare_ath10k(p.ops())&&p.allocations==2&&p.published==2&&p.writes==0);
+        assert(d.tables.physical>=d.ath10k_arena.physical+d.ath10k_bytes);
+        for(unsigned off=0;off<d.ath10k_bytes;off+=4096)
+            assert(walk(d,d.iova_base+off)==d.ath10k_arena.physical+off);
+        NabuWlanDma::Buffer b;assert(!d.buffer(64,64,b));
+        assert(d.attach(Peer::install,Peer::remove,&p)&&d.observe());d.lost();
+        assert(p.releases==0&&d.ath10k_arena.cpu&&d.tables.cpu);
+        p.timeout=true;assert(!d.release_after_stop()&&p.releases==0&&p.memory.size()==2);
+        assert(d.program.must_retain_tables&&!d.program.tlb_synchronized);
+        p.timeout=false;assert(d.release_after_stop()&&p.memory.empty()&&p.sizes.empty()&&p.releases==2);
+        assert(!d.ath10k_arena.cpu&&!d.tables.cpu&&p.removed==1);p.foreign_unchanged();
+        // The same owner can return to the original 8 MiB allocator after stop.
+        assert(d.prepare(p.ops())&&d.table_allocation_bytes==65536&&d.buffer(64,64,b));
+        assert(d.release_after_stop()&&p.memory.empty());
+    }
+    for(unsigned fail=1;fail<=2;++fail) {
+        Peer p;NabuWlanDma d;p.fail_alloc=fail;
+        assert(!d.prepare_ath10k(p.ops())&&p.releases==fail-1&&p.memory.empty()&&p.writes==0);
+        assert(d.prepare_failure==(fail==1?NabuWlanDma::BlockAllocation:NabuWlanDma::TableAllocation));
+        assert(d.state==NabuWlanDma::Empty);
+        p.fail_alloc=0;assert(d.prepare_ath10k(p.ops())&&d.release_after_stop()&&p.memory.empty());
+    }
+    {Peer p;NabuWlanDma d;p.bad_pa=true;
+        assert(!d.prepare_ath10k(p.ops())&&p.memory.empty()&&p.releases==2&&p.writes==0);
+        assert(d.prepare_failure==NabuWlanDma::TableBuild&&d.status==ArmSmmu4KBadRange);
+    }
     // Actual Nabu ID1 has 128 global pages: the old USB-sized aperture is
     // insufficient even though it covers all 56 implemented context banks.
     {Peer p;NabuWlanDma d;auto ops=p.ops();ops.io.register_bytes=0xd0000;
@@ -350,7 +395,7 @@ int main() {
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
-    puts("WLAN DMA production allocation callbacks above 4GiB, 2048 independent 4K translations, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
+    puts("WLAN DMA production allocation callbacks above 4GiB, original 2048 and ath10k 11264 4K translations, exact allocation/free sizes, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
 }
 '''
 def main():

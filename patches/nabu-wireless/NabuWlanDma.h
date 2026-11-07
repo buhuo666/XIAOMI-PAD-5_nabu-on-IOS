@@ -5,6 +5,8 @@
 
 struct NabuWlanDma {
     static constexpr unsigned block_bytes=65536, block_count=128, table_bytes=65536;
+    // Helium ath10k's LinuxKPI pool uses one contiguous CPU/IOVA span.
+    static constexpr unsigned ath10k_bytes=44u<<20,ath10k_table_bytes=131072;
     static constexpr uint64_t iova_base=0xa0000000ULL;
     // Neither WLAN SID matches qcom,actlr; the vendor writes zero for this CB.
     static constexpr uint32_t wlan_actlr=0;
@@ -21,6 +23,8 @@ struct NabuWlanDma {
     } platform{};
     ArmSmmu4KIo raw_io{};
     Memory blocks[block_count]{},tables{};
+    Memory ath10k_arena{};
+    unsigned table_allocation_bytes=table_bytes;
     ArmSmmu4KRange ranges[block_count]{};
     ArmSmmu4KConfig mapping{};
     ArmSmmu4KResult built{};
@@ -117,8 +121,10 @@ struct NabuWlanDma {
         qcom_fault_encoding=true;return true;
     }
     void release_memory() {
-        if(tables.cpu)platform.release(platform.cookie,tables,table_bytes);
+        if(tables.cpu)platform.release(platform.cookie,tables,table_allocation_bytes);
         tables={};
+        if(ath10k_arena.cpu)platform.release(platform.cookie,ath10k_arena,ath10k_bytes);
+        ath10k_arena={};
         while(allocated)platform.release(platform.cookie,blocks[--allocated],block_bytes);
         for(auto &b:blocks)b={};cursor=0;state=Empty;
     }
@@ -128,7 +134,7 @@ struct NabuWlanDma {
         qcom_fault_encoding=false;configure_io();
         remove_fault_handler=nullptr;fault_cookie=nullptr;
         streams={};program={};stream_result={};status=ArmSmmu4KSuccess;
-        prepare_failure=None;failed_block=0;
+        prepare_failure=None;failed_block=0;table_allocation_bytes=table_bytes;
         for(;allocated<block_count;++allocated) {
             blocks[allocated]=platform.allocate(platform.cookie,block_bytes);
             if(!blocks[allocated].cpu){prepare_failure=BlockAllocation;failed_block=allocated;release_memory();return false;}
@@ -146,8 +152,28 @@ struct NabuWlanDma {
         // Explicitly cleaned tables allow noncoherent walks. No execute mapping.
         context.coherent_walk=0;state=Prepared;return true;
     }
+    bool prepare_ath10k(const Platform &ops) {
+        if(state!=Empty||allocated||ath10k_arena.cpu)return false;
+        platform=ops;cursor=0;read_failed=false;mutated=false;context_started=false;
+        qcom_fault_encoding=false;configure_io();
+        remove_fault_handler=nullptr;fault_cookie=nullptr;
+        streams={};program={};stream_result={};status=ArmSmmu4KSuccess;
+        prepare_failure=None;failed_block=0;table_allocation_bytes=ath10k_table_bytes;
+        ath10k_arena=platform.allocate(platform.cookie,ath10k_bytes);
+        if(!ath10k_arena.cpu){prepare_failure=BlockAllocation;return false;}
+        platform.publish(platform.cookie,ath10k_arena.cpu,ath10k_bytes);
+        ranges[0]={iova_base,ath10k_arena.physical,ath10k_bytes,ArmSmmu4KRead|ArmSmmu4KWrite,1,3};
+        tables=platform.allocate(platform.cookie,table_allocation_bytes);
+        if(!tables.cpu){prepare_failure=TableAllocation;release_memory();return false;}
+        mapping={32,36,tables.physical,ath10k_bytes/4096};
+        status=ArmSmmu4KBuild(&mapping,ranges,1,(uint64_t *)tables.cpu,table_allocation_bytes/4096,&built);
+        if(status){prepare_failure=TableBuild;release_memory();return false;}
+        platform.publish(platform.cookie,tables.cpu,(unsigned)built.table_pages*4096);
+        context={};context.lower=&mapping;context.lower_tables=&built;
+        context.coherent_walk=0;state=Prepared;return true;
+    }
     bool buffer(unsigned bytes,unsigned alignment,Buffer &out) {
-        if((state!=Prepared&&state!=Active)||!bytes||bytes>block_bytes||!alignment||
+        if(ath10k_arena.cpu||(state!=Prepared&&state!=Active)||!bytes||bytes>block_bytes||!alignment||
            (alignment&(alignment-1))||alignment>block_bytes)return false;
         if(alignment<64)alignment=64; // Never share cache lines across DMA owners.
         unsigned start=(cursor+alignment-1)&~(alignment-1);
@@ -347,5 +373,6 @@ struct NabuWlanDma {
 // SMMU MMIO/cache operations. Creation/preparation performs no SMMU writes.
 #ifdef KERNEL
 extern "C" NabuWlanDma *nabu_wlan_dma_prepare();
+extern "C" NabuWlanDma *nabu_wlan_dma_prepare_ath10k();
 extern "C" void nabu_wlan_dma_sync(NabuWlanDma::Buffer *buffer);
 #endif

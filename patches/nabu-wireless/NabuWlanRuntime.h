@@ -8,3 +8,6 @@ extern "C" void nabu_wlan_runtime_poll();
 extern "C" void nabu_wlan_runtime_lost();
 extern "C" void nabu_wlan_runtime_stop(); // Only after confirmed PAS shutdown.
 extern "C" void nabu_wlan_runtime_summary();
+#ifdef NABU_ATH10K_SERVICE
+extern "C" bool nabu_wlan_runtime_quiesced(); // Worker/IRQ teardown before PAS and DMA release.
+#endif

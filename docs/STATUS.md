@@ -3,15 +3,19 @@
 更新：2026-11-08，Asia/Shanghai。
 
 当前优先级已按用户要求切换到Wi-Fi和蓝牙。第110轮蓝牙原配对跨重启直连通过；
-第126轮日志已回收，APFS计数96，设备已回Android且蓝牙关闭。第122至126轮WLAN
-SMMU实际接入成功，但固件仍在0xb019b9bc异常，取消额外HOST_CAP未改变结果。
-完整CI42403940093通过，实机已确认SMMU停用/TLB同步与DMA释放成功，当前
-基线的首次PFR先于BT启动。Wi-Fi尚未就绪，设置按钮可见但不能点击。用户认可
-Helium Raphael的完整ath10k路线，第127轮先验证QDSS时钟请求差异；原生wifid
-及网络接口仍待接入。
+第127轮日志已回收，APFS计数97，设备已回Android且蓝牙关闭。完整CI42407480663
+通过；QDSS时钟请求被实际接受后，首次收到FW_READY并完成CFG/MODE、HTC READY
+与WMI服务连接，捕获范围未再出现原0xb019b9bc异常。完整ath10k、HTT/WMI INIT、
+原生wifid及网络接口尚待接入，未取得扫描或联网。成功后固件常驻，本轮未执行
+PAS停止/QDSS撤票；第125/126轮SMMU停用/TLB同步与DMA释放成功证据保持。
 蓝牙原生HCI初始化基线保留，音频播放后置。根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
+
+v128候选已加入完整ath10k构建、原生DMA/CE IRQ桥和真实QRTR交接。47个后端
+对象已本地编译；44MiB DMA、QRTR并发关闭、GLINK交接和runtime退出测试通过。
+macOS合并链接及完整CI待执行，设备尚未部署。首轮以被动扫描验证完整协议栈，
+不启用旧基核尚未修正状态语义的原生station/network接口。
 
 第76轮无线调查已通过桌面和USB检查，2,260,552字节日志及完整槽已回收清空，
 APFS计数46→47。modem通信项未建立，蓝牙引脚未复用到UART、串行时钟停止。

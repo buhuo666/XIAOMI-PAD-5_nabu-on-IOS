@@ -1,0 +1,120 @@
+--- a/ath10k/qmi.c
++++ b/ath10k/qmi.c
+@@ -757,12 +757,14 @@
+ 	struct qmi_txn txn;
+ 	int ret;
+ 
++	/* Nabu owns bootstrap; accept only the registration response handoff. */
++	qmi->fw_ready = false;
+ 	req.client_id_valid = 1;
+ 	req.client_id = ATH10K_QMI_CLIENT_ID;
+ 	req.fw_ready_enable_valid = 1;
+ 	req.fw_ready_enable = 1;
+ 	req.msa_ready_enable_valid = 1;
+-	req.msa_ready_enable = 1;
++	req.msa_ready_enable = 0;
+ 
+ 	if (ar_snoc->xo_cal_supported) {
+ 		req.xo_cal_enable_valid = 1;
+@@ -814,43 +816,14 @@
+ 	if (ret)
+ 		return;
+ 
+-	if (qmi->fw_ready) {
+-		if (ath10k_qmi_cap_send_sync_msg(qmi)) return;
+-		ath10k_snoc_fw_indication(ar, ATH10K_QMI_EVENT_FW_READY_IND);
++	if (!qmi->fw_ready) {
++		ath10k_err(ar, "Nabu handoff requires FW_READY in KNEL registration response\n");
+ 		return;
+ 	}
+ 
+-	ret = ath10k_qmi_host_cap_send_sync(qmi);
+-	if (ret)
++	if (ath10k_qmi_cap_send_sync_msg(qmi))
+ 		return;
+-
+-	ret = ath10k_qmi_msa_mem_info_send_sync_msg(qmi);
+-	if (ret)
+-		return;
+-
+-	/*
+-	 * HACK: sleep for a while between receiving the msa info response
+-	 * and the XPU update to prevent SDM845 from crashing due to a security
+-	 * violation, when running MPSS.AT.4.0.c2-01184-SDM845_GEN_PACK-1.
+-	 */
+-	msleep(20);
+-
+-	ret = ath10k_qmi_setup_msa_permissions(qmi);
+-	if (ret)
+-		return;
+-
+-	ret = ath10k_qmi_msa_ready_send_sync_msg(qmi);
+-	if (ret)
+-		goto err_setup_msa;
+-
+-	ret = ath10k_qmi_cap_send_sync_msg(qmi);
+-	if (ret)
+-		goto err_setup_msa;
+-
+-	return;
+-
+-err_setup_msa:
+-	ath10k_qmi_remove_msa_permission(qmi);
++	ath10k_snoc_fw_indication(ar, ATH10K_QMI_EVENT_FW_READY_IND);
+ }
+ 
+ static int ath10k_qmi_fetch_board_file(struct ath10k_qmi *qmi)
+@@ -899,7 +872,7 @@
+ 	struct ath10k *ar = qmi->ar;
+ 	struct ath10k_snoc *ar_snoc = ath10k_snoc_priv(ar);
+ 
+-	ath10k_qmi_remove_msa_permission(qmi);
++	/* MSA permissions belong to the native bootstrap owner. */
+ 	ath10k_core_free_board_files(ar);
+ 	if (!test_bit(ATH10K_SNOC_FLAG_UNREGISTERING, &ar_snoc->flags) &&
+ 	    !test_bit(ATH10K_SNOC_FLAG_MODEM_STOPPED, &ar_snoc->flags))
+@@ -911,29 +884,14 @@
+ 
+ static void ath10k_qmi_event_msa_ready(struct ath10k_qmi *qmi)
+ {
+-	int ret;
+-
+-	ret = ath10k_qmi_fetch_board_file(qmi);
+-	if (ret)
+-		goto out;
+-
+-	ret = ath10k_qmi_bdf_dnld_send_sync(qmi);
+-	if (ret)
+-		goto out;
+-
+-	ret = ath10k_qmi_send_cal_report_req(qmi);
+-
+-out:
+-	return;
++	/* The native owner has already supplied MSA, BDF and calibration. */
++	ath10k_dbg(qmi->ar, ATH10K_DBG_QMI, "Nabu handoff ignores msa_ready indication\n");
+ }
+ 
+ static int ath10k_qmi_event_fw_ready_ind(struct ath10k_qmi *qmi)
+ {
+-	struct ath10k *ar = qmi->ar;
+-
+-	ath10k_dbg(ar, ATH10K_DBG_QMI, "wifi fw ready event received\n");
+-	ath10k_snoc_fw_indication(ar, ATH10K_QMI_EVENT_FW_READY_IND);
+-
++	/* An unsolicited indication cannot replace the registration response. */
++	ath10k_dbg(qmi->ar, ATH10K_DBG_QMI, "Nabu handoff ignores fw_ready indication\n");
+ 	return 0;
+ }
+ 
+@@ -1041,10 +999,6 @@
+ 		switch (event->type) {
+ 		case ATH10K_QMI_EVENT_SERVER_ARRIVE:
+ 			ath10k_qmi_event_server_arrive(qmi);
+-			if (qmi->no_msa_ready_indicator) {
+-				ath10k_info(ar, "qmi not waiting for msa_ready indicator");
+-				ath10k_qmi_event_msa_ready(qmi);
+-			}
+ 			break;
+ 		case ATH10K_QMI_EVENT_SERVER_EXIT:
+ 			ath10k_qmi_event_server_exit(qmi);

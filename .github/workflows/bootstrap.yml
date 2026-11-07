@@ -12,6 +12,7 @@ on:
       - 'patches/nabu-storage/**'
       - 'patches/nabu-input/**'
       - 'patches/nabu-wireless/**'
+      - 'patches/nabu-ath10k/**'
       - 'patches/nabu-apfs/**'
       - 'patches/nabu-userland/**'
       - 'userland/nabu/**'
@@ -42,7 +43,7 @@ jobs:
           sudo apt-get install -y clang-18
       - name: Replay WLFW, DIAG framing and production GLINK with sanitizers
         run: |
-          python3 tools/fetch_sources.py --only ArmSmmu4K-nabu --report log/ci/nabu-smmu-source.json
+          python3 tools/fetch_sources.py --only ArmSmmu4K-nabu hakios-8796-reference --report log/ci/nabu-smmu-source.json
           python3 tools/check_nabu_modem_power.py --output log/ci/nabu-modem-power
           python3 tools/check_nabu_wireless_start.py --output log/ci/nabu-wireless-start
           python3 tools/check_nabu_wlan_config.py --output log/ci/nabu-wlan-config
@@ -53,12 +54,42 @@ jobs:
           python3 tools/check_nabu_wlfw.py --output log/ci/nabu-wlfw
           python3 tools/check_nabu_diag_frames.py --output log/ci/nabu-diag-frames
           python3 tools/check_nabu_glink.py --output log/ci/nabu-glink
+          python3 tools/check_nabu_ath10k_qrtr.py --output log/ci/nabu-ath10k-qrtr
+          python3 tools/check_nabu_ath10k_glink.py --output log/ci/nabu-ath10k-glink
+          python3 tools/check_nabu_ath10k_runtime.py --output log/ci/nabu-ath10k-runtime
       - name: Retain wireless protocol results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wireless-protocol-${{ github.run_number }}
           path: log/ci/nabu-*/
+          retention-days: 14
+          if-no-files-found: warn
+  ath10k-backend:
+    runs-on: ${{ inputs.runner || 'macos-15' }}
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile and relocatable-link the pinned Nabu ath10k backend
+        run: |
+          python3 tools/build_nabu_ath10k.py --reference build/nabu-ath10k/reference \
+            --nabu-platform --proxy '' --log log/ci/nabu-ath10k \
+            --linker "$(xcrun --find ld)"
+          test -f artifacts/nabu-ath10k/ath10k.o
+      - name: Replay the ready-only registration handoff
+        run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/ready-only-v128/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
+      - name: Retain the combined backend and build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nabu-ath10k-${{ github.run_number }}
+          path: |
+            artifacts/nabu-ath10k/
+            log/ci/nabu-ath10k*/
           retention-days: 14
           if-no-files-found: warn
   xnu8796-reference:
@@ -90,6 +121,11 @@ jobs:
         run: bash tools/build_8796_reference.sh
       - name: Compile the APFS Data block device
         run: python3 tools/build_nabu_data_block.py --tree build/xnu8796-reference/tree --output artifacts/nabu-data-block
+      - name: Compile the Nabu ath10k native bridge and existing device services
+        run: |
+          python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
+          python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
+            --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace
       - name: Verify linked kernel against the selected export contract
         if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
         run: python3 tools/check_nabu_export_contract.py --tree build/xnu8796-reference/tree --verify-generated --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-export-contract-linked.json
@@ -120,6 +156,7 @@ jobs:
             artifacts/nabu-setup-compat/
             artifacts/nabu-input-bridge/
             artifacts/nabu-data-block/
+            artifacts/nabu-wireless-objects/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14

@@ -1,0 +1,12 @@
+--- a/sys/sys/pcpu.h
++++ b/sys/sys/pcpu.h
+@@ -56,9 +56,7 @@
+  * Define a set for pcpu data.
+  */
+ extern uintptr_t *__start_set_pcpu;
+-__GLOBL(__start_set_pcpu);
+ extern uintptr_t *__stop_set_pcpu;
+-__GLOBL(__stop_set_pcpu);
+ 
+ /*
+  * Array of dynamic pcpu base offsets.  Indexed by id.

@@ -21,7 +21,7 @@ static void publish(void *,void *memory,unsigned bytes) {
 extern "C" void nabu_wlan_dma_sync(NabuWlanDma::Buffer *buffer) {
     publish(nullptr,buffer->cpu,buffer->bytes);
 }
-extern "C" NabuWlanDma *nabu_wlan_dma_prepare() {
+static NabuWlanDma *prepare_native(bool ath10k) {
     if(owner.state!=NabuWlanDma::Empty)return nullptr;
     if(!registers)registers=ml_io_map_unmappable(nabu_usb::smmu::kBase,
         register_bytes,VM_WIMG_IO);
@@ -46,9 +46,15 @@ extern "C" NabuWlanDma *nabu_wlan_dma_prepare() {
         [](void *,size_t at,uint32_t v){*(volatile uint32_t *)(registers+at)=v;return 0;},
         [](void *,size_t at,uint64_t v){*(volatile uint64_t *)(registers+at)=v;return 0;},
         [](void *){__asm__ volatile("dsb sy" ::: "memory");return 0;}};
-    if(!owner.prepare(ops)) {
+    if(!(ath10k?owner.prepare_ath10k(ops):owner.prepare(ops))) {
         nabu_wireless_log("NABU WLAN DMA: preparation failed phase=%u block=%u status=%u; unexposed allocations released\n",
             owner.prepare_failure,owner.failed_block,owner.status);return nullptr;
+    }
+    if(ath10k) {
+        nabu_wireless_log("NABU WLAN DMA: ath10k arena=%u bytes cpu=%p pa=%#llx iova=%#llx table-bytes=%u pages=%u; CE not started\n",
+            owner.ath10k_bytes,owner.ath10k_arena.cpu,owner.ath10k_arena.physical,owner.iova_base,
+            owner.table_allocation_bytes,(unsigned)owner.built.table_pages);
+        return &owner;
     }
     unsigned high_blocks=0;
     for(const auto &block:owner.blocks)if(block.physical>0xffffffffULL)++high_blocks;
@@ -57,3 +63,5 @@ extern "C" NabuWlanDma *nabu_wlan_dma_prepare() {
         owner.blocks[owner.block_count-1].physical,owner.tables.physical,(unsigned)owner.built.table_pages);
     return &owner;
 }
+extern "C" NabuWlanDma *nabu_wlan_dma_prepare(){return prepare_native(false);}
+extern "C" NabuWlanDma *nabu_wlan_dma_prepare_ath10k(){return prepare_native(true);}

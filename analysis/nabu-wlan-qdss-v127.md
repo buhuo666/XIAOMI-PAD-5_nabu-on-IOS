@@ -42,3 +42,26 @@ stop_image的回放，保持原CX/MSS/XO测试。ASan/UBSan通过：
 证据：`log/host/wireless-v127/power-test/report.json`。arm64构建、内核链接与
 return-trace检查均通过，候选位于`artifacts/nabu-wireless-trace-v127`。
 完整CI及本机FW_READY/PFR、蓝牙、DMA清理结果另记。
+
+## v127 实机成功与边界
+
+a093742、完整CI42407480663两项成功，用户确认桌面/USB正常。QDSS on实际
+open=1、accepted=1；33.277625秒首次收到0x21 FW_READY，并收到PIN_CONNECT。
+CFG0x23与MODE0x22真实应答成功后，33.330343秒启动CE，33.330373秒收到
+HTC READY，33.331545秒完成WMI服务连接。完整捕获范围没有原0xb019b9bc PFR。
+与v126相比仅新增QDSS投票及对应停止处理，本次实测支持该票解决此前首次
+启动阻塞；仍未取得旧故障BADVA/LR，不能据此命名旧错误的具体MMIO寄存器。
+
+BT在33.277773秒才开始，原生HCI初始化成功回应保留，一次0x200b status12后
+仍有成功回执。本轮耳机留盒，没有新增配对/音频验收。HTT/setup仍明确延后，
+WMI只连接服务，未完成WMI INIT；软件无wifid及网络接口，尚不能扫描或联网。
+
+第二次USB快照仍无新增PFR/退出记录；它是累计报告，不能单独证明长时间稳定。
+固件成功后GLINK保持常驻，回Android前未执行PAS6、QDSS off或DMA释放；
+本轮不能记作正常停止或撤票实机通过，第125/126轮已有的DMA清理证据独立保留。
+
+用户回Android且蓝牙关闭后，完整64MiB槽与2,961,182字节连续日志已备份清空，
+清空回读成功，boot分区未改变。日志未封口，APFS96→97、fullfsync成功。
+证据：`log/host/wireless-v127/result-summary.json`和
+`log/device/nabu-boot-20261108-127/runtime-log/runtime.log`。
+下一步在新冷启动中交接完整ath10k，不在已消费HTC READY的旧transport上热插。
