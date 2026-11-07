@@ -2,7 +2,7 @@
 
 更新：2026-11-07，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第108轮蓝牙开关、发现、配对和连接通过，内核日志已回收；根据本机ICNSS及
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第110轮蓝牙原配对跨重启直连通过，日志已备份清空，APFS计数80；Wi-Fi仍在初始化时异常。根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
@@ -497,3 +497,11 @@ L2CAP配置超时。用户确认该耳机也在同一平板Android配对过；�
 APFS计数78→79、fullfsync成功。用户确认耳机留盒、Android蓝牙关闭，设置读回0；
 第110轮复用同版本验证这一条件下原有配对的跨重启重连。Wi-Fi仍同PC异常，
 上下文递交/32字节记录及PFR字段解析见[第109轮静态分析](../analysis/nabu-wlan-context-handoff-v109.md)。
+
+第110轮桌面/USB正常，Android蓝牙关闭且耳机留盒的条件下，原配对跨重启直接
+连接通过，无需重新配对；单广告偏好自动保留，原生2005/200b/200c均status0。
+原生A2DP/AVRCP/HFP/GATT连接成功，AAC-LC/44.1kHz协商完成；实际播放留到
+声音服务阶段。首次回收在完整槽保存后遇到GPT短读、未清空；重试已成功备份
+64MiB槽及3,896,291字节连续日志，清空回读通过。日志未封口，APFS计数79→80、
+fullfsync成功。设备已回Android，蓝牙设置读回0。Wi-Fi仍同PC异常，FW_READY/
+INIT_DONE均0。详见[第110轮实测与日志](../analysis/nabu-bluetooth-cold-boot-v110.md)。
