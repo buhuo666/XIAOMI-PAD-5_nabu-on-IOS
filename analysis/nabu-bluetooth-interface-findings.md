@@ -868,3 +868,10 @@ byte `0x100855919`。它由`0x1001881bc`写入；`0x100183cbc`与`0x10018445c`
 周期同步传输205c/205d的独立选择及后续间接路径尚未穷尽，七项本身也不是完整
 命令族适配证明。第105轮保留v102 bootstrap专注HALTED诊断，没有纳入slot18候选。
 原版指令、调用点、当前配置与局限保存在`log/host/wireless-v105/bluetooth-next-review.md`。
+
+第106轮已实现上述slot18条件策略，保留slot24既有兼容。七项在initializer实际执行
+时读取，任一非零均传原record给原方法，全部零才把当前sequence交给原advance；
+不修改控制器feature/support位、不合成回复。WSL及macOS的128组合、七项0x80、
+动态sequence与输入不变测试通过；提交7f0f797的Actions42334625352产出新iOS库。
+新bootstrap已通过apfsck，复用v105内核部署回读并发送临时启动；运行期安装、
+七项实际值、2007/200b/200c响应、持续发现/配对均待验证。
