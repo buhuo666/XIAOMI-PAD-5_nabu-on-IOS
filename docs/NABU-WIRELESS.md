@@ -766,3 +766,10 @@ Wi-Fi按钮可见但不能点击；系统仍无wifid job及网络接口。3,015,
 完整槽已备份清空，APFS计数95。第126轮在此SMMU基线上先取得WLAN结果，再
 异步启动蓝牙，覆盖第116轮尚未验证的组合并保留常驻GLINK。
 见[启动顺序对照](../analysis/nabu-wlan-first-outcome-v126.md)。
+
+第126轮完整CI42403940093、桌面/USB通过；同PC PFR实际先于BT worker，排除
+当前基线必须提前启动BT才出现该异常。DMA清理成功，3,827,776字节日志及完整
+槽已备份清空，APFS计数96。用户认可Helium Raphael的SM8150/WCN399x/ath10k
+路线，第127轮先单独加入AOSS QDSS投票，正常运行保持、PAS停止后撤销；本地
+协议/生命周期回放通过，实机待验。见[QDSS候选](../analysis/nabu-wlan-qdss-v127.md)
+与[完整参考路线](../analysis/nabu-helium-wifi-reuse-20261108.md)。

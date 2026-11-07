@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay the production modem proxy votes against the stock SM8150 clock contract."""
+"""Replay production SM8150 proxy votes and WLAN QDSS/PAS mailbox lifetime."""
 import argparse
 import json
 from pathlib import Path
@@ -78,6 +78,92 @@ int main() {
 }
 '''
 
+QMP_PREFIX = r'''
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+using vm_offset_t=uintptr_t;
+struct IORegistryEntry {};
+static uint32_t ram[1024],doorbell;
+static vm_offset_t aop=(uintptr_t)ram,ipc=(uintptr_t)&doorbell;
+static uint32_t mailbox;
+static bool qdss_touched,locked,rmtfs_ok=true,pas_start_ok=true,pas_stop_ok=true;
+static int hakios_aop_mailbox_lock;
+static std::vector<std::string> events;
+static std::string timeout_message;
+static void nabu_wireless_log(const char *,...) {}
+static void lck_mtx_lock(int *){assert(!locked);locked=true;}
+static void lck_mtx_unlock(int *){assert(locked);locked=false;}
+static uint32_t rd(uintptr_t at){assert(locked);return *(uint32_t *)at;}
+static void wr(uintptr_t at,uint32_t v){
+    assert(locked);*(uint32_t *)at=v;
+    if(at!=ipc)return;
+    assert(v==1);
+    if(ram[0x24/4]==0xffff)ram[0x28/4]=0xffff;
+    if(ram[0x2c/4]==0xffff)ram[0x14/4]=0xffff;
+    if(ram[0x18/4]==0xffff)ram[0x30/4]=0xffff;
+    if(mailbox&&ram[mailbox/4]) {
+        assert(ram[mailbox/4]==64);
+        const char *text=(const char *)ram+mailbox+4;
+        size_t n=strlen(text);assert(n<64);
+        for(unsigned i=n;i<64;++i)assert(text[i]==0);
+        events.emplace_back(text);
+        if(timeout_message!=text)ram[mailbox/4]=0;
+    }
+}
+static bool wait_value(uintptr_t at,uint32_t v,unsigned ms){assert(ms==1000);return rd(at)==v;}
+static bool nabu_rmtfs_prepare(IORegistryEntry *){assert(!locked);events.emplace_back("rmtfs-prepare");return rmtfs_ok;}
+static void nabu_wlan_runtime_stop(){assert(!locked);events.emplace_back("dma-stop");}
+static void nabu_msa_finish(){assert(!locked);events.emplace_back("msa-finish");}
+static void nabu_rmtfs_finish(){assert(!locked);events.emplace_back("rmtfs-finish");}
+static bool scm(unsigned command,uint64_t types,uint64_t a,uint64_t b,uint64_t c){
+    assert(!locked&&types==1&&a==4&&!b&&!c&&(command==5||command==6));
+    events.emplace_back(command==5?"pas5":"pas6");return command==5?pas_start_ok:pas_stop_ok;
+}
+static void reset_qmp(){
+    memset(ram,0,sizeof(ram));ram[0]=0x4d41494c;ram[1]=1;
+    ram[0xc/4]=0xffff;ram[0x34/4]=68;ram[0x38/4]=0x100;
+    mailbox=0;qdss_touched=false;locked=false;rmtfs_ok=pas_start_ok=pas_stop_ok=true;
+    events.clear();timeout_message.clear();
+}
+'''
+QMP_TEST = r'''
+int main(){
+    const std::string on="{class: clock, res: qdss, val: 1}",off="{class: clock, res: qdss, val: 0}";
+    const std::string load="{class: image, res: load_state, name: modem, val: on}";
+    const std::string unload="{class: image, res: load_state, name: modem, val: off}";
+    bool requested=false;reset_qmp();
+    assert(start_image(nullptr,true,requested)&&requested&&qdss_touched&&!locked);
+    assert((events==std::vector<std::string>{"rmtfs-prepare",on,load,"pas5"}));
+    // The vote stays held through running firmware; confirmed PAS6 precedes off.
+    stop_image(true,requested);assert(!qdss_touched&&!locked);
+    assert((events==std::vector<std::string>{"rmtfs-prepare",on,load,"pas5","pas6","dma-stop",off,unload,"msa-finish","rmtfs-finish"}));
+    reset_qmp();requested=false;assert(start_image(nullptr,false,requested));stop_image(false,requested);
+    assert((events==std::vector<std::string>{"rmtfs-prepare",load,"pas5","pas6",unload,"msa-finish","rmtfs-finish"}));
+    reset_qmp();requested=false;timeout_message=on;
+    assert(!start_image(nullptr,true,requested)&&!requested&&qdss_touched&&!locked);
+    assert((events==std::vector<std::string>{"rmtfs-prepare",on}));
+    // Simulate the late AOP consume. The failed on is still explicitly revoked.
+    ram[mailbox/4]=0;timeout_message.clear();stop_image(true,requested);
+    assert(!qdss_touched&&events[2]=="dma-stop"&&events[3]==off);
+    reset_qmp();requested=false;pas_start_ok=false;
+    assert(!start_image(nullptr,true,requested)&&requested&&qdss_touched);
+    pas_stop_ok=false;stop_image(true,requested);
+    assert(qdss_touched&&events.size()==5&&events.back()=="pas6");
+    pas_stop_ok=true;stop_image(true,requested);assert(!qdss_touched&&events[6]=="dma-stop"&&events[7]==off);
+    reset_qmp();requested=false;assert(start_image(nullptr,true,requested));timeout_message=off;
+    stop_image(true,requested);assert(qdss_touched&&!locked); // No false off success.
+    reset_qmp();requested=false;lck_mtx_lock(&hakios_aop_mailbox_lock);
+    assert(qmp_open());lck_mtx_unlock(&hakios_aop_mailbox_lock);ram[mailbox/4]=64;
+    assert(!start_image(nullptr,true,requested)&&!requested&&!qdss_touched);
+    assert(events.size()==1&&events[0]=="rmtfs-prepare"); // Busy slot is not overwritten.
+    puts("QDSS: exact padded QMP messages, mailbox locking, on before PAS5, retained while live, off after PAS6, timeout/busy admission and failed shutdown retention passed");
+}
+'''
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -93,8 +179,17 @@ def main():
     result=subprocess.run(host_command([host_path(binary)]),capture_output=True)
     (args.output/'test.log').write_bytes(result.stdout);(args.output/'test.stderr').write_bytes(result.stderr)
     result.check_returncode()
+    qmp_source=args.output/'qmp-power.cpp'
+    qmp_source.write_text(QMP_PREFIX+source[source.index('static bool qmp_open()'):source.index('static bool proxy_power()')]+QMP_TEST)
+    qmp_binary=args.output/'qmp-power-test'
+    subprocess.run(host_command(['clang++-18','-std=c++17','-fsanitize=address,undefined',
+        '-fno-omit-frame-pointer',host_path(qmp_source),'-o',host_path(qmp_binary)]),check=True)
+    qmp_result=subprocess.run(host_command([host_path(qmp_binary)]),capture_output=True)
+    (args.output/'qmp-test.log').write_bytes(qmp_result.stdout);(args.output/'qmp-test.stderr').write_bytes(qmp_result.stderr)
+    qmp_result.check_returncode()
     report={'production_proxy_power_tested':True,'sanitizers':['address','undefined'],
         'xo_resource':'xo.lvl','xo_offset':0,'xo_on_value':3,'hardware_tested':False,
+        'production_qmp_lifetime_tested':True,'qmp_result':qmp_result.stdout.decode().strip(),
         'result':result.stdout.decode().strip()}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

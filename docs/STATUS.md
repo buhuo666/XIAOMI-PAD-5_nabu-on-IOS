@@ -3,11 +3,12 @@
 更新：2026-11-08，Asia/Shanghai。
 
 当前优先级已按用户要求切换到Wi-Fi和蓝牙。第110轮蓝牙原配对跨重启直连通过；
-第125轮日志已回收，APFS计数95，设备已回Android且蓝牙关闭。第122至125轮WLAN
+第126轮日志已回收，APFS计数96，设备已回Android且蓝牙关闭。第122至126轮WLAN
 SMMU实际接入成功，但固件仍在0xb019b9bc异常，取消额外HOST_CAP未改变结果。
-完整CI42402284763通过，实机已确认SMMU停用/TLB同步与DMA释放成功。
-Wi-Fi尚未就绪，设置按钮可见但不能点击；第126轮进行当前SMMU基线的WLAN先行
-与蓝牙异步启动对照，原生wifid及网络接口仍待接入。
+完整CI42403940093通过，实机已确认SMMU停用/TLB同步与DMA释放成功，当前
+基线的首次PFR先于BT启动。Wi-Fi尚未就绪，设置按钮可见但不能点击。用户认可
+Helium Raphael的完整ath10k路线，第127轮先验证QDSS时钟请求差异；原生wifid
+及网络接口仍待接入。
 蓝牙原生HCI初始化基线保留，音频播放后置。根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。

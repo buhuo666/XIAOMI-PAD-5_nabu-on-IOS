@@ -39,3 +39,19 @@ worker开始时间，完成后重新发布无线报告。既有BT下载/HCI协�
 已通过，输出位于`artifacts/nabu-wireless-trace-v126`；完整CI及实机结果另记。
 软件服务层独立调查见`analysis/nabu-wifi-native-service-plan-v126.md`，本轮未改变
 wifid打包或宣称设置按钮已能使用。
+
+## v126 实测与归档
+
+00f70b4、完整CI42403940093两个job成功，桌面/USB正常。实际SMMU接入成功；
+首次PFR为29.548927秒，PC=0xb019b9bc；29.549351秒才排队蓝牙，29.549381秒
+BT worker开始，29.763060秒取得ROM版本。当前SMMU基线上同样无需提前初始化
+蓝牙即可出现此异常，FW_READY/INIT_DONE仍0。不能由同一PC推断具体寄存器相同。
+
+PAS6成功，60.944326秒记录bank54停用、TLB同步和DMA释放成功；BT后续HCI成功
+回应保留，耳机留盒未做操作验收。软件仍无wifid job及Wi-Fi网络接口。用户回到
+Android且蓝牙关闭后，已回收3,827,776字节连续日志与完整64MiB槽并清空回读；
+日志缺少最终提交头，APFS95→96、fullfsync成功，boot分区未改变。
+证据：`log/host/wireless-v126/result-summary.json`。
+
+用户随后认可Helium Raphael的SM8150/WCN399x/ath10k路线。第127轮先验证新发现
+的QDSS时钟请求差异，继续保持本机供电、BDF和已验证SMMU，不再重复BT顺序假设。

@@ -27,6 +27,7 @@ extern "C" void nabu_msa_finish();
 
 static vm_offset_t aop, ipc, rsc, smem_va;
 static uint32_t mailbox, our_item;
+static bool qdss_touched;
 static vm_offset_t map_region(const char *name, vm_offset_t pa, vm_size_t size, unsigned flags) {
     nabu_wireless_log("NABU MODEM: map %s physical=%#llx bytes=%#llx\n", name, (uint64_t)pa, (uint64_t)size);
     // ml_io_map and ml_io_map_wcomb share an 8 MiB permanent submap.
@@ -79,20 +80,48 @@ static bool qmp_open() {
     wr(aop + 0x18, 0xffff); wr(ipc, 1);
     return wait_value(aop + 0x30, 0xffff, 1000);
 }
-static bool qmp_send(bool on) {
+static bool qmp_send(bool on, bool qdss=false) {
     lck_mtx_lock(&hakios_aop_mailbox_lock);
     bool open = mailbox || qmp_open();
     bool ok = false;
     if (open && rd(aop + mailbox) == 0) {
         char text[64] = {};
-        snprintf(text, sizeof(text), "{class: image, res: load_state, name: modem, val: %s}", on ? "on" : "off");
+        if(qdss)snprintf(text,sizeof(text),"{class: clock, res: qdss, val: %u}",on?1:0);
+        else snprintf(text, sizeof(text), "{class: image, res: load_state, name: modem, val: %s}", on ? "on" : "off");
         for (unsigned i = 0; i < 16; ++i) { uint32_t word; memcpy(&word, text + 4 * i, 4); wr(aop + mailbox + 4 + i * 4, word); }
+        // A timed-out request may still have been consumed by AOP. Keep the
+        // vote pending until an explicit off request is acknowledged.
+        if(qdss&&on)qdss_touched=true;
         wr(aop + mailbox, sizeof(text)); wr(ipc, 1);
         ok = wait_value(aop + mailbox, 0, 1000);
     }
+    if(qdss&&!on&&ok)qdss_touched=false;
     lck_mtx_unlock(&hakios_aop_mailbox_lock);
-    nabu_wireless_log("NABU MODEM: AOP load-state=%s open=%u accepted=%u\n", on ? "on" : "off", open, ok);
+    if(qdss)nabu_wireless_log("NABU WLAN: AOP QDSS vote=%u open=%u accepted=%u pending-off=%u\n",on,open,ok,qdss_touched);
+    else nabu_wireless_log("NABU MODEM: AOP load-state=%s open=%u accepted=%u\n", on ? "on" : "off", open, ok);
     return ok;
+}
+
+static bool start_image(IORegistryEntry *entry,bool wlan_requested,bool &pas_requested) {
+    if(!nabu_rmtfs_prepare(entry))return false;
+    // The SM8150 WLAN QDSS clock is provided by AOSS QMP. Keep it on across
+    // firmware initialization and the live GLINK/CE lifetime, until PAS stops.
+    if(wlan_requested&&!qmp_send(true,true))return false;
+    if(!qmp_send(true))return false;
+    pas_requested=true;
+    return scm(5,1,4,0,0);
+}
+
+static void stop_image(bool wlan_requested,bool pas_requested) {
+    // Even a failed PAS start can have reached hardware; require its shutdown
+    // before revoking QDSS or shared memory. No PAS request needs no shutdown.
+    if(pas_requested&&!scm(6,1,4,0,0)) {
+        nabu_wireless_log("NABU MODEM: PAS stop unconfirmed; QDSS and shared resources retained\n");
+        return;
+    }
+    if(wlan_requested)nabu_wlan_runtime_stop();
+    if(qdss_touched)qmp_send(false,true);
+    qmp_send(false);nabu_msa_finish();nabu_rmtfs_finish();
 }
 
 static bool proxy_power() {
@@ -266,7 +295,8 @@ extern "C" void nabu_modem_start_trial() {
     bool wlan_requested=entry->getProperty("wlfw-board")!=nullptr;
     bool resources_ready=!wlan_requested||(copied&&nabu_wlan_runtime_prepare());
     nabu_wireless_log("NABU WLAN: host resources before PAS requested=%u ready=%u\n",wlan_requested,resources_ready);
-    bool started = copied && resources_ready && nabu_rmtfs_prepare(entry) && qmp_send(true) && scm(5, 1, 4, 0, 0);
+    bool pas_requested=false;
+    bool started = copied && resources_ready && start_image(entry,wlan_requested,pas_requested);
     uint32_t state = 0;
     if (started) {
         for (unsigned i = 0; i < 1500; ++i) { state = modem_state(smem, false); if (state & 3) break; IOSleep(10); }
@@ -283,11 +313,8 @@ extern "C" void nabu_modem_start_trial() {
             nabu_wireless_log("NABU MODEM: stop-ack=%u state=%#x\n", !!(state & 8), state);
             wr(smem_va + our_item + 36, 0); wr(ipc, 1u << 14);
         }
-        if (scm(6, 1, 4, 0, 0)) {
-            if(wlan_requested)nabu_wlan_runtime_stop();
-            qmp_send(false); nabu_msa_finish(); nabu_rmtfs_finish();
-        }
     }
+    stop_image(wlan_requested,pas_requested);
     IOFreeContiguous(header, 16384);
     entry->release();
     nabu_wireless_log("NABU MODEM: trial finished started=%u last-state=%#x; GLINK/QRTR and WLAN data path pending\n", started, state);
