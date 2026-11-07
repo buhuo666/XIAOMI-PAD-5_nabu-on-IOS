@@ -181,14 +181,16 @@ def worker(args, cfg):
         sdk_link.symlink_to(args.sdk, target_is_directory=True)
     os.environ['THEOS'] = str(theos)
     remap = NABU_REMAP if args.nabu_platform else {}
-    os.environ['CC'] = shlex.join([args.compiler, *[f'-D{k}={v}' for k, v in remap.items()]])
+    # Apple's kernel target otherwise leaves Mbed TLS's tentative cipher table
+    # as COMMON even after ld -r. The prelinker needs actual section storage.
+    os.environ['CC'] = shlex.join([args.compiler, '-fno-common', *[f'-D{k}={v}' for k, v in remap.items()]])
     driver = upstream.driver_build()
     print(f'Driver objects compiled: {len(driver)}', flush=True)
     crypto, _ = upstream.sae_build(False)
     print(f'SAE/crypto objects compiled: {len(crypto)}', flush=True)
     objects = driver + crypto
     args.output.mkdir(parents=True, exist_ok=True)
-    definitions, undefined = set(), set()
+    definitions, undefined, common = set(), set(), set()
     object_records = []
     for path in objects:
         raw = path.read_bytes()
@@ -199,6 +201,8 @@ def worker(args, cfg):
             fields = line.split()
             if len(fields) < 2:
                 continue
+            if fields[1] == 'C':
+                common.add(fields[0])
             (undefined if fields[1] == 'U' else definitions).add(fields[0])
         object_records.append({'path': str(path), 'bytes': len(raw)})
     external = sorted(undefined - definitions)
@@ -214,13 +218,14 @@ def worker(args, cfg):
               'nabu_platform': args.nabu_platform, 'symbol_remaps': remap,
               'driver_objects': len(driver), 'sae_objects': len(crypto), 'objects': object_records,
               'undefined': external, 'unexpected_undefined': unexpected,
+              'unallocated_common': sorted(common),
               'compiler': subprocess.check_output([args.compiler, '--version'], text=True).splitlines()[0],
               'sdk_path': str(args.sdk), 'sdk_metadata': json.loads(settings.read_text()) if settings.exists() else None,
               'runtime_integrated': False, 'hardware_tested': False,
               'status': 'objects-compiled', 'relocatable_link': 'not-attempted', 'elapsed_seconds': time.monotonic() - start}
-    if unexpected:
+    if unexpected or common:
         save(args.output / 'build-report.json', report)
-        raise RuntimeError('Unimplemented backend symbols: ' + ', '.join(unexpected))
+        raise RuntimeError('Unimplemented or unallocated backend symbols: ' + ', '.join(unexpected + sorted(common)))
     linker = args.linker or (shutil.which('ld') if sys.platform == 'darwin' else shutil.which('ld64'))
     if linker:
         all_object = args.output / 'all.o'

@@ -123,3 +123,8 @@ typeof；FreeBSD的flex_array_size恰好依赖该操作。本机clang18没有启
 所以此前本地编译未遇到问题。新增xcode-counted-by.patch，仅在Apple编译器
 禁用该可选注解，保留原有分配尺寸计算及运行时代码，不增加驱动桩。
 隔离源码目录改为ready-only-v128-xcode，保留首次CI和本地构建证据。
+
+CI42411834635的后端构建与合并链接、22场景测试均通过。最终prelink发现Mbed TLS
+的`mbedtls_cipher_supported[4]`仍是16字节COMMON，Apple `ld -r`不会分配该符号
+存储。统一编译参数增加`-fno-common`，使其进入实际BSS，并在对象符号检查中
+拒绝遗留COMMON。无库实现缺失，不以空符号或内核地址代替这张可写表。
