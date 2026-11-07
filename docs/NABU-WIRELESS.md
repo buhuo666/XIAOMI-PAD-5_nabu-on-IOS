@@ -759,3 +759,10 @@ CBAR54清零后仍读回0x1f300；上下文停用和TLB同步实际成功。第1
 清空，APFS计数94，设备在Android。详见[释放条件修正](../analysis/nabu-wlan-disabled-release-v125.md)。
 用户提出的QCA6174、共用cal及BT先启动假设已按本机资料核对，见
 [共享资源与启动顺序证据](../analysis/nabu-wlan-bt-shared-resources-v124.md)。
+
+第125轮4f42554、完整CI42402284763通过，实机确认bank54停用/TLB同步成功，
+DMA映射和内存已释放，清理问题闭环。首次固件PFR仍在0xb019b9bc，用户报告
+Wi-Fi按钮可见但不能点击；系统仍无wifid job及网络接口。3,015,907字节日志与
+完整槽已备份清空，APFS计数95。第126轮在此SMMU基线上先取得WLAN结果，再
+异步启动蓝牙，覆盖第116轮尚未验证的组合并保留常驻GLINK。
+见[启动顺序对照](../analysis/nabu-wlan-first-outcome-v126.md)。

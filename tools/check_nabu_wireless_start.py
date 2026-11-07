@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay production shared-power, BT startup and persistent WLAN ordering."""
+"""Replay production shared-power, WLAN outcome and asynchronous BT startup."""
 import argparse
 import json
 from pathlib import Path
@@ -18,6 +18,10 @@ using vm_size_t=uintptr_t;
 using thread_call_param_t=void *;
 static unsigned wireless_level,failed_rail;
 static bool map_ok=true;
+using thread_call_t=void *;
+static thread_call_t bluetooth_call=(void *)1;
+static bool bluetooth_queued;
+static unsigned modem_outcome;
 static int report_lock;
 static const char *wireless_report="report",*gIODTPlane="IODeviceTree";
 static std::vector<unsigned> events;
@@ -31,9 +35,21 @@ static bool enable_supply(vm_offset_t rsc,const char *name,uint32_t address,uint
 static void IOSleep(unsigned ms){assert(ms==10);events.push_back(5);}
 static void nabu_wireless_log(const char *,...){}
 void nabu_wireless_publish();
+void nabu_wireless_queue_bluetooth(const char *);
+static bool thread_call_enter(thread_call_t call){assert(call==bluetooth_call);events.push_back(9);return false;}
 static void smem_survey(){} static void cmd_db_survey(){} static void rpmh_survey(){}
 static void regulator_survey(){} static void uart_survey(){}
-static void nabu_modem_start_trial(){events.push_back(6);}
+static void nabu_modem_start_trial(){
+    events.push_back(6);
+    assert(!bluetooth_queued);
+    if(modem_outcome){
+        events.push_back(10);
+        nabu_wireless_queue_bluetooth("test-ready");
+        nabu_wireless_queue_bluetooth("test-ready-repeat");
+        // The real callback is scheduled, never run inline on the WLAN owner.
+        assert(events.back()==9);events.push_back(11);
+    }
+}
 static void nabu_bluetooth_version_trial(){events.push_back(7);}
 static void IOLockLock(int){} static void IOLockUnlock(int){}
 struct IORegistryEntry {
@@ -45,10 +61,15 @@ struct IORegistryEntry {
 TEST=r'''
 int main(){
     wireless_level=5;wireless_survey(nullptr,nullptr);
-    assert((events==std::vector<unsigned>{1,2,3,4,5,7,6,8}));
+    assert((events==std::vector<unsigned>{1,2,3,4,5,6,9,8}));
+    events.clear();bluetooth_start(nullptr,nullptr);assert((events==std::vector<unsigned>{7,8}));
+    events.clear();bluetooth_queued=false;modem_outcome=1;wireless_survey(nullptr,nullptr);
+    assert((events==std::vector<unsigned>{1,2,3,4,5,6,10,9,11,8}));
+    events.clear();bluetooth_start(nullptr,nullptr);assert((events==std::vector<unsigned>{7,8}));
     events.clear();nabu_wireless_publish();assert((events==std::vector<unsigned>{8}));
-    events.clear();wireless_level=3;wireless_survey(nullptr,nullptr);
-    assert((events==std::vector<unsigned>{1,2,3,4,5,7,8}));
+    events.clear();bluetooth_queued=false;modem_outcome=0;wireless_level=3;wireless_survey(nullptr,nullptr);
+    assert((events==std::vector<unsigned>{1,2,3,4,5,9,8}));
+    events.clear();bluetooth_start(nullptr,nullptr);assert((events==std::vector<unsigned>{7,8}));
     events.clear();wireless_level=1;wireless_survey(nullptr,nullptr);assert((events==std::vector<unsigned>{8}));
     for(failed_rail=1;failed_rail<=4;++failed_rail){
         events.clear();wireless_level=5;wireless_survey(nullptr,nullptr);
@@ -57,7 +78,7 @@ int main(){
     }
     events.clear();failed_rail=0;map_ok=false;wireless_survey(nullptr,nullptr);
     assert((events==std::vector<unsigned>{8}));
-    puts("Wireless startup: shared rails then BT before persistent WLAN, independent live report publishing, BT-only/survey levels and power failure passed");
+    puts("Wireless startup: shared rails before WLAN, BT queued once at outcome or trial return, separate BT worker and live reports, BT-only/survey levels and power failure passed");
 }
 '''
 
@@ -67,7 +88,7 @@ def main():
     bt=(ROOT/'patches/nabu-wireless/NabuBluetooth.cpp').read_text()
     power=bt[bt.index('bool nabu_wireless_power_on()'):bt.index('void nabu_bluetooth_version_trial()')]
     source=(ROOT/'patches/nabu-wireless/NabuWireless.cpp').read_text()
-    order=source[source.index('static void wireless_survey('):source.index('extern "C" void nabu_wireless_start(')]
+    order=source[source.index('static void bluetooth_start('):source.index('extern "C" void nabu_wireless_start(')]
     harness=a.output/'wireless-start.cpp';harness.write_text(PREFIX+power+order+TEST);binary=a.output/'wireless-start-test'
     subprocess.run(host_command(['clang++-18','-std=c++17','-fsanitize=address,undefined','-fno-omit-frame-pointer',host_path(harness),'-o',host_path(binary)]),check=True)
     r=subprocess.run(host_command([host_path(binary)]),capture_output=True)

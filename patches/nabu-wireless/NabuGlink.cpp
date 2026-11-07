@@ -418,6 +418,8 @@ struct NabuGlink {
     }
     void runtime_tick() {
         if(!wlan_runtime)return;
+        if(wlfw.fw_ready||wlfw.init_done||wlfw.instance_lost)
+            nabu_wireless_queue_bluetooth(wlfw.instance_lost ? "wlan-instance-lost" : "wlan-ready");
         wlan_config.tick(); nabu_wlan_runtime_poll();
         if(!wlfw.instance_lost&&(wlan_config.phase==NabuWlanConfig::Failed||nabu_wlan_runtime_failed()))
             invalidate_wlfw("runtime-failed");

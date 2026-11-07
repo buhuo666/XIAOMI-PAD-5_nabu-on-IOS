@@ -74,3 +74,20 @@ CBAR/CBA2R 和 TCR/TTBR/MAIR 配置原样保留且停止期间没有写入，ACT
 此修改修复停止后资源保留问题，不是 WLAN 固件 PFR、FW_READY 或扫描修复。
 arm64 构建、链接和 return-trace 检查已通过，候选位于
 `artifacts/nabu-wireless-trace-v125`。完整 CI 和 v125 实机效果尚待验证。
+
+## v125 实机验证通过
+
+4f42554、完整 CI 42402284763 两个 job 全部成功后临时启动，桌面及 USB 正常。
+完整日志确认 PAS6 返回成功后，bank54 的 disabled=1、tlb-sync=1、retain=0、
+phase=7，随后明确记录映射和全部分配释放。清理问题已由实机闭环，配置保持
+禁用状态下的旧值不再导致错误保留。
+
+首次 WLAN PFR 仍在 43.631126 秒，PC=0xb019b9bc，FW_READY/INIT_DONE=0，
+CE/HTC/WMI没有启动。蓝牙0x2005/0x200b/0x200c成功回执保持，另有一次0x200b
+status12及后续成功；本轮未操作耳机。用户观察设置中的Wi-Fi按钮可见但不能点击，
+当轮软件清单仍无wifid job、IO80211/IONetwork接口，BSD只有lo0/utun。
+
+用户回Android且蓝牙关闭后，3,015,907字节连续日志及完整64MiB槽已备份清空，
+清空回读成功，boot分区未改变。日志未封口，APFS94→95、fullfsync成功。
+证据：`log/host/wireless-v125/result-summary.json`、
+`log/device/nabu-boot-20261108-125/runtime-log/runtime.log:28761`。

@@ -16,6 +16,8 @@ extern "C" void hakios_spmi_lock(void);
 extern "C" void hakios_spmi_unlock(void);
 
 static thread_call_t wireless_call;
+static thread_call_t bluetooth_call;
+static bool bluetooth_queued;
 static uint32_t wireless_level;
 static char wireless_report[32768];
 static unsigned report_length;
@@ -173,6 +175,23 @@ static void uart_survey()
         rd(uart + 0x68), rd(uart + 0x40), rd(uart + 0x908), rd(uart + 0x48), rd(uart + 0x4c));
 }
 
+static void bluetooth_start(thread_call_param_t, thread_call_param_t)
+{
+    nabu_wireless_log("NABU WIRELESS: deferred Bluetooth worker begins\n");
+    nabu_bluetooth_version_trial();
+    nabu_wireless_publish();
+}
+
+// The survey and its GLINK loop have one owner. Queue BT once after the first
+// WLAN outcome; its separate worker cannot block a live GLINK/CE polling loop.
+void nabu_wireless_queue_bluetooth(const char *reason)
+{
+    if (bluetooth_queued) return;
+    bluetooth_queued = true;
+    nabu_wireless_log("NABU WIRELESS: Bluetooth startup queued reason=%s\n", reason);
+    thread_call_enter(bluetooth_call);
+}
+
 static void wireless_survey(thread_call_param_t, thread_call_param_t)
 {
     nabu_wireless_log("NABU WIRELESS: survey begin; SM8150 SNOC Wi-Fi + WCN3991-compatible UART Bluetooth\n");
@@ -183,10 +202,10 @@ static void wireless_survey(thread_call_param_t, thread_call_param_t)
     uart_survey();
     nabu_wireless_log("NABU WIRELESS: survey complete; radios not started\n");
     if (wireless_level >= 2 && nabu_wireless_power_on()) {
-        // v116 ruled out early BT startup as the cause of the first WLAN PFR.
-        // Keep the working BT service available while WLAN runs persistently.
-        nabu_bluetooth_version_trial();
+        // Repeat the v116 order with the now-verified SMMU/DMA path. GLINK
+        // queues BT on real WLAN ready/loss; a returned trial also releases it.
         if (wireless_level >= 4) nabu_modem_start_trial();
+        nabu_wireless_queue_bluetooth(wireless_level >= 4 ? "wlan-trial-returned" : "bluetooth-only");
     }
     nabu_wireless_publish();
 }
@@ -209,6 +228,7 @@ extern "C" void nabu_wireless_start(void)
     wireless_level = level;
     report_lock = IOLockAlloc();
     if (!report_lock) return;
+    bluetooth_call = thread_call_allocate(bluetooth_start, nullptr);
     wireless_call = thread_call_allocate(wireless_survey, nullptr);
     uint64_t deadline;
     clock_interval_to_deadline(5, NSEC_PER_SEC, &deadline);

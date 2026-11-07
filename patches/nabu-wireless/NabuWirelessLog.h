@@ -5,3 +5,4 @@ extern "C" void nabu_wireless_publish();
 extern "C" void nabu_bluetooth_version_trial();
 extern "C" bool nabu_wireless_power_on();
 extern "C" void nabu_modem_start_trial();
+extern "C" void nabu_wireless_queue_bluetooth(const char *reason);

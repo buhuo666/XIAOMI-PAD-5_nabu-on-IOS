@@ -39,6 +39,9 @@ static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { ++rmt
 static unsigned msa_prepare_calls;
 static bool runtime_resources=true,runtime_failure=false,runtime_start_ok=true;
 static unsigned runtime_starts=0,runtime_losses=0,runtime_polls=0;
+static unsigned bluetooth_queue_calls=0;
+static const char *bluetooth_queue_reason=nullptr;
+static void nabu_wireless_queue_bluetooth(const char *reason){++bluetooth_queue_calls;bluetooth_queue_reason=reason;}
 static bool nabu_wlan_runtime_resources_ready(){return runtime_resources;}
 static bool nabu_wlan_runtime_failed(){return runtime_failure;}
 static bool nabu_wlan_runtime_start(){++runtime_starts;return runtime_start_ok;}
@@ -584,11 +587,26 @@ static void check_wlan_runtime_lifecycle() {
         p.g.wlan_runtime=true;p.g.wlfw.complete=true;p.g.wlfw.step=9;p.g.wlfw.transaction=41;
         runtime_resources=true;runtime_failure=false;runtime_start_ok=true;
         runtime_starts=runtime_losses=runtime_polls=0;
+        bluetooth_queue_calls=0;bluetooth_queue_reason=nullptr;
     };
     auto response=[](unsigned tx,unsigned message,unsigned result=0) {
         return std::vector<uint8_t>{2,(uint8_t)tx,(uint8_t)(tx>>8),(uint8_t)message,0,7,0,
             2,4,0,(uint8_t)result,0,(uint8_t)(result?7:0),0};
     };
+    {
+        UlogPeer p;setup(p);p.g.runtime_tick();
+        assert(!bluetooth_queue_calls); // Setup completion alone cannot release BT.
+        p.feed({4,0,0,0x21,0,0,0},0x4003,0,36);p.g.runtime_tick();
+        assert(!bluetooth_queue_calls); // A different endpoint is not WLAN ready.
+        p.feed({4,0,0,0x21,0,0,0},0x4003,0,35);p.g.runtime_tick();
+        assert(bluetooth_queue_calls==1&&!strcmp(bluetooth_queue_reason,"wlan-ready"));
+    }
+    {
+        UlogPeer p;setup(p);p.g.runtime_tick();assert(!bluetooth_queue_calls);
+        p.feed(pfr,0x4002,0,9);p.g.runtime_tick();
+        assert(bluetooth_queue_calls==1&&!strcmp(bluetooth_queue_reason,"wlan-instance-lost"));
+        assert(p.g.wlfw.instance_lost&&!p.g.wlfw.fw_ready&&!p.g.wlfw.init_done);
+    }
     {
         UlogPeer p;setup(p);
         assert(p.flush().empty()&&p.g.wlan_config.phase==NabuWlanConfig::Idle);
