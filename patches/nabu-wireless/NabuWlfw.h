@@ -48,7 +48,9 @@ struct NabuWlfw {
     }
     void prepare() {
         if(instance_lost)return;
-        static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24,0x20,0x25,0x26,0x33};
+        // Step 1 was the extra HOST_CAP request. Preserve later diagnostic
+        // step numbers while following the original ICNSS KNEL -> MSA path.
+        static const uint16_t ids[]={0x20,0,0x2d,0x2e,0x24,0x20,0x25,0x26,0x33};
         if(rejuvenate_count){if(rejuvenate_ack_finished||failed)return;message=0x3a;}
         else {
             if(failed||step>=(board_data?(mac_available?9u:8u):activate?5u:3u))return;
@@ -66,7 +68,6 @@ struct NabuWlfw {
             value(0x15,step==0?0x4b4e454c:0x444d4f4e,4);value(0x18,1,1);
             if(step==0)value(0x19,1,4); // Original Android quirks=128 enables rejuvenation.
         }
-        if(step==1)value(0x10,board_data?1:0,4);
         if(step==2){value(1,0x8bc00000,8);value(2,0x180000,4);}
         if(step==6){
             chunk=board_bytes-board_sent; if(chunk>6144)chunk=6144;
@@ -135,8 +136,7 @@ struct NabuWlfw {
             dynamic_current_valid=p&&length==8;dynamic_current=dynamic_current_valid?(uint64_t)NabuRmtfs::u32(p)|(uint64_t)NabuRmtfs::u32(p+4)<<32:0;
             failed=NabuRmtfs::u16(result)!=0;dynamic_feature_complete=!failed;bytes=0;return true;
         }
-        // Some older firmware doesn't implement host capabilities (QMI error 94).
-        if(NabuRmtfs::u16(result) && !(step==1&&NabuRmtfs::u16(result+2)==94)){failed=true;return true;}
+        if(NabuRmtfs::u16(result)){failed=true;return true;}
         if(message==0x20){
             status_valid=false;fw_status=0;
             const uint8_t *status=NabuRmtfs::tlv(data,size,0x10,length);
@@ -163,6 +163,7 @@ struct NabuWlfw {
         }
         if(step==6){board_sent+=chunk;++board_segment;if(board_sent<board_bytes){bytes=0;return true;}}
         if(step==8)mac_set=true;
-        ++step;complete=step==(board_data?(mac_available?9u:8u):activate?5u:3u)&&!failed;bytes=0;return true;
+        step=step==0?2:step+1;
+        complete=step==(board_data?(mac_available?9u:8u):activate?5u:3u)&&!failed;bytes=0;return true;
     }
 };

@@ -17,12 +17,12 @@ int main(){
     const uint8_t register_request[]={0,1,0,0x20,0,30,0,0x10,1,0,1,0x13,1,0,1,0x14,1,0,1,0x15,4,0,0x4c,0x45,0x4e,0x4b,0x18,1,0,1,0x19,4,0,1,0,0,0};
     assert(w.bytes==sizeof(register_request)&&!memcmp(w.request,register_request,sizeof(register_request)));
     uint8_t response[]={2,1,0,0x20,0,7,0,2,4,0,0,0,0,0};w.sent();
-    response[1]=9;assert(!w.receive(response,sizeof(response))&&w.waiting);response[1]=1;assert(w.receive(response,sizeof(response))&&w.step==1);
-    w.prepare();assert(w.message==0x34&&w.bytes==14);w.sent();response[1]=2;response[3]=0x34;
-    assert(w.receive(response,sizeof(response))&&w.step==2);w.prepare();
-    const uint8_t msa_request[]={0,3,0,0x2d,0,18,0,1,8,0,0,0,0xc0,0x8b,0,0,0,0,2,4,0,0,0,0x18,0};
+    response[1]=9;assert(!w.receive(response,sizeof(response))&&w.waiting);response[1]=1;assert(w.receive(response,sizeof(response))&&w.step==2);
+    // Original ICNSS server-arrive: KNEL registration goes directly to MSA_INFO.
+    w.prepare();assert(w.message==0x2d&&w.transaction==2);
+    const uint8_t msa_request[]={0,2,0,0x2d,0,18,0,1,8,0,0,0,0xc0,0x8b,0,0,0,0,2,4,0,0,0,0x18,0};
     assert(w.bytes==sizeof(msa_request)&&!memcmp(w.request,msa_request,sizeof(msa_request)));w.sent();
-    std::vector<uint8_t> msa{2,3,0,0x2d,0,37,0,2,4,0,0,0,0,0,3,27,0,2,
+    std::vector<uint8_t> msa{2,2,0,0x2d,0,37,0,2,4,0,0,0,0,0,3,27,0,2,
         0,0,0xc0,0x8b,0,0,0,0,0,0,0x10,0,1,
         0,0,0xd0,0x8b,0,0,0,0,0,0,8,0,0};
     assert(w.receive(msa.data(),msa.size())&&w.complete&&!w.failed&&w.region_count==2);
@@ -39,18 +39,18 @@ int main(){
     w.receive(pwr_only,sizeof(pwr_only));assert(w.pin_result_count==2&&w.pin_result_valid[0]&&w.pin_result[0]==1);
     assert(!w.pin_result_valid[1]&&!w.pin_result_valid[2]&&!w.pin_result[1]&&!w.pin_result[2]);
     assert(!w.receive(pins,sizeof(pins)-1)&&w.pin_result_count==2&&w.waiting);
-    response[1]=4;response[3]=0x2e;assert(w.receive(response,sizeof(response))&&w.msa_ready);
+    response[1]=3;response[3]=0x2e;assert(w.receive(response,sizeof(response))&&w.msa_ready);
     w.prepare();assert(w.message==0x24&&w.bytes==7);w.sent();
-    std::vector<uint8_t> cap{2,5,0,0x24,0,25,0,2,4,0,0,0,0,0,0x10,8,0,0x91,0x39,0,0,1,0,0,0,0x11,4,0,0x34,0x12,0,0};
+    std::vector<uint8_t> cap{2,4,0,0x24,0,25,0,2,4,0,0,0,0,0,0x10,8,0,0x91,0x39,0,0,1,0,0,0,0x11,4,0,0x34,0x12,0,0};
     assert(w.receive(cap.data(),cap.size())&&w.complete&&w.capability_valid&&w.chip_id==0x3991&&w.board_id_valid&&w.board_id==0x1234);
     NabuWlfw missing_board{};missing_board.activate=true;missing_board.step=4;missing_board.prepare();missing_board.sent();
     response[1]=1;response[3]=0x24;assert(missing_board.receive(response,sizeof(response))&&!missing_board.board_id_valid&&missing_board.board_id==0xff);
     std::vector<uint8_t> board(26328),copied;for(unsigned i=0;i<board.size();++i)board[i]=i%251;
     w.board_data=board.data();w.board_bytes=board.size();w.complete=false;
     w.prepare();
-    const uint8_t feature_request[]={0,6,0,0x3b,0,11,0,0x10,8,0,1,0,0,0,0,0,0,0};
+    const uint8_t feature_request[]={0,5,0,0x3b,0,11,0,0x10,8,0,1,0,0,0,0,0,0,0};
     assert(w.local_port()==0x4003&&w.bytes==sizeof(feature_request)&&!memcmp(w.request,feature_request,sizeof(feature_request)));w.sent();
-    uint8_t features[]={2,6,0,0x3b,0,29,0,2,4,0,0,0,0,0,0x10,8,0,0xef,0xcd,0xab,0x89,0x67,0x45,0x23,0x81,
+    uint8_t features[]={2,5,0,0x3b,0,29,0,2,4,0,0,0,0,0,0x10,8,0,0xef,0xcd,0xab,0x89,0x67,0x45,0x23,0x81,
         0x11,8,0,1,0,0,0,0,0,0,0};
     assert(w.receive(features,sizeof(features))&&w.dynamic_feature_complete&&w.step==5&&!w.waiting&&!w.complete);
     assert(w.dynamic_prev_valid&&w.dynamic_prev==0x8123456789abcdefULL&&w.dynamic_current_valid&&w.dynamic_current==1);
@@ -59,8 +59,6 @@ int main(){
     assert(!NabuRmtfs::tlv(w.request,w.bytes,0x14,dn)); // DMON registration stays as captured.
     assert(!NabuRmtfs::tlv(w.request,w.bytes,0x19,dn));
     w.sent();response[1]=w.transaction;response[3]=0x20;assert(w.receive(response,sizeof(response))&&w.step==6);
-    NabuWlfw host{};host.board_data=board.data();host.step=1;host.prepare();
-    const uint8_t *support=NabuRmtfs::tlv(host.request,host.bytes,0x10,dn);assert(support&&dn==4&&NabuRmtfs::u32(support)==1);
     while(w.step==6){
         w.prepare();unsigned n=0;const uint8_t *p=NabuRmtfs::tlv(w.request,w.bytes,0x13,n);
         assert(p&&n==w.chunk+2&&NabuRmtfs::u16(p)==w.chunk&&w.bytes<8192-32);

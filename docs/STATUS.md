@@ -639,3 +639,12 @@ FAULT检查Busy，尚未编程页表或启动PAS。第122轮依据Linux Qualcomm
 两个已租用WLAN槽启用相应写入编码。原始读回和库检查保持严格。主机回归
 通过，实机待验证。第121轮3,216,300字节日志和完整槽已备份清空，计数91。
 详见[FAULT编码与验证](../analysis/nabu-wlan-fault-encoding-v122.md)。
+
+## 第122轮SMMU实机成功与第123轮初始化对照（2026-11-08）
+
+第122轮流槽6/7编码读回0x20000，bank54/ASID55及页表实际接入，PAS启动成功。
+随后固件仍在0xb019b9bc PFR，FW_READY/INIT_DONE未到，CE/HTC/WMI未启动。
+第123轮按原机ICNSS源码顺序，仅取消注册与MSA之间额外HOST_CAP请求，保留
+已通过的SMMU、供电及其他QMI内容；WLFW/生产GLINK回放通过，实机待验。
+第122轮2,944,627字节日志及完整槽已备份清空，计数92。
+详见[原机初始化顺序对照](../analysis/nabu-wlan-original-startup-v123.md)。

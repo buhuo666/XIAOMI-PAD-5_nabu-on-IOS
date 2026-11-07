@@ -973,6 +973,24 @@ int main() {
         g.qrtr(packet.data(),packet.size());
     };
     auto transmitted=[&](){QrtrHeader result;memcpy(&result,shared+g.tx.offset+16,32);return result;};
+    // Original ICNSS KNEL sequence through the production QRTR queue. The
+    // removed extra HOST_CAP must not consume transaction 2 or bypass MSA grant.
+    g.wlfw=NabuWlfw{};g.wlfw.activate=true;g.wlfw.board_data=board.data();g.wlfw.board_bytes=board.size();
+    msa_prepare_calls=0;reset_tx();g.tftp_flush();qh=transmitted();
+    assert(g.wlfw.message==0x20&&g.wlfw.transaction==1&&qh.from_port==0x4003);
+    feed_qmi(reg_response,sizeof(reg_response));assert(g.wlfw.step==2&&!g.wlfw.waiting);
+    reset_tx();g.tftp_flush();qh=transmitted();
+    assert(g.wlfw.message==0x2d&&g.wlfw.transaction==2&&qh.from_port==0x4003&&msa_prepare_calls==0);
+    const uint8_t late_host[]={2,2,0,0x34,0,7,0,2,4,0,0,0,0,0};
+    feed_qmi(late_host,sizeof(late_host));assert(g.wlfw.waiting&&g.wlfw.step==2);
+    const uint8_t msa_response[]={2,2,0,0x2d,0,24,0,2,4,0,0,0,0,0,3,14,0,1,
+        0,0,0xc0,0x8b,0,0,0,0,0,0x40,0,0,1};
+    feed_qmi(msa_response,sizeof(msa_response));assert(g.wlfw.step==3&&g.wlfw.region_count==1);
+    reset_tx();g.tftp_flush();assert(g.wlfw.message==0x2e&&g.wlfw.transaction==3&&msa_prepare_calls==1&&g.wlfw.permissions_ready);
+    const uint8_t msa_ready_response[]={2,3,0,0x2e,0,7,0,2,4,0,0,0,0,0};
+    feed_qmi(msa_ready_response,sizeof(msa_ready_response));
+    reset_tx();g.tftp_flush();assert(g.wlfw.message==0x24&&g.wlfw.transaction==4&&msa_prepare_calls==1);
+    msa_prepare_calls=0;
     g.wlfw=NabuWlfw{};g.wlfw.board_data=board.data();g.wlfw.board_bytes=board.size();g.wlfw.step=5;
     reset_tx();g.tftp_flush();qh=transmitted();
     assert(g.wlfw.waiting&&g.wlfw.message==0x3b&&g.wlfw.step==5);
