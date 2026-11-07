@@ -505,3 +505,12 @@ APFS计数78→79、fullfsync成功。用户确认耳机留盒、Android蓝牙�
 64MiB槽及3,896,291字节连续日志，清空回读通过。日志未封口，APFS计数79→80、
 fullfsync成功。设备已回Android，蓝牙设置读回0。Wi-Fi仍同PC异常，FW_READY/
 INIT_DONE均0。详见[第110轮实测与日志](../analysis/nabu-bluetooth-cold-boot-v110.md)。
+
+第110轮静态分析找到WLAN本地ULog的原机DIAG出口：subsystem0x4d、命令
+0900..090f；版本、枚举、按名连接与raw读取协议已闭合，见
+[ULog出口分析](../analysis/nabu-wlan-ulog-export-v110.md)。第111轮据此新增
+完整控制/命令往返和CCPM日志采集，原始帧及生产GLINK回放通过ASan/UBSan，
+arm64编译、链接和return-trace检查通过。CAL前有界查询，日志未创建时放行，
+PFR/注销/端点变化立即退休旧句柄；尚待实机证明通路和日志内容。
+蓝牙继续沿用v108已通过的实现，bootstrap不变。详见
+[第111轮采集候选](../analysis/nabu-wlan-ulog-capture-v111.md)。

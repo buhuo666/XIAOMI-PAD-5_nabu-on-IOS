@@ -20,6 +20,7 @@ PREFIX = r'''
 #include "NabuTftp.h"
 #include "NabuServreg.h"
 #include "NabuWlfw.h"
+#include "NabuDiagFrames.h"
 using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }
@@ -41,6 +42,11 @@ static void nabu_wireless_log(const char *format, ...) {
     char line[1024];va_list args,copy;va_start(args,format);va_copy(copy,args);
     vsnprintf(line,sizeof(line),format,copy);va_end(copy);captured_log+=line;
     vprintf(format,args);va_end(args);
+}
+static std::string captured_bulk_log;
+static void IOLog(const char *format, ...) {
+    char line[1024];va_list args;va_start(args,format);
+    vsnprintf(line,sizeof(line),format,args);va_end(args);captured_bulk_log+=line;
 }
 static uintptr_t smem_va;
 static uint32_t hardware_lock;
@@ -186,13 +192,339 @@ static void check_diag_observation() {
     assert(g.wlfw.step==6&&g.wlfw.waiting&&!g.wlfw.fw_ready&&g.wlfw_port==90);
     assert(g.tftp_requests==0&&g.tftp_completed==0&&g.registry.requests==0&&rmtfs_request_calls==0);
     assert(g.response_count==0&&g.pending_count==1&&!g.broken&&count_command(g,9)==6);
-    g.diag_summary();assert(captured_log.size()<1900);
+    g.diag_summary();assert(captured_log.size()<4096);
     assert(captured_log.find("inst=0 packets=5 captured=3 omitted=2 bytes=111 raw-bytes=43 omitted-bytes=68 last=1:91 changes=1")!=std::string::npos);
     assert(captured_log.find("inst=2 packets=4 captured=3 omitted=1 bytes=75 raw-bytes=33 omitted-bytes=42 last=3:101 changes=1")!=std::string::npos);
     NabuGlink empty{};captured_log.clear();empty.diag_summary();
     assert(captured_log.find("inst=0 packets=0 captured=0 omitted=0 bytes=0 raw-bytes=0 omitted-bytes=0")!=std::string::npos);
     assert(captured_log.find("inst=2 packets=0 captured=0 omitted=0 bytes=0 raw-bytes=0 omitted-bytes=0")!=std::string::npos);
     rmtfs_available=false;
+}
+static void check_diag_handshake() {
+    memset(shared,0,sizeof(shared));
+    NabuGlink g{};g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
+    g.descriptor={0,32};g.tx={0x4000,16384};g.rx={0x8000,16384};g.qmi_enabled=true;
+    const uint8_t feature[]={8,0,0,0,7,0,0,0,3,0,0,0,0xf7,0xfe,3};
+    const uint8_t expected[]={8,0,0,0,8,0,0,0,4,0,0,0,0x51,0xa0,0,0};
+    const uint8_t presets[]={12,0,0,0,1,0,0,0,2};
+    auto feed=[&](NabuGlink &link,const uint8_t *body,unsigned bytes,unsigned port=26){
+        QrtrHeader h{1,1,0,port,0,bytes,1,0x4005};
+        std::vector<uint8_t> packet(32+bytes);memcpy(packet.data(),&h,32);memcpy(packet.data()+32,body,bytes);
+        link.qrtr(packet.data(),packet.size());
+    };
+    auto id_request=[](const char *name){
+        unsigned n=strlen(name)+1;
+        std::vector<uint8_t> record(16+n);uint32_t words[]={33,8+n,1,0};
+        memcpy(record.data(),words,16);memcpy(record.data()+16,name,n);return record;
+    };
+    auto response=[&](unsigned i)->const NabuGlink::Response &{return g.responses[(g.response_head+i)%8];};
+    feed(g,feature,sizeof(feature));
+    assert(g.diag_feature_queued&&!g.diag_feature_tx&&g.response_count==1);
+    assert(response(0).node==0&&response(0).port==26&&response(0).from==0x4005&&response(0).bytes==16);
+    assert(!memcmp(response(0).data,expected,sizeof(expected))&&g.diag_feature_mask_bytes==3);
+    assert(g.diag_feature_mask[0]==0xf7&&g.diag_feature_mask[1]==0xfe&&g.diag_feature_mask[2]==3);
+    feed(g,feature,sizeof(feature));feed(g,presets,sizeof(presets));
+    assert(g.response_count==1&&g.diag_feature_records==2&&g.diag_presets==2);
+    auto root=id_request("modem/root_pd"),wlan=id_request("modem/wlan_pd");
+    feed(g,root.data(),root.size());feed(g,root.data(),root.size());feed(g,wlan.data(),wlan.size());
+    assert(g.response_count==4&&g.diag_id_count==2&&g.diag_root_id==2&&g.diag_wlan_id==3&&!g.diag_root_id_tx);
+    for(unsigned i=1;i<4;++i){
+        NabuSmem r{response(i).data,response(i).bytes};
+        assert(r.u32(0)==33&&r.u32(8)==1&&r.u32(12)==(i==3?3u:2u));
+        assert(r.u32(4)+8==response(i).bytes&&response(i).port==26);
+    }
+    assert(!strcmp((char*)response(1).data+16,"modem/root_pd"));
+    assert(!strcmp((char*)response(3).data+16,"modem/wlan_pd"));
+    // Feature and ID replies travel through the actual GLINK data sender, in order.
+    g.opened=true;for(unsigned i=0;i<8;++i)g.remote[i]={100+i,1024,true,false};
+    g.tftp_flush();
+    assert(g.response_count==0&&g.diag_feature_tx&&g.diag_root_id_tx&&g.diag_replies_tx==4&&!g.broken);
+    QrtrHeader first;memcpy(&first,shared+g.tx.offset+16,32);
+    assert(first.type==1&&first.from_port==0x4005&&first.to_node==0&&first.to_port==26&&first.size==16);
+    assert(!memcmp(shared+g.tx.offset+48,expected,sizeof(expected)));
+    assert(g.wlfw.step==0&&!g.wlfw.waiting&&g.tftp_requests==0&&g.registry.requests==0);
+    auto unknown=id_request("unrecognized/pd");feed(g,unknown.data(),unknown.size());
+    assert(g.diag_id_unknown==1&&g.response_count==0&&g.diag_id_count==2);
+    auto invalid=root;invalid[8]=2;feed(g,invalid.data(),invalid.size());
+    invalid=root;invalid.back()='X';feed(g,invalid.data(),invalid.size());
+    assert(g.diag_control_invalid==2&&g.response_count==0);
+    // IDs follow real request order, not a hard-coded root=2/WLAN=3 assumption.
+    NabuGlink reordered{};reordered.qmi_enabled=true;
+    feed(reordered,feature,sizeof(feature));feed(reordered,wlan.data(),wlan.size());feed(reordered,root.data(),root.size());
+    assert(reordered.diag_wlan_id==2&&reordered.diag_root_id==3&&reordered.diag_id_count==2);
+    // One real transport datagram can contain multiple control records.
+    NabuGlink compound{};compound.qmi_enabled=true;std::vector<uint8_t> body;
+    auto append=[&](const uint8_t *p,unsigned n){body.insert(body.end(),p,p+n);};
+    append(feature,sizeof(feature));append(presets,sizeof(presets));append(root.data(),root.size());
+    const uint8_t ssids[]={24,0,0,0,12,0,0,0,1,0,0,0,1,0,0,0,100,0,101,0};
+    const uint8_t masks[]={25,0,0,0,20,0,0,0,1,0,0,0,1,0,0,0,100,0,101,0,4,0,0,0,16,0,0,0};
+    const uint8_t pd[]={30,0,0,0,9,0,0,0,1,0,0,0,8,0,0,0,0};
+    const uint8_t registration[]={1,0,0,0,20,0,0,0,1,0,0,0,75,0,12,0,1,0,0,0,2,0,3,0,0,0,0,0};
+    append(ssids,sizeof(ssids));append(masks,sizeof(masks));append(pd,sizeof(pd));append(registration,sizeof(registration));
+    captured_log.clear();feed(compound,body.data(),body.size());
+    assert(compound.diag_control_records==7&&compound.diag_control_invalid==0&&compound.response_count==2);
+    assert(compound.diag_ssid_records==1&&compound.diag_build_records==1&&compound.diag_pd_records==1&&compound.diag_registration_records==1);
+    assert(captured_log.find("ssid=100..101 masks=2 first-mask=0x4 last-mask=0x10")!=std::string::npos);
+    assert(captured_log.find("pd-status version=1 pd=8 status=0")!=std::string::npos);
+    assert(captured_log.find("registration version=1 cmd=75 subsys=12 ranges=1 port=0")!=std::string::npos);
+    assert(compound.diag_root_id==2&&compound.diag_wlan_id==0&&compound.diag_presets==2);
+    // Parse all records after the raw sample budget; a truncated record is not read.
+    feed(compound,presets,sizeof(presets));feed(compound,presets,sizeof(presets));feed(compound,wlan.data(),wlan.size());
+    assert(compound.diag[0].captured_packets==3&&compound.diag_wlan_id==3&&compound.response_count==3);
+    const uint8_t truncated[]={25,0,0,0,12,0,0,0,1,0,0,0};
+    feed(compound,truncated,sizeof(truncated));assert(compound.diag_control_invalid==1&&compound.response_count==3);
+    // Failed enqueue must not claim feature completion; peer retransmission can retry.
+    NabuGlink full{};full.qmi_enabled=true;full.response_count=8;
+    feed(full,feature,sizeof(feature));assert(!full.diag_feature_queued&&full.diag_reply_full==1);
+    full.response_count=0;feed(full,feature,sizeof(feature));assert(full.diag_feature_queued&&full.response_count==1);
+    // A restarted control endpoint gets a new ID session; queued old replies are not redirected.
+    memset(shared,0,sizeof(shared));NabuGlink moved{};
+    moved.memory={shared,sizeof(shared)};moved.doorbell=&doorbell;moved.descriptor={0,32};moved.tx={0x4000,16384};moved.rx={0x8000,16384};moved.qmi_enabled=true;
+    feed(moved,feature,sizeof(feature));feed(moved,root.data(),root.size());
+    feed(moved,feature,sizeof(feature),30);assert(moved.diag_id_count==0&&moved.diag_root_id==0&&moved.diag_control_port==30);
+    moved.opened=true;moved.remote[0]={100,1024,true,false};moved.tftp_flush();
+    assert(moved.response_count==0&&moved.diag_replies_tx==1&&moved.diag_feature_tx&&!moved.diag_root_id_tx);
+    memcpy(&first,shared+moved.tx.offset+16,32);assert(first.to_port==30&&first.size==16);
+}
+// Expected wire values below come from the fixed MiCode command transport and
+// original modem.b19 WLAN ULog dispatcher, not from the production serializer.
+// See wireless-v110/diag-command-route/protocol-spec.json and
+// analysis/nabu-wlan-ulog-export-v110.md. This peer supplies responses, not hardware.
+struct UlogPeer {
+    NabuGlink g{};
+    struct Tx { QrtrHeader header; std::vector<uint8_t> payload; };
+    uint8_t board[4]{};
+    UlogPeer() {
+        memset(shared,0,sizeof(shared));g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
+        g.descriptor={0,32};g.tx={0x4000,16384};g.rx={0x8000,16384};
+        g.qmi_enabled=true;g.ulog_enabled=true;g.opened=true;reset_tx();
+    }
+    void reset_tx() {
+        put32(0,0);put32(4,0);g.intent_requested=false;
+        for(unsigned i=0;i<16;++i)g.remote[i]={100+i,8192,true,false};
+    }
+    void feed(const std::vector<uint8_t> &body,unsigned local=0x4005,unsigned node=3,unsigned port=51) {
+        QrtrHeader h{1,1,node,port,0,(uint32_t)body.size(),1,local};
+        std::vector<uint8_t> packet(32+body.size());memcpy(packet.data(),&h,32);
+        if(!body.empty())memcpy(packet.data()+32,body.data(),body.size());g.qrtr(packet.data(),packet.size());
+    }
+    void server(unsigned command=4,unsigned service=4097,unsigned instance=1,unsigned node=7,unsigned port=219) {
+        QrtrHeader h{1,command,0,control_port,0,20,1,control_port};
+        QrtrControl c{command,{service,instance,node,port}};uint8_t packet[52];
+        memcpy(packet,&h,32);memcpy(packet+32,&c,20);g.qrtr(packet,sizeof(packet));
+    }
+    void feature(uint8_t first=0xf7,unsigned source=51) {
+        feed({8,0,0,0,7,0,0,0,3,0,0,0,first,0xfe,3},0x4005,3,source);
+    }
+    void root() {
+        const char name[]="modem/root_pd";std::vector<uint8_t> body(16+sizeof(name));
+        uint32_t words[]={33,8+sizeof(name),1,0};memcpy(body.data(),words,16);memcpy(body.data()+16,name,sizeof(name));feed(body);
+    }
+    void registration(unsigned first=0x900,unsigned last=0x90f,unsigned command=0xff,unsigned source=51) {
+        std::vector<uint8_t> body{1,0,0,0,20,0,0,0,1,0,0,0,(uint8_t)command,0,0x4d,0,
+            1,0,0x34,0x12,(uint8_t)first,(uint8_t)(first>>8),(uint8_t)last,(uint8_t)(last>>8),0xef,0xbe,0xad,0xde};
+        feed(body,0x4005,3,source);
+    }
+    void setup() { server();feature();root();registration(); }
+    void cal() { g.wlfw.board_data=board;g.wlfw.board_bytes=sizeof(board);g.wlfw.step=7;g.wlfw_node=0;g.wlfw_port=35; }
+    void ticks(unsigned n) { for(unsigned i=0;i<n;++i)g.tick_ulog(); }
+    std::vector<Tx> flush() {
+        reset_tx();g.tftp_flush();std::vector<Tx> result;
+        for(unsigned at=0;at<g.word(4);) {
+            GlinkMessage frame;memcpy(&frame,shared+g.tx.offset+at,8);assert(frame.command==9);
+            uint32_t count;memcpy(&count,shared+g.tx.offset+at+8,4);assert(count>=32);
+            Tx tx;memcpy(&tx.header,shared+g.tx.offset+at+16,32);assert(tx.header.size<=count-32);
+            const uint8_t *p=shared+g.tx.offset+at+48;tx.payload.assign(p,p+tx.header.size);result.push_back(tx);
+            at+=(16+count+7)&~7u;
+        }
+        return result;
+    }
+    static unsigned commands(const std::vector<Tx> &tx) {
+        unsigned n=0;for(const auto &p:tx)if(p.header.from_port==0x4007)++n;return n;
+    }
+    static void expect(const std::vector<Tx> &tx,const std::vector<uint8_t> &wire) {
+        assert(commands(tx)==1);for(const auto &p:tx)if(p.header.from_port==0x4007){
+            assert(p.header.type==1&&p.header.from_node==1&&p.header.to_node==7&&p.header.to_port==219);
+            assert(p.payload==wire); // No framing/tag prefix and no registration port/data destination.
+        }
+    }
+    static bool has_cal(const std::vector<Tx> &tx) {
+        for(const auto &p:tx)if(p.header.from_port==0x4004){
+            const std::vector<uint8_t> expected{0,1,0,0x26,0,8,0,1,1,0,0,0x11,1,0,0};
+            assert(p.header.to_node==0&&p.header.to_port==35&&p.payload==expected);return true;
+        }return false;
+    }
+    static std::vector<uint8_t> connect(unsigned index) {
+        const char *name=index?"CCPM User DEBUG LOG":"CCPM User LOG";
+        std::vector<uint8_t> wire(28);wire[0]=0x4b;wire[1]=0x4d;wire[2]=1;wire[3]=9;
+        memcpy(wire.data()+4,name,strlen(name)+1);return wire;
+    }
+    static std::vector<uint8_t> payload(unsigned command,std::initializer_list<uint32_t> fields) {
+        std::vector<uint8_t> p{0x4b,0x4d,(uint8_t)command,(uint8_t)(command>>8)};
+        for(uint32_t value:fields)for(unsigned i=0;i<4;++i)p.push_back(value>>(8*i));return p;
+    }
+    void raw(const std::vector<uint8_t> &p,unsigned node=7,unsigned port=219,bool tail=true) {
+        std::vector<uint8_t> frame{0x7e,1,(uint8_t)p.size(),(uint8_t)(p.size()>>8)};
+        frame.insert(frame.end(),p.begin(),p.end());frame.push_back(tail?0x7e:0);feed(frame,0x4007,node,port);
+    }
+    void initial_queries() {
+        expect(flush(),{0x4b,0x4d,0,9});raw(payload(0x900,{1,0}));
+        expect(flush(),{0x4b,0x4d,4,9,0,0,0,0});
+        auto names=payload(0x904,{0,2,0,2});const char list[]="CCPM User LOG\0CCPM User DEBUG LOG";
+        names.insert(names.end(),list,list+sizeof(list));raw(names);
+    }
+    void connections(uint32_t first,uint32_t second) {
+        expect(flush(),connect(0));raw(payload(0x901,{first,first?0u:13u}));
+        expect(flush(),connect(1));raw(payload(0x901,{second,second?0u:13u}));
+    }
+};
+static void check_ulog_commands() {
+    {
+        UlogPeer p;p.cal();p.server(4,4097,0);assert(!p.g.diag_command_server);
+        p.server();p.feature();p.registration(0x700,0x70f);p.root();
+        auto sent=p.flush();assert(UlogPeer::commands(sent)==0&&!UlogPeer::has_cal(sent));
+        p.registration(0x900,0x90f,0xff,52);assert(!p.g.diag_ulog_registered);
+        p.registration();assert(p.g.diag_ulog_registered);UlogPeer::expect(p.flush(),{0x4b,0x4d,0,9});
+    }
+    {
+        UlogPeer p;p.server();p.feature();p.registration(0x900,0x90f,0x4b);
+        assert(UlogPeer::commands(p.flush())==0&&p.g.diag_feature_tx&&!p.g.diag_root_id_tx);
+        p.root();p.reset_tx();p.g.send_ulog_command();assert(p.g.word(4)==0&&!p.g.ulog_waiting);
+        UlogPeer::expect(p.flush(),{0x4b,0x4d,0,9});assert(p.g.diag_root_id_tx);
+    }
+    {
+        UlogPeer p;p.server();p.feature(0xa7);p.root();p.registration();
+        assert(UlogPeer::commands(p.flush())==0); // Peer lacks separate response/raw encoding bits.
+    }
+    {
+        UlogPeer p;p.cal();p.setup();p.initial_queries();p.connections(0x11223344,0xa1b2c3d4);
+        assert(p.g.ulog_handles[0]==0x11223344&&p.g.ulog_handles[1]==0xa1b2c3d4);
+        assert(p.g.hold_cal_for_ulog()&&!p.g.wlfw.waiting);
+        p.ticks(5);UlogPeer::expect(p.flush(),{0x4b,0x4d,5,9,0x44,0x33,0x22,0x11,1,0,0,0});
+        captured_bulk_log.clear();auto first=UlogPeer::payload(0x905,{1,4});
+        first.insert(first.end(),{0,0,0,0,0x99});p.raw(first);
+        assert(p.g.ulog_first_reads==1&&p.g.ulog_saved_bytes==4&&p.g.ulog_empty==1);
+        assert(captured_bulk_log.find("bytes=4 raw=00000000\n")!=std::string::npos);
+        assert(p.g.hold_cal_for_ulog()&&!UlogPeer::has_cal(p.flush()));
+        p.ticks(5);UlogPeer::expect(p.flush(),{0x4b,0x4d,5,9,0xd4,0xc3,0xb2,0xa1,1,0,0,0});
+        auto second=UlogPeer::payload(0x905,{3,1024});
+        for(unsigned i=0;i<1024;++i)second.push_back(i);second.push_back(0xee);
+        captured_bulk_log.clear();p.raw(second);
+        assert(p.g.ulog_first_reads==3&&p.g.ulog_saved_bytes==1028&&p.g.ulog_overruns==1&&!p.g.ulog_stopped);
+        assert(captured_bulk_log.find("at=896 bytes=128 raw=")!=std::string::npos);
+        assert(captured_bulk_log.find("at=1024")==std::string::npos);
+        assert(!p.g.hold_cal_for_ulog()&&UlogPeer::has_cal(p.flush())&&p.g.wlfw.waiting);
+        assert(p.g.wlfw.step==7&&!p.g.wlfw.fw_ready&&!p.g.wlfw.init_done);
+    }
+    {
+        UlogPeer p;p.cal();p.setup();p.initial_queries();p.connections(0,0);
+        assert(p.g.ulog_connect_attempted==3&&!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        assert(UlogPeer::has_cal(p.flush())&&!p.g.ulog_stopped);
+        p.ticks(5);UlogPeer::expect(p.flush(),UlogPeer::connect(0));p.raw(UlogPeer::payload(0x901,{7,0}));
+        p.ticks(5);UlogPeer::expect(p.flush(),UlogPeer::connect(1));p.raw(UlogPeer::payload(0x901,{0,13}));
+        p.ticks(5);UlogPeer::expect(p.flush(),{0x4b,0x4d,5,9,7,0,0,0,1,0,0,0});
+        assert(p.g.ulog_handles[0]==7&&!p.g.ulog_stopped); // A ring created after CAL remains discoverable.
+    }
+    {
+        UlogPeer p;p.cal();p.setup();UlogPeer::expect(p.flush(),{0x4b,0x4d,0,9});
+        p.ticks(999);assert(!p.g.ulog_stopped&&p.g.hold_cal_for_ulog());
+        p.ticks(1);assert(p.g.ulog_stopped&&!p.g.ulog_waiting&&UlogPeer::has_cal(p.flush()));
+    }
+    {
+        UlogPeer p;p.cal();assert(!UlogPeer::has_cal(p.flush()));p.ticks(1999);
+        assert(!UlogPeer::has_cal(p.flush()));p.ticks(1);assert(UlogPeer::has_cal(p.flush()));
+    }
+    {
+        UlogPeer p;p.cal();p.setup();p.flush();auto good=UlogPeer::payload(0x900,{1,0});
+        p.raw(good,7,218);assert(p.g.ulog_waiting&&p.g.diag_command_packets==0); // Wrong peer ignored.
+        p.raw(good,7,219,false);assert(p.g.diag_frame_errors==1&&p.g.ulog_stopped&&!p.g.ulog_waiting);
+        assert(UlogPeer::has_cal(p.flush())&&p.g.ulog_stage==0);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();
+        p.raw(UlogPeer::payload(0x905,{1,1025}));assert(p.g.ulog_stopped&&p.g.ulog_saved_bytes==0);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();
+        p.g.ulog_saved_bytes=65532;auto page=UlogPeer::payload(0x905,{1,8});page.resize(20);
+        captured_bulk_log.clear();p.raw(page);
+        assert(p.g.ulog_stopped&&p.g.ulog_saved_bytes==65532&&p.g.ulog_omitted_bytes==8&&captured_bulk_log.empty());
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.g.ulog_requests=1024;
+        assert(UlogPeer::commands(p.flush())==0&&p.g.ulog_stopped);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();assert(p.g.ulog_waiting);
+        p.server(4,4097,1,7,220);
+        assert(!p.g.ulog_waiting&&!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);
+        p.raw(late);p.raw(late,7,220);assert(p.g.ulog_reads==0&&p.g.ulog_saved_bytes==0);
+        assert(p.g.ulog_stopped&&UlogPeer::commands(p.flush())==0); // Old handles never sent to new peer.
+        p.server(5,4097,1,7,219);assert(p.g.diag_command_server); // Stale removal cannot remove new peer.
+        p.server(5,4097,1,7,220);assert(!p.g.diag_command_server);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();assert(p.g.ulog_waiting);
+        p.feature(0xf7,52);assert(!p.g.ulog_waiting&&!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);p.raw(late);
+        assert(p.g.ulog_reads==0&&p.g.ulog_saved_bytes==0);
+        assert(p.g.ulog_stopped&&!p.g.diag_ulog_registered&&UlogPeer::commands(p.flush())==0);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();assert(p.g.ulog_waiting);
+        // Original packed id27 has 10 fixed payload bytes and 4 per range, unlike id1.
+        const std::vector<uint8_t> deregister{0x1b,0,0,0,0x0e,0,0,0,1,0,0,0,0xff,0,0x4d,0,1,0,0,9,0x0f,9};
+        p.feed(deregister,0x4005,3,52);assert(p.g.diag_ulog_registered&&p.g.ulog_waiting);
+        auto unrelated=deregister;unrelated[19]=unrelated[21]=7;p.feed(unrelated);
+        assert(p.g.diag_ulog_registered&&p.g.ulog_waiting&&!p.g.ulog_stopped);
+        auto malformed=deregister;malformed[16]=2;p.feed(malformed);
+        assert(p.g.diag_control_invalid==1&&p.g.diag_ulog_registered&&p.g.ulog_waiting);
+        p.feed(deregister);
+        assert(!p.g.diag_ulog_registered&&p.g.ulog_stopped&&!p.g.ulog_waiting);
+        assert(!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);p.raw(late);
+        assert(p.g.ulog_reads==0&&p.g.ulog_saved_bytes==0&&UlogPeer::commands(p.flush())==0);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();
+        // Withdrawing the used READ command alone also invalidates this collection.
+        p.feed({0x1b,0,0,0,0x0e,0,0,0,1,0,0,0,0x4b,0,0x4d,0,1,0,5,9,5,9});
+        assert(p.g.ulog_stopped&&!p.g.diag_ulog_registered&&!p.g.ulog_waiting&&!p.g.ulog_handles[0]);
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);captured_bulk_log.clear();
+        auto empty=UlogPeer::payload(0x905,{1,4});empty.resize(16);
+        for(unsigned i=0;i<12;++i){
+            p.ticks(5);auto tx=p.flush();assert(UlogPeer::commands(tx)==1);p.raw(empty);
+            if(i==1)captured_bulk_log.clear();
+        }
+        assert(p.g.ulog_empty==12&&p.g.ulog_saved_bytes==8&&captured_bulk_log.empty());
+        // A changed status and overrun remain observable even without a record body.
+        p.ticks(5);p.flush();auto changed=empty;changed[12]=1;p.raw(changed);
+        assert(p.g.ulog_saved_bytes==12&&!captured_bulk_log.empty());captured_bulk_log.clear();
+        p.ticks(5);p.flush();auto overrun=empty;overrun[4]=3;p.raw(overrun);
+        assert(p.g.ulog_saved_bytes==16&&p.g.ulog_overruns==1&&!captured_bulk_log.empty());
+    }
+    {
+        UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();
+        assert(p.g.ulog_waiting);p.g.registry.records=p.board;
+        std::vector<uint8_t> failure{0,9,0,0x24,0,20,0,1,12,0,
+            'w','l','a','n','_','p','r','o','c','e','s','s',2,2,0,'E','X'};
+        p.feed(failure,0x4002,0,9);
+        assert(p.g.wlan_crash_captured&&p.g.ulog_stopped&&!p.g.ulog_waiting);
+        assert(!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        unsigned before=p.g.ulog_reads;auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);p.raw(late);
+        assert(p.g.ulog_reads==before&&p.g.ulog_saved_bytes==0&&UlogPeer::commands(p.flush())==0);
+    }
+    {
+        UlogPeer p;p.cal();assert(p.g.hold_cal_for_ulog());
+        p.feed({4,0,0,0x39,0,0,0},0x4003,0,35);
+        assert(p.g.wlfw.rejuvenate_count==1&&!p.g.hold_cal_for_ulog());
+        auto tx=p.flush();assert(tx.size()==1&&tx[0].header.from_port==0x4003);
+        assert((tx[0].payload==std::vector<uint8_t>{0,1,0,0x3a,0,0,0}));
+        assert(p.g.wlfw.waiting&&p.g.wlfw.message==0x3a); // Recovery ACK is never held by the CAL gate.
+    }
 }
 int main() {
     smem_va=(uintptr_t)shared;
@@ -352,7 +684,9 @@ int main() {
     g.release();
     check_tftp_reuse();
     check_diag_observation();
-    puts("GLINK: bounded DIAG 4097 control/data observation, public MODEM/TZ TOC metadata without payload reads, APPS-visible prefixes, rings/fragments, KNEL/DMON routing and recovery stop passed");
+    check_diag_handshake();
+    check_ulog_commands();
+    puts("GLINK: DIAG feature/ID exchange, dynamic command routing, original ULog query/read bytes and framing, bounded CAL gate/retry, capture limits, endpoint/PFR/deregistration retirement and late-response rejection; existing rings/fragments, KNEL/DMON and recovery tests passed");
 }
 '''
 
@@ -377,9 +711,11 @@ def main():
     (args.output/'test.log').write_bytes(result.stdout); (args.output/'test.stderr').write_bytes(result.stderr)
     result.check_returncode()
     report = {'production_protocol_tested':True,'sanitizers':['address','undefined'],
-              'diag_service':4097,'diag_instances':[0,2],'diag_local_ports':[0x4005,0x4006],
+              'diag_service':4097,'diag_instances':[0,1,2],'diag_local_ports':[0x4005,0x4006,0x4007],
               'diag_packet_limit_per_channel':3,'diag_prefix_limit':32,
-              'diag_payload_responses':False,
+              'diag_payload_responses':True,'apps_feature_hex':'51a00000',
+              'ulog_commands':[0x900,0x901,0x904,0x905],
+              'ulog_evidence':'wireless-v110/diag-command-route/protocol-spec.json and analysis/nabu-wlan-ulog-export-v110.md',
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
