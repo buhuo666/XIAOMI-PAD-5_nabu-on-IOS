@@ -21,6 +21,7 @@ PREFIX = r'''
 #include "NabuServreg.h"
 #include "NabuWlfw.h"
 #include "NabuDiagFrames.h"
+#include "NabuWlanConfig.h"
 using vm_offset_t = uintptr_t;
 static void *IOMalloc(size_t n) { return malloc(n); }
 static void IOFree(void *p, size_t) { free(p); }
@@ -36,6 +37,13 @@ static unsigned rmtfs_request_calls;
 static bool nabu_rmtfs_available() { return rmtfs_available; }
 static unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *) { ++rmtfs_request_calls;return 0; }
 static unsigned msa_prepare_calls;
+static bool runtime_resources=true,runtime_failure=false,runtime_start_ok=true;
+static unsigned runtime_starts=0,runtime_losses=0,runtime_polls=0;
+static bool nabu_wlan_runtime_resources_ready(){return runtime_resources;}
+static bool nabu_wlan_runtime_failed(){return runtime_failure;}
+static bool nabu_wlan_runtime_start(){++runtime_starts;return runtime_start_ok;}
+static void nabu_wlan_runtime_lost(){++runtime_losses;}
+static void nabu_wlan_runtime_poll(){++runtime_polls;}
 static bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned) { ++msa_prepare_calls;return true; }
 static std::string captured_log;
 static void nabu_wireless_log(const char *format, ...) {
@@ -568,6 +576,61 @@ static void check_wlfw_instance_retirement() {
     assert(p.g.wlfw.instance_lost&&!p.g.wlfw.waiting&&!p.g.wlfw.board_sent&&p.g.wlfw.step==6);
     p.flush();assert(!p.g.wlfw.bytes&&!p.g.wlfw.waiting);
 }
+static void check_wlan_runtime_lifecycle() {
+    const std::vector<uint8_t> pfr{0,9,0,0x24,0,20,0,1,12,0,
+        'w','l','a','n','_','p','r','o','c','e','s','s',2,2,0,'E','X'};
+    auto setup=[](UlogPeer &p) {
+        p.g.ulog_enabled=false;p.cal();p.g.registry.records=p.board;
+        p.g.wlan_runtime=true;p.g.wlfw.complete=true;p.g.wlfw.step=9;p.g.wlfw.transaction=41;
+        runtime_resources=true;runtime_failure=false;runtime_start_ok=true;
+        runtime_starts=runtime_losses=runtime_polls=0;
+    };
+    auto response=[](unsigned tx,unsigned message,unsigned result=0) {
+        return std::vector<uint8_t>{2,(uint8_t)tx,(uint8_t)(tx>>8),(uint8_t)message,0,7,0,
+            2,4,0,(uint8_t)result,0,(uint8_t)(result?7:0),0};
+    };
+    {
+        UlogPeer p;setup(p);
+        assert(p.flush().empty()&&p.g.wlan_config.phase==NabuWlanConfig::Idle);
+        p.feed({4,0,0,0x21,0,0,0},0x4003,0,35); // Real FW_READY indication.
+        runtime_resources=false;assert(p.flush().empty());runtime_resources=true;
+        auto tx=p.flush();assert(tx.size()==1&&tx[0].header.from_port==0x4003&&tx[0].header.to_port==35);
+        assert(tx[0].payload.size()==559&&tx[0].payload[1]==42&&tx[0].payload[3]==0x23);
+        assert(!runtime_starts&&!p.g.keep_running(30000));
+        auto cfg=response(42,0x23);
+        p.feed(cfg,0x4003,0,36);p.feed(cfg,0x4004,0,35);p.feed(response(41,0x23),0x4003,0,35);
+        assert(p.g.wlan_config.waiting&&!runtime_starts);
+        p.feed(cfg,0x4003,0,35);tx=p.flush();
+        assert(tx.size()==1&&tx[0].payload.size()==18&&tx[0].payload[1]==43&&tx[0].payload[3]==0x22);
+        assert(!runtime_starts);
+        p.feed(response(43,0x22),0x4003,0,35);
+        assert(runtime_starts==1&&p.g.keep_running(30000)&&p.g.keep_running(60000));
+        p.feed(response(43,0x22),0x4003,0,35);assert(runtime_starts==1);
+        p.g.runtime_tick();assert(runtime_polls==1&&!runtime_losses);
+        runtime_failure=true;p.g.runtime_tick();
+        assert(p.g.wlfw.instance_lost&&runtime_losses==1&&!p.g.keep_running(30000));
+    }
+    for(unsigned cause=0;cause<4;++cause) {
+        UlogPeer p;setup(p);p.g.wlfw.init_done=true;assert(p.flush().size()==1);
+        p.feed(response(42,0x23),0x4003,0,35);assert(p.flush().size()==1);
+        if(cause==0)p.feed(pfr,0x4002,0,9);
+        if(cause==1)p.server(5,0x45,1,0,35);
+        if(cause==2)p.server(4,0x45,1,0,41);
+        if(cause==3)p.feed({4,0,0,0x39,0,0,0},0x4003,0,35);
+        assert(p.g.wlan_config.phase==NabuWlanConfig::Lost&&runtime_losses==1);
+        p.feed(response(43,0x22),0x4003,0,35);p.feed(response(43,0x22),0x4003,0,41);
+        assert(!runtime_starts&&!p.g.keep_running(30000));
+    }
+    for(unsigned cause=0;cause<3;++cause) {
+        UlogPeer p;setup(p);p.g.wlfw.fw_ready=true;p.flush();
+        if(cause==0)for(unsigned i=0;i<10000;++i)p.g.runtime_tick();
+        if(cause==1)p.feed(response(42,0x23,1),0x4003,0,35);
+        if(cause==2){p.feed(response(42,0x23),0x4003,0,35);p.flush();runtime_start_ok=false;p.feed(response(43,0x22),0x4003,0,35);}
+        assert(p.g.wlfw.instance_lost&&runtime_losses==1&&!p.g.keep_running(30000));
+        assert(runtime_starts==(cause==2?1u:0u));
+    }
+    runtime_failure=false;runtime_start_ok=true;
+}
 static void check_ulog_version_without_registration() {
     // The original MPSS internal dispatcher accepts WLAN's fixed read-only 0900
     // handler without waiting for APPS REG advertisement. It does not authorize
@@ -952,6 +1015,7 @@ int main() {
     check_diag_handshake();
     check_ulog_commands();
     check_wlfw_instance_retirement();
+    check_wlan_runtime_lifecycle();
     check_ulog_version_without_registration();
     check_diag_socket_receipts();
     puts("GLINK: original root-ID without confirm, one exact repeat only after WLFW, failed-send/cache/order and retirement checks, two-confirm limit, v1/v3 socket receipts without DIAG success inference; bounded ULog route/CAL gates, framing and existing rings/fragments/KNEL/DMON recovery tests passed");
@@ -992,6 +1056,7 @@ def main():
               'diag_root_repeat_requires_successful_original_tx':True,
               'diag_confirm_does_not_verify_route':True,
               'wlfw_instance_retirement':['PFR','endpoint removal','endpoint replacement','late indications','in-flight BDF','no MSA regrant'],
+              'wlan_runtime':['real readiness and resources gate','CFG then MODE endpoint/transaction matching','start only on MODE ACK','PFR/rejuvenate/endpoint retirement','late ACK ignored','QMI timeout/error and CE failure','persistent lifetime'],
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

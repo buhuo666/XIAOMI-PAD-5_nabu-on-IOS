@@ -13,6 +13,7 @@
 #include <pexpert/pexpert.h>
 #include "NabuSmem.h"
 #include "NabuWirelessLog.h"
+#include "NabuWlanRuntime.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
@@ -262,7 +263,10 @@ extern "C" void nabu_modem_start_trial() {
         file_bytes += bytes; memory_bytes += mem; loaded++;
     }
     nabu_wireless_log("NABU MODEM: copied=%u segments=%u file-bytes=%llu memory-bytes=%llu\n", copied, loaded, file_bytes, memory_bytes);
-    bool started = copied && nabu_rmtfs_prepare(entry) && qmp_send(true) && scm(5, 1, 4, 0, 0);
+    bool wlan_requested=entry->getProperty("wlfw-board")!=nullptr;
+    bool resources_ready=!wlan_requested||(copied&&nabu_wlan_runtime_prepare());
+    nabu_wireless_log("NABU WLAN: host resources before PAS requested=%u ready=%u\n",wlan_requested,resources_ready);
+    bool started = copied && resources_ready && nabu_rmtfs_prepare(entry) && qmp_send(true) && scm(5, 1, 4, 0, 0);
     uint32_t state = 0;
     if (started) {
         for (unsigned i = 0; i < 1500; ++i) { state = modem_state(smem, false); if (state & 3) break; IOSleep(10); }
@@ -279,7 +283,10 @@ extern "C" void nabu_modem_start_trial() {
             nabu_wireless_log("NABU MODEM: stop-ack=%u state=%#x\n", !!(state & 8), state);
             wr(smem_va + our_item + 36, 0); wr(ipc, 1u << 14);
         }
-        if (scm(6, 1, 4, 0, 0)) { qmp_send(false); nabu_msa_finish(); nabu_rmtfs_finish(); }
+        if (scm(6, 1, 4, 0, 0)) {
+            if(wlan_requested)nabu_wlan_runtime_stop();
+            qmp_send(false); nabu_msa_finish(); nabu_rmtfs_finish();
+        }
     }
     IOFreeContiguous(header, 16384);
     entry->release();

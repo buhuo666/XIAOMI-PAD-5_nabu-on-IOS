@@ -578,3 +578,18 @@ CI通过后才临时启动设备，尚未实机验收。详见
 仅替换探针的bootstrap通过apfsck。候选在artifacts/nabu-wireless-recheck-v114和
 artifacts/nabu-bootstrap-recheck-v114，尚未部署或实机验收。续接记录为
 log/host/wifi-recheck-v114/continuation.json。第114轮仍是最近实机结果，不记作第115轮。
+
+## 第116轮完整回收与第117轮接线
+
+第116轮594bb860的完整CI42385432816通过后临时启动，桌面和USB正常。首次PFR
+仍为PC=b019b9bc，发生在30.111秒、任何蓝牙ROM脉冲之前；没有FW_READY/INIT_DONE。
+这排除了BT先启动是当前首个PFR必要条件。蓝牙后续发布UART服务，原生2005/200b/
+200c最终status0；一次重复200b返回12随后正常，保留真实记录。64MiB原始槽和
+2,485,091字节连续日志已备份，清空回读通过；未封口，APFS85→86、fullfsync成功。
+设备已回Android，蓝牙关闭。证据log/host/wireless-v116/result-summary.json。
+
+第117轮恢复蓝牙先启动以保留工作基线，并在PAS启动前准备真实WLAN SMMU域、
+8MiB映射和CE缓冲资源。实际FW_READY/INIT_DONE及CFG、MODE有效应答才启动CE。
+接上真实HTC READY/WMI服务连接、超时/固件失效停止和常驻服务；HTT/setup、扫描/
+连接/联网尚未启用，不能作为Wi-Fi修复完成。独立复核修正了WLAN SMMU寄存器窗口
+从0xd0000到原DT的0x100000，否则真实128全局页布局无法通过组件校验。

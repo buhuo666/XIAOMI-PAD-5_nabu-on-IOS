@@ -55,11 +55,20 @@ def main():
         sources.append(('NabuGlink',ROOT/'patches/nabu-wireless/NabuGlink.cpp'))
         sources.append(('NabuRmtfs',ROOT/'patches/nabu-wireless/NabuRmtfs.cpp'))
         sources.append(('NabuMsa',ROOT/'patches/nabu-wireless/NabuMsa.cpp'))
+        for name in ('NabuWlanDma','NabuWlanController','NabuWlanRuntime'):
+            sources.append((name,ROOT/'patches/nabu-wireless'/(name+'.cpp')))
+        for name in ('ArmSmmu4K','ArmSmmu4KContext','ArmSmmu4KProgram','ArmSmmu4KStreams'):
+            sources.append((name,ROOT/'src/ArmSmmu4K-nabu'/(name+'.c')))
     if a.return_trace:
         sources.append(('NabuReturnTrace',ROOT/'patches/nabu-diagnostics/NabuReturnTrace.cpp'))
         sources.append(('NabuReturnTraceAsm',ROOT/'patches/nabu-diagnostics/NabuReturnTrace.S'))
     for name,source in sources:
-        subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
+        source_flags=flags
+        if source.suffix=='.c':
+            cxx_only={'-std=gnu++17','-fapple-kext','-fno-exceptions','-fno-rtti','-fno-use-cxa-atexit',
+                '-fno-c++-static-destructors','-nostdinc++','-Wno-inconsistent-missing-override'}
+            source_flags=['clang-18','-std=c11']+[flag for flag in flags[1:] if flag not in cxx_only]
+        subprocess.run(host_command(source_flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')
 
 

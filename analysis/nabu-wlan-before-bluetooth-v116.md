@@ -19,3 +19,12 @@ WCN399x CE ring代码及源协议fixture加入CI回放；它们尚未在v116生�
 
 验收：供电先于modem、WLAN首个PFR/FW_READY/INIT_DONE结果先于任何BT ROM脉冲；
 之后蓝牙transport和原生初始化正常，桌面USB无回归。完整CI后才部署。
+
+## 第116轮完整回收与第117轮接线
+
+第116轮594bb860的完整CI42385432816通过后临时启动，桌面和USB正常。首次PFR
+仍为PC=b019b9bc，发生在30.111秒、任何蓝牙ROM脉冲之前；没有FW_READY/INIT_DONE。
+这排除了BT先启动是当前首个PFR必要条件。蓝牙后续发布UART服务，原生2005/200b/
+200c最终status0；一次重复200b返回12随后正常，保留真实记录。64MiB原始槽和
+2,485,091字节连续日志已备份，清空回读通过；未封口，APFS85→86、fullfsync成功。
+设备已回Android，蓝牙关闭。证据log/host/wireless-v116/result-summary.json。

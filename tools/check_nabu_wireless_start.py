@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay production shared-power and WLAN-before-BT startup ordering."""
+"""Replay production shared-power, BT startup and persistent WLAN ordering."""
 import argparse
 import json
 from pathlib import Path
@@ -30,6 +30,7 @@ static bool enable_supply(vm_offset_t rsc,const char *name,uint32_t address,uint
 }
 static void IOSleep(unsigned ms){assert(ms==10);events.push_back(5);}
 static void nabu_wireless_log(const char *,...){}
+void nabu_wireless_publish();
 static void smem_survey(){} static void cmd_db_survey(){} static void rpmh_survey(){}
 static void regulator_survey(){} static void uart_survey(){}
 static void nabu_modem_start_trial(){events.push_back(6);}
@@ -44,7 +45,8 @@ struct IORegistryEntry {
 TEST=r'''
 int main(){
     wireless_level=5;wireless_survey(nullptr,nullptr);
-    assert((events==std::vector<unsigned>{1,2,3,4,5,6,7,8}));
+    assert((events==std::vector<unsigned>{1,2,3,4,5,7,6,8}));
+    events.clear();nabu_wireless_publish();assert((events==std::vector<unsigned>{8}));
     events.clear();wireless_level=3;wireless_survey(nullptr,nullptr);
     assert((events==std::vector<unsigned>{1,2,3,4,5,7,8}));
     events.clear();wireless_level=1;wireless_survey(nullptr,nullptr);assert((events==std::vector<unsigned>{8}));
@@ -55,7 +57,7 @@ int main(){
     }
     events.clear();failed_rail=0;map_ok=false;wireless_survey(nullptr,nullptr);
     assert((events==std::vector<unsigned>{8}));
-    puts("Wireless startup: unchanged four shared rails, WLAN before BT pulses, BT-only and survey levels, power failure stops both and still publishes report passed");
+    puts("Wireless startup: shared rails then BT before persistent WLAN, independent live report publishing, BT-only/survey levels and power failure passed");
 }
 '''
 

@@ -42,9 +42,14 @@ jobs:
           sudo apt-get install -y clang-18
       - name: Replay WLFW, DIAG framing and production GLINK with sanitizers
         run: |
+          python3 tools/fetch_sources.py --only ArmSmmu4K-nabu --report log/ci/nabu-smmu-source.json
           python3 tools/check_nabu_modem_power.py --output log/ci/nabu-modem-power
           python3 tools/check_nabu_wireless_start.py --output log/ci/nabu-wireless-start
           python3 tools/check_nabu_wlan_config.py --output log/ci/nabu-wlan-config
+          python3 tools/check_nabu_wlan_dma.py --output log/ci/nabu-wlan-dma
+          python3 tools/check_nabu_wlan_fault.py --output log/ci/nabu-wlan-fault
+          python3 tools/check_nabu_htc.py --output log/ci/nabu-htc
+          python3 tools/check_nabu_wlan_runtime.py --output log/ci/nabu-wlan-runtime
           python3 tools/check_nabu_wlfw.py --output log/ci/nabu-wlfw
           python3 tools/check_nabu_diag_frames.py --output log/ci/nabu-diag-frames
           python3 tools/check_nabu_glink.py --output log/ci/nabu-glink

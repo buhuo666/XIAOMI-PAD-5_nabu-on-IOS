@@ -11,6 +11,8 @@
 #include "NabuServreg.h"
 #include "NabuWlfw.h"
 #include "NabuDiagFrames.h"
+#include "NabuWlanConfig.h"
+#include "NabuWlanRuntime.h"
 extern "C" bool nabu_rmtfs_available();
 extern "C" unsigned nabu_rmtfs_request(const uint8_t *, unsigned, uint8_t *);
 extern "C" bool nabu_msa_prepare(const NabuWlfw::Region *,unsigned);
@@ -43,6 +45,8 @@ struct NabuGlink {
     unsigned server_check_size = 0;
     bool server_check_valid = false;
     NabuWlfw wlfw;
+    NabuWlanConfig wlan_config;
+    bool wlan_runtime=false;
     bool qmi_enabled = false;
     bool wlan_crash_captured = false;
     uint8_t transmit[8192]{};
@@ -408,7 +412,20 @@ struct NabuGlink {
     void invalidate_wlfw(const char *reason) {
         nabu_wireless_log("NABU WLFW: session invalidated reason=%s endpoint=%u:%u previous-step=%u previous-setup-complete=%u previous-fw-ready=%u previous-init-done=%u; no automatic restart or MSA regrant\n",
             reason, wlfw_node, wlfw_port, wlfw.step, wlfw.complete, wlfw.fw_ready, wlfw.init_done);
-        wlfw.invalidate(); retire_ulog();
+        wlfw.invalidate(); wlan_config.invalidate();
+        if(wlan_runtime)nabu_wlan_runtime_lost();
+        retire_ulog();
+    }
+    void runtime_tick() {
+        if(!wlan_runtime)return;
+        wlan_config.tick(); nabu_wlan_runtime_poll();
+        if(!wlfw.instance_lost&&(wlan_config.phase==NabuWlanConfig::Failed||nabu_wlan_runtime_failed()))
+            invalidate_wlfw("runtime-failed");
+    }
+    bool keep_running(unsigned ticks) const {
+        return ticks<30000 || (wlan_runtime&&!wlfw.instance_lost&&!wlfw.failed&&
+            (wlfw.fw_ready||wlfw.init_done)&&wlan_config.phase==NabuWlanConfig::Enabled&&
+            !nabu_wlan_runtime_failed());
     }
     static void ulog_payload_callback(void *context, const uint8_t *data, unsigned bytes) {
         ((NabuGlink *)context)->receive_ulog_payload(data, bytes);
@@ -668,6 +685,17 @@ struct NabuGlink {
                 wlfw.sent();nabu_wireless_log("NABU WLFW: request message=%#x transaction=%u bytes=%u client-port=%#x\n",wlfw.message,wlfw.transaction,wlfw.bytes,wlfw.local_port());
             }
         }
+        if(wlan_runtime&&wlfw_port&&wlfw.complete&&!wlfw.instance_lost&&!wlfw.failed&&
+           !wlfw.rejuvenate_count&&(wlfw.fw_ready||wlfw.init_done)) {
+            if(wlan_config.phase==NabuWlanConfig::Idle)
+                wlan_config.begin(true,nabu_wlan_runtime_resources_ready(),wlfw.transaction+1);
+            if(wlan_config.phase==NabuWlanConfig::Mode&&!wlan_config.bytes&&!wlan_config.waiting)
+                wlan_config.prepare_mode(wlan_config.transaction+1);
+            if(wlan_config.bytes&&!wlan_config.waiting&&datagram(1,0x4003,wlfw_node,wlfw_port,wlan_config.request,wlan_config.bytes)) {
+                wlan_config.sent();
+                nabu_wireless_log("NABU WLAN: runtime QMI request=%#x tx=%u bytes=%u\n",wlan_config.message,wlan_config.transaction,wlan_config.bytes);
+            }
+        }
     }
 
     uint32_t word(unsigned at) { return memory.u32(descriptor.offset + at); }
@@ -766,10 +794,17 @@ struct NabuGlink {
         if (header.to_port != control_port && header.type == 1) {
             if(qmi_enabled&&(header.to_port==0x4003||header.to_port==0x4004)&&header.from_node==wlfw_node&&header.from_port==wlfw_port){
                 const uint8_t *qmi=data+at;
+                if(wlan_runtime&&header.to_port==0x4003&&wlan_config.receive(qmi,header.size)) {
+                    nabu_wireless_log("NABU WLAN: runtime QMI response=%#x phase=%u error=%u\n",wlan_config.message,(unsigned)wlan_config.phase,wlan_config.error);
+                    if(wlan_config.phase==NabuWlanConfig::Enabled&&!nabu_wlan_runtime_start())invalidate_wlfw("ce-start-failed");
+                    if(wlan_config.phase==NabuWlanConfig::Failed)invalidate_wlfw("runtime-qmi-error");
+                    return;
+                }
                 if(header.size>=7&&qmi[0]==4){
                     unsigned pin_count=wlfw.pin_result_count;
                     unsigned rejuvenate_count=wlfw.rejuvenate_count;
                     wlfw.receive(qmi,header.size);
+                    if(wlan_runtime&&wlfw.rejuvenate_count!=rejuvenate_count){wlan_config.invalidate();nabu_wlan_runtime_lost();}
                     nabu_wireless_log("NABU WLFW: indication message=%#x bytes=%u\n",NabuRmtfs::u16(qmi+3),header.size);
                     if(wlfw.pin_result_count!=pin_count)nabu_wireless_log("NABU WLFW: pin-connect count=%u step=%u request=%#x waiting=%u client-port=%#x pwr-valid=%u pwr=%#x phy-io-valid=%u phy-io=%#x rf-valid=%u rf=%#x\n",
                         wlfw.pin_result_count,wlfw.pin_result_step,wlfw.message,wlfw.waiting,header.to_port,
@@ -964,7 +999,7 @@ struct NabuGlink {
 extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     NabuGlink *link = (NabuGlink *)IOMalloc(sizeof(NabuGlink));
     if (!link) return;
-    // All state belongs to this one bounded trial; no interrupt callback retains it.
+    // This worker owns one firmware instance, persisting while its runtime is live.
     // The remaining nonzero WLFW default is board_id; avoid a 6 KiB temporary.
     bzero(link, sizeof(*link)); link->features = 1; link->wlfw.board_id = 0xff;
     link->memory = {(const volatile uint8_t *)smem, 0x200000}; link->doorbell = (volatile uint32_t *)ipc;
@@ -984,6 +1019,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
         link->wlfw.activate=firmware_entry->getProperty("wlfw-msa")!=nullptr;
         OSData *board=OSDynamicCast(OSData,firmware_entry->getProperty("wlfw-board"));
         if(board){link->wlfw.board_data=(const uint8_t*)board->getBytesNoCopy();link->wlfw.board_bytes=board->getLength();}
+        link->wlan_runtime=board!=nullptr;
         link->ulog_enabled = link->qmi_enabled && link->wlfw.board_data;
     }
     if(link->qmi_enabled) link->capture_minidump_prefixes("pre-glink");
@@ -995,18 +1031,20 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     }
     nabu_wireless_log("NABU GLINK: queues ready tx-head=%u rx-head=%u; begin version1\n", link->word(4), link->word(12));
     link->command(0, 1, 1);
-    for (unsigned i = 0; i < 30000 && !link->broken; ++i) {
-        link->pump(); for (auto &t : link->transfers) t.tick(); link->wlfw.tick(); link->tick_ulog(); IOSleep(1);
+    for (unsigned i = 0; link->keep_running(i) && !link->broken; ++i) {
+        link->pump(); for (auto &t : link->transfers) t.tick(); link->wlfw.tick(); link->tick_ulog();link->runtime_tick(); IOSleep(1);
+        if(i%5000==4999)nabu_wireless_publish();
         if(link->wlfw.rejuvenate_count&&(link->wlfw.rejuvenate_ack_finished||link->wlfw.failed))break;
     }
     bool was_open = link->opened;
+    if(link->wlan_runtime){nabu_wlan_runtime_summary();nabu_wlan_runtime_lost();}
     if (link->opened && !link->broken) {
         link->closing = true;
         link->command(3, 1, 0);
         for (unsigned i = 0; i < 100 && !link->close_ack && !link->broken; ++i) { link->pump(); IOSleep(10); }
     }
     nabu_wireless_log("NABU GLINK: trial complete agreed=%u open=%u broken=%u tx=%u rx=%u close-ack=%u\n", link->agreed, was_open, link->broken, link->sent, link->received, link->close_ack);
-    nabu_wireless_log("NABU QRTR: inventory peer=%u servers=%u WLFW-node=%u WLFW-port=%u; WLAN data path not started\n", link->peer, link->servers, link->wlfw_node, link->wlfw_port);
+    nabu_wireless_log("NABU QRTR: inventory peer=%u servers=%u WLFW-node=%u WLFW-port=%u runtime-requested=%u config-phase=%u\n", link->peer, link->servers, link->wlfw_node, link->wlfw_port,link->wlan_runtime,(unsigned)link->wlan_config.phase);
     if (link->qmi_enabled) link->diag_summary();
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
