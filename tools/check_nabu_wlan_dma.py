@@ -40,8 +40,8 @@ struct Peer {
     bool locked=false,timeout=false,bad_pa=false;
     std::vector<unsigned> write_addresses;
     Peer() {
-        regs[0]=0x406;regs[0x20]=(1u<<30)|(1u<<27)|(15<<9)|94;
-        regs[0x24]=(6u<<28)|56;regs[0x28]=0x1433;
+        regs[0]=0x2e0406;regs[0x20]=0x4c017e5e;
+        regs[0x24]=0x60000038;regs[0x28]=0x5555;
         regs[0x800]=0x80000140;regs[0xc00]=3;
         regs[0x804]=0x80000300;regs[0xc04]=4;
         regs[(128+3)*4096]=1;regs[(128+3)*4096+0x24]=4<<16;
@@ -143,11 +143,33 @@ int main() {
         assert(d.selection.stage==2&&d.selection.scr0==0&&d.selection.id0==p.regs[0x20]&&d.status==ArmSmmu4KStateMismatch);
         assert(d.release_after_stop());}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
-        for(unsigned b=1;b<56;++b)p.regs[0x1000+4*b]=0x10000;
+        // Model the UFS lease on bank 55 even with M=0. Real v119 bank 54
+        // was unreferenced with SCTLR=0x377d631e, not an all-zero image.
+        unsigned cb54=(128+54)*4096,cb55=(128+55)*4096;
+        p.regs[0x808]=0x80000060;p.regs[0xc08]=55;p.regs[cb55]=0;
+        for(unsigned b=1;b<55;++b)if(b!=3&&b!=4)p.regs[(128+b)*4096]=0x377d631e;
+        p.regs[cb54]=0x377d631e;p.regs[cb54+0x10]=0x50;
+        p.regs[cb54+0x20]=0x12345000;p.regs[cb54+0x24]=0x77770000;
+        p.regs[cb54+0x30]=0x1234;p.regs[cb54+0x38]=0xff;
+        assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54&&d.observe());
+        assert(d.selection.selected_sctlr==0x377d631e&&d.selection.selected_actlr==0);
+        assert(p.regs[cb54+0x20]==(uint32_t)d.tables.physical&&p.regs[cb54+0x38]==0xff44);
+        assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();
+        assert(p.regs[0x808]==0x80000060&&p.regs[0xc08]==55&&p.regs[cb55]==0);
+        for(unsigned at:p.write_addresses)assert(at!=0x808&&at!=0xc08&&
+            !(at>=cb55&&at<cb55+4096)&&at!=0x1000+55*4&&at!=0x1800+55*4);
+    }
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
+        for(unsigned b=1;b<56;++b)p.regs[(128+b)*4096]=1;
         assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0&&p.installed==0);
-        assert(d.selection.stage==4&&d.selection.free_slots==2&&d.selection.used_banks==2&&d.selection.nonzero_banks==53);
-        assert(d.selection.first_bank==55&&d.selection.first_offset==0x10dc&&d.selection.first_value==0x10000&&d.status==ArmSmmu4KBusy);
+        assert(d.selection.stage==4&&d.selection.free_slots==2&&d.selection.used_banks==2&&d.selection.blocked_banks==53);
+        assert(d.selection.first_bank==55&&d.selection.first_offset==(128+55)*4096&&d.selection.first_value==1&&d.status==ArmSmmu4KBusy);
         assert(d.release_after_stop()&&p.memory.empty());}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));unsigned cb55=(128+55)*4096;
+        p.regs[cb55+4]=0x103; // Unknown platform ACTLR still excludes this bank.
+        assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54);
+        assert(d.selection.first_offset==cb55+4&&d.selection.first_value==0x103);
+        assert(d.release_after_stop()&&p.regs[cb55+4]==0x103&&p.memory.empty());}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
         p.regs[(128+3)*4096+0x24]=56u<<16; // Active USB context owns candidate ASID.
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54&&d.context.asid==55);

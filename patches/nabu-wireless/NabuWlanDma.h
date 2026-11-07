@@ -33,11 +33,12 @@ struct NabuWlanDma {
     unsigned failed_block=0;
     struct SelectionTrace {
         // 1 identification, 2 global, 3 stream scan, 4 bank scan, 5 selected.
-        unsigned stage=0,free_slots=0,used_banks=0,nonzero_banks=0,asid_conflicts=0;
+        unsigned stage=0,free_slots=0,used_banks=0,blocked_banks=0,asid_conflicts=0;
         unsigned first_bank=0,first_offset=0;
         uint32_t first_value=0,scr0=0,id0=0,id1=0,id2=0,gfsr=0;
         unsigned conflict_slot=0;
         uint32_t conflict_smr=0,conflict_s2cr=0;
+        uint32_t selected_sctlr=0,selected_actlr=0;
     } selection{};
     bool read_failed=false,mutated=false;
     void (*remove_fault_handler)(void *,unsigned)=nullptr;
@@ -123,18 +124,19 @@ struct NabuWlanDma {
         for(unsigned b=info.num_cb-1;b>0&&b>=info.num_s2_cb;--b) {
             unsigned cb=context_offset(info.global_pages,b);
             if(used[b]){++selection.used_banks;continue;}
-            const unsigned offsets[]={kCbarBase+4*b,kCba2rBase+4*b,cb,cb+4,
-                cb+0x10,cb+0x20,cb+0x24,cb+0x28,cb+0x2c,cb+0x30,cb+0x38,cb+0x3c};
-            bool nonzero=false;
-            for(unsigned offset:offsets) {
-                uint32_t value=read(offset);
-                if(!value)continue;
-                if(!selection.nonzero_banks) {
-                    selection.first_bank=b;selection.first_offset=offset;selection.first_value=value;
+            // v119 bank 54 was unreferenced and M=0, but SCTLR read
+            // 0x377d631e. Like the existing UFS planner, lease an unreferenced
+            // disabled bank, not an all-zero register image. The programmer
+            // disables it and replaces CBAR/CBA2R/TCR/TTBR/MAIR before enable.
+            // Keep the platform ACTLR requirement used by the fault registrar.
+            uint32_t sctlr=read(cb),actlr=read(cb+4);
+            if((sctlr&1)||actlr) {
+                if(!selection.blocked_banks) {
+                    selection.first_bank=b;selection.first_offset=(sctlr&1)?cb:cb+4;
+                    selection.first_value=(sctlr&1)?sctlr:actlr;
                 }
-                ++selection.nonzero_banks;nonzero=true;break;
+                ++selection.blocked_banks;continue;
             }
-            if(nonzero)continue;
             unsigned asid=b+1;bool collision=false;
             for(unsigned other=0;other<info.num_cb;++other) {
                 unsigned o=context_offset(info.global_pages,other);
@@ -144,6 +146,7 @@ struct NabuWlanDma {
             }
             if(collision){++selection.asid_conflicts;continue;}
             bank=b;context.asid=asid;context.id0=info.idr0;context.id2=info.idr2;
+            selection.selected_sctlr=sctlr;selection.selected_actlr=actlr;
             selection.stage=5;
             if(read_failed)status=ArmSmmu4KIoError;
             return !read_failed;

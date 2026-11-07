@@ -54,15 +54,16 @@ extern "C" bool nabu_wlan_runtime_prepare() {
     if(!transport->prepare(ops)){native_failed=true;return false;}
     if(!nabu_wlan_dma_attach_native(dma)) {
         const auto &s=dma->selection;
-        nabu_wireless_log("NABU WLAN DMA: selection stage=%u id=%#x/%#x/%#x scr0=%#x gfsr=%#x free-slots=%u used-banks=%u nonzero-banks=%u asid-conflicts=%u\n",
-            s.stage,s.id0,s.id1,s.id2,s.scr0,s.gfsr,s.free_slots,s.used_banks,s.nonzero_banks,s.asid_conflicts);
+        nabu_wireless_log("NABU WLAN DMA: selection stage=%u id=%#x/%#x/%#x scr0=%#x gfsr=%#x free-slots=%u used-banks=%u blocked-banks=%u asid-conflicts=%u\n",
+            s.stage,s.id0,s.id1,s.id2,s.scr0,s.gfsr,s.free_slots,s.used_banks,s.blocked_banks,s.asid_conflicts);
         nabu_wireless_log("NABU WLAN DMA: selection first-bank=%u offset=%#x value=%#x conflict-slot=%u smr=%#x s2cr=%#x\n",
             s.first_bank,s.first_offset,s.first_value,s.conflict_slot,s.conflict_smr,s.conflict_s2cr);
         native_failed=true;nabu_wireless_log("NABU WLAN DMA: native attachment failed state=%u status=%u bank=%u; allocations retained until confirmed stop\n",
             dma->state,dma->status,dma->bank);return false;
     }
-    nabu_wireless_log("NABU WLAN DMA: attached bank=%u asid=%u slots=%u/%u streams=0x640/0x641 arena=0xa0000000+0x800000 tables=%u pages; CE not started\n",
-        dma->bank,dma->context.asid,dma->routes[0].slot,dma->routes[1].slot,(unsigned)dma->built.table_pages);
+    nabu_wireless_log("NABU WLAN DMA: attached bank=%u asid=%u slots=%u/%u streams=0x640/0x641 arena=0xa0000000+0x800000 tables=%u pages prior-sctlr=%#x prior-actlr=%#x; CE not started\n",
+        dma->bank,dma->context.asid,dma->routes[0].slot,dma->routes[1].slot,(unsigned)dma->built.table_pages,
+        dma->selection.selected_sctlr,dma->selection.selected_actlr);
     return !faults_pending();
 }
 extern "C" bool nabu_wlan_runtime_resources_ready() {
