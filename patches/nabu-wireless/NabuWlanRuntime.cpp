@@ -124,6 +124,10 @@ extern "C" void nabu_wlan_runtime_stop() {
             dma->program.tlb_synchronized,dma->program.must_retain_tables);
         return;
     }
+    if(dma&&dma->context_started)
+        nabu_wireless_log("NABU WLAN DMA: stopped context released bank=%u disabled=%u tlb-sync=%u retain=%u phase=%u; inactive configuration preserved\n",
+            dma->bank,dma->program.disabled_verified,dma->program.tlb_synchronized,
+            dma->program.must_retain_tables,dma->stop.phase);
     dma=nullptr;
     nabu_wireless_log("NABU WLAN DMA: stopped mappings and allocations released\n");
 }

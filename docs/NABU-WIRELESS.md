@@ -751,3 +751,11 @@ FAULT检查Busy，尚未编程页表或启动PAS。第122轮依据Linux Qualcomm
 第123轮2,910,094字节日志及完整64MiB槽已备份清空，日志未封口，APFS计数93。
 详见[第123轮实测](../analysis/nabu-wlan-original-startup-v123.md)与
 [停止清理修正](../analysis/nabu-wlan-stop-cleanup-v124.md)。
+
+第124轮完整CI42400310573、桌面和USB均通过。完整日志将停止清理失败定位到
+CBAR54清零后仍读回0x1f300；上下文停用和TLB同步实际成功。第125轮按已验证
+停止及流归属条件修正释放，不再将禁用配置寄存器全零作为条件。首次固件异常
+仍为0xb019b9bc，蓝牙HCI基线保留。第124轮3,062,031字节日志和完整槽已备份
+清空，APFS计数94，设备在Android。详见[释放条件修正](../analysis/nabu-wlan-disabled-release-v125.md)。
+用户提出的QCA6174、共用cal及BT先启动假设已按本机资料核对，见
+[共享资源与启动顺序证据](../analysis/nabu-wlan-bt-shared-resources-v124.md)。

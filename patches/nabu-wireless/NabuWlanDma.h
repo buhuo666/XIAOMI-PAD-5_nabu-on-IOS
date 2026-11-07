@@ -46,7 +46,7 @@ struct NabuWlanDma {
         uint32_t selected_sctlr=0,selected_actlr=0,actlr_readback=0;
     } selection{};
     enum StopPhase { StopNone, StopOwnership, StopFaultRoutes, StopDisableContext,
-        StopRestoreRoutes, StopClearContext, StopRestoreActlr, StopComplete };
+        StopRestoreRoutes, StopRestoreActlr=6, StopComplete }; // Phase 5 was the removed configuration clear.
     struct StopTrace {
         StopPhase phase=StopNone;
         unsigned offset=0;
@@ -282,11 +282,11 @@ struct NabuWlanDma {
         stop.offset=at;stop.expected=expected;stop.actual=actual;stop.readback_valid=!read_failed;
         status=read_failed?ArmSmmu4KIoError:ArmSmmu4KStateMismatch;return false;
     }
-    bool stop_register(unsigned at,uint32_t expected,uint32_t allowed_set=0) {
+    bool stop_register(unsigned at,uint32_t expected) {
         stop.offset=at;stop.expected=expected;stop.actual=0;stop.readback_valid=false;
         if(!write(at,expected)){status=ArmSmmu4KIoError;return false;}
         stop.actual=read(at);stop.readback_valid=!read_failed;
-        if(read_failed||(stop.actual&~allowed_set)!=expected)
+        if(read_failed||stop.actual!=expected)
             return stop_mismatch(at,expected,stop.actual);
         return true;
     }
@@ -317,7 +317,7 @@ struct NabuWlanDma {
         if(ok&&context_started) {
             stop={};stop.phase=StopDisableContext;
             status=ArmSmmu4KDisableOwnedContext(&platform.io,bank,&context,10000,&program);
-            ok=status==0&&!program.must_retain_tables;
+            ok=status==0&&program.disabled_verified&&program.tlb_synchronized&&!program.must_retain_tables;
             if(!ok&&status==0)status=ArmSmmu4KStateMismatch;
         }
         if(ok) {
@@ -328,21 +328,14 @@ struct NabuWlanDma {
             }
         }
         if(ok) {
-            if(remove_fault_handler){remove_fault_handler(fault_cookie,bank);remove_fault_handler=nullptr;}
-            if(context_started) {
-                stop.phase=StopClearContext;
-                const unsigned offsets[]={0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
-                // Match ArmSmmu4KValidateContextReadback: only TCR2.TBI0/1
-                // may read as one. Context disable and TLBSYNC already passed.
-                for(unsigned offset:offsets) {
-                    if(!stop_register(bank_offset+offset,0,offset==0x10?0x60:0)){ok=false;break;}
-                }
-                if(ok)ok=stop_register(0x1000+bank*4,0)&&stop_register(0x1800+bank*4,0);
-            }
-            if(ok) {
-                stop.phase=StopRestoreActlr;
-                ok=stop_register(bank_offset+4,selection.selected_actlr);
-            }
+            // PAS is stopped, the owned context is disabled/TLB-synchronized,
+            // and both SMRs are restored to their original invalid values.
+            // Inert CBAR/TCR/TTBR/MAIR contents do not keep tables live. Like
+            // vendor destroy_domain_context, leave them for the next owner.
+            // v124 CBAR54 ignores a zero write and retains 0x1f300.
+            stop.phase=StopRestoreActlr;
+            ok=stop_register(bank_offset+4,selection.selected_actlr);
+            if(ok&&remove_fault_handler){remove_fault_handler(fault_cookie,bank);remove_fault_handler=nullptr;}
         }
         platform.unlock(platform.cookie);
         if(ok){stop.phase=StopComplete;mutated=false;release_memory();}

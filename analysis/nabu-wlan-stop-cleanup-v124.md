@@ -66,3 +66,22 @@ program-phase/disabled/tlb-sync/retain 判断。其他阶段记录首个失败�
 部分清理后重试机制。实机需要 v124 新日志才能判定 v123 的真实失败点。
 arm64 对象构建、内核链接及 return-trace 检查已通过，输出位于
 `artifacts/nabu-wireless-trace-v124`。完整 CI 与实机验证尚未完成。
+
+## v124 实机结果
+
+121123a 的完整 CI 42400310573 两个 job 均成功后临时启动，用户确认桌面/USB
+正常。WirelessInventory 的 32767 字节摘要已满，末尾缺少 DMA 清理结果；回到
+Android 后的完整日志取得真实失败位置：
+
+`status=7 phase=5 offset=0x10d8 expected=0 actual=0x1f300 readback=1 bank=54
+program-phase=7 disabled=1 tlb-sync=1 retain=0`。
+
+该偏移为 GR1 CBAR54，实际保留已编程的 0x1f300；已越过上下文配置中 TCR2 的
+清理检查。PAS6 成功，上下文停用和 TLB 同步实际成功，失败的是额外要求 CBAR
+清零的本地条件。不能由此宣称 v123 必定先失败于 TCR2，也不能把停止阶段条件
+解释为更早的 WLAN PFR。第125轮将依据已停用上下文及原机销毁流程修正释放条件。
+
+WLAN SMMU 接入成功，固件仍在0xb019b9bc异常，FW_READY/INIT_DONE均0。蓝牙
+原生HCI成功回执保留；本轮未操作耳机。已回收3,062,031字节连续日志及完整64MiB
+槽，备份清空回读通过，boot分区未改变。日志未封口，APFS93→94、fullfsync成功。
+证据：`log/host/wireless-v124/result-summary.json`。

@@ -39,9 +39,8 @@ struct Peer {
     unsigned allocations=0,releases=0,published=0,writes=0,locks=0,installed=0,removed=0,fail_alloc=0;
     bool locked=false,timeout=false,bad_pa=false,fail_install=false;
     bool ignore_actlr_zero=false,fail_actlr_restore=false;
-    bool qcom_fault_quirk=false,tcr2_read_as_one=false;
+    bool qcom_fault_quirk=false,tcr2_read_as_one=false,ignore_cbar_clear=false;
     unsigned ignore_fault_writes=0,ignore_write_at=0,fail_read_at=0;
-    uint32_t tcr2_clear_bits=0;
     bool fail_translation=false;
     std::vector<unsigned> write_addresses;
     std::vector<std::pair<unsigned,uint32_t>> write_values;
@@ -78,7 +77,7 @@ struct Peer {
                 ++s.writes;s.write_addresses.push_back(at);
                 s.write_values.push_back({at,v});
                 if(s.ignore_write_at&&s.ignore_write_at==at)return 0;
-                if(at>=128*4096&&(at&4095)==0x10&&v==0)v|=s.tcr2_clear_bits;
+                if(s.ignore_cbar_clear&&at>=0x1000&&at<0x1000+56*4&&v==0)return 0;
                 if(at>=128*4096&&(at&4095)==4) {
                     if(s.ignore_actlr_zero&&v==0)return 0;
                     if(s.fail_actlr_restore&&v==3)return 1;
@@ -118,6 +117,31 @@ static uint64_t walk(const NabuWlanDma &d,uint64_t va) {
     abort();
 }
 int main() {
+    {Peer p;NabuWlanDma d;p.ignore_cbar_clear=true;p.qcom_fault_quirk=true;p.tcr2_read_as_one=true;
+        // Match v124: bank 55 remains owned, WLAN leases bank 54 and slots 6/7.
+        for(unsigned i=0;i<4;++i){p.regs[0x808+4*i]=0x80000060+0x10*i;p.regs[0xc08+4*i]=55;}
+        p.regs[0xc18]=0x200ff;p.regs[0xc1c]=0x200ff;p.regs[(128+54)*4096+4]=3;
+        assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
+        assert(d.bank==54&&d.routes[0].slot==6&&d.routes[1].slot==7);
+        auto owned_regs=p.regs;unsigned writes=p.write_addresses.size();
+        d.lost();assert(p.releases==0);
+        bool released=d.release_after_stop();
+        if(!released)fprintf(stderr,"v124 CBAR cleanup reproduction: status=%u phase=%u offset=%#x expected=%#x actual=%#x disabled=%u tlb-sync=%u retain=%u\n",
+            d.status,d.stop.phase,d.stop.offset,d.stop.expected,d.stop.actual,
+            d.program.disabled_verified,d.program.tlb_synchronized,d.program.must_retain_tables);
+        assert(released&&p.memory.empty()&&p.releases==129);
+        assert(d.program.disabled_verified&&d.program.tlb_synchronized&&!d.program.must_retain_tables);
+        assert(p.regs[d.bank_offset]==0&&p.regs[d.bank_offset+4]==3);
+        const unsigned inactive_offsets[]={0x10,0x20,0x24,0x28,0x2c,0x30,0x38,0x3c};
+        for(unsigned off:inactive_offsets)assert(p.regs[d.bank_offset+off]==owned_regs[d.bank_offset+off]);
+        assert(p.regs[0x10d8]==0x1f300&&p.regs[0x18d8]==1);
+        for(unsigned i=writes;i<p.write_addresses.size();++i) {
+            unsigned at=p.write_addresses[i];assert(at!=0x10d8&&at!=0x18d8);
+            for(unsigned off:inactive_offsets)assert(at!=d.bank_offset+off);
+        }
+        assert(p.regs[0x818]==0&&p.regs[0x81c]==0&&p.regs[0xc18]==0x200ff&&p.regs[0xc1c]==0x200ff);
+        for(unsigned i=0;i<4;++i)assert(p.regs[0x808+4*i]==0x80000060+0x10*i&&p.regs[0xc08+4*i]==55);
+        p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;p.tcr2_read_as_one=true;p.qcom_fault_quirk=true;
         p.regs[0xc08]=0x200ff;p.regs[0xc0c]=0x200ff;p.regs[(128+55)*4096+4]=3;
         assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
@@ -165,25 +189,32 @@ int main() {
         assert(d.program.must_retain_tables&&!d.program.disabled_verified&&!d.program.tlb_synchronized);
         p.ignore_write_at=0;assert(d.release_after_stop());p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
-        unsigned tcr2=p.regs[d.bank_offset+0x10];p.tcr2_clear_bits=0x80;
+        p.ignore_write_at=0x808;
+        assert(!d.release_after_stop()&&p.releases==0&&p.removed==0);
+        assert(d.stop.phase==NabuWlanDma::StopRestoreRoutes&&d.stop.offset==0x808&&
+            d.stop.expected==0&&d.stop.actual==0x80000640&&d.status==ArmSmmu4KStateMismatch);
+        assert(d.program.disabled_verified&&d.program.tlb_synchronized&&!d.program.must_retain_tables);
+        p.ignore_write_at=0;assert(d.release_after_stop());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
+        unsigned tcr2=p.regs[d.bank_offset+0x10];p.regs[d.bank_offset+0x10]|=0x80;
         assert(!d.release_after_stop()&&p.releases==0&&d.allocated==128);
-        assert(d.stop.phase==NabuWlanDma::StopClearContext&&d.stop.offset==d.bank_offset+0x10&&
-            d.stop.expected==0&&d.stop.actual==0x80&&d.stop.readback_valid);
-        assert(d.status==ArmSmmu4KStateMismatch&&d.program.disabled_verified&&d.program.tlb_synchronized);
-        // Repair the simulated register image to dispose of retained test memory.
-        p.tcr2_clear_bits=0;p.regs[d.bank_offset+0x10]=tcr2;
+        // Inactive configuration need not be cleared, but ownership of the
+        // programmed image must still be verified before disabling it.
+        assert(d.stop.phase==NabuWlanDma::StopDisableContext&&d.status==ArmSmmu4KStateMismatch);
+        assert(!d.program.disabled_verified&&d.program.must_retain_tables&&(p.regs[d.bank_offset]&1));
+        p.regs[d.bank_offset+0x10]=tcr2;
         assert(d.release_after_stop());p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;p.regs[(128+55)*4096+4]=3;
         assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p));
-        auto owned_regs=p.regs;p.fail_actlr_restore=true;
+        p.fail_actlr_restore=true;
         assert(!d.release_after_stop()&&p.releases==0&&d.allocated==128);
         assert(d.stop.phase==NabuWlanDma::StopRestoreActlr&&d.stop.offset==d.bank_offset+4&&
             d.stop.expected==3&&!d.stop.readback_valid&&d.status==ArmSmmu4KIoError);
         assert(d.program.disabled_verified&&d.program.tlb_synchronized&&!d.program.must_retain_tables);
-        // Restore only the test peer image for disposal; production retained
-        // resources are not retried after a partially cleared context.
-        p.fail_actlr_restore=false;p.regs=owned_regs;
-        assert(d.release_after_stop());p.foreign_unchanged();}
+        assert(p.removed==0);
+        // The intact disabled context remains verifiable on a retry.
+        p.fail_actlr_restore=false;
+        assert(d.release_after_stop()&&p.removed==1);p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;p.qcom_fault_quirk=true;
         p.regs[0xc08]=0x100;p.regs[0xc0c]=0x100;
         assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
@@ -249,7 +280,7 @@ int main() {
             d.program.disabled_verified&&!d.program.tlb_synchronized&&d.program.must_retain_tables);
         p.timeout=false;assert(d.release_after_stop()&&p.memory.empty()&&p.releases==129&&p.removed==1);
         assert(p.regs[0x808]==0&&p.regs[0xc08]==0&&p.regs[0x80c]==0&&p.regs[0xc0c]==0);
-        assert(p.regs[0x1000+d.bank*4]==0&&p.regs[0x1800+d.bank*4]==0);p.foreign_unchanged();
+        assert(p.regs[0x1000+d.bank*4]==0x1f300&&p.regs[0x1800+d.bank*4]==1);p.foreign_unchanged();
     }
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));p.regs[0]=0;
         assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0);
@@ -319,7 +350,7 @@ int main() {
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
-    puts("WLAN DMA production allocation callbacks above 4GiB, 2048 independent 4K translations, Qualcomm fault encoding, TCR2 read-as-one cleanup, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB-gated release passed");
+    puts("WLAN DMA production allocation callbacks above 4GiB, 2048 independent 4K translations, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
 }
 '''
 def main():
