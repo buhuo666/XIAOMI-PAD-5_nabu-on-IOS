@@ -179,3 +179,9 @@ setup-complete、FW_READY、INIT_DONE、MSA协议ready、capability/status与MAC
 NabuGlink/NabuMsa的arm64内核对象编译通过。结果在
 `log/host/wifi-recheck-v114/{wlfw-test,glink-test,compile}`。
 完整CI与实机验证另行记录；首次b019b9bc异常原因仍未解决。
+
+接续验证完成：源码7b2c54d，完整CI42382217873的两个job全部成功，软件探针CI
+42382217973编译/签名成功。新内核已本地链接并通过return-trace检查；以v108为基线
+仅替换探针的bootstrap通过apfsck。候选在artifacts/nabu-wireless-recheck-v114和
+artifacts/nabu-bootstrap-recheck-v114，尚未部署或实机验收。续接记录为
+log/host/wifi-recheck-v114/continuation.json。第114轮仍是最近实机结果，不记作第115轮。

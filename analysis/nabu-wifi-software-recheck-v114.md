@@ -139,3 +139,9 @@ DHCP或数据收发成功。新增代码未启动wifid、未更改设备树或�
 本地已完成内核状态失效回放，iOS SDK编译由system-services工作流验证；
 软件新增字段尚未实机采集。后续一次报告可同时回答固件当前实例是否失效、
 上层job是否打包、IOKit/BSD接口是否发布，作为两层对接的可观测入口。
+
+接续验证完成：源码7b2c54d，完整CI42382217873的两个job全部成功，软件探针CI
+42382217973编译/签名成功。新内核已本地链接并通过return-trace检查；以v108为基线
+仅替换探针的bootstrap通过apfsck。候选在artifacts/nabu-wireless-recheck-v114和
+artifacts/nabu-bootstrap-recheck-v114，尚未部署或实机验收。续接记录为
+log/host/wifi-recheck-v114/continuation.json。第114轮仍是最近实机结果，不记作第115轮。

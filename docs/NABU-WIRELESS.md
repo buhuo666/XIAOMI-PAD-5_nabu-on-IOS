@@ -664,3 +664,9 @@ CI通过后才临时启动设备，尚未实机验收。详见
 旧WLFW实例继续有效的问题，WLFW/GLINK的ASan/UBSan回放与arm64对象编译通过；
 保留MSA所有权，尚不自动恢复。WirelessInventory增加wifid打包、IOKit及BSD接口
 只读观测，SDK构建与完整CI另行记录。首次固件异常和真实网络数据面仍未解决。
+
+接续验证完成：源码7b2c54d，完整CI42382217873的两个job全部成功，软件探针CI
+42382217973编译/签名成功。新内核已本地链接并通过return-trace检查；以v108为基线
+仅替换探针的bootstrap通过apfsck。候选在artifacts/nabu-wireless-recheck-v114和
+artifacts/nabu-bootstrap-recheck-v114，尚未部署或实机验收。续接记录为
+log/host/wifi-recheck-v114/continuation.json。第114轮仍是最近实机结果，不记作第115轮。
