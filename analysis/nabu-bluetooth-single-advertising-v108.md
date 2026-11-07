@@ -52,3 +52,9 @@ QuRT字符环打印路径。Android两个ramdump开关当前为0，现有QuRT环
 CoreFoundation链接及签名检查通过；产物为134,768字节。联合内核编译、链接与返回
 入口补丁回放通过，TX/RX函数栈帧分别464/160字节。bootstrap已通过apfsck，两个
 相关LaunchDaemon仍以mobile执行。偏好写入和实际HCI结果等待第108轮实机验证。
+
+第108轮用户确认桌面/USB正常。mobile原生偏好同步及精确/有效读回均false，
+新bluetoothd PID181打印single-advertising选择，随后两个实时采集窗口未见718
+重启。真实扫描统计分别出现241、74、43、4、0、247条广播事件，均0 dropped，
+并有真实Discovered device日志。设置界面、配对及跨重启仍待验收；原始2005/200c
+状态须回收console日志核对。Wi-Fi仍同PC异常，FW_READY/INIT_DONE均0。
