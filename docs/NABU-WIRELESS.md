@@ -648,3 +648,8 @@ CI通过后才临时启动设备，尚未实机验收。详见
 连续日志备份清空回读通过；日志未封口，APFS计数82→83、fullfsync成功，引导
 分区未变。后续追踪取包后的DIAG消费/分派，详见
 [第113轮实测](../analysis/nabu-wlan-socket-receipts-v113.md)。
+
+第114轮采用一次有界root ID重复观测：首回复confirm0，现有WLFW/0900资格点
+重复相同字节confirm1，之后仍只发一次0900。仅证明控制槽再次可用，不声称ID
+已接受。生产回放ASan/UBSan、arm64编译、链接和返回检查通过，等待完整CI。
+详见[第114轮控制槽验证](../analysis/nabu-wlan-control-slot-v114.md)。

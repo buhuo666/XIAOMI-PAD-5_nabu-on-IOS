@@ -630,19 +630,27 @@ static void check_diag_socket_receipts() {
     // Full independent golden vectors from original MPSS receive/dequeue evidence:
     // wireless-v112/diag-rx-followup/confirm-probe-spec.json. Includes QRTR padding.
     const auto root_tx=wire_hex("010000000100000001000000054000000100000022000000000000001a000000210000001a00000001000000020000006d736d2f6d6f64656d2f726f6f745f7064000000");
+    auto first_root_tx=root_tx;first_root_tx[16]=0;
     const auto version_tx=wire_hex("010000000100000001000000074000000100000004000000000000001b0000004b4d0009");
     const auto root_v1=wire_hex("010000000700000000000000feffffff000000001400000001000000feffffff07000000000000001a0000000000000000000000");
     const auto root_v3=wire_hex("03070000140000000000feff0100feff07000000000000001a0000000000000000000000");
     const auto version_v1=wire_hex("010000000700000000000000feffffff000000001400000001000000feffffff07000000000000001b0000000000000000000000");
     const auto version_v3=wire_hex("03070000140000000000feff0100feff07000000000000001b0000000000000000000000");
     {
-        ConfirmPeer p;p.ticks(10);p.setup();auto tx=p.flush();assert(tx.size()==3);
-        assert(tx[0].header.confirm==0&&tx[1].wire==root_tx&&tx[2].wire==version_tx);
-        unsigned confirmed=ConfirmPeer::confirms(tx);assert(confirmed==2);
+        ConfirmPeer p;p.ticks(10);p.feature();p.root_id();p.server(4,4097,1,0,27);
+        auto tx=p.flush();assert(tx.size()==2);
+        assert(tx[0].header.confirm==0&&tx[1].wire==first_root_tx);
+        assert(p.g.diag_root_reply_bytes==34&&p.g.diag_root_replies_tx==1);
+        assert(!memcmp(p.g.diag_root_reply,first_root_tx.data()+32,34));
+        assert(!p.g.diag_receipts[0].sent&&!p.g.diag_receipts[1].sent&&p.g.ulog_requests==0);
+        unsigned confirmed=ConfirmPeer::confirms(tx);assert(confirmed==0);
+        p.ticks(20);tx=p.flush();assert(tx.empty()&&!p.g.diag_receipts[0].sent); // No WLFW, no repeat.
+        p.cal();tx=p.flush();assert(tx.size()==2&&tx[0].wire==root_tx&&tx[1].wire==version_tx);
+        confirmed+=ConfirmPeer::confirms(tx);assert(confirmed==2&&p.g.diag_root_replies_tx==2);
         for(unsigned i=0;i<2;++i){const auto &r=p.g.diag_receipts[i];
-            assert(r.sent&&r.active&&r.node==0&&r.port==26+i&&r.sent_tick==10&&r.packets==0);}
+            assert(r.sent&&r.active&&r.node==0&&r.port==26+i&&r.sent_tick==30&&r.packets==0);}
         p.root_id();tx=p.flush();assert(tx.size()==1&&tx[0].header.confirm==0);confirmed+=ConfirmPeer::confirms(tx);
-        auto duplicate=root_tx;duplicate[16]=0;assert(tx[0].wire==duplicate);
+        assert(tx[0].wire==first_root_tx&&p.g.diag_root_replies_tx==3);
         p.feed(wire_hex("210000001a00000001000000000000006d736d2f6d6f64656d2f776c616e5f706400"),0x4005,0,26);
         tx=p.flush();assert(tx.size()==1&&tx[0].header.confirm==0);confirmed+=ConfirmPeer::confirms(tx);
         assert(!p.g.ulog_route_verified&&p.g.ulog_requests==1&&p.g.ulog_waiting);
@@ -656,7 +664,9 @@ static void check_diag_socket_receipts() {
         confirmed+=ConfirmPeer::confirms(tx);assert(confirmed==2&&p.g.ulog_requests==4);
     }
     {
-        ConfirmPeer p;p.ticks(10);p.setup();p.flush();
+        ConfirmPeer p;p.ticks(10);p.setup();auto sent=p.flush();
+        assert(sent.size()==4&&sent[1].wire==first_root_tx&&sent[2].wire==root_tx&&sent[3].wire==version_tx);
+        assert(ConfirmPeer::confirms(sent)==2); // First root reply is never confirmed, even with WLFW ready.
         std::vector<std::vector<uint8_t>> wrong;
         auto packet=version_v1;packet[40]=7;packet[41]=0x40;wrong.push_back(packet); // Local 0x4007 is not DSP27.
         packet=version_v1;packet[8]=packet[36]=2;wrong.push_back(packet); // Valid envelope, wrong target node.
@@ -690,13 +700,48 @@ static void check_diag_socket_receipts() {
         // Ring pressure makes datagram() return false even with a remote intent.
         put32(4,16368);p.g.tftp_flush();
         assert(!p.g.diag_receipts[0].sent&&!p.g.diag_root_id_tx&&p.g.response_count==1);
+        assert(p.g.diag_root_reply_bytes==0&&p.g.diag_root_replies_tx==0);
         p.incoming(root_v1);assert(!p.g.diag_receipts[0].packets&&p.g.diag_resume_unmatched==3);
-        auto tx=p.flush();assert(tx.size()==1&&tx[0].wire==root_tx&&p.g.diag_receipts[0].sent);
+        auto tx=p.flush();assert(tx.size()==1&&tx[0].wire==first_root_tx&&!p.g.diag_receipts[0].sent);
+        assert(p.g.diag_root_reply_bytes==34&&p.g.diag_root_replies_tx==1);
         p.server(4,4097,1,0,27);p.cal();p.reset_tx();
         for(auto &intent:p.g.remote)intent.present=false;p.g.intent_requested=true;
-        p.g.send_ulog_command();assert(!p.g.diag_receipts[1].sent&&!p.g.ulog_waiting&&p.g.ulog_requests==0&&p.g.word(4)==0);
-        p.incoming(version_v1);assert(!p.g.diag_receipts[1].packets&&p.g.diag_resume_unmatched==4);
-        tx=p.flush();assert(tx.size()==1&&tx[0].wire==version_tx&&p.g.diag_receipts[1].sent&&p.g.ulog_requests==1);
+        p.g.send_ulog_command();assert(!p.g.diag_receipts[0].sent&&!p.g.diag_receipts[1].sent);
+        assert(!p.g.ulog_waiting&&p.g.ulog_requests==0&&p.g.word(4)==0&&p.g.diag_root_replies_tx==1);
+        p.incoming(root_v1);p.incoming(version_v1);
+        assert(!p.g.diag_receipts[0].packets&&!p.g.diag_receipts[1].packets&&p.g.diag_resume_unmatched==5);
+        tx=p.flush();assert(tx.size()==2&&tx[0].wire==root_tx&&tx[1].wire==version_tx);
+        assert(p.g.diag_receipts[0].sent&&p.g.diag_receipts[1].sent&&p.g.ulog_requests==1&&p.g.diag_root_replies_tx==2);
+    }
+    {
+        ConfirmPeer p;p.feature();p.root_id();p.server(4,4097,1,0,27);p.flush();p.cal();p.reset_tx();
+        for(unsigned i=1;i<16;++i)p.g.remote[i].present=false;
+        p.g.intent_requested=true; // One intent allows the repeat but forces 0900 to wait.
+        p.g.send_ulog_command();assert(p.g.diag_receipts[0].sent&&!p.g.diag_receipts[1].sent);
+        assert(p.g.diag_root_replies_tx==2&&!p.g.ulog_waiting&&p.g.ulog_requests==0);
+        assert(p.g.word(4)==88&&!memcmp(shared+p.g.tx.offset+16,root_tx.data(),root_tx.size()));
+        p.incoming(root_v1);assert(p.g.diag_receipts[0].packets==1&&!p.g.ulog_route_verified);
+        auto tx=p.flush();assert(tx.size()==1&&tx[0].wire==version_tx);
+        assert(p.g.diag_root_replies_tx==2&&p.g.diag_receipts[1].sent&&p.g.ulog_requests==1);
+        assert(p.flush().empty()); // Successful repeat is not retransmitted while 0900 waits.
+    }
+    for(unsigned retirement=0;retirement<4;++retirement) {
+        ConfirmPeer p;p.feature();p.root_id();p.server(4,4097,1,0,27);auto first=p.flush();
+        assert(first.size()==2&&first[1].wire==first_root_tx&&p.g.diag_root_reply_bytes==34);
+        if(retirement==0) {
+            p.feed({8,0,0,0,7,0,0,0,3,0,0,0,0xf7,0xfe,3},0x4005,0,30);
+            assert(p.g.diag_root_reply_bytes==0&&!p.g.diag_root_id_tx);
+        } else if(retirement==1)p.server(4,4097,1,0,28);
+        else if(retirement==2)p.server(5,4097,1,0,27);
+        else {
+            p.g.registry.records=p.board;
+            p.feed({0,9,0,0x24,0,20,0,1,12,0,'w','l','a','n','_','p','r','o','c','e','s','s',2,2,0,'E','X'},0x4002,0,9);
+            assert(p.g.wlan_crash_captured);
+        }
+        assert(p.g.ulog_stopped);p.cal();auto tx=p.flush();
+        assert(ConfirmPeer::confirms(tx)==0&&UlogPeer::commands(tx)==0);
+        assert(!p.g.diag_receipts[0].sent&&!p.g.diag_receipts[1].sent&&p.g.diag_root_replies_tx==1);
+        p.incoming(root_v1);assert(p.g.diag_resume_unmatched==1&&!p.g.diag_receipts[0].packets);
     }
     {
         ConfirmPeer p;p.setup();p.flush();p.server(4,4097,1,0,28);
@@ -871,7 +916,7 @@ int main() {
     check_ulog_commands();
     check_ulog_version_without_registration();
     check_diag_socket_receipts();
-    puts("GLINK: exact root-ID/0900 confirm vectors, two-probe-only transmission, v1/v3 socket receipts and rejection without DIAG success inference; bounded ULog route/CAL gates, framing, retirement and existing rings/fragments/KNEL/DMON recovery tests passed");
+    puts("GLINK: original root-ID without confirm, one exact repeat only after WLFW, failed-send/cache/order and retirement checks, two-confirm limit, v1/v3 socket receipts without DIAG success inference; bounded ULog route/CAL gates, framing and existing rings/fragments/KNEL/DMON recovery tests passed");
 }
 '''
 
@@ -904,7 +949,9 @@ def main():
               'ulog_version_probe_without_registration':True,
               'ulog_probe_evidence':'wireless-v111/diag-registration-followup/findings.md',
               'diag_confirm_probe_evidence':'wireless-v112/diag-rx-followup/confirm-probe-spec.json',
-              'diag_confirm_probes':['first root ID33 reply','single ULog0900 request'],
+              'diag_confirm_probes':['one exact root ID33 repeat after WLFW','single ULog0900 request'],
+              'diag_root_repeat_evidence':'wireless-v113/diag-consumer-followup/findings.md',
+              'diag_root_repeat_requires_successful_original_tx':True,
               'diag_confirm_does_not_verify_route':True,
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')

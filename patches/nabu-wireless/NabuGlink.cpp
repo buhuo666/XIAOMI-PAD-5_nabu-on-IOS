@@ -68,6 +68,8 @@ struct NabuGlink {
     uint8_t diag_feature_mask[4]{}, diag_root_id = 0, diag_wlan_id = 0;
     uint32_t diag_control_node = 0, diag_control_port = 0;
     bool diag_feature_queued = false, diag_feature_tx = false, diag_root_id_tx = false;
+    uint8_t diag_root_reply[46]{};
+    unsigned diag_root_reply_bytes = 0, diag_root_replies_tx = 0;
     bool diag_command_server = false, diag_ulog_registered = false, ulog_route_verified = false;
     uint32_t diag_command_node = 0, diag_command_peer = 0;
     unsigned diag_command_packets = 0, diag_frame_errors = 0, ulog_version_replies = 0;
@@ -75,7 +77,7 @@ struct NabuGlink {
         uint32_t node = 0, port = 0;
         unsigned sent_tick = 0, first_tick = 0, packets = 0;
         bool sent = false, active = false;
-    } diag_receipts[2]{}; // 0: first root ID reply; 1: single 0900 request.
+    } diag_receipts[2]{}; // 0: one root ID repeat after WLFW appears; 1: single 0900 request.
     unsigned diag_resume_packets = 0, diag_resume_invalid = 0, diag_resume_unmatched = 0;
     unsigned ulog_ticks = 0, ulog_sent_tick = 0, ulog_last_read_tick = 0, ulog_gate_ticks = 0;
     unsigned ulog_stage = 0, ulog_selected = 0, ulog_reads = 0, ulog_empty = 0, ulog_saved_bytes = 0;
@@ -281,6 +283,7 @@ struct NabuGlink {
                         bzero(diag_ids, sizeof(diag_ids)); diag_id_count = 0;
                         diag_feature_queued = diag_feature_tx = diag_root_id_tx = false;
                         diag_root_id = diag_wlan_id = 0;
+                        diag_root_reply_bytes = 0;
                         diag_ulog_registered = false; retire_ulog();
                         diag_receipts[0].active = diag_receipts[1].active = false;
                         nabu_wireless_log("NABU ULOG: control endpoint changed; old handles retired\n");
@@ -497,6 +500,19 @@ struct NabuGlink {
         // advertised to APPS. Probe only its constant version reply after WLAN QMI
         // appears; later commands require the actual version response or observed REG.
         if (!diag_ulog_registered && !ulog_route_verified && (ulog_stage != 0 || !wlfw_port)) return;
+        // The DSP uses one pending buffer per control socket. Repeat the exact
+        // locally sent root reply once at the existing WLFW/version-probe point.
+        // Only this repeat requests a receipt, so no earlier control receipt can
+        // be confused with it. A receipt proves another dequeue, not ID acceptance.
+        if (ulog_stage == 0 && wlfw_port && diag_root_reply_bytes && !diag_receipts[0].sent) {
+            if (!datagram(1, diag_ports[0], diag_control_node, diag_control_port,
+                          diag_root_reply, diag_root_reply_bytes, true)) return;
+            mark_diag_confirm(0, diag_control_node, diag_control_port);
+            nabu_wireless_log("NABU DIAG CONTROL PROBE: repeated-root-id bytes=%u prior-replies=%u step=%u; followup socket dequeue probe, receipt pending, parser acceptance unknown\n",
+                diag_root_reply_bytes, diag_root_replies_tx, wlfw.step);
+            ++diag_root_replies_tx; ++diag_replies_tx;
+            dump_ulog_bytes(diag_root_reply, diag_root_reply_bytes, "control-repeat", 1);
+        }
         if (ulog_stage >= 4 && ulog_ticks - ulog_last_read_tick < 5) return;
         if (ulog_requests >= 1024) { ulog_stopped = true; return; }
         uint8_t request[32] = {0x4b, 0x4d}; unsigned bytes = 4;
@@ -559,6 +575,8 @@ struct NabuGlink {
             ulog_route_verified, ulog_version_replies);
         nabu_wireless_log("NABU DIAG RESUME: packets=%u invalid=%u unmatched=%u; no DIAG acceptance or route-success inference\n",
             diag_resume_packets, diag_resume_invalid, diag_resume_unmatched);
+        nabu_wireless_log("NABU DIAG CONTROL PROBE: root-replies-tx=%u repeat-sent=%u repeat-socket-receipts=%u; slot availability only\n",
+            diag_root_replies_tx, diag_receipts[0].sent, diag_receipts[0].packets);
         for (unsigned i = 0; i < 2; ++i) {
             const DiagReceipt &r = diag_receipts[i];
             nabu_wireless_log("NABU DIAG CONFIRM: probe=%u sent=%u active=%u endpoint=%u:%u sent-tick=%u socket-receipts=%u first-tick=%u\n",
@@ -606,14 +624,16 @@ struct NabuGlink {
                 response_head = (response_head+1)%8; --response_count; continue;
             }
             NabuSmem reply{r.data, r.bytes};
-            bool confirm = r.from == diag_ports[0] && r.bytes >= 16 && reply.u32(0) == 33 &&
-                diag_root_id && reply.u32(12) == diag_root_id && !diag_receipts[0].sent;
-            if (!datagram(1, r.from, r.node, r.port, r.data, r.bytes, confirm)) break;
-            if (confirm) mark_diag_confirm(0, r.node, r.port);
+            if (!datagram(1, r.from, r.node, r.port, r.data, r.bytes)) break;
             if (r.from == diag_ports[0]) {
                 ++diag_replies_tx;
                 if (reply.u32(0) == 8) diag_feature_tx = true;
-                if (reply.u32(0) == 33 && reply.u32(12) == diag_root_id) diag_root_id_tx = true;
+                if (reply.u32(0) == 33 && reply.u32(12) == diag_root_id) {
+                    diag_root_id_tx = true; ++diag_root_replies_tx;
+                    if (!diag_root_reply_bytes) {
+                        memcpy(diag_root_reply, r.data, r.bytes); diag_root_reply_bytes = r.bytes;
+                    }
+                }
                 if (diag_replies_tx <= 4) {
                     nabu_wireless_log("NABU DIAG CTRL TX: sequence=%u to=%u:%u from=%u id=%u bytes=%u; locally transmitted\n",
                         diag_replies_tx, r.node, r.port, r.from, reply.u32(0), r.bytes);
