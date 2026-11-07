@@ -58,3 +58,32 @@ CoreFoundation链接及签名检查通过；产物为134,768字节。联合内�
 重启。真实扫描统计分别出现241、74、43、4、0、247条广播事件，均0 dropped，
 并有真实Discovered device日志。设置界面、配对及跨重启仍待验收；原始2005/200c
 状态须回收console日志核对。Wi-Fi仍同PC异常，FW_READY/INIT_DONE均0。
+
+## 回收结果与配对验收
+
+用户已确认蓝牙开关正常、能看到设备，并与自己的OPPO Enco Air5 Pro配对成功、
+显示已连接。原生日志有HFP、AVRCP、A2DP连接及AAC-LC/44100Hz协商结果。用户指出
+声音服务尚未修复，因此音频播放验证留到声音服务阶段，不将服务连接记为实际出声。
+
+回到Android后已备份完整64MiB日志槽，恢复9,157,715字节连续日志，清空并回读通过。
+日志没有最终提交头，仍标为未封口；APFS boot record为77→78，fullfsync=ok。
+
+原始证据为`log/device/nabu-boot-20261107-108/runtime-log/runtime.log`：
+
+| 行号 | 原生控制器路径 | 实际结果 |
+|---|---|---|
+| 44115 | bluetoothd PID181选择single advertising | 原生偏好已生效 |
+| 45335–45336 | 最后一次初始化Reset | status=0 |
+| 45589、45595 | LE Set Random Address，0x2005 | status=0 |
+| 46062、46074 | LE Set Scan Parameters，0x200b | status=0 |
+| 46078、46092 | LE Set Scan Enable，0x200c | status=0 |
+
+这三项命令处于同一个Reset区间；回收前缀中，此后没有新的HCI Reset，也没有718
+重启，原生进程保持PID181。仅统计完整可解析的后续定向响应，200b有27条、200c有
+50条，状态均0。console存在少量行交错，且采集有界；不把这些数量当成全部空口包数。
+此前241、74、43、4、0、247条广播、各0 dropped的统计来自原生扫描服务。
+
+结论：第108轮的开关、发现、配对及连接已通过，随机地址和扫描启动的控制器响应
+得到确认。Wi-Fi仍在相同PC产生PFR，FW_READY/INIT_DONE均0。第109轮复用当前
+内核/bootstrap，通过一次Android后的重新启动验证偏好及耳机配对记录持久化；
+进入桌面后先只读查询，不重复写入偏好，以免掩盖持久化问题。

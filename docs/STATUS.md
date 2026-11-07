@@ -2,7 +2,7 @@
 
 更新：2026-11-07，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第108轮桌面正常，蓝牙已观察到广播和发现；根据本机ICNSS及
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第108轮蓝牙开关、发现、配对和连接通过，内核日志已回收；根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
@@ -477,3 +477,12 @@ v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长�
 重启。真实扫描统计分别出现241、74、43、4、0、247条广播事件，均0 dropped，
 并有真实Discovered device日志。设置界面、配对及跨重启仍待验收；原始2005/200c
 状态须回收console日志核对。Wi-Fi仍同PC异常，FW_READY/INIT_DONE均0。
+
+第108轮用户确认蓝牙开关/发现/配对/连接通过，设备为OPPO Enco Air5 Pro。原生
+HFP/AVRCP/A2DP连接和AAC协商成功；声音服务尚未修复，实际播放留到声音阶段。
+已回到Android，完整64MiB槽及9,157,715字节连续日志已备份清空回读，日志未封口；
+APFS计数77→78、fullfsync成功。同一Reset区间中2005、200b、200c实际响应均0，
+之后前缀中无新Reset或718重启。Wi-Fi仍同PC异常、FW_READY/INIT_DONE均0。
+第109轮将复用v108内核/bootstrap验证蓝牙原生偏好和耳机配对的跨重启保留；
+Wi-Fi同步追踪可恢复异常的上下文消费者，暂未形成新的实机修改候选。
+详见[第108轮回收结果](../analysis/nabu-bluetooth-single-advertising-v108.md)。
