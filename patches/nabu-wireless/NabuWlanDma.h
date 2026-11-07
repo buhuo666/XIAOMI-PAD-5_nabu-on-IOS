@@ -29,6 +29,8 @@ struct NabuWlanDma {
     uint32_t old_smr[2]{},old_s2cr[2]{};
     unsigned allocated=0,cursor=0,bank=0;
     enum State { Empty, Prepared, Active, Retained } state=Empty;
+    enum PrepareFailure { None, BlockAllocation, TableAllocation, TableBuild } prepare_failure=None;
+    unsigned failed_block=0;
     bool read_failed=false,mutated=false;
     void (*remove_fault_handler)(void *,unsigned)=nullptr;
     void *fault_cookie=nullptr;
@@ -49,19 +51,20 @@ struct NabuWlanDma {
     bool prepare(const Platform &ops) {
         if(state!=Empty||allocated)return false;
         platform=ops;cursor=0;read_failed=false;mutated=false;
-        streams={};program={};stream_result={};
+        streams={};program={};stream_result={};status=ArmSmmu4KSuccess;
+        prepare_failure=None;failed_block=0;
         for(;allocated<block_count;++allocated) {
             blocks[allocated]=platform.allocate(platform.cookie,block_bytes);
-            if(!blocks[allocated].cpu){release_memory();return false;}
+            if(!blocks[allocated].cpu){prepare_failure=BlockAllocation;failed_block=allocated;release_memory();return false;}
             ranges[allocated]={iova_base+(uint64_t)allocated*block_bytes,blocks[allocated].physical,
                 block_bytes,ArmSmmu4KRead|ArmSmmu4KWrite,1,3};
             platform.publish(platform.cookie,blocks[allocated].cpu,block_bytes);
         }
         tables=platform.allocate(platform.cookie,table_bytes);
-        if(!tables.cpu){release_memory();return false;}
+        if(!tables.cpu){prepare_failure=TableAllocation;release_memory();return false;}
         mapping={32,36,tables.physical,block_count*block_bytes/4096};
         status=ArmSmmu4KBuild(&mapping,ranges,block_count,(uint64_t *)tables.cpu,table_bytes/4096,&built);
-        if(status){release_memory();return false;}
+        if(status){prepare_failure=TableBuild;release_memory();return false;}
         platform.publish(platform.cookie,tables.cpu,(unsigned)built.table_pages*4096);
         context={};context.lower=&mapping;context.lower_tables=&built;
         // Explicitly cleaned tables allow noncoherent walks. No execute mapping.

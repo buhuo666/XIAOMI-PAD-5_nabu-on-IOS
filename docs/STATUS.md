@@ -593,3 +593,14 @@ log/host/wifi-recheck-v114/continuation.json。第114轮仍是最近实机结果
 接上真实HTC READY/WMI服务连接、超时/固件失效停止和常驻服务；HTT/setup、扫描/
 连接/联网尚未启用，不能作为Wi-Fi修复完成。独立复核修正了WLAN SMMU寄存器窗口
 从0xd0000到原DT的0x100000，否则真实128全局页布局无法通过组件校验。
+
+## 第117轮归档与第118轮内存分配修复（2026-11-08）
+
+第117轮用户确认桌面/USB正常，回Android后已回收4,370,277字节日志，完整
+64MiB槽备份并清空；日志缺少最终提交头，APFS计数86→87、fullfsync成功。
+真实错误为64KiB连续分配受IOMallocContiguous物理输出参数的32位上限限制，
+未找到4GiB以下连续页；WLAN未进入PAS启动。已移除此分配限制，保持36位
+SMMU输出映射，增加物理地址及失败阶段日志。生产分配回调回归已复现旧失败，
+修复后DMA及CE/HTC回放通过ASan/UBSan；构建、CI及实机结果另行记录。
+蓝牙UART原生服务与HCI成功回执保留；软件报告仍无wifid job和Wi-Fi网络接口。
+详见[分配修复与实机证据](../analysis/nabu-wlan-dma-allocation-v118.md)。
