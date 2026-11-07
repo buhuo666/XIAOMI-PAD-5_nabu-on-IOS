@@ -131,15 +131,21 @@ int main() {
     subprocess.run(host_command(['clang++', '-std=c++17', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
                                  '-fsanitize=address,undefined', host_path(cpp), '-o', host_path(binary)]), check=True)
     result = subprocess.check_output(host_command([host_path(binary)]), text=True).strip()
-    # Identity changes must not alter the hardware nodes, pixels, memory or scale.
+    # Donor software identity changes model and its exact product-id; every
+    # other property, including hardware nodes, pixels, memory and scale, agrees.
     trees = [parse(make_tree(bytes(64), bootstrap=True, userland_model=m).encode())
              for m in (None, 'iPad7,11')]
+    products = [next(props for props, _ in tree[1] if props['name'] == b'product\0')
+                for tree in trees]
+    assert 'product-id' not in products[0]
+    assert products[1].pop('product-id') == bytes.fromhex('4d013e8fae976e61a7b3b69cdb5a015fa7ff04bb')
     assert trees[0][1] == trees[1][1]
     assert {k:v for k,v in trees[0][0].items() if k != 'model'} == {
         k:v for k,v in trees[1][0].items() if k != 'model'}
     report = {'passed': True, 'host_result': result,
               'source_sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(),
               'model_independent_hardware_nodes': True,
+              'identity_only_differences': ['/model', '/product/product-id'],
               'scope': 'Actual configuration method under ASan/UBSan with registry/boot-video mocks; no panel or desktop claim.'}
     if a.candidate:
         data = a.candidate.read_bytes()
