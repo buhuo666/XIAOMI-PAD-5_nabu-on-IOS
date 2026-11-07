@@ -83,6 +83,27 @@ static unsigned count_command(NabuGlink &g, unsigned wanted) {
     }
     return count;
 }
+static void check_tftp_reuse() {
+    NabuGlink g{};
+    uint8_t firmware[600];
+    for (unsigned i=0;i<sizeof(firmware);++i) firmware[i]=i;
+    g.wlan_firmware=firmware;g.wlan_bytes=sizeof(firmware);
+    const uint8_t negotiated[]="\0\1/readonly/firmware/image/wlanmdsp.mbn\0octet\0blksize\0" "4000";
+    g.tftp(0,23,0x4000,negotiated,sizeof(negotiated));
+    NabuTftp &t=g.transfers[0];
+    assert(t.block_size==4000&&t.options&&t.payload[1]==6);
+    uint8_t ack[]={0,4,0,0};t.sent();g.tftp(0,23,0x4010,ack,sizeof(ack));
+    assert(t.payload_bytes==604&&t.payload[1]==3);
+    t.sent();ack[3]=1;g.tftp(0,23,0x4010,ack,sizeof(ack));
+    assert(t.complete&&!t.active&&!t.pending&&g.tftp_completed==1);
+    // Reuse the completed transfer without options; do not carry its block size or state forward.
+    const uint8_t plain[]="\0\1/readonly/firmware/image/wlanmdsp.mbn\0octet";
+    g.tftp(0,29,0x4000,plain,sizeof(plain));
+    assert(t.block_size==512&&!t.options&&!t.complete&&!t.last&&t.block==1);
+    assert(t.peer_port==29&&t.delivered==0&&t.payload_bytes==516);
+    assert(t.payload[1]==3&&!memcmp(t.payload+4,firmware,512));
+    assert(g.tftp_requests==2&&g.tftp_completed==1);
+}
 static void check_diag_observation() {
     memset(shared,0,sizeof(shared));
     NabuGlink g{};g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
@@ -329,6 +350,7 @@ int main() {
     reset_tx();g.tftp_flush();assert(g.word(4)==0);
     server(4,0,41);g.tftp_flush();assert(g.word(4)==0&&g.wlfw.failed);
     g.release();
+    check_tftp_reuse();
     check_diag_observation();
     puts("GLINK: bounded DIAG 4097 control/data observation, public MODEM/TZ TOC metadata without payload reads, APPS-visible prefixes, rings/fragments, KNEL/DMON routing and recovery stop passed");
 }

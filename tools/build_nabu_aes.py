@@ -19,6 +19,7 @@ def main():
     ap.add_argument('--usb-reference',action='store_true',help='Compile the recovered stock controller ABI reference (not linked)')
     ap.add_argument('--native-usb',action='store_true',help='Include the stock USB family adapter and DWC3 bidirectional transport')
     ap.add_argument('--wireless',action='store_true',help='Include the Nabu SM8150 wireless foundation')
+    ap.add_argument('--return-trace',action='store_true',help='Include first-loader-return diagnostic objects for the separate offline patch step')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     assert not a.native_usb or a.power, 'Native USB reconnect uses the PMIC power sampler'
     headers=ROOT/'build/nabu-kernel-headers-v29'
@@ -26,7 +27,7 @@ def main():
         headers.mkdir()
         with tarfile.open(a.data_build/'kernel-headers.tar.gz') as archive:
             archive.extractall(headers,filter='data')
-    flags=['clang++-18','-target','arm64-apple-ios16.5','-std=gnu++17','-Os','-g',
+    flags=['clang++-18','-target','arm64-apple-ios16.5','-std=gnu++17','-Os','-g','-fstack-usage',
         '-mkernel','-fapple-kext','-fno-exceptions','-fno-rtti','-fno-builtin','-fno-stack-protector','-fno-use-cxa-atexit',
         '-fno-unwind-tables','-fno-asynchronous-unwind-tables','-fno-c++-static-destructors','-nostdinc','-nostdinc++',
         '-DKERNEL=1','-D__DARWIN_64_BIT_INO_T=1','-DARM64_BOARD_CONFIG_BCM2837','-DXNU_TARGET_OS_IOS=1',
@@ -54,6 +55,9 @@ def main():
         sources.append(('NabuGlink',ROOT/'patches/nabu-wireless/NabuGlink.cpp'))
         sources.append(('NabuRmtfs',ROOT/'patches/nabu-wireless/NabuRmtfs.cpp'))
         sources.append(('NabuMsa',ROOT/'patches/nabu-wireless/NabuMsa.cpp'))
+    if a.return_trace:
+        sources.append(('NabuReturnTrace',ROOT/'patches/nabu-diagnostics/NabuReturnTrace.cpp'))
+        sources.append(('NabuReturnTraceAsm',ROOT/'patches/nabu-diagnostics/NabuReturnTrace.S'))
     for name,source in sources:
         subprocess.run(host_command(flags+['-c',host_path(source),'-o',host_path(a.output/(name+'.o'))]),check=True)
     (a.output/'compile-command.json').write_text(json.dumps(flags,indent=2)+'\n')

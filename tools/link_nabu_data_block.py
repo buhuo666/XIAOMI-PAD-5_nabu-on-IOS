@@ -394,6 +394,10 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
               'bluetooth_trial': definitions.get('_nabu_bluetooth_version_trial'),
               'bluetooth_firmware': definitions.get('_nabu_bluetooth_load_firmware'),
               'modem_trial': definitions.get('_nabu_modem_start_trial'), 'relocations': relocation_counts,
+              'return_trace_symbols': {name: definitions[name] for name in (
+                  '_nabu_return_trace_entry', '_nabu_return_trace_entry_end',
+                  '_nabu_return_trace_terminal', '_nabu_return_trace_terminal_end',
+                  '_nabu_return_trace_record', '_nabu_return_trace_report') if name in definitions},
               'pointer_sites_added': len(pointer_sites), 'sparse_headers': headers,
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
               'imports': {s['name']: definitions[s['name']] for obj in objects for s in obj.symbols

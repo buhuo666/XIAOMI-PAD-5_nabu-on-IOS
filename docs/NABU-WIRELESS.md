@@ -502,6 +502,13 @@ feature/diag_id候选一起另存`wireless-v104/parked-*.patch`，从本轮工�
 空ID清单后增加optional TLV0x11=u8(0)，完整body为`0101000011010000`。字段语义
 未知，不称作OTP开关。第104轮仅补这一请求缺项，协议ASan/UBSan通过，实机待验。
 
+第104轮再次KERNEL RETURN/HALTED；本轮未开启主机USB服务探针，未取得CAL_REPORT
+运行结果。完整槽已备份清空回读，有效前缀349,079字节，APFS计数73→74。
+第105轮消除GLINK主函数和TFTP函数的大型聚合临时对象，ARM64栈帧分别从6816/4480
+降到160/240字节，并增加首次返回LR/CPU/栈指针记录；协议测试和入口回放通过。
+这属于停机诊断与栈开销修正，尚不能认定HALTED根因；蓝牙继续使用v102诊断包，
+slot18候选暂不纳入。依据与限制见`analysis/nabu-halted-return-v105.md`。
+
 ### 蓝牙系统界面与联合验收
 
 用户于第91轮后确认iPadOS设置没有蓝牙选项，并要求关注Wi-Fi/蓝牙共同使用。

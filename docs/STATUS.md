@@ -156,6 +156,13 @@ ramdisk，没有所需DTB或无线固件/BDF；不能当作已确认的原厂镜
 CAL_REPORT缺少TLV0x11=u8(0)。第104轮只补此四字节，ASan/UBSan通过，正在编译。
 DIAG协商与BT slot18候选已另存patch并从本轮工作树撤出；当前Android、计数73。
 
+第104轮用户反馈KERNEL RETURN/HALTED，未开启主机USB探针，新增校准字段尚无结果。
+完整64MiB槽已备份清空回读，恢复349,079字节有效前缀；APFS计数73→74。
+第105轮消除GLINK/WLFW及TFTP聚合临时对象，实际ARM64栈帧6816→160、4480→240字节；
+生产协议ASan/UBSan通过。新增首次loader_return来源记录，独立复核及4种入口回放
+通过，联合内核已链接并离线打补丁；仍未证实栈溢出是HALTED原因。继续复用v102
+蓝牙bootstrap，准备临时启动。详见[返回诊断](../analysis/nabu-halted-return-v105.md)。
+
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。
 原生USB、本地激活和155项应用总登记保持。当前使用v66内核/bootstrap v75，

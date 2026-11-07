@@ -200,7 +200,8 @@ struct NabuGlink {
     void tftp(unsigned node, unsigned from, unsigned to, const uint8_t *data, unsigned bytes) {
         if (to == 0x4000) {
             for (unsigned i = 0; i < 2; ++i) if (!transfers[i].active && !transfers[i].pending) {
-                NabuTftp &t = transfers[i]; t = NabuTftp{};
+                // Reset in place: aggregate assignment puts a 4 KiB temporary on the kernel stack.
+                NabuTftp &t = transfers[i]; bzero(&t, sizeof(t)); t.block_size = 512;
                 t.node = node; t.peer_port = from; t.local_port = 0x4010 + i;
                 t.write_buffer=server_check;t.write_capacity=sizeof(server_check);
                 bool check=bytes>2+strlen("/readwrite/server_check.txt") && !memcmp(data+2,"/readwrite/server_check.txt",strlen("/readwrite/server_check.txt")+1);
@@ -523,7 +524,8 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     NabuGlink *link = (NabuGlink *)IOMalloc(sizeof(NabuGlink));
     if (!link) return;
     // All state belongs to this one bounded trial; no interrupt callback retains it.
-    bzero(link, sizeof(*link)); link->features = 1; link->wlfw=NabuWlfw{};
+    // The remaining nonzero WLFW default is board_id; avoid a 6 KiB temporary.
+    bzero(link, sizeof(*link)); link->features = 1; link->wlfw.board_id = 0xff;
     link->memory = {(const volatile uint8_t *)smem, 0x200000}; link->doorbell = (volatile uint32_t *)ipc;
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
     if(chosen){
