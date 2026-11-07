@@ -119,7 +119,23 @@ int main(){
     assert(ack_error.receive(response,sizeof(response))&&ack_error.rejuvenate_ack_finished&&!ack_error.rejuvenate_ack_success&&ack_error.failed);
     NabuWlfw ack_timeout{};ack_timeout.receive(empty_rejuvenate,sizeof(empty_rejuvenate));ack_timeout.prepare();ack_timeout.sent();
     for(unsigned i=0;i<10000;++i)ack_timeout.tick();assert(ack_timeout.failed&&!ack_timeout.waiting&&!ack_timeout.rejuvenate_ack_success);
-    puts("WLFW: official Xiaomi CAL_REPORT bytes, Android feature-mask ordering and 64-bit fields, KNEL notifications and one-shot rejuvenate ACK, stale-response rejection, BDF/MSA/MAC, errors and timeout passed");
+    // Reproduce v114: setup completed, then the firmware instance crashed.
+    w.permissions_ready=true;
+    unsigned saved_step=w.step,saved_board=w.board_sent;
+    w.invalidate();
+    assert(w.instance_lost&&w.failed&&!w.complete&&!w.waiting&&!w.bytes);
+    assert(!w.fw_ready&&!w.init_done&&!w.msa_ready&&!w.capability_valid&&!w.board_id_valid&&!w.mac_set);
+    assert(!w.status_valid&&!w.fw_status&&!w.dynamic_feature_complete);
+    assert(w.permissions_ready&&w.step==saved_step&&w.board_sent==saved_board);
+    w.receive(ready,sizeof(ready));w.receive(initialized,sizeof(initialized));
+    w.receive(rejuvenate,sizeof(rejuvenate));w.prepare();
+    assert(!w.fw_ready&&!w.init_done&&!w.rejuvenate_count&&!w.bytes);
+    // An in-flight BDF response cannot advance the retired instance either.
+    NabuWlfw pending{};pending.board_data=board.data();pending.board_bytes=board.size();pending.step=6;
+    pending.prepare();pending.sent();response[1]=pending.transaction;response[3]=0x25;response[10]=response[12]=0;
+    pending.invalidate();assert(!pending.receive(response,sizeof(response))&&pending.board_sent==0&&pending.step==6);
+    pending.prepare();pending.tick();assert(!pending.bytes&&!pending.waiting&&pending.failed);
+    puts("WLFW: PFR instance retirement and late response/indication rejection, retained MSA ownership, official Xiaomi CAL_REPORT, feature-mask ordering, KNEL/DMON recovery, BDF/MSA/MAC, errors and timeout passed");
 }
 '''
 

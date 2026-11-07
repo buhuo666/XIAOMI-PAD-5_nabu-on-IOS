@@ -40,8 +40,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y clang-18
-      - name: Replay DIAG framing and production GLINK with sanitizers
+      - name: Replay WLFW, DIAG framing and production GLINK with sanitizers
         run: |
+          python3 tools/check_nabu_wlfw.py --output log/ci/nabu-wlfw
           python3 tools/check_nabu_diag_frames.py --output log/ci/nabu-diag-frames
           python3 tools/check_nabu_glink.py --output log/ci/nabu-glink
       - name: Retain wireless protocol results

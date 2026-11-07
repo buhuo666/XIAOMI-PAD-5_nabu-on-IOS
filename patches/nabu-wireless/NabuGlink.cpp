@@ -405,6 +405,11 @@ struct NabuGlink {
         ulog_stopped = true; ulog_waiting = false; ulog_route_verified = false;
         bzero(ulog_handles, sizeof(ulog_handles));
     }
+    void invalidate_wlfw(const char *reason) {
+        nabu_wireless_log("NABU WLFW: session invalidated reason=%s endpoint=%u:%u previous-step=%u previous-setup-complete=%u previous-fw-ready=%u previous-init-done=%u; no automatic restart or MSA regrant\n",
+            reason, wlfw_node, wlfw_port, wlfw.step, wlfw.complete, wlfw.fw_ready, wlfw.init_done);
+        wlfw.invalidate(); retire_ulog();
+    }
     static void ulog_payload_callback(void *context, const uint8_t *data, unsigned bytes) {
         ((NabuGlink *)context)->receive_ulog_payload(data, bytes);
     }
@@ -803,7 +808,7 @@ struct NabuGlink {
                     unsigned reason_bytes=0;const uint8_t *reason=NabuRmtfs::tlv(data+at,header.size,2,reason_bytes);
                     nabu_wireless_log("NABU SERVREG: PFR from=%u:%u service=%.*s reason=%.*s\n",header.from_node,header.from_port,name?(int)name_bytes:0,name?(const char*)name:"",reason?(int)reason_bytes:0,reason?(const char*)reason:"");
                     if(name && name_bytes == 12 && !memcmp(name, "wlan_process", 12) && !wlan_crash_captured) {
-                        retire_ulog();
+                        invalidate_wlfw("wlan-pfr");
                         nabu_wireless_log("NABU ULOG: WLAN PFR; retire read handles and stop new commands\n");
                         wlan_crash_captured = true; capture_wlan_crash("pfr");
                         capture_minidump_prefixes("pfr");
@@ -840,13 +845,14 @@ struct NabuGlink {
             if (service == wlfw_service && command == 4) {
                 if(wlfw_port&&(wlfw_node!=node||wlfw_port!=port)) {
                     nabu_wireless_log("NABU WLFW: endpoint changed old=%u:%u new=%u:%u step=%u complete=%u\n",wlfw_node,wlfw_port,node,port,wlfw.step,wlfw.complete);
+                    invalidate_wlfw("endpoint-changed");
                     if(wlan_crash_captured) { capture_wlan_crash("restart"); retire_ulog(); }
                     if(wlfw.rejuvenate_count){wlfw.failed=true;wlfw.waiting=false;wlfw.bytes=0;nabu_wireless_log("NABU WLFW: rejuvenate ACK cancelled after endpoint change; ending trial\n");}
                 }
                 wlfw_node = node; wlfw_port = port;
-            } else if(service==wlfw_service&&command==5&&node==wlfw_node&&port==wlfw_port&&wlfw.rejuvenate_count) {
-                wlfw.failed=true;wlfw.waiting=false;wlfw.bytes=0;wlfw_port=0;
-                nabu_wireless_log("NABU WLFW: rejuvenate ACK cancelled after endpoint removal; ending trial\n");
+            } else if(service==wlfw_service&&command==5&&node==wlfw_node&&port==wlfw_port) {
+                invalidate_wlfw("endpoint-removed"); wlfw_port=0;
+                nabu_wireless_log("NABU WLFW: endpoint removed; ending this firmware session\n");
             }
         } else if (command == 10 && header.size >= 20) {
             nabu_wireless_log("NABU QRTR: peer lookup service=%u instance=%#x\n", packet.u32(at + 4), packet.u32(at + 8));
@@ -1004,7 +1010,7 @@ extern "C" void nabu_glink_trial(vm_offset_t smem, vm_offset_t ipc) {
     if (link->qmi_enabled) link->diag_summary();
     nabu_wireless_log("NABU TFTP: requests=%u completed=%u firmware-bytes=%u\n", link->tftp_requests, link->tftp_completed, link->wlan_bytes);
     nabu_wireless_log("NABU SERVREG: records=%u requests=%u\n",link->registry.count,link->registry.requests);
-    if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: complete=%u failed=%u waiting=%u step=%u regions=%u permissions=%u msa-ready=%u\n",link->wlfw.complete,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
+    if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: setup-complete=%u instance-lost=%u failed=%u waiting=%u last-step=%u regions=%u permissions=%u msa-ready=%u; setup completion is not radio readiness\n",link->wlfw.complete,link->wlfw.instance_lost,link->wlfw.failed,link->wlfw.waiting,link->wlfw.step,link->wlfw.region_count,link->wlfw.permissions_ready,link->wlfw.msa_ready);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-bytes=%u fw-ready-indication=%u init-done=%u registration-status=%#llx\n",link->wlfw.board_sent,link->wlfw.fw_ready,link->wlfw.init_done,link->wlfw.fw_status);
     if(link->wlfw.board_data)nabu_wireless_log("NABU WLFW: board-MAC available=%u applied=%u\n",link->wlfw.mac_available,link->wlfw.mac_set);
     if(link->qmi_enabled)nabu_wireless_log("NABU WLFW: pin-connect indications=%u last-step=%u\n",link->wlfw.pin_result_count,link->wlfw.pin_result_step);

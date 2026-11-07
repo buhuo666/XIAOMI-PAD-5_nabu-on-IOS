@@ -7,10 +7,12 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <sys/attr.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include <sys/sysctl.h>
 #include <time.h>
 #include <unistd.h>
@@ -45,11 +47,57 @@ extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
 
 static NSDictionary *wirelessSnapshot(void) {
+    NSMutableDictionary *software = [NSMutableDictionary dictionary];
+    NSMutableArray *jobs = [NSMutableArray array];
+    for (NSString *path in @[@"/LaunchDaemons/com.apple.wifid.plist",
+                            @"/System/Library/LaunchDaemons/com.apple.wifid.plist"]) {
+        NSDictionary *job = [NSDictionary dictionaryWithContentsOfFile:path];
+        [jobs addObject:@{@"path": path,
+            @"exists": @([[NSFileManager defaultManager] fileExistsAtPath:path]),
+            @"plist_readable": @(job != nil),
+            @"device_tree_requirement": job[@"_LimitLoadToDeviceTree"] ?: NSNull.null,
+            @"mach_services": [job[@"MachServices"] allKeys] ?: @[]}];
+    }
+    software[@"wifid_jobs"] = jobs;
+    struct ifaddrs *interfaces = NULL;
+    int result = getifaddrs(&interfaces);
+    software[@"getifaddrs_errno"] = @(result == 0 ? 0 : errno);
+    NSMutableDictionary *bsd = [NSMutableDictionary dictionary];
+    if (result == 0) {
+        for (struct ifaddrs *entry = interfaces; entry; entry = entry->ifa_next) {
+            NSString *name = @(entry->ifa_name);
+            NSMutableDictionary *record = bsd[name];
+            if (!record) {
+                record = [@{@"flags": @(entry->ifa_flags), @"address_families": [NSMutableArray array]} mutableCopy];
+                bsd[name] = record;
+            }
+            if (entry->ifa_addr) {
+                NSNumber *family = @(entry->ifa_addr->sa_family);
+                if (![record[@"address_families"] containsObject:family])
+                    [record[@"address_families"] addObject:family];
+            }
+        }
+        freeifaddrs(interfaces);
+    }
+    software[@"bsd_interfaces"] = bsd;
     void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
-    if (!kit) return @{@"error": @"IOKit unavailable"};
+    if (!kit) return @{@"read_only": @YES, @"error": @"IOKit unavailable", @"software": software};
     uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
     CFTypeRef (*property)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = dlsym(kit, "IORegistryEntryCreateCFProperty");
     int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
+    CFMutableDictionaryRef (*matching)(const char *) = dlsym(kit, "IOServiceMatching");
+    int (*services)(uint32_t, CFDictionaryRef, uint32_t *) = dlsym(kit, "IOServiceGetMatchingServices");
+    uint32_t (*next)(uint32_t) = dlsym(kit, "IOIteratorNext");
+    NSMutableDictionary *classes = [NSMutableDictionary dictionary];
+    for (NSString *name in @[@"IO80211Controller", @"IO80211Interface", @"IONetworkInterface"]) {
+        uint32_t iterator = 0, entry = 0;
+        int status = services(0, matching(name.UTF8String), &iterator);
+        unsigned count = 0;
+        if (status == 0) while ((entry = next(iterator))) { ++count; release(entry); }
+        if (iterator) release(iterator);
+        classes[name] = @{@"status": @(status), @"count": @(count)};
+    }
+    software[@"iokit_matching_classes"] = classes;
     uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
     id value = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-wireless-report"), NULL, 0)) : nil;
     NSMutableDictionary *crash = [NSMutableDictionary dictionary];
@@ -61,7 +109,9 @@ static NSDictionary *wirelessSnapshot(void) {
     if (chosen) release(chosen);
     dlclose(kit);
     return @{@"read_only": @YES, @"registry_entry_found": @(chosen != 0),
-             @"report": value ?: NSNull.null, @"wlan_smem611_snapshots_base64": crash};
+             @"report": value ?: NSNull.null, @"wlan_smem611_snapshots_base64": crash,
+             @"software": software,
+             @"interpretation": @"Job files, matching services and BSD interfaces are presence observations; they do not prove radio readiness, association or packet delivery."};
 }
 
 static NSDictionary *bulkDirectory(void) {

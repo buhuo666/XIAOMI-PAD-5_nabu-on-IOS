@@ -7,6 +7,7 @@ struct NabuWlfw {
     unsigned bytes = 0, step = 0, elapsed = 0;
     uint16_t transaction = 0, message = 0;
     bool waiting = false, failed = false, complete = false;
+    bool instance_lost = false;
     bool activate = false, permissions_ready = false, capability_valid = false, msa_ready = false;
     const uint8_t *board_data=nullptr;
     unsigned board_bytes=0,board_sent=0,board_segment=0,chunk=0;
@@ -32,12 +33,21 @@ struct NabuWlfw {
     char build_id[129]{};
     struct Region { uint64_t address; uint32_t size; bool secure; } regions[2]{};
     unsigned region_count = 0;
+    void invalidate() {
+        // MSA remains owned until NabuMsa reclaims it after PAS shutdown.
+        // A replacement endpoint must not inherit this firmware session.
+        instance_lost = true; failed = true; complete = false; waiting = false; bytes = 0;
+        fw_ready = init_done = msa_ready = capability_valid = board_id_valid = mac_set = false;
+        status_valid = false; fw_status = 0;
+        dynamic_feature_complete = dynamic_prev_valid = dynamic_current_valid = false;
+    }
     unsigned local_port() const { return rejuvenate_count||(step==5&&!dynamic_feature_complete)?0x4003:board_data&&step>=5?0x4004:0x4003; }
     void value(unsigned type, uint64_t value, unsigned size) {
         request[bytes++]=type;request[bytes++]=size;request[bytes++]=0;
         for(unsigned i=0;i<size;++i)request[bytes++]=value>>(8*i);
     }
     void prepare() {
+        if(instance_lost)return;
         static const uint16_t ids[]={0x20,0x34,0x2d,0x2e,0x24,0x20,0x25,0x26,0x33};
         if(rejuvenate_count){if(rejuvenate_ack_finished||failed)return;message=0x3a;}
         else {
@@ -81,6 +91,7 @@ struct NabuWlfw {
     void sent() {waiting=true;elapsed=0;}
     void tick(){if(waiting&&++elapsed>=10000){waiting=false;failed=true;}}
     bool receive(const uint8_t *data,unsigned size) {
+        if(instance_lost)return false;
         if(size<7||NabuRmtfs::u16(data+5)!=size-7)return false;
         if(data[0]==4){
             uint16_t indication=NabuRmtfs::u16(data+3);

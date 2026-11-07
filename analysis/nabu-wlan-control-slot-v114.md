@@ -54,3 +54,20 @@ arm64编译、本地链接和return-trace四项回放通过；最终产物目录
 另已找到原机VERNO wire00→c0943700→55字节响应，但公共response drain
 c092b194..b1a4同样受动态root ID非零门槛限制，所以未把它加入本轮。
 证据为`log/host/wireless-v113/root-version-probe/findings.md`。
+
+## 第114轮实测及回收
+
+bd8e306的完整CI 42378906946两个job全部成功后，部署并临时启动，用户确认桌面
+和USB正常。41.604931秒重复34字节rootID（prior-replies=1），随后0900发送。
+仅command0:27在41.634332秒返回type7回执；control0:26在74.552秒结束报告中
+仍0回执，完整回收console也没有迟到回执。未见新的REG/WLAN ID，0900超时。
+这支持控制槽未释放/控制接收停住方向，不能唯一归因pending length或DIAG parser。
+
+CAL回复42.769031秒、MAC回复42.774832秒、PFR42.781749秒，仍是PC=b019b9bc，
+FW_READY/INIT_DONE均0。蓝牙偏好保留，原生2005/200b/200c均status0，无reason718。
+首次Android回收在初始GPT只读验证时ADB closed，尚未清空日志；重试成功备份
+64MiB槽和3,068,039字节连续控制台，清空回读通过。日志未封口，APFS83→84、
+fullfsync成功，引导分区相同。设备在Android，蓝牙关闭。
+
+用户随后明确要求重新检查整个Wi-Fi流程，按硬件启动与软件使用两层融合排查。
+后续不再将DIAG问题自动视为WLAN首次异常的根因；转为全链前置条件复核。

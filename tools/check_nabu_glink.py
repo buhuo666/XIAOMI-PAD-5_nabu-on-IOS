@@ -531,6 +531,43 @@ static void check_ulog_commands() {
         assert(p.g.wlfw.waiting&&p.g.wlfw.message==0x3a); // Recovery ACK is never held by the CAL gate.
     }
 }
+static void check_wlfw_instance_retirement() {
+    const std::vector<uint8_t> pfr{0,9,0,0x24,0,20,0,1,12,0,
+        'w','l','a','n','_','p','r','o','c','e','s','s',2,2,0,'E','X'};
+    for(unsigned cause=0;cause<3;++cause) {
+        UlogPeer p;p.g.ulog_enabled=false;p.cal();p.g.registry.records=p.board;
+        p.g.wlfw.step=9;p.g.wlfw.complete=true;p.g.wlfw.fw_ready=true;p.g.wlfw.init_done=true;
+        p.g.wlfw.permissions_ready=true;p.g.wlfw.mac_set=true;p.g.wlfw.msa_ready=true;
+        p.g.wlfw.board_sent=4;
+        p.server(4,0x45,1,0,35); // Repeating the current endpoint preserves the session.
+        p.server(5,0x45,1,0,99); // Removing an unrelated endpoint does too.
+        assert(p.g.wlfw.complete&&!p.g.wlfw.instance_lost);
+        unsigned grants=msa_prepare_calls;
+        if(cause==0)p.feed(pfr,0x4002,0,9);
+        if(cause==1)p.server(5,0x45,1,0,35);
+        if(cause==2)p.server(4,0x45,1,0,41);
+        assert(p.g.wlfw.instance_lost&&p.g.wlfw.failed&&!p.g.wlfw.complete);
+        assert(!p.g.wlfw.fw_ready&&!p.g.wlfw.init_done&&!p.g.wlfw.mac_set&&!p.g.wlfw.msa_ready);
+        assert(p.g.wlfw.permissions_ready&&p.g.wlfw.board_sent==4);
+        p.server(4,0x45,1,0,41);
+        for(unsigned port : {35u,41u}) {
+            p.feed({4,0,0,0x21,0,0,0},0x4003,0,port);
+            p.feed({4,0,0,0x38,0,0,0},0x4003,0,port);
+            p.feed({4,0,0,0x39,0,0,0},0x4003,0,port);
+        }
+        assert(!p.g.wlfw.fw_ready&&!p.g.wlfw.init_done&&!p.g.wlfw.rejuvenate_count);
+        auto tx=p.flush();
+        assert(tx.size()==(cause==0?1u:0u)&&msa_prepare_calls==grants);
+        if(cause==0)assert(tx[0].header.from_port==0x4002); // Preserve the SERVREG PFR reply.
+    }
+    // Stop an ordinary in-flight BDF transfer, not just a rejuvenation ACK.
+    UlogPeer p;p.g.ulog_enabled=false;p.cal();p.g.wlfw.step=6;p.g.registry.records=p.board;
+    p.g.wlfw.prepare();p.g.wlfw.sent();
+    p.feed(pfr,0x4002,0,9);
+    p.feed({2,1,0,0x25,0,7,0,2,4,0,0,0,0,0},0x4004,0,35);
+    assert(p.g.wlfw.instance_lost&&!p.g.wlfw.waiting&&!p.g.wlfw.board_sent&&p.g.wlfw.step==6);
+    p.flush();assert(!p.g.wlfw.bytes&&!p.g.wlfw.waiting);
+}
 static void check_ulog_version_without_registration() {
     // The original MPSS internal dispatcher accepts WLAN's fixed read-only 0900
     // handler without waiting for APPS REG advertisement. It does not authorize
@@ -914,6 +951,7 @@ int main() {
     check_diag_observation();
     check_diag_handshake();
     check_ulog_commands();
+    check_wlfw_instance_retirement();
     check_ulog_version_without_registration();
     check_diag_socket_receipts();
     puts("GLINK: original root-ID without confirm, one exact repeat only after WLFW, failed-send/cache/order and retirement checks, two-confirm limit, v1/v3 socket receipts without DIAG success inference; bounded ULog route/CAL gates, framing and existing rings/fragments/KNEL/DMON recovery tests passed");
@@ -953,6 +991,7 @@ def main():
               'diag_root_repeat_evidence':'wireless-v113/diag-consumer-followup/findings.md',
               'diag_root_repeat_requires_successful_original_tx':True,
               'diag_confirm_does_not_verify_route':True,
+              'wlfw_instance_retirement':['PFR','endpoint removal','endpoint replacement','late indications','in-flight BDF','no MSA regrant'],
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

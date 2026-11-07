@@ -653,3 +653,14 @@ CI通过后才临时启动设备，尚未实机验收。详见
 重复相同字节confirm1，之后仍只发一次0900。仅证明控制槽再次可用，不声称ID
 已接受。生产回放ASan/UBSan、arm64编译、链接和返回检查通过，等待完整CI。
 详见[第114轮控制槽验证](../analysis/nabu-wlan-control-slot-v114.md)。
+
+第114轮完整CI42378906946和桌面/USB通过。仅command获得回执，重复rootID无
+回执；没有REG/正常0900响应，Wi-Fi仍同PC异常。完整64MiB槽及3,068,039字节
+连续日志已回收清空，未封口，APFS83→84，蓝牙初始化保持正常。用户要求重新
+审查Wi-Fi全流程，分硬件启动/软件使用两层交叉核对，优先查前期遗漏。
+
+第114轮后完成硬件/软件两层复查，见[硬件复查](../analysis/nabu-wifi-hardware-recheck-v114.md)
+和[软件复查](../analysis/nabu-wifi-software-recheck-v114.md)。已修复PFR/端点失效后
+旧WLFW实例继续有效的问题，WLFW/GLINK的ASan/UBSan回放与arm64对象编译通过；
+保留MSA所有权，尚不自动恢复。WirelessInventory增加wifid打包、IOKit及BSD接口
+只读观测，SDK构建与完整CI另行记录。首次固件异常和真实网络数据面仍未解决。
