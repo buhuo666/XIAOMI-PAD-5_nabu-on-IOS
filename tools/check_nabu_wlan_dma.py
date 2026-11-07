@@ -39,7 +39,11 @@ struct Peer {
     unsigned allocations=0,releases=0,published=0,writes=0,locks=0,installed=0,removed=0,fail_alloc=0;
     bool locked=false,timeout=false,bad_pa=false,fail_install=false;
     bool ignore_actlr_zero=false,fail_actlr_restore=false;
+    bool qcom_fault_quirk=false;
+    unsigned ignore_fault_writes=0;
+    bool fail_translation=false;
     std::vector<unsigned> write_addresses;
+    std::vector<std::pair<unsigned,uint32_t>> write_values;
     Peer() {
         regs[0]=0x2e0406;regs[0x20]=0x4c017e5e;
         regs[0x24]=0x60000038;regs[0x28]=0x5555;
@@ -68,9 +72,18 @@ struct Peer {
                 *v=(uint64_t)s.regs[at]|(uint64_t)s.regs[at+4]<<32;return 0;},
             [](void *x,size_t at,uint32_t v){auto &s=*(Peer *)x;assert(s.locked);
                 ++s.writes;s.write_addresses.push_back(at);
+                s.write_values.push_back({at,v});
                 if(at>=128*4096&&(at&4095)==4) {
                     if(s.ignore_actlr_zero&&v==0)return 0;
                     if(s.fail_actlr_restore&&v==3)return 1;
+                }
+                if(at>=0xc00&&at<0xc00+94*4) {
+                    if((v&0x30000)==0x20000&&s.ignore_fault_writes){--s.ignore_fault_writes;return 0;}
+                    if(s.qcom_fault_quirk) {
+                        if((v&0x30000)==0x20000)return 0; // Firmware ignores FAULT writes.
+                        if((v&0x30000)==0x10000)v=(v&~0x30000u)|0x20000; // BYPASS becomes FAULT.
+                    }
+                    if(s.fail_translation&&at==0xc08&&(v&0x30000)==0){s.regs[at]=v;return 1;}
                 }
                 s.regs[at]=((at&4095)==0x58)?0:v;return 0;},
             [](void *x,size_t at,uint64_t v){auto &s=*(Peer *)x;assert(s.locked);
@@ -99,6 +112,23 @@ static uint64_t walk(const NabuWlanDma &d,uint64_t va) {
     abort();
 }
 int main() {
+    {Peer p;NabuWlanDma d;p.qcom_fault_quirk=true;
+        p.regs[0xc08]=0x100;p.regs[0xc0c]=0x100;
+        assert(d.prepare(p.ops())&&d.attach(Peer::install,Peer::remove,&p)&&d.observe());
+        assert(d.qcom_fault_encoding&&d.fault_direct[0]==0x100&&d.fault_direct[1]==0x100);
+        assert(d.fault_readback[0]==0x20000&&d.fault_readback[1]==0x20000);
+        assert(p.regs[0xc08]==d.bank&&p.regs[0xc0c]==d.bank);
+        assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;p.ignore_fault_writes=2;
+        assert(d.prepare(p.ops())&&!d.attach(Peer::install,Peer::remove,&p));
+        assert(!d.qcom_fault_encoding&&d.attach_phase==4&&!d.context_started&&d.fault_readback[0]==0x10000);
+        assert(p.regs[0x808]==0&&p.regs[0x80c]==0&&p.regs[0xc08]==0x20000&&p.regs[0xc0c]==0x20000);
+        assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();}
+    {Peer p;NabuWlanDma d;p.qcom_fault_quirk=true;p.fail_translation=true;
+        assert(d.prepare(p.ops())&&!d.attach(Peer::install,Peer::remove,&p));
+        assert(d.qcom_fault_encoding&&d.attach_phase==7&&d.context_started&&d.state==NabuWlanDma::Retained);
+        assert(p.regs[0xc08]==0x20000&&p.regs[0xc0c]==0x20000&&p.releases==0);
+        p.fail_translation=false;assert(d.release_after_stop()&&p.memory.empty());p.foreign_unchanged();}
     {Peer p;NabuWlanDma d;auto ops=p.ops();ops.allocate=native_allocate;ops.release=native_release;
         assert(d.prepare(ops)&&native_allocations==129&&native_memory.size()==129);
         for(unsigned b=0;b<128;++b)for(unsigned off=0;off<65536;off+=4096) {
@@ -138,6 +168,7 @@ int main() {
             d.selection.conflict_smr==0x80010640&&d.selection.conflict_s2cr==7&&d.status==ArmSmmu4KBusy);
         p.regs[0x808]=0;p.regs[0xc08]=0;
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.state==NabuWlanDma::Active);
+        assert(!d.qcom_fault_encoding);
         assert(p.regs[0x808]==0x80000640&&p.regs[0x80c]==0x80000641);
         assert(p.regs[0xc08]==d.bank&&p.regs[0xc0c]==d.bank&&d.observe());p.foreign_unchanged();
         d.lost();assert(!d.buffer(64,64,a)&&!d.observe()&&p.releases==0);

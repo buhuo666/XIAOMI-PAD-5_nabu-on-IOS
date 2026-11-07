@@ -19,6 +19,7 @@ struct NabuWlanDma {
         void (*unlock)(void *);
         ArmSmmu4KIo io;
     } platform{};
+    ArmSmmu4KIo raw_io{};
     Memory blocks[block_count]{},tables{};
     ArmSmmu4KRange ranges[block_count]{};
     ArmSmmu4KConfig mapping{};
@@ -29,6 +30,8 @@ struct NabuWlanDma {
     ArmSmmu4KStreamResult stream_result{};
     ArmSmmu4KStream routes[2]{};
     uint32_t old_smr[2]{},old_s2cr[2]{};
+    uint32_t fault_direct[2]{},fault_readback[2]{};
+    bool qcom_fault_encoding=false;
     unsigned allocated=0,cursor=0,bank=0,bank_offset=0,attach_phase=0;
     enum State { Empty, Prepared, Active, Retained } state=Empty;
     enum PrepareFailure { None, BlockAllocation, TableAllocation, TableBuild } prepare_failure=None;
@@ -53,6 +56,58 @@ struct NabuWlanDma {
     bool write(unsigned offset,uint32_t v) {
         return !platform.io.write32(platform.io.cookie,offset,v)&&!platform.io.barrier(platform.io.cookie);
     }
+    void configure_io() {
+        raw_io=platform.io;
+        platform.io={this,raw_io.register_bytes,
+            [](void *cookie,size_t at,uint32_t *v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.read32(d.raw_io.cookie,at,v);},
+            [](void *cookie,size_t at,uint64_t *v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.read64(d.raw_io.cookie,at,v);},
+            [](void *cookie,size_t at,uint32_t v) {
+                auto &d=*(NabuWlanDma *)cookie;
+                // Qualcomm's firmware can ignore FAULT writes and replace
+                // BYPASS writes with FAULT. Encode only our two leased S2CRs.
+                // Reads always return untouched hardware values to ArmSmmu4K.
+                if(d.qcom_fault_encoding&&(v&0x30000)==0x20000&&
+                   (at==0xc00+4*d.routes[0].slot||at==0xc00+4*d.routes[1].slot))v^=0x30000;
+                return d.raw_io.write32(d.raw_io.cookie,at,v);
+            },
+            [](void *cookie,size_t at,uint64_t v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.write64(d.raw_io.cookie,at,v);},
+            [](void *cookie){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.barrier(d.raw_io.cookie);}};
+    }
+    bool fault_routes() {
+        bool exact=true;
+        for(unsigned i=0;i<2;++i) {
+            unsigned at=0xc00+4*routes[i].slot;
+            if(!write(at,0x20000)){status=ArmSmmu4KIoError;return false;}
+            fault_direct[i]=fault_readback[i]=read(at);
+            if(fault_direct[i]!=0x20000)exact=false;
+        }
+        if(read_failed){status=ArmSmmu4KIoError;return false;}
+        if(exact)return true;
+        // Only try the documented encoding when the conventional write was
+        // ignored on our still-invalid slots. No stream can match these yet.
+        for(unsigned i=0;i<2;++i) {
+            if(read(0x800+4*routes[i].slot)!=old_smr[i]||
+               (fault_direct[i]!=0x20000&&fault_direct[i]!=old_s2cr[i])) {
+                status=ArmSmmu4KStateMismatch;return false;
+            }
+        }
+        if(read_failed){status=ArmSmmu4KIoError;return false;}
+        bool ok=true;
+        for(unsigned i=0;i<2&&ok;++i) {
+            unsigned at=0xc00+4*routes[i].slot;
+            ok=write(at,0x10000);
+            fault_readback[i]=read(at);
+            ok=ok&&!read_failed&&fault_readback[i]==0x20000;
+        }
+        if(!ok) {
+            status=read_failed?ArmSmmu4KIoError:ArmSmmu4KStateMismatch;
+            // A standard SMMU would interpret 0x10000 as BYPASS. Slots remain
+            // invalid; request FAULT again and leave the instance unstarted.
+            for(unsigned i=0;i<2;++i)(void)write(0xc00+4*routes[i].slot,0x20000);
+            return false;
+        }
+        qcom_fault_encoding=true;return true;
+    }
     void release_memory() {
         if(tables.cpu)platform.release(platform.cookie,tables,table_bytes);
         tables={};
@@ -62,6 +117,7 @@ struct NabuWlanDma {
     bool prepare(const Platform &ops) {
         if(state!=Empty||allocated)return false;
         platform=ops;cursor=0;read_failed=false;mutated=false;context_started=false;
+        qcom_fault_encoding=false;configure_io();
         remove_fault_handler=nullptr;fault_cookie=nullptr;
         streams={};program={};stream_result={};status=ArmSmmu4KSuccess;
         prepare_failure=None;failed_block=0;
@@ -194,8 +250,7 @@ struct NabuWlanDma {
             remove_fault_handler=unregister;fault_cookie=cookie;
             state=Retained;mutated=true;
             attach_phase=4;
-            for(unsigned i=0;i<2&&ok;++i)ok=write(0xc00+4*routes[i].slot,0x20000);
-            if(!ok)status=ArmSmmu4KIoError;
+            ok=fault_routes();
             if(ok){attach_phase=5;status=ArmSmmu4KCheckFaultedStreams(&platform.io,routes,2,bank,
                 ArmSmmu4KShareabilityFromTransaction,&stream_result);ok=status==0;}
             if(ok){attach_phase=6;context_started=true;status=ArmSmmu4KProgramDisabledContext(&platform.io,bank,&context,10000,&program);ok=status==0;}

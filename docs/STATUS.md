@@ -630,3 +630,12 @@ ASan/UBSan通过。第119轮3,138,882字节日志和完整槽已备份清空，�
 失败/停止恢复原值，保留其他上下文隔离。旧代码复现失败，修复后DMA回放
 通过ASan/UBSan。第120轮日志3,269,767字节已回收，完整槽已备份清空，计数90。
 详见[ACTLR初始化修复](../analysis/nabu-wlan-actlr-init-v121.md)。
+
+## 第121轮实机与第122轮流槽FAULT编码（2026-11-08）
+
+第121轮ACTLR 3→0实际读回成功，bank54选择及IRQ注册通过；新阻塞是stream
+FAULT检查Busy，尚未编程页表或启动PAS。第122轮依据Linux Qualcomm quirk，
+先记录原始S2CR；只有标准FAULT写入被忽略且替代编码实际读回FAULT时，才对
+两个已租用WLAN槽启用相应写入编码。原始读回和库检查保持严格。主机回归
+通过，实机待验证。第121轮3,216,300字节日志和完整槽已备份清空，计数91。
+详见[FAULT编码与验证](../analysis/nabu-wlan-fault-encoding-v122.md)。

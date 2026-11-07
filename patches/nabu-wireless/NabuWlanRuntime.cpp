@@ -59,6 +59,9 @@ extern "C" bool nabu_wlan_runtime_prepare() {
         nabu_wireless_log("NABU WLAN DMA: selection first-bank=%u offset=%#x value=%#x conflict-slot=%u smr=%#x s2cr=%#x selected-actlr=%#x actlr-readback=%#x\n",
             s.first_bank,s.first_offset,s.first_value,s.conflict_slot,s.conflict_smr,s.conflict_s2cr,
             s.selected_actlr,s.actlr_readback);
+        nabu_wireless_log("NABU WLAN DMA: fault-slots=%u/%u old-s2cr=%#x/%#x direct-readback=%#x/%#x encoded-readback=%#x/%#x qcom-encoding=%u\n",
+            dma->routes[0].slot,dma->routes[1].slot,dma->old_s2cr[0],dma->old_s2cr[1],
+            dma->fault_direct[0],dma->fault_direct[1],dma->fault_readback[0],dma->fault_readback[1],dma->qcom_fault_encoding);
         const auto &p=dma->program;
         nabu_wireless_log("NABU WLAN DMA: attach-phase=%u program-phase=%u writes=%u polls=%u fault=%#x readback-valid=%u sctlr=%#x cbar=%#x cba2r=%#x tcr=%#x tcr2=%#x ttbr=%#llx/%#llx mair=%#x/%#x stream-phase=%u\n",
             dma->attach_phase,p.phase,p.writes,p.poll_reads,p.fault_status,p.readback_valid,
@@ -67,6 +70,9 @@ extern "C" bool nabu_wlan_runtime_prepare() {
         native_failed=true;nabu_wireless_log("NABU WLAN DMA: native attachment failed state=%u status=%u bank=%u; allocations retained until confirmed stop\n",
             dma->state,dma->status,dma->bank);return false;
     }
+    nabu_wireless_log("NABU WLAN DMA: fault-slots=%u/%u direct-readback=%#x/%#x encoded-readback=%#x/%#x qcom-encoding=%u\n",
+        dma->routes[0].slot,dma->routes[1].slot,dma->fault_direct[0],dma->fault_direct[1],
+        dma->fault_readback[0],dma->fault_readback[1],dma->qcom_fault_encoding);
     nabu_wireless_log("NABU WLAN DMA: attached bank=%u asid=%u slots=%u/%u streams=0x640/0x641 arena=0xa0000000+0x800000 tables=%u pages prior-sctlr=%#x prior-actlr=%#x; CE not started\n",
         dma->bank,dma->context.asid,dma->routes[0].slot,dma->routes[1].slot,(unsigned)dma->built.table_pages,
         dma->selection.selected_sctlr,dma->selection.selected_actlr);
