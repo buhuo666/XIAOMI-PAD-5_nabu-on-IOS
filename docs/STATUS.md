@@ -2,7 +2,7 @@
 
 更新：2026-11-07，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第105轮已发送临时启动，等待设备反馈；根据本机ICNSS及
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第105轮完成采集，设备已回Android；根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
@@ -163,6 +163,13 @@ DIAG协商与BT slot18候选已另存patch并从本轮工作树撤出；当前An
 通过，联合内核已链接并离线打补丁；仍未证实栈溢出是HALTED原因。继续复用v102
 蓝牙bootstrap；部署回读和fastboot boot均通过，源码/产物快照已保存，等待用户反馈，
 主机USB服务探针尚未开启。详见[返回诊断](../analysis/nabu-halted-return-v105.md)。
+
+第105轮桌面与USB正常，未重现HALTED；CAL_REPORT bytes15响应0，但仍PFR PC=b019b9bc，
+FW_READY/INIT_DONE均0。蓝牙A/B/C再次0/0/12，原生扫描仍712循环。6,762,513字节
+有效日志及完整64MiB槽已备份清空；末尾GPT短读在只读接续核对后通过，APFS计数74→75。
+第106轮准备slot18临时host初始化降级：七项host选择全零时省略204a，原控制器响应
+与能力不改；128组合等主机ASan/UBSan通过，等待macOS/iOS构建和实测。Wi-Fi静态
+追踪继续，DIAG协商候选尚无获取异常地址的完整依据，暂不纳入。
 
 第75轮界面验收通过：用户确认桌面正常、键盘显示且比例正常，备忘录中英文输入、
 删除和保存均正常；内置静态壁纸恢复显示，设置到锁屏和主屏后均正常。

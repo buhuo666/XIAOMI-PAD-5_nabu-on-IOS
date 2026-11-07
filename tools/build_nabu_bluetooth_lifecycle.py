@@ -55,6 +55,17 @@ def main():
         'supported_path': 'original initializer with original record argument',
         'unsupported_path': 'advance original sequence without emitting an HCI command or reply',
         'text_or_controller_support_patched': False, 'runtime_verified': False}
+    report['legacy_host_periodic_compatibility'] = {
+        'binary': compat.name, 'host_test': 'ASan/UBSan passed',
+        'scope': '20F66 bluetoothd slot18; temporary host initialization downgrade',
+        'required_disabled_host_choices': ['standard_advertising', 'extended_advertising',
+            'extended_scanning', 'extended_scan_hci', 'periodic_advertiser',
+            'periodic_synchronizer', 'enhanced_connections'],
+        'host_policy_boolean_combinations_tested': 128,
+        'all_disabled_path': 'advance original sequence without sending ReadPeriodicAdvertiserListSize',
+        'any_enabled_path': 'original initializer with original record argument',
+        'initializer_data_slot_replaced': True,
+        'controller_features_or_responses_fabricated': False, 'runtime_verified': False}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

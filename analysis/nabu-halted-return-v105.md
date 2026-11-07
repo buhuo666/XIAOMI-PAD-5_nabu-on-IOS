@@ -63,3 +63,15 @@ CAL_REPORT字段。新增变化只有栈开销修正与返回来源诊断。临�
 第105轮部署回读及fastboot boot已成功，源码提交为`1a38097`；完整产物快照位于
 `log/device/nabu-boot-20261107-105`，接续状态在`log/host/wireless-v105/continuation.json`。
 当前仅确认启动命令发送成功，等待用户反馈；主机USB服务探针尚未开启。
+
+## 第105轮实测结果
+
+用户确认桌面正常后，WirelessInventory、BluetoothInventory、系统日志和155项
+应用登记均可读取。未重现HALTED，因此这次没有首次返回记录，不足以证明根因已修复。
+CAL_REPORT请求message0x26、bytes15返回result0，但WLAN仍PFR PC=0xb019b9bc，
+FW_READY/INIT_DONE均0。蓝牙Reset隔离A/B/C再次0/0/12，原生LE扫描仍以712重启。
+
+用户回Android后，完整64MiB槽与6,762,513字节有效前缀已保存；日志无最终提交头，
+APFS计数74→75、fullfsync成功。清空及零值回读后，末尾GPT读取短于预期导致命令
+报错；保留首次失败receipt，随后只读重验槽全零、GPT及设备布局通过，没有再次清空。
+最终`runtime-log/clearing.json`为`cleared-and-readback-verified`。
