@@ -52,3 +52,16 @@ DMA及CE/HTC运行时回放均通过ASan/UBSan，路径：
 `log/host/wireless-v118/dma-test`、`runtime-test`。
 此记录不代表实机DMA、FW_READY、HTC/WMI或网络扫描连接已成功；
 arm64构建、完整CI及v118实机结果另行追加。
+
+## v118构建、CI与部署
+
+修复提交`51860319d07b08c7cf1a5a9bfbf2e658d637f36b`已通过本地代理推送。
+arm64内核对象编译、内核链接和return-trace检查通过；完整CI
+`42391045367`同一提交的全部job成功，无线协议ASan/UBSan及完整内核
+编译/导出接口/容量/存储/显示检查均通过。
+
+2026-11-08部署记录为`log/device/nabu-chain-20261108-002928/deployment.json`，
+状态deployed-and-readback-verified。沿用bootstrap-recheck-v114的蓝牙和
+软件探针；临时启动记录在`log/device/nabu-boot-20261108-118`，fastboot boot
+返回成功。当前等待用户确认桌面与USB，尚未采集v118无线实机报告；
+本记录不把启动命令成功当作桌面、DMA或Wi-Fi成功。
