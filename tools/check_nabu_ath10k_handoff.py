@@ -200,7 +200,7 @@ int main(void) {
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=ROOT / 'build/nabu-ath10k/ready-only-v128-xcode/linux/ath10k/qmi.c')
+    parser.add_argument('--source', type=Path, default=ROOT / 'build/nabu-ath10k/ready-only-v128-xcode-r2/linux/ath10k/qmi.c')
     parser.add_argument('--output', type=Path, default=ROOT / 'log/host/wireless-v128/ath10k-handoff')
     parser.add_argument('--compiler', default='clang' if sys.platform == 'darwin' else 'clang-18')
     args = parser.parse_args()

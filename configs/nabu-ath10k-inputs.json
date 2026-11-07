@@ -4,7 +4,7 @@
   "reference_commit": "57722468a3774e2ec60017705ec356ae9b31f40e",
   "reference_default_path": "../research-sources/helium-hackios-raphael",
   "reference_sparse_paths": ["tools/mk-ath10k.py", "wifi/lx", "xnu/files/bsd/sys/hakios.lx.h", "xnu/files/bsd/sys/hakios.qmi.h", "xnu/files/bsd/sys/hakios.sta.h"],
-  "build_variant": "ready-only-v128-xcode",
+  "build_variant": "ready-only-v128-xcode-r2",
   "project_patches": {
     "linux": ["patches/nabu-ath10k/ready-only-qmi.patch"],
     "freebsd": ["patches/nabu-ath10k/macho-pcpu-globl.patch", "patches/nabu-ath10k/xcode-counted-by.patch"]

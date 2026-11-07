@@ -81,7 +81,7 @@ jobs:
             --linker "$(xcrun --find ld)"
           test -f artifacts/nabu-ath10k/ath10k.o
       - name: Replay the ready-only registration handoff
-        run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/ready-only-v128-xcode/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
+        run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/ready-only-v128-xcode-r2/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
       - name: Retain the combined backend and build evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
