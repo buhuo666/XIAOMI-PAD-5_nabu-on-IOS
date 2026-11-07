@@ -640,3 +640,11 @@ socket取包和DIAG正常响应。生产回放ASan/UBSan、arm64编译、本地�
 已通过；GitHub主workflow新增DIAG/GLINK回放job及无线源码触发路径。本轮须完整
 CI通过后才临时启动设备，尚未实机验收。详见
 [第113轮socket取包诊断](../analysis/nabu-wlan-socket-receipts-v113.md)。
+
+第113轮完整CI 42344870556（b7b559d）两个job均成功，新增无线协议回放也通过。
+实机桌面/USB正常，root ID及0900各取得一次DSP socket取包回执，但0900仍超时，
+控制仅3条、无REG/WLAN ID；Wi-Fi同PC异常，FW_READY/INIT_DONE均0。蓝牙偏好
+保留且原生2005/200b/200c均status0。已回Android，完整64MiB槽及7,459,296字节
+连续日志备份清空回读通过；日志未封口，APFS计数82→83、fullfsync成功，引导
+分区未变。后续追踪取包后的DIAG消费/分派，详见
+[第113轮实测](../analysis/nabu-wlan-socket-receipts-v113.md)。

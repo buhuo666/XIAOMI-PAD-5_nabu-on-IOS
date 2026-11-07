@@ -42,3 +42,30 @@ job执行。本轮提交须两个job均成功才进入设备临时启动；当�
 用户确认桌面后读取WirelessInventory和BluetoothInventory，蓝牙核对既有偏好
 及原生2005/200b/200c初始化。耳机保持留盒，实际音频仍留到声音服务阶段。
 回Android且boot_completed=1后备份完整日志槽、恢复控制台，再清空回读。
+
+## 第113轮实测结果
+
+提交b7b559d对应完整CI 42344870556成功。两个job均完成，核心/APFS、所有原生
+检查及新增DIAG/GLINK ASan/UBSan回放全部通过，日志和两个artifact已保存。
+随后部署v113，用户确认桌面和USB正常；主机只读报告及磁盘日志一致：
+
+- root ID在39.466130秒发送，0:26的有效CONTROL回执在39.466219秒到达；
+  sent/first tick均124，socket-receipts=1。
+- 0900在41.171861秒发送，0:27的有效CONTROL回执在41.171926秒到达；
+  sent/first tick均1260，socket-receipts=1。
+- 两个回执均在PFR前，invalid/unmatched均0。已证实两个DSP socket进入取包，
+  未证实数据复制、DIAG ID赋值或命令分派完成。
+- 0900在42.332582秒超时，replies=0、route_verified=0；没有REG和WLAN ID。
+  CAL等待941tick后放行，42.346524秒仍出现PC=b019b9bc的WLAN PFR，
+  FW_READY/INIT_DONE均0，没有CCPM内容。
+- 蓝牙单广告偏好自动保留；原生启动2005/200b/200c均status0，完整恢复日志
+  未见reason718。声音播放未测试。
+
+设备已回Android，蓝牙读回0。等待boot_completed后回收完整64MiB原始槽以及
+7,459,296字节连续控制台日志；无committed header，不能称完整封口日志。
+备份后清空回读成功；APFS计数82→83、fullfsync成功，引导分区前后相同。
+证据索引为`log/host/wireless-v113/result-summary.json`和`runtime-evidence.txt`，
+完整日志为`log/device/nabu-boot-20261107-113/runtime-log/runtime.log`。
+
+后续调查转到取包之后的通知/消费与原机流控解除路径。不能将两次回执解释成
+root ID已接受、ULog已可用或Wi-Fi已修复。
