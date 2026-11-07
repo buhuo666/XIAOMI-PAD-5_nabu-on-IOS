@@ -96,7 +96,7 @@ def main():
         'baseline': str(baseline), 'changed_root_files': changed, 'jobs': policies,
         'boot_and_app_containers_unchanged': True, 'runtime_verified': False}
     report['system_service_probe_update'] = {'ci_run': args.ci_run, 'source': str(args.probe),
-        'baseline': str(baseline), 'actions_added': ['BluetoothInventory', 'BluetoothTransportTrial', 'BluetoothSocketTrial'],
+        'baseline': str(baseline), 'actions_added': ['BluetoothInventory', 'BluetoothUseSingleAdvertising', 'BluetoothTransportTrial', 'BluetoothSocketTrial'],
         'wireless_smem611_snapshots': True}
     if args.lifecycle:
         report['bluetooth_lifecycle'] = {

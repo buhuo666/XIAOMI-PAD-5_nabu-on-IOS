@@ -25,7 +25,7 @@ def main():
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
                '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source),
-               '-framework', 'Foundation', '-framework', 'ImageIO',
+               '-framework', 'Foundation', '-framework', 'CoreFoundation', '-framework', 'ImageIO',
                '-framework', 'CoreGraphics', '-framework', 'UIKit', '-o', str(binary)]
     subprocess.run(command, check=True)
     entitlements = ROOT / 'userland/nabu/system-service-probe.entitlements.plist'
@@ -45,6 +45,13 @@ def main():
               'sqlite_vnode_observer': str(sqlite_watch_source.relative_to(ROOT)),
               'experience_compatibility': 'Compiled without constructor; explicit ExperienceCompatibilityTrial after paired request',
               'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request'}
+    report['bluetooth_single_advertising_policy'] = {
+        'action': 'BluetoothUseSingleAdvertising', 'uid': 501,
+        'domain': 'com.apple.MobileBluetooth.debug', 'section': 'LE',
+        'key': 'SupportsMultipleAdvertising', 'value': False,
+        'activation': 'Explicit paired host request; next native daemon construction',
+        'validation': 'CFPreferencesSynchronize plus stored and effective readback',
+        'hci_results_modified': False, 'runtime_verified': False}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 

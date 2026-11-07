@@ -2,7 +2,7 @@
 
 更新：2026-11-07，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第106轮完成采集，设备在Android；根据本机ICNSS及
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第107轮完成采集，设备在Android；根据本机ICNSS及
 WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
 无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
@@ -464,3 +464,10 @@ v7 的 3016 字节回调 blob 已通过 8 个仿真场景，覆盖有效／长�
 
 第三十六轮已于 `2026-11-05T17:32:14.586514+08:00` 成功发送 `fastboot boot`，源提交 `481ca90`。
 平台 UUID 查询与 USB 图标延迟等待实机确认，确切输入在 `log/device/nabu-boot-20261105-36/`，接续在 `log/host/power-v36/continuation.json`。
+
+第107轮桌面与USB正常，原生200b载荷00e00130000100、200c载荷0101已确认；首个完整
+原生会话没有2005，fd48返回1后扫描启动返回0x12/718。10,508,786字节连续日志及
+完整64MiB槽已备份清空回读，日志未封口；APFS计数76→77、fullfsync成功。Wi-Fi仍
+同PC异常、FW_READY/INIT_DONE均0。第108轮新增mobile原生单广告偏好动作和启动后
+定向HCI日志，正在构建；发现、配对及Wi-Fi联网尚未验证。详见
+[单广告候选](../analysis/nabu-bluetooth-single-advertising-v108.md)。

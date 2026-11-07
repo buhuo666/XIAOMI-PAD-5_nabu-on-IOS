@@ -40,6 +40,7 @@ extern void nabuStartSQLiteVnodeWatch(void);
 extern NSDictionary *nabuExperienceSnapshot(void);
 extern void nabuInstallExperienceCompatibility(void);
 extern NSDictionary *nabuBluetoothSnapshot(void);
+extern NSDictionary *nabuBluetoothUseSingleAdvertising(void);
 extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
 
@@ -414,6 +415,11 @@ int main(void) {
                         }
                         else if ([action isEqual:@"BluetoothInventory"]) {
                             result[@"read_only"] = @YES;
+                            result[@"bluetooth"] = nabuBluetoothSnapshot();
+                        }
+                        else if ([action isEqual:@"BluetoothUseSingleAdvertising"]) {
+                            result[@"read_only"] = @NO;
+                            result[@"policy"] = nabuBluetoothUseSingleAdvertising();
                             result[@"bluetooth"] = nabuBluetoothSnapshot();
                         }
                         else if ([action isEqual:@"BluetoothTransportTrial"]) {

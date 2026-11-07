@@ -1,5 +1,6 @@
-/* Paired-host Bluetooth identity and bounded raw-UART validation. */
+/* Paired-host Bluetooth inventory, native policy and bounded UART validation. */
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -24,8 +25,79 @@ _Static_assert(sizeof(struct NabuControlInfo) == 100, "XNU control lookup ABI");
 _Static_assert(sizeof(struct NabuControlAddress) == 32, "XNU control address ABI");
 _Static_assert(sizeof(struct termios) == 72, "64-bit XNU termios ABI");
 
+static NSString *const bluetoothPolicyDomain = @"com.apple.MobileBluetooth.debug";
+static NSString *const bluetoothPolicyKey = @"SupportsMultipleAdvertising";
+
+// Report only the selected preference, not unrelated LE configuration values.
+static id singleAdvertisingValue(id section) {
+    if (![section isKindOfClass:NSDictionary.class]) return NSNull.null;
+    id value = section[bluetoothPolicyKey];
+    if (!value) return NSNull.null;
+    if ([value isKindOfClass:NSNumber.class] || [value isKindOfClass:NSString.class]) return value;
+    return [value description];
+}
+
+static NSDictionary *singleAdvertisingPolicy(void) {
+    CFStringRef app = (__bridge CFStringRef)bluetoothPolicyDomain;
+    id stored = CFBridgingRelease(CFPreferencesCopyValue(CFSTR("LE"), app,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
+    id effective = CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("LE"), app));
+    return @{@"application": bluetoothPolicyDomain, @"section": @"LE", @"key": bluetoothPolicyKey,
+             @"user": @"CurrentUser", @"host": @"AnyHost", @"uid": @(getuid()), @"euid": @(geteuid()),
+             @"stored": singleAdvertisingValue(stored), @"effective": singleAdvertisingValue(effective)};
+}
+
+NSDictionary *nabuBluetoothUseSingleAdvertising(void) {
+    CFStringRef app = (__bridge CFStringRef)bluetoothPolicyDomain;
+    id storedBefore = CFBridgingRelease(CFPreferencesCopyValue(CFSTR("LE"), app,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
+    id effectiveBefore = CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("LE"), app));
+    NSMutableDictionary *result = [@{
+        @"scope": @"Native mobile-user LE preference; success means synchronization and preference readback",
+        @"application": bluetoothPolicyDomain, @"section": @"LE", @"key": bluetoothPolicyKey,
+        @"user": @"CurrentUser", @"host": @"AnyHost", @"uid": @(getuid()), @"euid": @(geteuid()),
+        @"before": singleAdvertisingValue(storedBefore),
+        @"before_effective": singleAdvertisingValue(effectiveBefore),
+        @"write_requested": @NO, @"synchronized": @NO, @"success": @NO,
+        @"stored": NSNull.null, @"effective": NSNull.null
+    } mutableCopy];
+    if (getuid() != 501 || geteuid() != 501) {
+        result[@"error"] = @"This preference action requires the mobile user (uid/euid 501)";
+        return result;
+    }
+    if ((storedBefore && ![storedBefore isKindOfClass:NSDictionary.class]) ||
+        (effectiveBefore && ![effectiveBefore isKindOfClass:NSDictionary.class])) {
+        result[@"error"] = @"Existing LE preference is not a dictionary; no value changed";
+        return result;
+    }
+    // Preserve the exact target dictionary. If it is absent, retain the
+    // effective LE dictionary so the new domain does not hide its other keys.
+    NSDictionary *before = storedBefore ?: effectiveBefore;
+    NSMutableDictionary *le = before ? [before mutableCopy] : [NSMutableDictionary dictionary];
+    le[bluetoothPolicyKey] = @NO;
+    result[@"existing_le_keys"] = before ? [before.allKeys sortedArrayUsingSelector:@selector(compare:)] : @[];
+    CFPreferencesSetValue(CFSTR("LE"), (__bridge CFPropertyListRef)le, app,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    result[@"write_requested"] = @YES;
+    Boolean synchronized = CFPreferencesSynchronize(app, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    result[@"synchronized"] = @(synchronized);
+    id stored = CFBridgingRelease(CFPreferencesCopyValue(CFSTR("LE"), app,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
+    id effective = CFBridgingRelease(CFPreferencesCopyAppValue(CFSTR("LE"), app));
+    result[@"stored"] = singleAdvertisingValue(stored);
+    result[@"effective"] = singleAdvertisingValue(effective);
+    BOOL storedFalse = [stored isKindOfClass:NSDictionary.class] &&
+        [stored[bluetoothPolicyKey] isKindOfClass:NSNumber.class] && ![stored[bluetoothPolicyKey] boolValue];
+    BOOL effectiveFalse = [effective isKindOfClass:NSDictionary.class] &&
+        [effective[bluetoothPolicyKey] isKindOfClass:NSNumber.class] && ![effective[bluetoothPolicyKey] boolValue];
+    result[@"success"] = @(synchronized && storedFalse && effectiveFalse);
+    result[@"takes_effect"] = @"Read by a new bluetoothd process during native chip construction";
+    return result;
+}
+
 NSDictionary *nabuBluetoothSnapshot(void) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    result[@"single_advertising_policy"] = singleAdvertisingPolicy();
     void *library = dlopen("/usr/lib/libMobileGestalt.dylib", RTLD_NOW);
     CFTypeRef (*answer)(CFStringRef) = library ? dlsym(library, "MGCopyAnswer") : NULL;
     NSMutableDictionary *capabilities = [NSMutableDictionary dictionary];

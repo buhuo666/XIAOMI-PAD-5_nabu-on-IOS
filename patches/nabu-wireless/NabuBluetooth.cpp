@@ -338,8 +338,14 @@ static uint64_t stream_ibs_deadline, stream_ibs_wakes, stream_ibs_acks, stream_i
 static bool stream_idle_requested, stream_idle_confirmed, stream_suspending, stream_rx_wake_waiting;
 static uint64_t stream_host_sleep_count;
 static unsigned stream_command_logs, stream_event_logs;
+static unsigned stream_late_command_logs, stream_late_event_logs;
 static uint8_t stream_event_code, stream_event_prefix[4];
 static unsigned stream_event_payload_seen;
+
+static bool trace_address_scan(unsigned opcode)
+{
+    return opcode == 0x0c03 || opcode == 0x2005 || opcode == 0x200b || opcode == 0x200c;
+}
 
 static void stream_clear_rx()
 {
@@ -392,12 +398,17 @@ static void stream_drain_rx(bool discard)
                     ++stream_event_payload_seen;
                 }
                 if (stream_rx_frame.boundary() && !stream_rx_error && stream_event_payload_seen >= 4 &&
-                    (stream_event_code == 0x0e || stream_event_code == 0x0f) && stream_event_logs < 96) {
+                    (stream_event_code == 0x0e || stream_event_code == 0x0f)) {
                     unsigned opcode = stream_event_code == 0x0e ? stream_event_prefix[1] | stream_event_prefix[2] << 8 :
                         stream_event_prefix[2] | stream_event_prefix[3] << 8;
                     unsigned status = stream_event_prefix[stream_event_code == 0x0e ? 3 : 0];
-                    nabu_wireless_log("NABU BT HCI: RX event=%#x opcode=%#x status=%u\n", stream_event_code, opcode, status);
-                    ++stream_event_logs;
+                    if (stream_event_logs < 96) {
+                        nabu_wireless_log("NABU BT HCI: RX event=%#x opcode=%#x status=%u\n", stream_event_code, opcode, status);
+                        ++stream_event_logs;
+                    } else if (trace_address_scan(opcode) && stream_late_event_logs < 256) {
+                        IOLog("NABU BT HCI LATE: RX event=%#x opcode=%#x status=%u record=%u\n",
+                            stream_event_code, opcode, status, ++stream_late_event_logs);
+                    }
                 }
             }
             if (stream_rx_frame.boundary()) stream_discard_frame = false;
@@ -431,11 +442,16 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
             ++stream_ibs_attempts;
             clock_interval_to_deadline(100, kMillisecondScale, &stream_ibs_deadline);
         }
-        bool log_command = !control && packet > 0 && stream_tx->at(0) == 1 && stream_command_logs < 96;
-        unsigned command_opcode = log_command ? stream_tx->at(1) | stream_tx->at(2) << 8 : 0;
+        bool is_command = !control && packet > 0 && stream_tx->at(0) == 1;
+        unsigned command_opcode = is_command ? stream_tx->at(1) | stream_tx->at(2) << 8 : 0;
+        bool log_command = is_command && stream_command_logs < 96;
+        // A paired host applies the preference after desktop feedback, when the
+        // startup quota is already exhausted. Keep a bounded console-only trace
+        // for the new daemon's Reset/address/scan commands and real completions.
+        bool log_late = is_command && !log_command && trace_address_scan(command_opcode) && stream_late_command_logs < 256;
         // Run106 reached scan enable but received Invalid HCI Command Parameters.
         // Preserve the actual address/scan bytes before consuming the TX queue.
-        bool log_parameters = log_command && (command_opcode == 0x2005 || command_opcode == 0x200b || command_opcode == 0x200c);
+        bool log_parameters = (log_command || log_late) && (command_opcode == 0x2005 || command_opcode == 0x200b || command_opcode == 0x200c);
         unsigned parameter_bytes = log_parameters ? stream_tx->at(3) : 0;
         unsigned captured_parameters = parameter_bytes < 7 ? parameter_bytes : 7;
         char parameter_hex[15]{};
@@ -470,13 +486,20 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
             if (!ok) break;
         }
         lck_mtx_lock(stream_rx_lock);
-        bool sent_command = log_command && !stream_tx_error;
-        if (sent_command) ++stream_command_logs;
+        bool sent_command = (log_command || log_late) && !stream_tx_error;
+        if (sent_command && log_command) ++stream_command_logs;
+        if (sent_command && log_late) ++stream_late_command_logs;
         lck_mtx_unlock(stream_rx_lock);
-        if (sent_command) nabu_wireless_log("NABU BT HCI: TX opcode=%#x bytes=%u\n", command_opcode, (unsigned)packet);
-        if (sent_command && log_parameters)
+        if (sent_command && log_command) nabu_wireless_log("NABU BT HCI: TX opcode=%#x bytes=%u\n", command_opcode, (unsigned)packet);
+        if (sent_command && log_command && log_parameters)
             nabu_wireless_log("NABU BT HCI PARAM: opcode=%#x parameter-bytes=%u captured=%u raw=%s\n",
                 command_opcode, parameter_bytes, captured_parameters, parameter_hex);
+        if (sent_command && log_late) {
+            IOLog("NABU BT HCI LATE: TX opcode=%#x bytes=%u record=%u\n", command_opcode, (unsigned)packet, stream_late_command_logs);
+            if (log_parameters)
+                IOLog("NABU BT HCI LATE PARAM: opcode=%#x parameter-bytes=%u captured=%u raw=%s\n",
+                    command_opcode, parameter_bytes, captured_parameters, parameter_hex);
+        }
     }
     lck_mtx_lock(stream_rx_lock);
     int error = stream_tx_error;
