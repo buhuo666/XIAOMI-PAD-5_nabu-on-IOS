@@ -514,3 +514,8 @@ arm64编译、链接和return-trace检查通过。CAL前有界查询，日志未
 PFR/注销/端点变化立即退休旧句柄；尚待实机证明通路和日志内容。
 蓝牙继续沿用v108已通过的实现，bootstrap不变。详见
 [第111轮采集候选](../analysis/nabu-wlan-ulog-capture-v111.md)。
+
+第111轮已部署回读并成功发送fastboot boot，源码8327da1，内核v111/bootstrap v108。
+完整源码、构建对象、启动链及回执保存在log/device/nabu-boot-20261107-111；
+接续记录为log/host/wireless-v111/continuation.json。当前等待用户桌面反馈，
+尚未开启主机USB探针，不能把启动命令成功当作桌面或ULog实测通过。

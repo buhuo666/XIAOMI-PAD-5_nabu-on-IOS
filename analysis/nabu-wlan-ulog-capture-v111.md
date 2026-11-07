@@ -61,3 +61,8 @@ FEATURE/ID应答发送、WLAN注册、版本/枚举/连接回应、原始记录�
 回Android后按既有流程备份、回收并清空日志槽，再按WLAN固件指针解码PRINTF记录。
 如果命令未通、日志尚未创建或仍无内容，各自单独记录；Wi-Fi FW_READY/INIT_DONE、
 扫描连接与蓝牙共同使用继续保留为未验收项。
+
+第111轮已部署回读并成功发送fastboot boot，源码8327da1，内核v111/bootstrap v108。
+完整源码、构建对象、启动链及回执保存在log/device/nabu-boot-20261107-111；
+接续记录为log/host/wireless-v111/continuation.json。当前等待用户桌面反馈，
+尚未开启主机USB探针，不能把启动命令成功当作桌面或ULog实测通过。
