@@ -123,3 +123,38 @@ WLFW已出现例外；正常版本响应记录route_verified及独立的成功�
 注销/PFR/端点退休全部通过。报告为log/host/wireless-v112/glink-test/report.json。
 NabuGlink已重新编译链接，未变化对象复用v111；原有return-trace检查通过。
 内核v112/bootstrap v108。尚未完成本轮实机版本查询及CCPM读取验收。
+
+## 第112轮实测结果
+
+用户确认桌面/USB正常。实际FEATURE TX为08000000080000000400000051a00000；
+root ID应答完整34字节已回收，与{33,26,1,2}+msm/modem/root_pd含NUL一致。
+0900已于WLFW step0、44.259695秒发出，1000tick后超时，无命令回复或frame错误；
+route_verified和successful-version-replies均0，未推进枚举/连接/读取。
+控制仍只有FEATURE、NUM_PRESET、root ID三条消息。CAL等待936tick后因查询超时
+放行，45.435016秒仍报同一PFR PC=b019b9bc，FW_READY/INIT_DONE均0。
+
+蓝牙单广告偏好保留，原生2005/200b/200c均status0。设备已回Android，蓝牙关闭；
+本次等待Android sys.boot_completed=1再回收，完整64MiB槽与3,085,900字节连续
+日志已备份清空回读。APFS计数81→82、fullfsync成功，日志未封口。
+证据和续接记录均位于log/host/wireless-v112；原始日志为
+log/device/nabu-boot-20261107-112/runtime-log/runtime.log。
+
+用户指出GitHub主构建连续失败，现优先核对完整CI。最新失败42342588947在
+check_nabu_display.py的设备树一致性断言处停止，尚未进入XNU编译；新增的
+iPad专用product-id使旧测试过时。修复5ed580b精确验证该20字节字段，并继续
+比较其余硬件节点。17项本地显示测试和ASan/UBSan通过，完整CI 42343348954运行中。
+实机核心基底来自成功的42160433518；v112无线对象由本地编译/链接产生。
+完整CI结论、局部编译和实机验收分别记录，不再将这些范围混写为全部构建通过。
+
+主CI修复5ed580b的完整运行42343348954已全部成功：核心/APFS编译、导出合同、
+原生接口、SMP/容量、返回、存储和显示检查通过。该回归是iPad product-id新增后
+显示测试的过时断言，完整解释及实机来源见
+[CI回归与内核来源](../analysis/nabu-ci-display-regression-20261107.md)。
+第112轮设备当前在Android、蓝牙关闭、日志已回收清空，最后APFS计数82。
+
+后续静态分析已闭合原机QRTR confirm_rx到DSP socket取包后RESUME_TX的路径，
+并确认原机在DIAG前裁掉QRTR padding，34字节root ID长度无需改变。
+候选规格为log/host/wireless-v112/diag-rx-followup/confirm-probe-spec.json：
+只对首次root ID应答和一次0900设置确认位，按CONTROL→CONTROL回执的
+payload节点/端口匹配。回执只能证明socket取包，不能提升route_verified。
+此项尚未改入生产代码或实机执行，待作为下一轮传输诊断。
