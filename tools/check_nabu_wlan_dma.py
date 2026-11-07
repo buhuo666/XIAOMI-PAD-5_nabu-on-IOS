@@ -126,6 +126,8 @@ int main() {
         // A preexisting masked route covering both WLAN SIDs is never stolen.
         p.regs[0x808]=0x80010640;p.regs[0xc08]=7;
         assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0&&p.installed==0);
+        assert(d.selection.stage==3&&d.selection.conflict_slot==2&&
+            d.selection.conflict_smr==0x80010640&&d.selection.conflict_s2cr==7&&d.status==ArmSmmu4KBusy);
         p.regs[0x808]=0;p.regs[0xc08]=0;
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.state==NabuWlanDma::Active);
         assert(p.regs[0x808]==0x80000640&&p.regs[0x80c]==0x80000641);
@@ -137,7 +139,15 @@ int main() {
         assert(p.regs[0x1000+d.bank*4]==0&&p.regs[0x1800+d.bank*4]==0);p.foreign_unchanged();
     }
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));p.regs[0]=0;
-        assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0);assert(d.release_after_stop());}
+        assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0);
+        assert(d.selection.stage==2&&d.selection.scr0==0&&d.selection.id0==p.regs[0x20]&&d.status==ArmSmmu4KStateMismatch);
+        assert(d.release_after_stop());}
+    {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
+        for(unsigned b=1;b<56;++b)p.regs[0x1000+4*b]=0x10000;
+        assert(!d.attach(Peer::install,Peer::remove,&p)&&p.writes==0&&p.installed==0);
+        assert(d.selection.stage==4&&d.selection.free_slots==2&&d.selection.used_banks==2&&d.selection.nonzero_banks==53);
+        assert(d.selection.first_bank==55&&d.selection.first_offset==0x10dc&&d.selection.first_value==0x10000&&d.status==ArmSmmu4KBusy);
+        assert(d.release_after_stop()&&p.memory.empty());}
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));
         p.regs[(128+3)*4096+0x24]=56u<<16; // Active USB context owns candidate ASID.
         assert(d.attach(Peer::install,Peer::remove,&p)&&d.bank==54&&d.context.asid==55);

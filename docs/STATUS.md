@@ -604,3 +604,12 @@ SMMU输出映射，增加物理地址及失败阶段日志。生产分配回调�
 修复后DMA及CE/HTC回放通过ASan/UBSan；构建、CI及实机结果另行记录。
 蓝牙UART原生服务与HCI成功回执保留；软件报告仍无wifid job和Wi-Fi网络接口。
 详见[分配修复与实机证据](../analysis/nabu-wlan-dma-allocation-v118.md)。
+
+## 第118轮实机与第119轮SMMU诊断（2026-11-08）
+
+第118轮全部128个64KiB DMA块已实际分配在4GiB以上，6页SMMU页表及CE资源
+准备成功，确认上一轮内存分配修复有效。桌面/USB正常，蓝牙HCI基线保留。
+新阻塞是SMMU选择阶段拒绝接入，尚未启动WLAN固件；已回Android回收
+3,390,938字节日志并备份清空64MiB槽，APFS计数87→88。
+第119轮增加具体拒绝阶段、寄存器值和冲突信息，保持原选择策略；
+本地DMA回放通过。见[SMMU选择诊断](../analysis/nabu-wlan-smmu-selection-v119.md)。

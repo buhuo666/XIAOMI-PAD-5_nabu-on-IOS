@@ -31,6 +31,14 @@ struct NabuWlanDma {
     enum State { Empty, Prepared, Active, Retained } state=Empty;
     enum PrepareFailure { None, BlockAllocation, TableAllocation, TableBuild } prepare_failure=None;
     unsigned failed_block=0;
+    struct SelectionTrace {
+        // 1 identification, 2 global, 3 stream scan, 4 bank scan, 5 selected.
+        unsigned stage=0,free_slots=0,used_banks=0,nonzero_banks=0,asid_conflicts=0;
+        unsigned first_bank=0,first_offset=0;
+        uint32_t first_value=0,scr0=0,id0=0,id1=0,id2=0,gfsr=0;
+        unsigned conflict_slot=0;
+        uint32_t conflict_smr=0,conflict_s2cr=0;
+    } selection{};
     bool read_failed=false,mutated=false;
     void (*remove_fault_handler)(void *,unsigned)=nullptr;
     void *fault_cookie=nullptr;
@@ -82,10 +90,16 @@ struct NabuWlanDma {
     }
     bool select() {
         using namespace nabu_usb::smmu;
-        Info info{};read_failed=false;
-        if(!read_info([&](uint32_t at){return read(at);},&info)||read_failed||info.exids)return false;
+        Info info{};read_failed=false;selection={};selection.stage=1;
+        bool supported=read_info([&](uint32_t at){return read(at);},&info);
+        selection.id0=info.idr0;selection.id1=info.idr1;selection.id2=info.idr2;selection.gfsr=info.gfsr;
+        if(!supported||read_failed||info.exids){status=read_failed?ArmSmmu4KIoError:ArmSmmu4KUnsupported;return false;}
         // Do not reset the shared SMMU or alter its unmatched-stream policy.
-        if((read(0)&0x40f)!=0x406||info.gfsr||read_failed)return false;
+        selection.stage=2;selection.scr0=read(0);
+        if((selection.scr0&0x40f)!=0x406||info.gfsr||read_failed) {
+            status=read_failed?ArmSmmu4KIoError:info.gfsr?ArmSmmu4KFault:ArmSmmu4KStateMismatch;return false;
+        }
+        selection.stage=3;
         unsigned free_count=0;bool used[kMaxBanks]{};
         for(unsigned i=0;i<info.num_smr;++i) {
             uint32_t smr=read(kSmrBase+4*i),s2cr=read(kS2crBase+4*i);
@@ -93,19 +107,34 @@ struct NabuWlanDma {
                 unsigned mask=(smr>>16)&0x7fff;
                 // FDT SID=0x640/MASK=1 covers both 0x640 and 0x641.
                 if(!((0x640^smr)&~mask&stream_id_mask(info))||
-                   !((0x641^smr)&~mask&stream_id_mask(info)))return false;
+                   !((0x641^smr)&~mask&stream_id_mask(info))) {
+                    selection.conflict_slot=i;selection.conflict_smr=smr;selection.conflict_s2cr=s2cr;
+                    status=ArmSmmu4KBusy;return false;
+                }
                 if(((s2cr>>16)&3)==0&&(s2cr&255)<kMaxBanks)used[s2cr&255]=true;
             } else if(free_count<2) {
                 routes[free_count]={i,(uint16_t)(0x640+free_count)};
                 old_smr[free_count]=smr;old_s2cr[free_count]=s2cr;++free_count;
+                selection.free_slots=free_count;
             }
         }
-        if(read_failed||free_count!=2)return false;
+        if(read_failed||free_count!=2){status=read_failed?ArmSmmu4KIoError:ArmSmmu4KBusy;return false;}
+        selection.stage=4;
         for(unsigned b=info.num_cb-1;b>0&&b>=info.num_s2_cb;--b) {
             unsigned cb=context_offset(info.global_pages,b);
-            if(used[b]||read(kCbarBase+4*b)||read(kCba2rBase+4*b)||read(cb)||read(cb+4)||
-               read(cb+0x10)||read(cb+0x20)||read(cb+0x24)||read(cb+0x28)||read(cb+0x2c)||
-               read(cb+0x30)||read(cb+0x38)||read(cb+0x3c))continue;
+            if(used[b]){++selection.used_banks;continue;}
+            const unsigned offsets[]={kCbarBase+4*b,kCba2rBase+4*b,cb,cb+4,
+                cb+0x10,cb+0x20,cb+0x24,cb+0x28,cb+0x2c,cb+0x30,cb+0x38,cb+0x3c};
+            bool nonzero=false;
+            for(unsigned offset:offsets) {
+                uint32_t value=read(offset);
+                if(!value)continue;
+                if(!selection.nonzero_banks) {
+                    selection.first_bank=b;selection.first_offset=offset;selection.first_value=value;
+                }
+                ++selection.nonzero_banks;nonzero=true;break;
+            }
+            if(nonzero)continue;
             unsigned asid=b+1;bool collision=false;
             for(unsigned other=0;other<info.num_cb;++other) {
                 unsigned o=context_offset(info.global_pages,other);
@@ -113,10 +142,13 @@ struct NabuWlanDma {
                     if((read(o+0x24)>>16)==asid||(read(o+0x2c)>>16)==asid)collision=true;
                 }
             }
-            if(collision)continue;
+            if(collision){++selection.asid_conflicts;continue;}
             bank=b;context.asid=asid;context.id0=info.idr0;context.id2=info.idr2;
+            selection.stage=5;
+            if(read_failed)status=ArmSmmu4KIoError;
             return !read_failed;
         }
+        status=read_failed?ArmSmmu4KIoError:ArmSmmu4KBusy;
         return false;
     }
     // Caller keeps WLAN stopped/mission mode OFF. registrar must install real
