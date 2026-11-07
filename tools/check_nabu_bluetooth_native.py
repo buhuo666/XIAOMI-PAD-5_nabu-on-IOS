@@ -78,6 +78,7 @@ static void thread_call_enter(thread_call_t) { ++scheduled; }
 static void wr(vm_offset_t,uint32_t) {}
 static bool wait_bit(vm_offset_t,uint32_t,bool,unsigned) { return true; }
 static void nabu_wireless_log(const char *format,...) { char line[256];va_list args;va_start(args,format);vsnprintf(line,sizeof(line),format,args);va_end(args);logs.emplace_back(line); }
+static void IOLog(const char *,...) {} // Console-only late trace is outside the inventory buffer.
 static mbuf_t mbuf_next(mbuf_t m) { return m->next; }
 static size_t mbuf_len(mbuf_t m) { return m->bytes.size(); }
 static void *mbuf_data(mbuf_t m) { return m->bytes.data(); }

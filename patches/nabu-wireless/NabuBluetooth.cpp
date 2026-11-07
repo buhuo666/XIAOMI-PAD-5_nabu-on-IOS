@@ -1035,19 +1035,27 @@ static bool stream_start(vm_offset_t uart)
     return true;
 }
 
+bool nabu_wireless_power_on()
+{
+    vm_offset_t rsc = ml_io_map(0x18220000, 0x4000);
+    if (!rsc) return false;
+    if (!enable_supply(rsc, "ldoa1", 0x40800, 752) ||
+        !enable_supply(rsc, "ldoa7", 0x41f00, 1800) ||
+        !enable_supply(rsc, "ldoc2", 0x41d00, 1304) ||
+        !enable_supply(rsc, "ldoc11", 0x41a00, 3312)) return false;
+    IOSleep(10);
+    nabu_wireless_log("NABU WIRELESS: shared supplies ready; no BT pulse or firmware sent\n");
+    return true;
+}
+
 void nabu_bluetooth_version_trial()
 {
     uint32_t level = 0;
     PE_parse_boot_argn("nabu-wireless", &level, sizeof(level));
     nabu_wireless_log("NABU BT: powered trial level=%u; no discovery or pairing\n", level);
-    vm_offset_t rsc = ml_io_map(0x18220000, 0x4000), gcc = ml_io_map(0x00100000, 0x60000);
+    vm_offset_t gcc = ml_io_map(0x00100000, 0x60000);
     vm_offset_t pins = ml_io_map(0x0352b000, 0x4000);
-    if (!rsc || !gcc || !pins) return;
-    if (!enable_supply(rsc, "ldoa1", 0x40800, 752) ||
-        !enable_supply(rsc, "ldoa7", 0x41f00, 1800) ||
-        !enable_supply(rsc, "ldoc2", 0x41d00, 1304) ||
-        !enable_supply(rsc, "ldoc11", 0x41a00, 3312)) return;
-    IOSleep(10);
+    if (!gcc || !pins) return;
     if (!serial_clock(gcc)) return;
     vm_offset_t uart = ml_io_map(0x00c8c000, 0x4000);
     if (!uart) return;

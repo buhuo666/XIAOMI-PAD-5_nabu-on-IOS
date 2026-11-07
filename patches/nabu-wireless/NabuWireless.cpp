@@ -182,8 +182,12 @@ static void wireless_survey(thread_call_param_t, thread_call_param_t)
     regulator_survey();
     uart_survey();
     nabu_wireless_log("NABU WIRELESS: survey complete; radios not started\n");
-    if (wireless_level >= 2) nabu_bluetooth_version_trial();
-    if (wireless_level >= 4) nabu_modem_start_trial();
+    if (wireless_level >= 2 && nabu_wireless_power_on()) {
+        // Stock Nabu reaches WLAN FW_READY before bt_power probes. Keep the
+        // four shared rails on, but start WLAN before BT ROM power pulses.
+        if (wireless_level >= 4) nabu_modem_start_trial();
+        nabu_bluetooth_version_trial();
+    }
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
     if (chosen) {
         IOLockLock(report_lock);

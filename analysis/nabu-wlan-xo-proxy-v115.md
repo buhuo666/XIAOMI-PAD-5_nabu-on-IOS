@@ -39,3 +39,16 @@ log/host/wireless-v115/prerequisites/{clk-rpmh.c,subsys-pil-tz.c,peripheral-load
 候选内核artifacts/nabu-wireless-v115，bootstrap使用已通过CI42382217973的
 artifacts/nabu-bootstrap-recheck-v114。第114轮完整槽已备份清空，设备Android且
 蓝牙设置读回0。首次WLAN异常未宣告解决。
+
+## 实测结果
+
+完整CI42383852406两个job全部成功；用户确认桌面和USB正常。实机xo.lvl=0x30090，
+值3，三条RPMh状态均0x10101。仍在42.072029秒出现同PC b019b9bc PFR，
+FW_READY/INIT_DONE均0。因此补XO没有解决首次故障。实例失效修复真实生效，
+新端点不能继承旧complete/ready。软件报告确认wifid两处job均不存在，三类
+IOKit网络匹配数量均0，BSD只见lo0/utun。原生蓝牙初始化在2005之后200b/200c
+最终均status0，较早200b有status12，需保留原始时序。
+
+设备已回Android、蓝牙读回0；64MiB槽及3,682,765字节连续日志已备份并清空读回
+通过，APFS84→85/fullfsync成功，引导分区不变。日志未封口，不称完整关闭日志。
+记录位于log/host/wireless-v115/result-summary.json和runtime-evidence.txt。
