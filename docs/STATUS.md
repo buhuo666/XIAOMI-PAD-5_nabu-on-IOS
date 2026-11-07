@@ -542,3 +542,9 @@ PFR/注销/端点变化立即退休旧句柄；尚待实机证明通路和日志
 显示测试的过时断言，完整解释及实机来源见
 [CI回归与内核来源](../analysis/nabu-ci-display-regression-20261107.md)。
 第112轮设备当前在Android、蓝牙关闭、日志已回收清空，最后APFS计数82。
+
+第113轮为首个root ID应答和单次0900加入QRTR socket回执观测，严格区分本地发送、
+socket取包和DIAG正常响应。生产回放ASan/UBSan、arm64编译、本地链接和返回检查
+已通过；GitHub主workflow新增DIAG/GLINK回放job及无线源码触发路径。本轮须完整
+CI通过后才临时启动设备，尚未实机验收。详见
+[第113轮socket取包诊断](../analysis/nabu-wlan-socket-receipts-v113.md)。

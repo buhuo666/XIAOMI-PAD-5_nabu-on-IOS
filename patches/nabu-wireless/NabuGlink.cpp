@@ -71,6 +71,12 @@ struct NabuGlink {
     bool diag_command_server = false, diag_ulog_registered = false, ulog_route_verified = false;
     uint32_t diag_command_node = 0, diag_command_peer = 0;
     unsigned diag_command_packets = 0, diag_frame_errors = 0, ulog_version_replies = 0;
+    struct DiagReceipt {
+        uint32_t node = 0, port = 0;
+        unsigned sent_tick = 0, first_tick = 0, packets = 0;
+        bool sent = false, active = false;
+    } diag_receipts[2]{}; // 0: first root ID reply; 1: single 0900 request.
+    unsigned diag_resume_packets = 0, diag_resume_invalid = 0, diag_resume_unmatched = 0;
     unsigned ulog_ticks = 0, ulog_sent_tick = 0, ulog_last_read_tick = 0, ulog_gate_ticks = 0;
     unsigned ulog_stage = 0, ulog_selected = 0, ulog_reads = 0, ulog_empty = 0, ulog_saved_bytes = 0;
     unsigned ulog_first_reads = 0, ulog_overruns = 0, ulog_requests = 0, ulog_omitted_bytes = 0;
@@ -155,7 +161,7 @@ struct NabuGlink {
         IOFree(copy, bytes);
     }
 
-    bool datagram(unsigned type, unsigned from, unsigned node, unsigned port, const void *data, unsigned size) {
+    bool datagram(unsigned type, unsigned from, unsigned node, unsigned port, const void *data, unsigned size, bool confirm = false) {
         unsigned total = (sizeof(QrtrHeader) + size + 3) & ~3u;
         if (total > sizeof(transmit)) return false;
         int selected = -1;
@@ -165,12 +171,45 @@ struct NabuGlink {
             if (!intent_requested) { command(7, 1, total); intent_requested = true; }
             return false;
         }
-        QrtrHeader qrtr{1, type, 1, from, 0, size, node, port};
+        QrtrHeader qrtr{1, type, 1, from, confirm ? 1u : 0u, size, node, port};
         memcpy(transmit, &qrtr, sizeof(qrtr)); memcpy(transmit + sizeof(qrtr), data, size);
         for (unsigned i = sizeof(qrtr) + size; i < total; ++i) transmit[i] = 0;
         struct { GlinkMessage message; uint32_t size, left; } header{{9, 1, remote[selected].id}, total, 0};
         if (!send(&header, sizeof(header), transmit, total)) return false;
         remote[selected].used = true; return true;
+    }
+    void mark_diag_confirm(unsigned which, uint32_t node, uint32_t port) {
+        DiagReceipt &r = diag_receipts[which];
+        r.node = node; r.port = port; r.sent_tick = ulog_ticks; r.sent = r.active = true;
+        nabu_wireless_log("NABU DIAG CONFIRM: probe=%u sent-to=%u:%u tick=%u; locally transmitted, socket receipt pending\n",
+            which, node, port, r.sent_tick);
+    }
+    void receive_diag_resume(const QrtrHeader &header, const uint8_t *data) {
+        ++diag_resume_packets;
+        NabuSmem payload{data, header.size};
+        if (header.size != 20 || payload.u32(0) != 7 || payload.u32(12) || payload.u32(16) ||
+            header.from_port != control_port || header.to_port != control_port || header.to_node != 1 ||
+            header.from_node != payload.u32(4)) {
+            ++diag_resume_invalid;
+            if (diag_resume_invalid <= 4)
+                nabu_wireless_log("NABU DIAG RESUME: invalid from=%u:%#x to=%u:%#x bytes=%u\n",
+                    header.from_node, header.from_port, header.to_node, header.to_port, header.size);
+            return;
+        }
+        unsigned match = 0;
+        for (unsigned i = 0; i < 2; ++i) {
+            const DiagReceipt &r = diag_receipts[i];
+            if (r.sent && r.active && r.node == payload.u32(4) && r.port == payload.u32(8)) match |= 1u << i;
+        }
+        // RESUME_TX has no transaction ID. Attribute only an unambiguous endpoint.
+        if (match == 1 || match == 2) {
+            DiagReceipt &r = diag_receipts[match == 1 ? 0 : 1];
+            if (!r.packets++) r.first_tick = ulog_ticks;
+        } else ++diag_resume_unmatched;
+        if (diag_resume_packets <= 8)
+            nabu_wireless_log("NABU DIAG RESUME: from=%u:%#x to=%u:%#x words=%u,%u,%u,%u,%u match=%u tick=%u pfr=%u; socket dequeue precedes DIAG parsing\n",
+                header.from_node, header.from_port, header.to_node, header.to_port,
+                payload.u32(0), payload.u32(4), payload.u32(8), payload.u32(12), payload.u32(16), match, ulog_ticks, wlan_crash_captured);
     }
     void announce_tftp(unsigned node) {
         if (nabu_rmtfs_available()) { uint32_t server[4] = {14, 1, 1, 0x4001}; queue_control(4, node, control_port, server); }
@@ -243,6 +282,7 @@ struct NabuGlink {
                         diag_feature_queued = diag_feature_tx = diag_root_id_tx = false;
                         diag_root_id = diag_wlan_id = 0;
                         diag_ulog_registered = false; retire_ulog();
+                        diag_receipts[0].active = diag_receipts[1].active = false;
                         nabu_wireless_log("NABU ULOG: control endpoint changed; old handles retired\n");
                     }
                     diag_control_node = header.from_node; diag_control_port = header.from_port;
@@ -472,7 +512,9 @@ struct NabuGlink {
             memcpy(request + 4, parameters, sizeof(parameters));
         }
         request[2] = ulog_command; request[3] = ulog_command >> 8;
-        if (datagram(1, diag_command_port, diag_command_node, diag_command_peer, request, bytes)) {
+        bool confirm = ulog_command == 0x900 && !diag_receipts[1].sent;
+        if (datagram(1, diag_command_port, diag_command_node, diag_command_peer, request, bytes, confirm)) {
+            if (confirm) mark_diag_confirm(1, diag_command_node, diag_command_peer);
             ulog_waiting = true; ulog_sent_tick = ulog_ticks; ulog_last_read_tick = ulog_ticks;
             ++ulog_requests;
             if (ulog_stage < 4) nabu_wireless_log("NABU ULOG: request=%#x bytes=%u step=%u registered=%u route-verified=%u\n",
@@ -515,6 +557,13 @@ struct NabuGlink {
             ulog_requests, ulog_omitted_bytes);
         nabu_wireless_log("NABU ULOG: route-verified=%u successful-version-replies=%u; only real WLAN 0900 version1/status0 reply qualifies\n",
             ulog_route_verified, ulog_version_replies);
+        nabu_wireless_log("NABU DIAG RESUME: packets=%u invalid=%u unmatched=%u; no DIAG acceptance or route-success inference\n",
+            diag_resume_packets, diag_resume_invalid, diag_resume_unmatched);
+        for (unsigned i = 0; i < 2; ++i) {
+            const DiagReceipt &r = diag_receipts[i];
+            nabu_wireless_log("NABU DIAG CONFIRM: probe=%u sent=%u active=%u endpoint=%u:%u sent-tick=%u socket-receipts=%u first-tick=%u\n",
+                i, r.sent, r.active, r.node, r.port, r.sent_tick, r.packets, r.first_tick);
+        }
         nabu_wireless_log("NABU DIAG CTRL: registration-records=%u ssid-records=%u build-mask-records=%u pd-status-records=%u; no F3/log/event masks sent\n",
             diag_registration_records, diag_ssid_records, diag_build_records, diag_pd_records);
         for (unsigned which = 0; which < 2; ++which) {
@@ -556,9 +605,13 @@ struct NabuGlink {
             if (r.from == diag_ports[0] && (r.node != diag_control_node || r.port != diag_control_port)) {
                 response_head = (response_head+1)%8; --response_count; continue;
             }
-            if (!datagram(1, r.from, r.node, r.port, r.data, r.bytes)) break;
+            NabuSmem reply{r.data, r.bytes};
+            bool confirm = r.from == diag_ports[0] && r.bytes >= 16 && reply.u32(0) == 33 &&
+                diag_root_id && reply.u32(12) == diag_root_id && !diag_receipts[0].sent;
+            if (!datagram(1, r.from, r.node, r.port, r.data, r.bytes, confirm)) break;
+            if (confirm) mark_diag_confirm(0, r.node, r.port);
             if (r.from == diag_ports[0]) {
-                ++diag_replies_tx; NabuSmem reply{r.data, r.bytes};
+                ++diag_replies_tx;
                 if (reply.u32(0) == 8) diag_feature_tx = true;
                 if (reply.u32(0) == 33 && reply.u32(12) == diag_root_id) diag_root_id_tx = true;
                 if (diag_replies_tx <= 4) {
@@ -671,12 +724,14 @@ struct NabuGlink {
         } else { nabu_wireless_log("NABU QRTR: unsupported packet bytes=%u\n", size); return; }
         bool diag_packet = qmi_enabled && header.type == 1 &&
             (header.to_port == diag_ports[0] || header.to_port == diag_ports[1] || header.to_port == diag_command_port);
-        if (!packet.span(at, header.size) || (header.size < 4 && !diag_packet)) return;
+        bool diag_resume = qmi_enabled && header.type == 7;
+        if (!packet.span(at, header.size) || (header.size < 4 && !diag_packet && !diag_resume)) return;
         if (!peer_seen) { peer = header.from_node; peer_seen = true; }
         if (header.confirm) {
             uint32_t words[4] = {header.to_node, header.to_port, 0, 0};
             queue_control(7, header.from_node, header.from_port, words, header.to_port);
         }
+        if (diag_resume) { receive_diag_resume(header, data + at); return; }
         if (diag_packet) {
             if (header.to_port == diag_command_port) receive_diag_command(header, data + at);
             else observe_diag(header.to_port == diag_ports[1], header, data + at);
@@ -754,10 +809,12 @@ struct NabuGlink {
             nabu_wireless_log("NABU QRTR: %s service=%u version=%u instance=%u node=%u port=%u\n", command == 4 ? "server" : "removed", service, instance & 255, instance >> 8, node, port);
             if (service == diag_service && instance == 1) {
                 if (command == 4) {
-                    if (diag_command_server && (diag_command_node != node || diag_command_peer != port)) retire_ulog();
+                    if (diag_command_server && (diag_command_node != node || diag_command_peer != port)) {
+                        retire_ulog(); diag_receipts[1].active = false;
+                    }
                     diag_command_server = true; diag_command_node = node; diag_command_peer = port;
                 } else if (diag_command_node == node && diag_command_peer == port) {
-                    diag_command_server = false; retire_ulog();
+                    diag_command_server = false; retire_ulog(); diag_receipts[1].active = false;
                 }
             }
             if (service == wlfw_service && command == 4) {

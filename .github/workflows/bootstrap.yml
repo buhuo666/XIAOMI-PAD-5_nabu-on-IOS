@@ -11,6 +11,7 @@ on:
       - 'patches/darwinboot/**'
       - 'patches/nabu-storage/**'
       - 'patches/nabu-input/**'
+      - 'patches/nabu-wireless/**'
       - 'patches/nabu-apfs/**'
       - 'patches/nabu-userland/**'
       - 'userland/nabu/**'
@@ -28,6 +29,29 @@ permissions:
   contents: read
 
 jobs:
+  wireless-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install protocol test compiler
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y clang-18
+      - name: Replay DIAG framing and production GLINK with sanitizers
+        run: |
+          python3 tools/check_nabu_diag_frames.py --output log/ci/nabu-diag-frames
+          python3 tools/check_nabu_glink.py --output log/ci/nabu-glink
+      - name: Retain wireless protocol results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wireless-protocol-${{ github.run_number }}
+          path: log/ci/nabu-*/
+          retention-days: 14
+          if-no-files-found: warn
   xnu8796-reference:
     runs-on: ${{ inputs.runner || 'macos-15' }}
     timeout-minutes: 45

@@ -292,7 +292,7 @@ static void check_diag_handshake() {
 // analysis/nabu-wlan-ulog-export-v110.md. This peer supplies responses, not hardware.
 struct UlogPeer {
     NabuGlink g{};
-    struct Tx { QrtrHeader header; std::vector<uint8_t> payload; };
+    struct Tx { QrtrHeader header; std::vector<uint8_t> payload, wire; };
     uint8_t board[4]{};
     UlogPeer() {
         memset(shared,0,sizeof(shared));g.memory={shared,sizeof(shared)};g.doorbell=&doorbell;
@@ -334,7 +334,8 @@ struct UlogPeer {
             GlinkMessage frame;memcpy(&frame,shared+g.tx.offset+at,8);assert(frame.command==9);
             uint32_t count;memcpy(&count,shared+g.tx.offset+at+8,4);assert(count>=32);
             Tx tx;memcpy(&tx.header,shared+g.tx.offset+at+16,32);assert(tx.header.size<=count-32);
-            const uint8_t *p=shared+g.tx.offset+at+48;tx.payload.assign(p,p+tx.header.size);result.push_back(tx);
+            const uint8_t *p=shared+g.tx.offset+at+48;tx.payload.assign(p,p+tx.header.size);
+            tx.wire.assign(p-32,p-32+count);result.push_back(tx);
             at+=(16+count+7)&~7u;
         }
         return result;
@@ -603,6 +604,111 @@ static void check_ulog_version_without_registration() {
         assert(captured_bulk_log.find("kind=control-tx sequence=5")==std::string::npos);
     }
 }
+static std::vector<uint8_t> wire_hex(const char *hex) {
+    std::vector<uint8_t> result;
+    auto digit=[](char c)->unsigned {assert((c>='0'&&c<='9')||(c>='a'&&c<='f'));return c<='9'?c-'0':c-'a'+10;};
+    for(unsigned i=0;hex[i];i+=2){assert(hex[i+1]);result.push_back((digit(hex[i])<<4)|digit(hex[i+1]));}return result;
+}
+struct ConfirmPeer:UlogPeer {
+    void feature() {feed({8,0,0,0,7,0,0,0,3,0,0,0,0xf7,0xfe,3},0x4005,0,26);}
+    void root_id() {
+        // Recorded MPSS root name and opaque request ID; the response assigns ID2.
+        feed(wire_hex("210000001a00000001000000504366c26d736d2f6d6f64656d2f726f6f745f706400"),0x4005,0,26);
+    }
+    void setup() {feature();root_id();server(4,4097,1,0,27);cal();}
+    void incoming(const std::vector<uint8_t> &wire) {g.qrtr(wire.data(),wire.size());}
+    void reply(const std::vector<uint8_t> &payload) {raw(payload,0,27);}
+    static unsigned confirms(const std::vector<Tx> &packets) {
+        unsigned n=0;for(const auto &p:packets){assert(p.header.confirm<=1);n+=p.header.confirm;}return n;
+    }
+    static void command(const std::vector<Tx> &packets,const std::vector<uint8_t> &payload) {
+        assert(commands(packets)==1);for(const auto &p:packets)if(p.header.from_port==0x4007)
+            assert(p.header.to_node==0&&p.header.to_port==27&&p.payload==payload&&p.header.confirm==0);
+    }
+};
+static void check_diag_socket_receipts() {
+    // Full independent golden vectors from original MPSS receive/dequeue evidence:
+    // wireless-v112/diag-rx-followup/confirm-probe-spec.json. Includes QRTR padding.
+    const auto root_tx=wire_hex("010000000100000001000000054000000100000022000000000000001a000000210000001a00000001000000020000006d736d2f6d6f64656d2f726f6f745f7064000000");
+    const auto version_tx=wire_hex("010000000100000001000000074000000100000004000000000000001b0000004b4d0009");
+    const auto root_v1=wire_hex("010000000700000000000000feffffff000000001400000001000000feffffff07000000000000001a0000000000000000000000");
+    const auto root_v3=wire_hex("03070000140000000000feff0100feff07000000000000001a0000000000000000000000");
+    const auto version_v1=wire_hex("010000000700000000000000feffffff000000001400000001000000feffffff07000000000000001b0000000000000000000000");
+    const auto version_v3=wire_hex("03070000140000000000feff0100feff07000000000000001b0000000000000000000000");
+    {
+        ConfirmPeer p;p.ticks(10);p.setup();auto tx=p.flush();assert(tx.size()==3);
+        assert(tx[0].header.confirm==0&&tx[1].wire==root_tx&&tx[2].wire==version_tx);
+        unsigned confirmed=ConfirmPeer::confirms(tx);assert(confirmed==2);
+        for(unsigned i=0;i<2;++i){const auto &r=p.g.diag_receipts[i];
+            assert(r.sent&&r.active&&r.node==0&&r.port==26+i&&r.sent_tick==10&&r.packets==0);}
+        p.root_id();tx=p.flush();assert(tx.size()==1&&tx[0].header.confirm==0);confirmed+=ConfirmPeer::confirms(tx);
+        auto duplicate=root_tx;duplicate[16]=0;assert(tx[0].wire==duplicate);
+        p.feed(wire_hex("210000001a00000001000000000000006d736d2f6d6f64656d2f776c616e5f706400"),0x4005,0,26);
+        tx=p.flush();assert(tx.size()==1&&tx[0].header.confirm==0);confirmed+=ConfirmPeer::confirms(tx);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_requests==1&&p.g.ulog_waiting);
+        p.reply(UlogPeer::payload(0x900,{1,0}));assert(p.g.ulog_route_verified&&p.g.ulog_version_replies==1);
+        tx=p.flush();ConfirmPeer::command(tx,{0x4b,0x4d,4,9,0,0,0,0});confirmed+=ConfirmPeer::confirms(tx);
+        p.reply(UlogPeer::payload(0x904,{0,0,0,0}));
+        tx=p.flush();ConfirmPeer::command(tx,UlogPeer::connect(0));confirmed+=ConfirmPeer::confirms(tx);
+        p.reply(UlogPeer::payload(0x901,{0,13}));
+        tx=p.flush();ConfirmPeer::command(tx,UlogPeer::connect(1));confirmed+=ConfirmPeer::confirms(tx);
+        p.reply(UlogPeer::payload(0x901,{0,13}));tx=p.flush();assert(UlogPeer::has_cal(tx));
+        confirmed+=ConfirmPeer::confirms(tx);assert(confirmed==2&&p.g.ulog_requests==4);
+    }
+    {
+        ConfirmPeer p;p.ticks(10);p.setup();p.flush();
+        std::vector<std::vector<uint8_t>> wrong;
+        auto packet=version_v1;packet[40]=7;packet[41]=0x40;wrong.push_back(packet); // Local 0x4007 is not DSP27.
+        packet=version_v1;packet[8]=packet[36]=2;wrong.push_back(packet); // Valid envelope, wrong target node.
+        packet=version_v1;packet[8]=2;wrong.push_back(packet); // Envelope source disagrees with payload node.
+        packet=version_v1;packet[12]=27;packet[13]=packet[14]=packet[15]=0;wrong.push_back(packet);
+        packet=version_v1;packet[24]=0;wrong.push_back(packet); // Not addressed to APPS node1.
+        packet=version_v1;packet[28]=7;packet[29]=0x40;packet[30]=packet[31]=0;wrong.push_back(packet);
+        packet=version_v1;packet[32]=8;wrong.push_back(packet); // Wrong payload control command.
+        packet=version_v1;packet[44]=1;wrong.push_back(packet); // Original five-word ack has zero tail words.
+        packet=version_v1;packet[20]=19;packet.pop_back();wrong.push_back(packet);
+        packet=version_v1;packet[4]=1;wrong.push_back(packet); // DATA carrying 7 is not a type7 receipt.
+        for(const auto &bad:wrong)p.incoming(bad);
+        assert(!p.g.diag_receipts[0].packets&&!p.g.diag_receipts[1].packets);
+        assert(p.g.diag_resume_invalid&&p.g.diag_resume_unmatched&&!p.g.ulog_route_verified);
+        p.ticks(3);p.incoming(root_v1);assert(p.g.diag_receipts[0].packets==1&&p.g.diag_receipts[0].first_tick==13);
+        assert(p.g.diag_receipts[1].packets==0);
+        p.ticks(7);p.incoming(version_v3);assert(p.g.diag_receipts[1].packets==1&&p.g.diag_receipts[1].first_tick==20);
+        p.incoming(root_v3);p.incoming(version_v1);
+        assert(p.g.diag_receipts[0].packets==2&&p.g.diag_receipts[0].first_tick==13);
+        assert(p.g.diag_receipts[1].packets==2&&p.g.diag_receipts[1].first_tick==20);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==0&&!p.g.diag_ulog_registered);
+        assert(p.g.ulog_waiting&&p.g.ulog_stage==0&&p.g.hold_cal_for_ulog()&&p.g.diag_command_packets==0);
+        assert(UlogPeer::commands(p.flush())==0&&p.g.ulog_requests==1); // No receipt-driven retry.
+        p.ticks(990);assert(p.g.ulog_stopped&&!p.g.ulog_waiting&&!p.g.ulog_route_verified);
+        assert(UlogPeer::has_cal(p.flush())&&p.g.ulog_version_replies==0);
+    }
+    {
+        ConfirmPeer p;p.incoming(root_v1);p.incoming(version_v3);
+        assert(p.g.diag_resume_unmatched==2&&!p.g.diag_receipts[0].sent&&!p.g.diag_receipts[1].sent);
+        p.feature();p.flush();p.root_id();p.reset_tx();
+        // Ring pressure makes datagram() return false even with a remote intent.
+        put32(4,16368);p.g.tftp_flush();
+        assert(!p.g.diag_receipts[0].sent&&!p.g.diag_root_id_tx&&p.g.response_count==1);
+        p.incoming(root_v1);assert(!p.g.diag_receipts[0].packets&&p.g.diag_resume_unmatched==3);
+        auto tx=p.flush();assert(tx.size()==1&&tx[0].wire==root_tx&&p.g.diag_receipts[0].sent);
+        p.server(4,4097,1,0,27);p.cal();p.reset_tx();
+        for(auto &intent:p.g.remote)intent.present=false;p.g.intent_requested=true;
+        p.g.send_ulog_command();assert(!p.g.diag_receipts[1].sent&&!p.g.ulog_waiting&&p.g.ulog_requests==0&&p.g.word(4)==0);
+        p.incoming(version_v1);assert(!p.g.diag_receipts[1].packets&&p.g.diag_resume_unmatched==4);
+        tx=p.flush();assert(tx.size()==1&&tx[0].wire==version_tx&&p.g.diag_receipts[1].sent&&p.g.ulog_requests==1);
+    }
+    {
+        ConfirmPeer p;p.setup();p.flush();p.server(4,4097,1,0,28);
+        assert(p.g.diag_receipts[1].sent&&!p.g.diag_receipts[1].active);
+        p.incoming(version_v1);assert(!p.g.diag_receipts[1].packets&&p.g.diag_resume_unmatched==1);
+        p.incoming(root_v3);assert(p.g.diag_receipts[0].packets==1); // Control endpoint is still the same socket.
+        p.feed({8,0,0,0,7,0,0,0,3,0,0,0,0xf7,0xfe,3},0x4005,0,30);
+        assert(!p.g.diag_receipts[0].active&&!p.g.diag_receipts[1].active);
+        p.incoming(root_v1);assert(p.g.diag_receipts[0].packets==1&&p.g.diag_resume_unmatched==2);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==0);
+    }
+}
 int main() {
     smem_va=(uintptr_t)shared;
     put32(0xf000,0x434f5424);put32(0xf004,1);put32(0xf008,1);
@@ -764,7 +870,8 @@ int main() {
     check_diag_handshake();
     check_ulog_commands();
     check_ulog_version_without_registration();
-    puts("GLINK: bounded WLAN 0900 query without APPS REG, actual version-response route gate, control TX/error evidence limits, original ULog query/read bytes and framing, CAL gate/retry, capture limits and retirement; existing rings/fragments, KNEL/DMON and recovery tests passed");
+    check_diag_socket_receipts();
+    puts("GLINK: exact root-ID/0900 confirm vectors, two-probe-only transmission, v1/v3 socket receipts and rejection without DIAG success inference; bounded ULog route/CAL gates, framing, retirement and existing rings/fragments/KNEL/DMON recovery tests passed");
 }
 '''
 
@@ -796,6 +903,9 @@ def main():
               'ulog_evidence':'wireless-v110/diag-command-route/protocol-spec.json and analysis/nabu-wlan-ulog-export-v110.md',
               'ulog_version_probe_without_registration':True,
               'ulog_probe_evidence':'wireless-v111/diag-registration-followup/findings.md',
+              'diag_confirm_probe_evidence':'wireless-v112/diag-rx-followup/confirm-probe-spec.json',
+              'diag_confirm_probes':['first root ID33 reply','single ULog0900 request'],
+              'diag_confirm_does_not_verify_route':True,
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
