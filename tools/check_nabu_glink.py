@@ -369,6 +369,7 @@ struct UlogPeer {
     }
     void initial_queries() {
         expect(flush(),{0x4b,0x4d,0,9});raw(payload(0x900,{1,0}));
+        assert(g.ulog_route_verified&&g.ulog_version_replies==1);
         expect(flush(),{0x4b,0x4d,4,9,0,0,0,0});
         auto names=payload(0x904,{0,2,0,2});const char list[]="CCPM User LOG\0CCPM User DEBUG LOG";
         names.insert(names.end(),list,list+sizeof(list));raw(names);
@@ -380,7 +381,7 @@ struct UlogPeer {
 };
 static void check_ulog_commands() {
     {
-        UlogPeer p;p.cal();p.server(4,4097,0);assert(!p.g.diag_command_server);
+        UlogPeer p;p.server(4,4097,0);assert(!p.g.diag_command_server);
         p.server();p.feature();p.registration(0x700,0x70f);p.root();
         auto sent=p.flush();assert(UlogPeer::commands(sent)==0&&!UlogPeer::has_cal(sent));
         p.registration(0x900,0x90f,0xff,52);assert(!p.g.diag_ulog_registered);
@@ -458,6 +459,7 @@ static void check_ulog_commands() {
         UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();assert(p.g.ulog_waiting);
         p.server(4,4097,1,7,220);
         assert(!p.g.ulog_waiting&&!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==1);
         auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);
         p.raw(late);p.raw(late,7,220);assert(p.g.ulog_reads==0&&p.g.ulog_saved_bytes==0);
         assert(p.g.ulog_stopped&&UlogPeer::commands(p.flush())==0); // Old handles never sent to new peer.
@@ -467,6 +469,7 @@ static void check_ulog_commands() {
     {
         UlogPeer p;p.setup();p.initial_queries();p.connections(2,3);p.ticks(5);p.flush();assert(p.g.ulog_waiting);
         p.feature(0xf7,52);assert(!p.g.ulog_waiting&&!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==1);
         auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);p.raw(late);
         assert(p.g.ulog_reads==0&&p.g.ulog_saved_bytes==0);
         assert(p.g.ulog_stopped&&!p.g.diag_ulog_registered&&UlogPeer::commands(p.flush())==0);
@@ -514,6 +517,7 @@ static void check_ulog_commands() {
         p.feed(failure,0x4002,0,9);
         assert(p.g.wlan_crash_captured&&p.g.ulog_stopped&&!p.g.ulog_waiting);
         assert(!p.g.ulog_handles[0]&&!p.g.ulog_handles[1]);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==1);
         unsigned before=p.g.ulog_reads;auto late=UlogPeer::payload(0x905,{1,4});late.resize(16);p.raw(late);
         assert(p.g.ulog_reads==before&&p.g.ulog_saved_bytes==0&&UlogPeer::commands(p.flush())==0);
     }
@@ -524,6 +528,79 @@ static void check_ulog_commands() {
         auto tx=p.flush();assert(tx.size()==1&&tx[0].header.from_port==0x4003);
         assert((tx[0].payload==std::vector<uint8_t>{0,1,0,0x3a,0,0,0}));
         assert(p.g.wlfw.waiting&&p.g.wlfw.message==0x3a); // Recovery ACK is never held by the CAL gate.
+    }
+}
+static void check_ulog_version_without_registration() {
+    // The original MPSS internal dispatcher accepts WLAN's fixed read-only 0900
+    // handler without waiting for APPS REG advertisement. It does not authorize
+    // advancing on a local TX, bad-command response or mismatched version.
+    // Evidence: wireless-v111/diag-registration-followup/findings.md.
+    {
+        UlogPeer p;p.server();p.feature();p.root();
+        auto tx=p.flush();assert(UlogPeer::commands(tx)==0&&p.g.wlfw_port==0);
+        assert(p.g.diag_feature_tx&&p.g.diag_root_id_tx&&!p.g.diag_ulog_registered);
+        p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;
+        UlogPeer::expect(p.flush(),{0x4b,0x4d,0,9});
+        assert(p.g.ulog_requests==1&&p.g.ulog_waiting&&!p.g.ulog_route_verified);
+        p.ticks(200);assert(UlogPeer::commands(p.flush())==0&&p.g.ulog_stage==0&&p.g.ulog_requests==1);
+        // A packet from another endpoint is not version evidence.
+        p.raw(UlogPeer::payload(0x900,{1,0}),7,218);
+        assert(p.g.ulog_waiting&&!p.g.ulog_route_verified&&p.g.ulog_version_replies==0);
+        p.raw(UlogPeer::payload(0x900,{1,0}));
+        assert(p.g.ulog_route_verified&&p.g.ulog_version_replies==1&&!p.g.diag_ulog_registered);
+        UlogPeer::expect(p.flush(),{0x4b,0x4d,4,9,0,0,0,0});
+        p.raw(UlogPeer::payload(0x904,{0,0,0,0}));
+        UlogPeer::expect(p.flush(),UlogPeer::connect(0));
+        assert(p.g.ulog_command==0x901&&!p.g.diag_ulog_registered);
+    }
+    {
+        UlogPeer p;p.server();p.feature();p.root();p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;
+        // The new route does not bypass actual FEATURE/root-ID response transmission.
+        p.reset_tx();p.g.send_ulog_command();assert(p.g.word(4)==0&&!p.g.diag_feature_tx&&!p.g.diag_root_id_tx);
+        UlogPeer::expect(p.flush(),{0x4b,0x4d,0,9});
+        p.ticks(1000);assert(p.g.ulog_stopped&&!p.g.ulog_waiting);
+        assert(UlogPeer::commands(p.flush())==0&&!p.g.ulog_route_verified&&p.g.ulog_version_replies==0);
+    }
+    {
+        UlogPeer p;p.server();p.feature();p.root();p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;
+        p.flush();captured_bulk_log.clear();
+        p.raw({0x13,0x4b,0x4d,0,9}); // Original unregistered-handler BAD_CMD with request prefix.
+        assert(p.g.ulog_stopped&&!p.g.ulog_waiting&&!p.g.ulog_route_verified&&p.g.ulog_stage==0);
+        assert(p.g.ulog_version_replies==0&&UlogPeer::commands(p.flush())==0);
+        assert(captured_bulk_log.find("kind=unexpected sequence=1 at=0 bytes=5 raw=134b4d0009\n")!=std::string::npos);
+    }
+    for(unsigned failure=0;failure<4;++failure) {
+        UlogPeer p;p.server();p.feature();p.root();p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;p.flush();
+        auto reply=UlogPeer::payload(0x900,{1,0});
+        if(failure==0)reply[4]=2; // Unsupported version, correct command echo.
+        if(failure==1)reply[8]=1; // Nonzero version-query status.
+        if(failure==2)reply[3]=8; // Another PD's 0800 echo cannot establish the WLAN route.
+        if(failure==3)reply.resize(11); // A short apparent success cannot establish it either.
+        p.raw(reply);assert(p.g.ulog_stopped&&!p.g.ulog_waiting&&p.g.ulog_stage==0);
+        assert(!p.g.ulog_route_verified&&p.g.ulog_version_replies==0&&UlogPeer::commands(p.flush())==0);
+    }
+    {
+        UlogPeer p;p.server();p.feature();p.root();p.flush();
+        p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;
+        // An unverified nonzero stage cannot issue LIST/CONNECT/READ without REG.
+        for(unsigned stage=1;stage<5;++stage){
+            p.g.ulog_stage=stage;p.ticks(5);
+            assert(UlogPeer::commands(p.flush())==0&&p.g.ulog_requests==0&&!p.g.ulog_waiting);
+        }
+    }
+    {
+        UlogPeer p;p.server();p.feature();p.root();p.server(4,0x45,1,0,35);p.g.wlfw.waiting=true;p.flush();
+        std::vector<uint8_t> bad(90,0xaa);bad[0]=0x13;captured_bulk_log.clear();p.raw(bad);
+        assert(p.g.ulog_stopped&&captured_bulk_log.find("bytes=64 raw=13")!=std::string::npos);
+        assert(captured_bulk_log.find("at=64")==std::string::npos&&captured_bulk_log.size()<240);
+    }
+    {
+        UlogPeer p;p.feature();for(unsigned i=0;i<4;++i)p.root();captured_bulk_log.clear();
+        p.flush();assert(p.g.diag_replies_tx==5);
+        assert(captured_bulk_log.find("kind=control-tx sequence=1 at=0 bytes=16 raw=08000000080000000400000051a00000\n")!=std::string::npos);
+        assert(captured_bulk_log.find("raw=210000001600000001000000020000006d6f64656d2f726f6f745f706400\n")!=std::string::npos);
+        assert(captured_bulk_log.find("kind=control-tx sequence=4")!=std::string::npos);
+        assert(captured_bulk_log.find("kind=control-tx sequence=5")==std::string::npos);
     }
 }
 int main() {
@@ -686,7 +763,8 @@ int main() {
     check_diag_observation();
     check_diag_handshake();
     check_ulog_commands();
-    puts("GLINK: DIAG feature/ID exchange, dynamic command routing, original ULog query/read bytes and framing, bounded CAL gate/retry, capture limits, endpoint/PFR/deregistration retirement and late-response rejection; existing rings/fragments, KNEL/DMON and recovery tests passed");
+    check_ulog_version_without_registration();
+    puts("GLINK: bounded WLAN 0900 query without APPS REG, actual version-response route gate, control TX/error evidence limits, original ULog query/read bytes and framing, CAL gate/retry, capture limits and retirement; existing rings/fragments, KNEL/DMON and recovery tests passed");
 }
 '''
 
@@ -716,6 +794,8 @@ def main():
               'diag_payload_responses':True,'apps_feature_hex':'51a00000',
               'ulog_commands':[0x900,0x901,0x904,0x905],
               'ulog_evidence':'wireless-v110/diag-command-route/protocol-spec.json and analysis/nabu-wlan-ulog-export-v110.md',
+              'ulog_version_probe_without_registration':True,
+              'ulog_probe_evidence':'wireless-v111/diag-registration-followup/findings.md',
               'hardware_tested':False,'result':result.stdout.decode().splitlines()[-1]}
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))

@@ -519,3 +519,14 @@ PFR/注销/端点变化立即退休旧句柄；尚待实机证明通路和日志
 完整源码、构建对象、启动链及回执保存在log/device/nabu-boot-20261107-111；
 接续记录为log/host/wireless-v111/continuation.json。当前等待用户桌面反馈，
 尚未开启主机USB探针，不能把启动命令成功当作桌面或ULog实测通过。
+
+第111轮桌面/USB正常，首次DIAG FEATURE/root ID请求与本机应答已实测，后续
+未收到WLAN命令注册，故ULog未发请求。CAL有界放行后仍同PC异常，Wi-Fi未就绪。
+蓝牙单广告偏好和原生2005/200b/200c均正常。已回Android并回收64MiB槽与
+3,051,636字节连续日志，重试清空回读通过；日志未封口，APFS计数80→81。
+详见[第111轮实测](../analysis/nabu-wlan-ulog-capture-v111.md)。
+
+第111轮原机分析确认：root ID应答布局与厂版消费者一致，bit11不是REG必需门槛；
+内部命令分派也不要求先向APPS通告REG。第112轮新增一次受限0900版本查询，
+实际成功回显后才开放无REG的后续ULog读取；生产协议ASan/UBSan、编译链接通过。
+详见[第112轮路由验证候选](../analysis/nabu-wlan-diag-route-v112.md)。

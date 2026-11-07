@@ -68,9 +68,9 @@ struct NabuGlink {
     uint8_t diag_feature_mask[4]{}, diag_root_id = 0, diag_wlan_id = 0;
     uint32_t diag_control_node = 0, diag_control_port = 0;
     bool diag_feature_queued = false, diag_feature_tx = false, diag_root_id_tx = false;
-    bool diag_command_server = false, diag_ulog_registered = false;
+    bool diag_command_server = false, diag_ulog_registered = false, ulog_route_verified = false;
     uint32_t diag_command_node = 0, diag_command_peer = 0;
-    unsigned diag_command_packets = 0, diag_frame_errors = 0;
+    unsigned diag_command_packets = 0, diag_frame_errors = 0, ulog_version_replies = 0;
     unsigned ulog_ticks = 0, ulog_sent_tick = 0, ulog_last_read_tick = 0, ulog_gate_ticks = 0;
     unsigned ulog_stage = 0, ulog_selected = 0, ulog_reads = 0, ulog_empty = 0, ulog_saved_bytes = 0;
     unsigned ulog_first_reads = 0, ulog_overruns = 0, ulog_requests = 0, ulog_omitted_bytes = 0;
@@ -359,7 +359,8 @@ struct NabuGlink {
         }
     }
     void retire_ulog() {
-        ulog_stopped = true; ulog_waiting = false; bzero(ulog_handles, sizeof(ulog_handles));
+        ulog_stopped = true; ulog_waiting = false; ulog_route_verified = false;
+        bzero(ulog_handles, sizeof(ulog_handles));
     }
     static void ulog_payload_callback(void *context, const uint8_t *data, unsigned bytes) {
         ((NabuGlink *)context)->receive_ulog_payload(data, bytes);
@@ -381,6 +382,7 @@ struct NabuGlink {
         if (bytes < 4 || data[0] != 0x4b || data[1] != 0x4d || reply.u16(2) != ulog_command) {
             nabu_wireless_log("NABU ULOG: unexpected reply bytes=%u first=%#x expected=%#x; stopped\n",
                 bytes, bytes ? data[0] : 0, ulog_command);
+            dump_ulog_bytes(data, bytes < 64 ? bytes : 64, "unexpected", ulog_requests);
             ulog_stopped = true; ulog_waiting = false; return;
         }
         ulog_waiting = false;
@@ -388,6 +390,8 @@ struct NabuGlink {
         if (ulog_command == 0x900) {
             nabu_wireless_log("NABU ULOG: version=%u status=%u\n", reply.u32(4), reply.u32(8));
             if (reply.u32(4) != 1 || reply.u32(8)) { ulog_stopped = true; return; }
+            ulog_route_verified = true;
+            ++ulog_version_replies;
             ulog_stage = 1;
         } else if (ulog_command == 0x904) {
             if (bytes < 20) { ulog_stopped = true; return; }
@@ -447,8 +451,12 @@ struct NabuGlink {
         }
     }
     void send_ulog_command() {
-        if (!ulog_enabled || ulog_stopped || ulog_waiting || !diag_command_server || !diag_ulog_registered ||
+        if (!ulog_enabled || ulog_stopped || ulog_waiting || !diag_command_server ||
             !diag_feature_tx || !diag_root_id_tx || (diag_feature_mask[0] & 0x50) != 0x50) return;
+        // Original MPSS dispatches a registered internal handler even before REG is
+        // advertised to APPS. Probe only its constant version reply after WLAN QMI
+        // appears; later commands require the actual version response or observed REG.
+        if (!diag_ulog_registered && !ulog_route_verified && (ulog_stage != 0 || !wlfw_port)) return;
         if (ulog_stage >= 4 && ulog_ticks - ulog_last_read_tick < 5) return;
         if (ulog_requests >= 1024) { ulog_stopped = true; return; }
         uint8_t request[32] = {0x4b, 0x4d}; unsigned bytes = 4;
@@ -467,7 +475,8 @@ struct NabuGlink {
         if (datagram(1, diag_command_port, diag_command_node, diag_command_peer, request, bytes)) {
             ulog_waiting = true; ulog_sent_tick = ulog_ticks; ulog_last_read_tick = ulog_ticks;
             ++ulog_requests;
-            if (ulog_stage < 4) nabu_wireless_log("NABU ULOG: request=%#x bytes=%u step=%u\n", ulog_command, bytes, wlfw.step);
+            if (ulog_stage < 4) nabu_wireless_log("NABU ULOG: request=%#x bytes=%u step=%u registered=%u route-verified=%u\n",
+                ulog_command, bytes, wlfw.step, diag_ulog_registered, ulog_route_verified);
         }
     }
     bool hold_cal_for_ulog() {
@@ -493,9 +502,9 @@ struct NabuGlink {
         }
     }
     void diag_summary() {
-        nabu_wireless_log("NABU DIAG: service=%u server-queues=%u ports=%#x/%#x packet-limit=%u prefix-limit=%u; observe only\n",
+        nabu_wireless_log("NABU DIAG: service=%u server-queues=%u ports=%#x/%#x packet-limit=%u prefix-limit=%u; bounded transport samples\n",
             diag_service, diag_servers_queued, diag_ports[0], diag_ports[1], diag_packet_limit, diag_prefix_limit);
-        nabu_wireless_log("NABU DIAG CTRL: records=%u invalid=%u feature-rx=%u feature-queued=%u feature-tx=%u presets=%u ids=%u id-requests=%u unknown-names=%u root-id=%u root-reply-tx=%u wlan-id=%u replies-queued=%u replies-tx=%u queue-full=%u; PD data not decoded\n",
+        nabu_wireless_log("NABU DIAG CTRL: records=%u invalid=%u feature-rx=%u feature-queued=%u feature-tx=%u presets=%u ids=%u id-requests=%u unknown-names=%u root-id=%u root-reply-tx=%u wlan-id=%u replies-queued=%u replies-tx=%u queue-full=%u; command raw frames enabled, PD tags disabled\n",
             diag_control_records, diag_control_invalid, diag_feature_records, diag_feature_queued, diag_feature_tx, diag_presets,
             diag_id_count, diag_id_requests, diag_id_unknown, diag_root_id, diag_root_id_tx, diag_wlan_id,
             diag_replies_queued, diag_replies_tx, diag_reply_full);
@@ -504,6 +513,8 @@ struct NabuGlink {
             ulog_stage, ulog_stopped, ulog_reads, ulog_empty, ulog_overruns, ulog_saved_bytes);
         nabu_wireless_log("NABU ULOG: requests=%u omitted-bytes=%u request-limit=1024 capture-limit=65536; repeated empty-ring status suppressed\n",
             ulog_requests, ulog_omitted_bytes);
+        nabu_wireless_log("NABU ULOG: route-verified=%u successful-version-replies=%u; only real WLAN 0900 version1/status0 reply qualifies\n",
+            ulog_route_verified, ulog_version_replies);
         nabu_wireless_log("NABU DIAG CTRL: registration-records=%u ssid-records=%u build-mask-records=%u pd-status-records=%u; no F3/log/event masks sent\n",
             diag_registration_records, diag_ssid_records, diag_build_records, diag_pd_records);
         for (unsigned which = 0; which < 2; ++which) {
@@ -550,6 +561,11 @@ struct NabuGlink {
                 ++diag_replies_tx; NabuSmem reply{r.data, r.bytes};
                 if (reply.u32(0) == 8) diag_feature_tx = true;
                 if (reply.u32(0) == 33 && reply.u32(12) == diag_root_id) diag_root_id_tx = true;
+                if (diag_replies_tx <= 4) {
+                    nabu_wireless_log("NABU DIAG CTRL TX: sequence=%u to=%u:%u from=%u id=%u bytes=%u; locally transmitted\n",
+                        diag_replies_tx, r.node, r.port, r.from, reply.u32(0), r.bytes);
+                    dump_ulog_bytes(r.data, r.bytes, "control-tx", diag_replies_tx);
+                }
             }
             response_head = (response_head+1)%8; --response_count;
         }

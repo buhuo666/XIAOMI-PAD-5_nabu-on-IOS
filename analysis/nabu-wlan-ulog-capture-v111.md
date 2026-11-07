@@ -66,3 +66,23 @@ FEATURE/ID应答发送、WLAN注册、版本/枚举/连接回应、原始记录�
 完整源码、构建对象、启动链及回执保存在log/device/nabu-boot-20261107-111；
 接续记录为log/host/wireless-v111/continuation.json。当前等待用户桌面反馈，
 尚未开启主机USB探针，不能把启动命令成功当作桌面或ULog实测通过。
+
+## 第111轮实测与回收
+
+用户确认桌面/USB正常。实际收到远端FEATURE f7fe03、NUM_PRESETS=2以及
+msm/modem/root_pd的ID请求；本机FEATURE和分配ID2的应答均已发送。后续控制
+总数仍只有3条，未收到WLAN ID或任何命令注册，命令server实例1已出现。
+因此registered=0、ULog请求/应答/保存字节均0；CAL等待2000tick后正常放行，
+随后仍为原PFR PC=b019b9bc，FW_READY/INIT_DONE均0。不能把root应答已发送
+表述为远端已确认ID，也不能把零ULog请求表述为CCPM日志不存在。
+
+蓝牙单广告stored/effective均false，PID62开机自动选用；完整前缀中同一次
+原生Reset后2005/200b/200c均status0，没有后续Reset或718重启。本轮未要求
+耳机配对操作，实际播放仍留到声音服务阶段。
+
+已回Android、蓝牙关闭。首次回收遇到short partition read，尚未写入首块
+备份、也未清空；保留失败回执后重试成功。完整64MiB槽及3,051,636字节连续
+日志位于log/device/nabu-boot-20261107-111/runtime-log-retry-1，清空回读通过。
+日志未封口；APFS计数80→81，fullfsync成功。摘录为
+log/host/wireless-v111/runtime-evidence.txt，summary与continuation已更新。
+下一步按实际原机MPSS代码核对注册发送条件和命令接收门槛。
