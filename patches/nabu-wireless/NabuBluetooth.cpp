@@ -433,6 +433,17 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
         }
         bool log_command = !control && packet > 0 && stream_tx->at(0) == 1 && stream_command_logs < 96;
         unsigned command_opcode = log_command ? stream_tx->at(1) | stream_tx->at(2) << 8 : 0;
+        // Run106 reached scan enable but received Invalid HCI Command Parameters.
+        // Preserve the actual address/scan bytes before consuming the TX queue.
+        bool log_parameters = log_command && (command_opcode == 0x2005 || command_opcode == 0x200b || command_opcode == 0x200c);
+        unsigned parameter_bytes = log_parameters ? stream_tx->at(3) : 0;
+        unsigned captured_parameters = parameter_bytes < 7 ? parameter_bytes : 7;
+        char parameter_hex[15]{};
+        static const char hex[] = "0123456789abcdef";
+        for (unsigned i = 0; i < captured_parameters; ++i) {
+            uint8_t byte = stream_tx->at(4 + i);
+            parameter_hex[2*i] = hex[byte >> 4]; parameter_hex[2*i+1] = hex[byte & 15];
+        }
         lck_mtx_unlock(stream_rx_lock);
         if (control) {
             bool ok = transmit(stream_uart, &control, 1, true);
@@ -463,6 +474,9 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
         if (sent_command) ++stream_command_logs;
         lck_mtx_unlock(stream_rx_lock);
         if (sent_command) nabu_wireless_log("NABU BT HCI: TX opcode=%#x bytes=%u\n", command_opcode, (unsigned)packet);
+        if (sent_command && log_parameters)
+            nabu_wireless_log("NABU BT HCI PARAM: opcode=%#x parameter-bytes=%u captured=%u raw=%s\n",
+                command_opcode, parameter_bytes, captured_parameters, parameter_hex);
     }
     lck_mtx_lock(stream_rx_lock);
     int error = stream_tx_error;
