@@ -42,3 +42,13 @@ BluetoothInventory增加这一单项的只读查询。
 继续复用匹配Android驱动与MPSS反汇编，追踪WLAN可恢复保护域异常是否进入已找到的
 QuRT字符环打印路径。Android两个ramdump开关当前为0，现有QuRT环地址只是ELF装载
 候选；本轮没有据此读取DSP私有内存或变更dump设置，WLAN初始化实现保持v107。
+进一步定位发现寄存器打印函数唯一已识别的直接调用点随后进入trap和无限循环，
+另有上下文处理分支绕开该打印点；不能据此认为本次可恢复PFR已写入环。
+详见[打印路径范围](nabu-wlan-qurt-printer-v108.md)。
+
+## 构建结果
+
+源码提交`1cc6340`的macOS Actions `42336668179`成功，Objective-C/ARM64编译、
+CoreFoundation链接及签名检查通过；产物为134,768字节。联合内核编译、链接与返回
+入口补丁回放通过，TX/RX函数栈帧分别464/160字节。bootstrap已通过apfsck，两个
+相关LaunchDaemon仍以mobile执行。偏好写入和实际HCI结果等待第108轮实机验证。
