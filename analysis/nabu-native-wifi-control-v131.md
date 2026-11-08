@@ -22,3 +22,15 @@
 实际station源码12项ASan/UBSan用例通过，含power失败、scan跨fatal/关开、state读取跨detach、排空和晚到attach。实际backend函数5项回滚用例通过，未patch负对照检出3处清理问题。原生service与runtime测试通过；47个arm64后端对象、Nabu桥接对象编译成功，五个回调外部符号路由已确认。完整macOS内核/relocatable link、诊断程序及实机结果待后续记录。
 
 证据：`log/host/wireless-v131/{station-check,ath10k-station-test,service-check,runtime-check,ath10k-build}`。关联、IP、耳机和Wi-Fi/BT共同流量尚未验证。
+
+## 第131轮实机结果
+
+源码6f03b605bb84a2821e5d748e51637a13b2f7485c，完整构建42441650458及诊断构建42441650464成功；新基核链接、loader解析、APFS检查通过。用户明确反馈黑屏、无苹果logo、未进入桌面，不能记为启动验收通过。
+
+34.142秒backend start=0，34.189秒add_interface=0、初次POWER1、native station present=1，offer返回0。约49秒原版wifid首次GET POWER以及254/207信道查询成功，106/RSSI_BOUNDS未支持。没有任何native scan/SET POWER请求，未验收真实原生扫描或开关。蓝牙boot/init errno0，bluetoothd记录Stack initialization complete。
+
+显示服务仍初始化1600x2560并提交最初6帧，约49.45秒清层后没有新提交。SpringBoard主线程在11:20:49.780的WWAN monitor日志之后停住；第130轮同一位置会记录WiFiManager lookup失败并继续。与原版wifid打开设备后调用SCNetworkInterfaceCopyAll、其客户随之等待的路径吻合，但未取得线程栈，不认定为已证实根因。
+
+WirelessInventory已写request-before，结果没有返回；AFC中的request-result属于第130轮，明确不作为本轮报告。20F66 SystemConfiguration原件证实SCNetworkInterfaceCopyAll在枚举前等待Plugin:InterfaceNamer的*QUIET*、*COMPLETE*或*TIMEOUT*。客户端NotifyWait没有接收超时；已有Apple源码中等待stack默认300秒、stack到达后quiet默认240秒，配置可覆盖，尚未核实本机原版插件配置。第131轮有效日志约216秒，未覆盖该默认等待窗口。详见`log/host/wireless-v131/sc-wait/`。
+
+已回Android、蓝牙关闭；2,301,005字节连续日志前缀与64MiB原始槽已备份清空，APFS100→101、fullfsync成功，Android引导分区未变。下一轮先将系统配置查询放到独立诊断线程并逐步落盘，记录IOService忙节点，保留常规无线/蓝牙报告及原生控制通道。

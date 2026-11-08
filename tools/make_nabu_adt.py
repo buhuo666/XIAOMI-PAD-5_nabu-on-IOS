@@ -139,7 +139,10 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
                            'reg': struct.pack('<4Q', 0xa00000, 0x10000, 0xa60000, 0x100000),
                            'virtual-timer-intid': U32(19)})]),
         Node('psci', {'compatible': STR('arm,psci-1.0'), 'method': STR('smc')}),
-        Node('defaults', {'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
+        # This is boot configuration, not hardware. IODTFindMatchingEntries
+        # skips AAPL,ignore when publishing device nubs, while DT readers retain
+        # these defaults. Publishing it left IOService busy and blocked configd.
+        Node('defaults', {'AAPL,ignore': U32(1), 'sleep-disabled': U32(1), 'kern.vm_compressor': U32(2)}),
         Node('options'), Node('product', {'product-name': STR('Xiaomi Pad 5'),
                                         # About reads ArtworkTraits' product description;
                                         # CoreUI uses the tablet resource idiom.

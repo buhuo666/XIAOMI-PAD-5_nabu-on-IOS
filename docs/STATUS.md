@@ -2,12 +2,13 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第130轮原版wifid已启动，发现新发布的
-en0并实际走IOCTL路径；GET12成功，GET96/97被拒绝，正在核对原版调用契约。
-独立ath10k扫描34个热点（25个2.4GHz、9个5GHz），蓝牙boot/init和原版系统栈通过。
-原生station控制、关联及IP仍待接入，en0保持down。2,834,552字节日志及完整64MiB
-槽已备份清空，APFS100，设备在Android且蓝牙关闭。详见
-[第130轮结果](../analysis/nabu-wifi-service-v130.md)。
+当前优先级是Wi-Fi和蓝牙。第131轮接通原生station，34.189秒成功发布；原版wifid
+首次查询POWER及硬件/监管信道。蓝牙boot/init和原版栈成功。用户反馈黑屏，无苹果
+logo或桌面；显示最初6帧后停止提交，SpringBoard启动停住，尚未验收本轮扫描/开关。
+原件已定位SystemConfiguration等待InterfaceNamer完成标记的路径，正在核对实机
+阻塞点；96/97拒绝与原版物理接口语义一致，不是已证实阻塞点。2,301,005字节日志
+及64MiB槽已备份清空，APFS101，设备在Android、蓝牙关闭。见
+[第131轮结果](../analysis/nabu-native-wifi-control-v131.md)。
 
 第127轮补齐QDSS时钟后首次取得FW_READY、HTC READY及WMI服务连接；第128轮
 首次真实扫描31个热点，第129轮同时恢复蓝牙初始化。第110轮耳机原配对跨重启

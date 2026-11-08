@@ -141,7 +141,12 @@ int main() {
         (out / (name + '.log')).write_bytes(result.stdout + result.stderr)
     mac = bytes([2, 7, 8, 9, 10, 11])
     _, children = parse(make_tree(bytes(64), wifi_mac=mac, wlan_native_service=True).encode())
+    defaults, = [props for props, _ in children if props['name'] == b'defaults\0']
+    assert defaults['AAPL,ignore'] == struct.pack('<I', 1)
+    assert defaults['sleep-disabled'] == struct.pack('<I', 1)
+    assert defaults['kern.vm_compressor'] == struct.pack('<I', 2)
     wlan, = [props for props, _ in children if props['name'] == b'wlan\0']
+    assert 'AAPL,ignore' not in wlan
     assert wlan['local-mac-address'] == mac
     assert wlan['compatible'] == b'qcom,wcn3990-wifi\0'
     assert struct.unpack('<2Q', wlan['reg']) == (0x18800000, 0x800000)
@@ -155,6 +160,7 @@ int main() {
                          'association unavailable and link-up refused', 'AP loss differs from fatal withdrawal',
                          'explicit device discovery', 'one stable down interface', 'unavailable transmit refused',
                          'real wlan ADT address and register geometry']}
+    report['passed'].append('boot defaults retained in DT and excluded from service nub publication; WLAN still published')
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 
