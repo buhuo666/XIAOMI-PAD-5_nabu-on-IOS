@@ -13,8 +13,9 @@ enum Error { Ok, Io, NotPreloaded, NotQuiescent, ReadbackMismatch,
     HaloState, InvalidState, PowerDownTimeout };
 enum Phase { Idle, Entry, Configure, Pll, Mpu, Rates, Core, Resume, Observe, Pause,
     Stop, Restore, Complete, Output, Mute, PowerDown };
-// cs35l41_set_vol: 817=0dB, each step1/8dB. 625=817-24*8; 625+0x4cf=0x740.
-static constexpr uint32_t LowVolumeCode=0x740, MuteVolumeCode=0x4cf;
+// Original Nabu mixer sets all four Digital PCM Volume controls to817 (0dB).
+// cs35l41_set_vol maps values >=817 to vol-817; hardware code0 is unity.
+static constexpr uint32_t NativeVolumeCode=0, MuteVolumeCode=0x4cf;
 struct Mailbox {
     uint32_t command=0,state=0,polls=0;
     bool sent=false,ack=false,matched=false;
@@ -246,15 +247,16 @@ public:
         if(!r.started||stopped||finished||r.error!=Ok)return fail(InvalidState);
         if(r.output_enabled)return true;
         phase(Output);r.output_attempted=true;
-        // Original Nabu music settings; only DAC output volume is reduced.
+        // Original Nabu music settings and unity DAC volume. Native HAL owns
+        // user volume attenuation; the earlier -24dB hardware trial is over.
         // Preserve each chip's loaded Protection, CAL_* and CH_BAL controls.
-        if(!update(0x6000,0x3fff,(LowVolumeCode<<3)|4)||
+        if(!update(0x6000,0x3fff,(NativeVolumeCode<<3)|4)||
             !update(0x6c04,0x3e0,18<<5)||!update(0x201c,0x100010,0x100010)||
             !update(0x3804,1,1)||!update(0x3800,0xff,0)||!update(0x2018,0x30,0x20)||
             !write(0x6404,0x02005308)||!write(0x6808,0x3f75)||
             !update(0x4c00,0x7f,0x32))return false;
-        r.volume_code=LowVolumeCode;
-        if(!verify(0x6000,0x3fff,(LowVolumeCode<<3)|4,r.volume_reg)||
+        r.volume_code=NativeVolumeCode;
+        if(!verify(0x6000,0x3fff,(NativeVolumeCode<<3)|4,r.volume_reg)||
             !verify(0x4c00,0x7f,0x32,r.dac_source))return false;
         // DAPM sets Main AMP before its POST_PMU power-up patch and GLOBAL_EN.
         if(!update(0x2018,1,1)||!power_patch(0x002f1aa0))return false;

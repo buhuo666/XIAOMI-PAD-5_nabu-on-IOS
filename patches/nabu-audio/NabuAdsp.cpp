@@ -367,7 +367,7 @@ struct Trial {
             bool ok=amp_core[amp].enable_output();report_amplifier(amp,"enable");publish();
             if(!ok)return false;
         }
-        log("NABU AMP PLAY: four protected outputs enabled at -24 dB; native PCM sink\n");publish();return true;
+        log("NABU AMP PLAY: four protected outputs enabled at original 0 dB; native PCM sink and system volume\n");publish();return true;
     }
     bool finish_amplifiers() {
         bool stopped=true;

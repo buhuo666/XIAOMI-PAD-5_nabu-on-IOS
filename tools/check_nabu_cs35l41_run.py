@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise production CS35L41 protected low-volume playback and core lifecycle."""
+"""Exercise production CS35L41 protected native playback and core lifecycle."""
 import argparse
 import json
 from pathlib import Path
@@ -102,7 +102,7 @@ struct Bus {
         if(address==0x10814||address==0x10014||address==0x10010) {reg[address]&=~value;return true;}
         if(address==0x2014&&(value&1)) {
             assert(reg[0x2018]&1);assert(reg[0x2084]==0x002f1aa0);
-            assert((reg[0x6000]&0x3fff)==0x3a04&&(reg[0x6c04]&0x3e0)==(18<<5));
+            assert((reg[0x6000]&0x3fff)==4&&(reg[0x6c04]&0x3e0)==(18<<5));
             assert((reg[0x4c00]&0x7f)==0x32);
             assert((reg[0x201c]&0x100010)==0x100010);
             assert((reg[0x3804]&1)&&!(reg[0x3800]&0xff)&&(reg[0x2018]&0x30)==0x20);
@@ -227,7 +227,7 @@ int main() {
         assert(p.start()&&p.result().started&&!p.result().output_enabled);
         assert(!p.result().heartbeat_changed&&!b.pause_commands&&(b.reg[0x02bc1000]&1));
         b.pcm_running=true;assert(p.enable_output());
-        assert(p.result().output_enabled&&p.result().volume_code==0x740&&p.result().volume_reg==0xba04);
+        assert(p.result().output_enabled&&p.result().volume_code==0&&p.result().volume_reg==0x8004);
         assert(p.observe());assert(p.stop_output());
         assert(!(b.reg[0x2014]&1)&&!(b.reg[0x2018]&1)&&(b.reg[0x02bc1000]&1));
         auto r=p.finish();assert(r.complete&&r.muted&&r.output_stopped&&r.pdn_done&&r.pdn_polls==3);
@@ -244,7 +244,7 @@ int main() {
         assert(ampOn<pup&&pup<globalOn&&globalOn<mute&&mute<ampOff&&ampOff<pause&&
             pause<globalOff&&globalOff<pdnClear&&pdnClear<pdn&&pdn<coreOff&&coreOff<pllRestore);
     }
-    printf("production CS35L41: four protected -24dB playback lifecycles, calibration/channel preservation, AMP/PUP/GLOBAL startup and mute/AMP/Pause/GLOBAL/PDN/core stop order, HALO2/mailbox validation, nonfatal static heartbeat, no ASPTX output; %u existing I/O exits and %u withheld clock removals passed\n",injected,withheld);
+    printf("production CS35L41: four protected original 0dB playback lifecycles, calibration/channel preservation, AMP/PUP/GLOBAL startup and mute/AMP/Pause/GLOBAL/PDN/core stop order, HALO2/mailbox validation, nonfatal static heartbeat, no ASPTX output; %u existing I/O exits and %u withheld clock removals passed\n",injected,withheld);
 }
 '''
 

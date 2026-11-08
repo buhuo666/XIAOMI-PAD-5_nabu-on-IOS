@@ -70,6 +70,13 @@ Protection/启停正常，141个PCM缓冲全部完成、无欠载，真实RENDER
 3,293,445字节日志前缀及64MiB槽备份清空，APFS121。下一轮接系统持续播放并延长左右
 引导音；麦克风尚未完成。见[第151轮结果](../analysis/nabu-internal-audio-v151.md)。
 
+第152轮已接通原生Speaker输出，用户确认四个内置扬声器均可播放；但系统音量最大时
+响度约为Android的10%。在线报告确认48kHz双声道、持续ASM完成、无丢包/欠载。定位到
+第151轮遗留的功放固定-24dB衰减。原机四路Digital PCM Volume均为817，对应硬件码0
+即0dB；第153轮恢复此值，继续由系统音量控制PCM衰减，保持本机Protection和校准。
+功放生命周期回归通过，响度修正尚待部署和用户实测。按用户指令已取消自动测试音和
+运行时限；麦克风仍未接入。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。
