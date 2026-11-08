@@ -793,3 +793,10 @@ FW_READY，CFG/MODE应答成功，CE取得HTC READY和WMI服务连接；捕获�
 没有wifid/网络接口，尚未扫描联网。固件保持常驻直到用户重启，未实测本轮
 PAS停止/QDSS撤票。2,961,182字节日志及完整槽已备份清空，APFS97。
 后续接完整ath10k及原生服务，不能将这次固件成功等同联网成功。
+
+
+## 第133轮回收结果（2026-11-08）
+
+源码23bb7a5、完整CI42444116789；复用第132轮probe/bootstrap。用户确认正常桌面、Wi-Fi开关可操作且热点列表正常。原版wifid于98.354秒开始真实扫描，后续多次返回0；bluetoothd原版栈初始化完成。InterfaceNamer记录START/STACK/en0/COMPLETE约0.174秒完成，SCNetworkInterfaceCopyAll同秒返回，但defaults末端仍busy1。因此不能认定AAPL,ignore消除了忙节点或使启动变快；上轮持久化命名状态是待证实解释。下一轮对比实时DT和IOService的defaults属性。
+
+设备已回Android、蓝牙关闭。3,499,357字节连续日志前缀和完整64MiB槽已备份清空；日志无终止记录，不能写成正常关机封口日志。APFS102→103、fullfsync成功，Android引导分区不变。关联、IP与数据流量仍未验收。

@@ -26,7 +26,7 @@ NABU_REMAP = {f'lx_{name}': f'nabu_ath10k_driver_{name}'
 NABU_REMAP.update({f'lx_os_{name}': f'nabu_ath10k_os_{name}' for name in (
     'radio_memory', 'map_registers', 'print', 'tell', 'option', 'firmware',
     'rproc_boot', 'radio_powered', 'radio_address', 'irq_attach', 'irq_enable',
-    'irq_disable', 'irq_detach_all', 'station', 'station_lost',
+    'irq_disable', 'irq_detach_all', 'station', 'station_lost', 'station_fatal',
     'net_attach', 'net_link', 'net_input')})
 
 
@@ -230,7 +230,7 @@ def worker(args, cfg):
         object_records.append({'path': str(path), 'bytes': len(raw)})
     external = sorted(undefined - definitions)
     if args.nabu_platform:
-        callbacks = ('station', 'station_lost', 'net_attach', 'net_link', 'net_input')
+        callbacks = ('station', 'station_lost', 'station_fatal', 'net_attach', 'net_link', 'net_input')
         if any('_lx_os_' + name in external for name in callbacks):
             raise RuntimeError('Backend still references the old native station/network adapter')
         if any('_nabu_ath10k_os_' + name not in external for name in callbacks):

@@ -18,6 +18,7 @@ extern "C" int lx_os_thread(const char *,void (*)(void *),void *);
 extern "C" int nabu_ath10k_driver_start();
 extern "C" void nabu_ath10k_driver_stop();
 extern "C" void nabu_wlan_service_invalidate(int);
+extern "C" void nabu_wlan_service_summary();
 extern "C" kern_return_t gic_v3_spi_attach(uint32_t,bool,void (*)(void *,uint32_t),void *);
 extern "C" void gic_v3_spi_mask(uint32_t);
 extern "C" void gic_v3_spi_unmask(uint32_t);
@@ -133,6 +134,7 @@ extern "C" bool nabu_wlan_runtime_quiesced() {
     IOLockLock(state_lock);bool result=!worker_started||worker_stopped;IOLockUnlock(state_lock);return result;
 }
 extern "C" void nabu_wlan_runtime_summary() {
+    nabu_wlan_service_summary();
     if(!state_lock)return;
     IOLockLock(state_lock);
     bool live=firmware_live,started=worker_started,stopped=worker_stopped,error=failed;

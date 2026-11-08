@@ -33,9 +33,16 @@ static atomic_bool finish_worker;
 static pthread_t worker_thread;
 static bool worker_created;
 static atomic_uint drain_waits;
-static _Thread_local bool is_worker, is_detacher;
+static atomic_uint mutation_waits;
+static _Thread_local bool is_worker, is_detacher, is_mutator;
 
-static void lck_mtx_lock(lck_mtx_t *lock) { assert(!pthread_mutex_lock(&lock->mutex)); }
+static void lck_mtx_lock(lck_mtx_t *lock) {
+    int result = pthread_mutex_trylock(&lock->mutex);
+    if (!result) return;
+    assert(result == EBUSY);
+    if (is_mutator) atomic_fetch_add(&mutation_waits, 1);
+    assert(!pthread_mutex_lock(&lock->mutex));
+}
 static void lck_mtx_unlock(lck_mtx_t *lock) { assert(!pthread_mutex_unlock(&lock->mutex)); }
 static void lck_mtx_sleep(lck_mtx_t *lock, int flags, event_t event, int interruptible)
 {

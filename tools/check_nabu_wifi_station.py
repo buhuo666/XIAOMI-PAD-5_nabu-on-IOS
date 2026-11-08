@@ -10,7 +10,10 @@ from check_darwinboot_8796 import host_command, host_path
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ('attach-off', 'attach-fatal', 'power', 'scan', 'lost', 'scan-fatal',
-         'heard-fatal', 'state-fatal', 'state-detach', 'scan-detach', 'scan-off-on', 'power-fatal')
+         'heard-fatal', 'state-fatal', 'state-detach', 'scan-detach', 'scan-off-on', 'power-fatal',
+         'join-success', 'join-refused', 'join-no-commit', 'join-power-off', 'join-off-on',
+         'join-leave', 'join-lost', 'join-lost-after-commit', 'join-fatal', 'join-replace',
+         'join-publication-race', 'join-commit-race', 'join-committed-off-on', 'join-off-active')
 
 
 def main():

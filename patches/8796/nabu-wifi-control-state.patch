@@ -1,6 +1,49 @@
 --- a/bsd/dev/hakios.apple80211.c
 +++ b/bsd/dev/hakios.apple80211.c
-@@ -294,7 +294,7 @@
+@@ -26,7 +26,7 @@
+  * _performAssociation, _dispatchAsyncAssocEvent, _dispatchLinkChangedEvent).
+  *
+  * A join: ASSOCIATE (20) carries the network's name, perhaps its access point, and the
+- * passphrase as typed (the framework does not make the key of it), and is answered at once;
++ * passphrase or a PMK derived by the framework, and is answered at once;
+  * when the station has joined or failed, event 9 says so, and ASSOCIATE_RESULT (21) gives the
+  * outcome as one of Apple80211's result numbers, which the framework turns into its errors:
+  * 1 success, 21 "invalid PMK" (a wrong passphrase), 9 a timeout, 2 anything else.
+@@ -150,17 +150,20 @@
+ 	uint8_t elements[1024];
+ };
+ 
+-/* ASSOCIATE (20): 592 bytes; of what follows the key (the RSN element wifid built, flags) nothing is used */
++/* ASSOCIATE (20): 592 bytes, including the selected RSN at offset 0xce. */
+ struct apple80211_assoc {
+ 	uint32_t version;
+ 	uint16_t mode, auth_lower, auth_upper, unused_0;
+ 	uint32_t ssid_length;
+ 	uint8_t ssid[32];
+ 	uint8_t bssid[6], unused_1[2];
+-	uint32_t key_version, key_length, key_cipher;   /* cipher 10: a passphrase as typed; 6: the key (from 64 hex digits) */
++	uint32_t key_version, key_length, key_cipher;   /* cipher 10: passphrase; 6: PMK, including ordinary userland derivation */
+ 	uint16_t key_flags, key_index;
+ 	uint8_t key[64];
+-	uint8_t rest[0x250 - 0x88];
++	uint8_t key_rest[0xcc - 0x88];
++	uint16_t rsn_length;
++	uint8_t rsn[258];
++	uint8_t rest[0x250 - 0x1d0];
+ };
+ 
+ #define CIPHER_PMK              6
+@@ -177,7 +180,8 @@
+ 	uint8_t unused_3[4];
+ };
+ 
+-_Static_assert(sizeof(struct apple80211_assoc) == 592 && offsetof(struct apple80211_assoc, key) == 0x48,
++_Static_assert(sizeof(struct apple80211_assoc) == 592 && offsetof(struct apple80211_assoc, key) == 0x48 &&
++    offsetof(struct apple80211_assoc, rsn_length) == 0xcc && offsetof(struct apple80211_assoc, rsn) == 0xce,
+     "the association request as Darwin userland 16.5 has it");
+ _Static_assert(sizeof(struct apple80211_link_changed) == 32 && offsetof(struct apple80211_link_changed, reason) == 0x14,
+     "the link event as Darwin userland 16.5 reads it");
+@@ -294,7 +298,7 @@
  	switch (request->req_type) {
  	case 43:
  	case 44: {                              /* the driver's and the hardware's name: the text alone, in 256 bytes */
@@ -9,14 +52,17 @@
  
  		return give(request, name, sizeof(name));
  	}
-@@ -309,15 +309,11 @@
+@@ -307,17 +311,18 @@
+ 		 * for a WPA2 network ("Unable to join").
+ 		 */
  		uint8_t bits[13] = { 0 };
 -		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
--
--		for (unsigned i = 0; i < sizeof(has); i++) {
--			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
--		}
-+		/* Scan/power only: association and encryption are not exposed yet. */
++		/* 20F66: bit3 CCMP, bit14 RSN. Only the supported WPA2 data path. */
++		static const uint8_t has[] = { 3, 14 };
+ 
+ 		for (unsigned i = 0; i < sizeof(has); i++) {
+ 			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
+ 		}
  		return give(request, bits, sizeof(bits));
  	}
 -	case 19: {                              /* the radio's power: one radio. Until the driver is up it counts as on: it */
@@ -29,3 +75,74 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
+@@ -511,6 +516,40 @@
+ 	return error;
+ }
+ 
++/* Validate the mode selected by 20F66, not every mode advertised by an AP. */
++static int
++join_security(const struct apple80211_assoc *asked)
++{
++	if (asked->version != 1 || asked->key_version != 1) return EINVAL;
++	if (asked->mode != 2 || asked->auth_lower != 1 || asked->auth_upper != 8 ||
++	    asked->key_flags || asked->key_index) return EOPNOTSUPP;
++	if (asked->key_cipher != CIPHER_PMK && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
++	if ((asked->key_cipher == CIPHER_PMK && asked->key_length != 32) ||
++	    (asked->key_cipher == CIPHER_PASSPHRASE && (asked->key_length < 8 || asked->key_length > 63))) return EINVAL;
++	unsigned length = asked->rsn_length;
++	const uint8_t *r = asked->rsn;
++	if (!length) return EOPNOTSUPP;
++	if (length < 20 || length > sizeof(asked->rsn) || r[1] + 2u != length) return EINVAL;
++	if (r[0] != 48) return EOPNOTSUPP;
++	if (r[2] != 1 || r[3]) return EINVAL;
++	if (memcmp(r + 4, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
++	unsigned count = r[8] | r[9] << 8;
++	if (!count || count > (length - 10) / 4) return EINVAL;
++	if (count != 1 || memcmp(r + 10, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
++	count = r[14] | r[15] << 8;
++	if (!count || count > (length - 16) / 4) return EINVAL;
++	if (count != 1 || memcmp(r + 16, "\x00\x0f\xac\x02", 4)) return EOPNOTSUPP;
++	if (length == 20) return 0;
++	if (length < 22) return EINVAL;
++	if (r[20] & 0xc0) return EOPNOTSUPP; /* No management-frame protection negotiated. */
++	if (length == 22) return 0;
++	if (length < 24) return EINVAL;
++	count = r[22] | r[23] << 8;
++	if (count > (length - 24) / 16) return EINVAL;
++	/* PMKID caching and group-management keys are outside this connection path. */
++	return count || length != 24 ? EOPNOTSUPP : 0;
++}
++
+ static int
+ set_join(const struct apple80211req *request, char *said, size_t said_size)
+ {
+@@ -518,12 +557,12 @@
+ 	struct hakios_sta_join *what;
+ 	int error;
+ 
+-	if (request->req_len < offsetof(struct apple80211_assoc, rest)) {
++	if (request->req_len < sizeof(struct apple80211_assoc)) {
+ 		return EINVAL;
+ 	}
+ 	asked = kalloc_data(sizeof(*asked), Z_WAITOK | Z_ZERO);
+ 	what = kalloc_data(sizeof(*what), Z_WAITOK | Z_ZERO);
+-	if (asked == NULL || what == NULL || (error = copyin(request->req_data, asked, offsetof(struct apple80211_assoc, rest))) != 0) {
++	if (asked == NULL || what == NULL || (error = copyin(request->req_data, asked, sizeof(*asked))) != 0) {
+ 		error = asked == NULL || what == NULL ? ENOMEM : error;
+ 		goto out;
+ 	}
+@@ -535,12 +574,11 @@
+ 		error = EINVAL;
+ 		goto out;
+ 	}
++	if ((error = join_security(asked)) != 0) goto out;
+ 	what->ssid_length = (uint8_t)asked->ssid_length;
+ 	memcpy(what->ssid, asked->ssid, asked->ssid_length);
+ 	memcpy(what->bssid, asked->bssid, sizeof(what->bssid));
+-	if (asked->key_length == 0) {
+-		what->security = HAKIOS_STA_OPEN;
+-	} else if (asked->key_cipher == CIPHER_PASSPHRASE && asked->key_length >= 8 && asked->key_length <= 63) {
++	if (asked->key_cipher == CIPHER_PASSPHRASE && asked->key_length >= 8 && asked->key_length <= 63) {
+ 		what->security = HAKIOS_STA_WPA2_PSK;
+ 		what->passphrase_length = (uint8_t)asked->key_length;
+ 		memcpy(what->passphrase, asked->key, asked->key_length);

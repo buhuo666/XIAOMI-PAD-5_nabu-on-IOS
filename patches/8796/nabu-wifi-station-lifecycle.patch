@@ -26,7 +26,7 @@
   */
  #include <kern/kalloc.h>
  #include <kern/locks.h>
-@@ -35,34 +22,65 @@
+@@ -35,34 +22,101 @@
  
  static LCK_GRP_DECLARE(sta_lock_group, "hakios-sta");
  static LCK_MTX_DECLARE(sta_lock, &sta_lock_group);
@@ -53,9 +53,13 @@
 +static bool sta_failed;                 /* fatal is latched: no backend restart this boot */
 +static uint64_t sta_generation;
 +static uint64_t sta_scan_generation;     /* an accepted off cancels this scan's publication */
++static uint64_t sta_connection_generation;
++static uint64_t sta_join_generation, sta_join_instance;
++static bool sta_join_active, sta_join_committed, sta_association_valid;
 +static int sta_error;
 +
  static bool asked_power, asked_power_on, asked_scan, asked_join, asked_leave;
++static bool asked_power_off, sta_power_active, sta_power_active_on;
  static struct hakios_sta_scan asked_scan_what;
  static struct hakios_sta_join asked_join_what;
 -static struct hakios_sta_join standing;        /* the network joined whenever the radio comes on (ssid_length 0: none) */
@@ -80,10 +84,41 @@
 -{
 -	/* (only the thread writes the list, and it reads the count without the lock) */
 -	if (heard_count < HEARD_MOST) {
--		lck_mtx_lock(&sta_lock);
++cancel_connection_locked(void)
++{
++	sta_connection_generation++;
++	sta_association_valid = false;
++	sta_join_committed = false;
++}
++
++/* Only the active synchronous join callback may commit. The callback can take
++ * its adapter gate, so every caller must enter without holding that gate.
++ * It must not call backend operations or any station mutation from here. */
++bool
++hakios_sta_join_commit(bool (*commit)(void *), void *context)
++{
++	bool allowed, committed = false;
++
++	lck_mtx_lock(&sta_publish);
++	lck_mtx_lock(&sta_lock);
++	allowed = !sta_failed && sta_ops != NULL && sta_join_active && !sta_join_committed &&
++	    sta_join_instance == sta_generation && sta_join_generation == sta_connection_generation &&
++	    sta_association_valid && sta_on && sta_want_on && !asked_leave;
++	lck_mtx_unlock(&sta_lock);
++	if (allowed) {
++		committed = commit(context);
+ 		lck_mtx_lock(&sta_lock);
++		sta_join_committed = committed;
++		lck_mtx_unlock(&sta_lock);
++	}
++	lck_mtx_unlock(&sta_publish);
++	return committed;
++}
++
++static void
 +clear_requests_locked(void)
 +{
-+	asked_power = asked_scan = asked_join = asked_leave = false;
++	asked_power = asked_power_off = asked_scan = asked_join = asked_leave = false;
 +	bzero(&asked_join_what, sizeof(asked_join_what));
 +	bzero(&standing, sizeof(standing));
 +	bzero(&fallback, sizeof(fallback));
@@ -111,7 +146,7 @@
  }
  
  static void
-@@ -70,18 +88,22 @@
+@@ -70,19 +124,31 @@
  {
  	static struct hakios_sta_scan scan;
  	static struct hakios_sta_join join;
@@ -120,24 +155,42 @@
  	for (;;) {
  		const struct hakios_sta_ops *ops;
 -		bool power = false, power_on = false, leave = false, do_join = false, do_scan = false;
-+		uint64_t generation, scan_generation;
++		uint64_t generation, scan_generation, connection_generation;
 +		bool power = false, power_on = false, leave = false, do_join = false;
 +		bool was_joined = false, completed_on = false, publish = false;
  		int error = 0;
  
  		lck_mtx_lock(&sta_lock);
 -		while (sta_ops == NULL || !(asked_power || asked_leave || asked_join || asked_scan)) {
-+		while (sta_failed || sta_ops == NULL || !(asked_power || asked_leave || asked_join || asked_scan)) {
++		while (sta_failed || sta_ops == NULL || !(asked_power || asked_power_off || asked_leave || asked_join || asked_scan)) {
  			lck_mtx_sleep(&sta_lock, LCK_SLEEP_DEFAULT, (event_t)&sta_ops, THREAD_UNINT);
  		}
  		ops = sta_ops;
 -		/* one thing at a time, in the order that makes sense when several wait */
+-		if (asked_power) {
 +		generation = sta_generation;
 +		scan_generation = sta_scan_generation;
- 		if (asked_power) {
++		connection_generation = sta_connection_generation;
++		if (asked_power_off) {
++			power = true;
++			power_on = false;
++			asked_power_off = false;
++			if (!asked_power_on) {
++				asked_power = false;
++			}
++		} else if (asked_power) {
  			power = true;
  			power_on = asked_power_on;
-@@ -95,7 +117,6 @@
+ 			asked_power = false;
+@@ -91,132 +157,270 @@
+ 			asked_leave = false;
+ 		} else if (asked_join) {
+ 			do_join = true;
++			sta_join_active = true;
++			sta_join_committed = false;
++			sta_join_generation = connection_generation;
++			sta_join_instance = generation;
+ 			join = asked_join_what;
  			bzero(&asked_join_what, sizeof(asked_join_what));
  			asked_join = false;
  		} else {
@@ -145,7 +198,9 @@
  			scan = asked_scan_what;
  			asked_scan = false;
  		}
-@@ -103,52 +124,81 @@
++		sta_power_active = power;
++		sta_power_active_on = power_on;
+ 		sta_calls = true;
  		lck_mtx_unlock(&sta_lock);
  
  		if (power) {
@@ -216,8 +271,11 @@
 +		/* Serialize the qualification, state commit and event with invalidate.
 +		 * The backend calls above hold neither publication nor state locks. */
 +		lck_mtx_lock(&sta_publish);
-+		lck_mtx_lock(&sta_lock);
-+		if (current_locked(ops, generation)) {
+ 		lck_mtx_lock(&sta_lock);
++		if (current_locked(ops, generation) && (!do_join || connection_generation == sta_connection_generation)) {
++			if (do_join && error == 0 && !sta_join_committed) {
++				error = ECANCELED;
++			}
 +			sta_error = error;
 +			if (power) {
 +				sta_on = completed_on;
@@ -225,6 +283,8 @@
 +					heard_count = 0;
 +				}
 +				if (error == 0 && sta_on && sta_want_on && ops->join != NULL && standing.ssid_length != 0 && !asked_join) {
++					sta_connection_generation++;
++					sta_association_valid = true;
 +					asked_join_what = standing;
 +					asked_join = true;
 +				}
@@ -232,8 +292,11 @@
 +			} else if (leave) {
 +				publish = error == 0;
 +			} else if (do_join) {
-+				publish = sta_want_on && !asked_leave;
++				publish = sta_on && sta_want_on && !asked_leave;
++				sta_association_valid = error == 0 && sta_join_committed;
 +				if (error != 0 && sta_want_on && fallback.ssid_length != 0 && !asked_join && !asked_leave && !asked_power) {
++					sta_connection_generation++;
++					sta_association_valid = true;
 +					standing = asked_join_what = fallback;
 +					asked_join = true;
 +				}
@@ -262,10 +325,13 @@
 +			}
 +		}
 +		lck_mtx_unlock(&sta_publish);
- 		lck_mtx_lock(&sta_lock);
++		lck_mtx_lock(&sta_lock);
++		sta_join_active = false;
++		sta_join_committed = false;
++		sta_power_active = false;
  		sta_calls = false;
  		lck_mtx_unlock(&sta_lock);
-@@ -156,67 +206,152 @@
+ 		thread_wakeup((event_t)&sta_calls);
  	}
  }
  
@@ -281,6 +347,7 @@
 +	sta_failed = true;
 +	sta_error = error != 0 ? error : EIO;
 +	sta_generation++;
++	cancel_connection_locked();
 +	sta_on = sta_want_on = false;
 +	heard_count = channel_count = 0;
 +	clear_requests_locked();
@@ -299,7 +366,7 @@
 +	struct hakios_sta_state *state;
 +	uint64_t generation;
 +	unsigned count;
-+	bool on, publish;
++	bool on, joined, publish;
 +	int error;
  	thread_t thread;
  
@@ -310,6 +377,7 @@
  		sta_ops = NULL;
 -		asked_power = asked_scan = asked_join = asked_leave = false;
 +		sta_generation++;
++		cancel_connection_locked();
 +		sta_on = sta_want_on = false;
 +		heard_count = channel_count = 0;
 +		clear_requests_locked();
@@ -367,6 +435,7 @@
 +	count = ops->channels(offered, CHANNELS_MOST);
 +	ops->state(state);
 +	on = state->phase != HAKIOS_STA_OFF;
++	joined = state->phase == HAKIOS_STA_JOINED;
 +	error = state->last_error;
 +	kfree_data(state, sizeof(*state));
 +	lck_mtx_lock(&sta_publish);
@@ -378,6 +447,7 @@
 +		sta_ops = ops;
 +		sta_generation++;
 +		sta_on = sta_want_on = on;
++		sta_association_valid = joined;
 +		sta_error = error;
 +	}
 +	lck_mtx_unlock(&sta_lock);
@@ -403,6 +473,10 @@
 +	lck_mtx_lock(&sta_lock);
 +	notify = !sta_failed && sta_ops != NULL;
 +	if (notify) {
++		cancel_connection_locked();
++		asked_join = false;
++		bzero(&asked_join_what, sizeof(asked_join_what));
++		bzero(&fallback, sizeof(fallback));
 +		sta_error = error != 0 ? error : ECONNRESET;
 +	}
 +	lck_mtx_unlock(&sta_lock);
@@ -437,22 +511,27 @@
  }
  
  bool
-@@ -225,7 +360,7 @@
+@@ -225,7 +429,7 @@
  	bool busy;
  
  	lck_mtx_lock(&sta_lock);
 -	busy = sta_ops != NULL && (sta_calls || asked_power || asked_leave || asked_join || asked_scan);
-+	busy = !sta_failed && sta_ops != NULL && (sta_calls || asked_power || asked_leave || asked_join || asked_scan);
++	busy = !sta_failed && sta_ops != NULL && (sta_calls || asked_power || asked_power_off || asked_leave || asked_join || asked_scan);
  	lck_mtx_unlock(&sta_lock);
  	return busy;
  }
-@@ -234,15 +369,19 @@
+@@ -233,18 +437,33 @@
+ int
  hakios_sta_ask_power(bool on)
  {
- 	lck_mtx_lock(&sta_lock);
+-	lck_mtx_lock(&sta_lock);
 -	if (sta_ops == NULL) {
+-		lck_mtx_unlock(&sta_lock);
++	lck_mtx_lock(&sta_publish);
++	lck_mtx_lock(&sta_lock);
 +	if (sta_failed || sta_ops == NULL) {
- 		lck_mtx_unlock(&sta_lock);
++		lck_mtx_unlock(&sta_lock);
++		lck_mtx_unlock(&sta_publish);
  		return ENXIO;
  	}
 -	sta_on = on;
@@ -460,15 +539,28 @@
  	asked_power = true;
  	asked_power_on = on;
  	if (!on) {
++		/* Once accepted, off must reach the backend even if on follows before
++		 * the worker runs. An already executing off satisfies this request. */
++		if (sta_power_active && !sta_power_active_on) {
++			asked_power = false;
++		} else {
++			asked_power_off = true;
++		}
++		cancel_connection_locked();
 +		sta_scan_generation++;
  		asked_scan = asked_join = asked_leave = false;
+-	}
+-	lck_mtx_unlock(&sta_lock);
 +		heard_count = 0;
 +		bzero(&asked_join_what, sizeof(asked_join_what));
 +		bzero(&fallback, sizeof(fallback));
- 	}
- 	lck_mtx_unlock(&sta_lock);
++	}
++	lck_mtx_unlock(&sta_lock);
++	lck_mtx_unlock(&sta_publish);
  	thread_wakeup((event_t)&sta_ops);
-@@ -252,16 +391,24 @@
+ 	return 0;
+ }
+@@ -252,16 +471,24 @@
  int
  hakios_sta_ask_scan(const struct hakios_sta_scan *what)
  {
@@ -503,7 +595,7 @@
  }
  
  int
-@@ -270,7 +417,7 @@
+@@ -270,7 +497,7 @@
  	int error = hakios_sta_ask_join(what);
  
  	lck_mtx_lock(&sta_lock);
@@ -512,7 +604,7 @@
  		standing = *what;
  	}
  	lck_mtx_unlock(&sta_lock);
-@@ -280,38 +427,52 @@
+@@ -280,38 +507,60 @@
  int
  hakios_sta_ask_join(const struct hakios_sta_join *what)
  {
@@ -533,6 +625,7 @@
 -	return 0;
 +	int error = 0;
 +
++	lck_mtx_lock(&sta_publish);
 +	lck_mtx_lock(&sta_lock);
 +	if (sta_failed || sta_ops == NULL) {
 +		error = ENXIO;
@@ -541,6 +634,9 @@
 +	} else if (!sta_on || !sta_want_on) {
 +		error = ENETDOWN;
 +	} else {
++		cancel_connection_locked();
++		sta_association_valid = true;
++		sta_error = 0;
 +		if (standing.ssid_length != 0) {
 +			fallback = standing;
 +		}
@@ -550,6 +646,7 @@
 +		asked_leave = false;
 +	}
 +	lck_mtx_unlock(&sta_lock);
++	lck_mtx_unlock(&sta_publish);
 +	if (error == 0) {
 +		thread_wakeup((event_t)&sta_ops);
 +	}
@@ -573,18 +670,21 @@
 -	return 0;
 +	int error = 0;
 +
++	lck_mtx_lock(&sta_publish);
 +	lck_mtx_lock(&sta_lock);
 +	if (sta_failed || sta_ops == NULL) {
 +		error = ENXIO;
 +	} else if (sta_ops->leave == NULL) {
 +		error = EOPNOTSUPP;
 +	} else {
++		cancel_connection_locked();
 +		asked_leave = true;
 +		asked_join = false;
 +		bzero(&asked_join_what, sizeof(asked_join_what));
 +		bzero(&fallback, sizeof(fallback));
 +	}
 +	lck_mtx_unlock(&sta_lock);
++	lck_mtx_unlock(&sta_publish);
 +	if (error == 0) {
 +		thread_wakeup((event_t)&sta_ops);
 +	}
@@ -592,17 +692,18 @@
  }
  
  bool
-@@ -331,16 +492,27 @@
+@@ -331,16 +580,33 @@
  hakios_sta_state(struct hakios_sta_state *state)
  {
  	const struct hakios_sta_ops *ops;
-+	uint64_t generation;
++	uint64_t generation, connection_generation;
  
  	bzero(state, sizeof(*state));
  	lck_mtx_lock(&sta_lock);
 -	if ((ops = sta_ops) != NULL) {
 +	ops = !sta_failed && sta_on ? sta_ops : NULL;
 +	generation = sta_generation;
++	connection_generation = sta_connection_generation;
 +	if (ops != NULL) {
  		sta_reads++;
 +	} else {
@@ -614,6 +715,11 @@
  		lck_mtx_lock(&sta_lock);
 +		if (!current_locked(ops, generation) || !sta_on) {
 +			bzero(state, sizeof(*state));
++		} else if ((state->phase == HAKIOS_STA_JOINED || state->phase == HAKIOS_STA_JOINING) &&
++		    (connection_generation != sta_connection_generation || !sta_association_valid ||
++		    (state->phase == HAKIOS_STA_JOINED && sta_join_active && !sta_join_committed))) {
++			bzero(state, sizeof(*state));
++			state->phase = HAKIOS_STA_IDLE;
 +		}
 +		if (sta_error != 0) {
 +			state->last_error = sta_error;
@@ -621,7 +727,7 @@
  		sta_reads--;
  		lck_mtx_unlock(&sta_lock);
  		thread_wakeup((event_t)&sta_calls);
-@@ -362,10 +534,13 @@
+@@ -362,10 +628,13 @@
  bool
  hakios_sta_address(uint8_t *address)
  {
@@ -653,7 +759,7 @@
  	int (*leave)(void);
  	void (*state)(struct hakios_sta_state *state);         /* on any thread; does not sleep */
  	unsigned (*channels)(struct hakios_sta_channel *channels, unsigned most);      /* what the radio may tune to */
-@@ -96,6 +96,10 @@
+@@ -96,6 +96,15 @@
  #ifdef KERNEL
  /* ---- the station side ---- */
  void     hakios_sta_attach(const struct hakios_sta_ops *ops);         /* NULL: it is going away (waits for a call under way) */
@@ -661,6 +767,11 @@
 + * Call attach(NULL) later on the backend owner to drain before freeing it.
 + * Normal radio power-off and AP loss must not call this. */
 +void     hakios_sta_invalidate(int error);
++/* Only from the active synchronous join callback after the backend has joined.
++ * Enter without adapter locks. commit runs under the station publication lock;
++ * it may take the adapter gate, but must not block on backend work or reenter
++ * station mutations. False means cancelled or the adapter refused publication. */
++bool     hakios_sta_join_commit(bool (*commit)(void *), void *context);
  void     hakios_sta_lost(int error);                                   /* the network joined is gone by itself */
  
  /* ---- who wants a network: each asks and returns; the outcome is an event. 0, or an errno ---- */

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay the new native Wi-Fi discovery and unavailable control behavior."""
+"""Test actual native control and association/data adapter against controlled peers."""
 import argparse
 import json
 from pathlib import Path
@@ -55,7 +55,8 @@ int main(void) {
     }
     for(unsigned p=0;p<2;p++) {
         present=p;r=(struct apple80211req){12,sizeof(caps),caps};
-        assert(get(&r)==0);for(unsigned i=0;i<sizeof(caps);i++)assert(!caps[i]);
+        assert(get(&r)==0);assert(caps[0]==8 && caps[1]==64);
+        for(unsigned i=2;i<sizeof(caps);i++)assert(!caps[i]);
     }
     r=(struct apple80211req){44,sizeof(name),name};assert(get(&r)==0);
     assert(strstr(name,"Nabu")&&strstr(name,"WCN399x")&&!strstr(name,"WCN6750"));
@@ -64,77 +65,14 @@ int main(void) {
 '''
     service = (ROOT / 'patches/nabu-wireless/NabuWlanService.cpp').read_text()
     service = '\n'.join(s for s in service.splitlines() if not s.startswith('#include'))
-    native = r'''
-#include <cassert>
-#include <cstdint>
-#include <cstring>
-#include <cstddef>
-#include <cerrno>
-#define KERNEL 1
-extern "C" {
-#include <sys/hakios.sta.h>
-}
-using mbuf_t=void *;
-struct hakios_net_link { const char *name;unsigned unit;uint8_t address[6];bool wireless,up;
-    bool (*transmit)(mbuf_t,size_t);unsigned (*poll)(); };
-static bool selected=false;static unsigned attaches;
-static uint8_t address[6]={2,7,8,9,10,11};
-struct OSData {unsigned getLength(){return 6;}const void *getBytesNoCopy(){return address;}};
-struct IORegistryEntry {
-    static IORegistryEntry *fromPath(const char *p,const char *) {
-        assert(!strcmp(p,"/wlan"));static IORegistryEntry node;return selected?&node:nullptr;
-    }
-    OSData *getProperty(const char *p){assert(!strcmp(p,"local-mac-address"));static OSData mac;return &mac;}
-    void release(){}
-};
-#define OSDynamicCast(type,value) (value)
-static const char *gIODTPlane="IODeviceTree";
-static void nabu_wireless_log(const char *,...){}
-static const hakios_sta_ops *attached_ops;
-static bool live=true;
-static unsigned invalidations, lost_calls, link_calls, power_calls, scan_calls;
-static int scan_errno;
-extern "C" int nabu_ath10k_os_radio_powered(){return live;}
-void hakios_sta_attach(const hakios_sta_ops *ops){attached_ops=ops;}
-extern "C" void hakios_sta_invalidate(int){++invalidations;attached_ops=nullptr;}
-bool hakios_sta_present(){return attached_ops!=nullptr;}
-bool hakios_sta_powered(){return attached_ops!=nullptr;}
-void hakios_sta_lost(int error){assert(error==ECONNRESET);++lost_calls;}
-void hakios_net_link_state(bool up){assert(!up);++link_calls;}
-static int raw_power(bool on){++power_calls;return on?EIO:0;}
-static int raw_scan(const hakios_sta_scan *what){++scan_calls;assert(what->passive);return scan_errno;}
-extern "C" bool hakios_net_attach(const hakios_net_link *link) {
-    ++attaches;assert(link->wireless&&!link->up&&link->unit==0&&!link->poll);
-    assert(!memcmp(link->address,address,6));assert(!link->transmit(nullptr,0));return true;
-}
-''' + service + r'''
-int main() {
-    nabu_wlan_service_publish();assert(!attaches);
-    selected=true;nabu_wlan_service_publish();assert(attaches==1);
-    nabu_wlan_service_publish();assert(attaches==1);
-    hakios_sta_ops raw={};raw.power=raw_power;raw.scan=raw_scan;
-    uint8_t wrong[6]={0};nabu_ath10k_os_net_attach(wrong);
-    nabu_ath10k_os_station(&raw);assert(!attached_ops);
-    nabu_ath10k_os_net_attach(address);live=false;
-    nabu_ath10k_os_station(&raw);assert(!attached_ops);
-    live=true;nabu_ath10k_os_station(&raw);assert(attached_ops&&!attached_ops->join);
-    assert(attached_ops->power(true)==EIO&&attached_ops->power(false)==0&&power_calls==2);
-    hakios_sta_scan scan={};scan.passive=true;
-    assert(attached_ops->scan(&scan)==0);scan_errno=ETIMEDOUT;
-    assert(attached_ops->scan(&scan)==ETIMEDOUT&&scan_calls==2);
-    nabu_ath10k_os_net_link(1);nabu_ath10k_os_net_input(wrong,sizeof(wrong));
-    nabu_ath10k_os_station_lost(ECONNRESET);assert(attached_ops&&lost_calls==1);
-    nabu_wlan_service_invalidate(ENXIO);assert(invalidations==1&&!attached_ops);
-    nabu_ath10k_os_station(nullptr);assert(!backend&&link_calls>=3&&attaches==1);
-    return 0;
-}
-'''
+    fixtures = ROOT / 'tools/fixtures/nabu_wifi_service'
+    native = (fixtures / 'host.h').read_text() + '\n' + service + '\n' + (fixtures / 'replay.cpp').read_text()
     for name, text, compiler, standard in [('control', control, 'clang-18', 'c11'),
                                            ('service', native, 'clang++-18', 'c++17')]:
         src = out / (name + ('.c' if standard == 'c11' else '.cpp'))
         binary = out / (name + '-test')
-        src.write_text(text)
-        subprocess.run(host_command([compiler, '-std=' + standard, '-fsanitize=address,undefined',
+        src.write_text(text, newline="\n")
+        subprocess.run(host_command([compiler, '-std=' + standard, '-pthread', '-fsanitize=address,undefined',
             '-I' + host_path(ROOT / 'src/hakios-8796/xnu/files/bsd'),
             '-fno-sanitize-recover=all', '-fno-omit-frame-pointer', '-g', host_path(src), '-o', host_path(binary)]), check=True)
         result = subprocess.run(host_command([host_path(binary)]), capture_output=True, check=True)
@@ -155,12 +93,12 @@ int main() {
     report = {'hardware_tested': False, 'source_patch_applied': str(patch),
               'sanitizers': ['address', 'undefined'],
               'passed': ['no backend reports off', 'attached backend power preserved',
-                         'scan-only backend advertises no encryption capabilities', 'Nabu driver identity',
+                         'only CCMP and WPA2 capability bits advertised', 'Nabu driver identity',
                          'backend MAC and readiness required', 'native power/scan preserve backend errors',
-                         'association unavailable and link-up refused', 'AP loss differs from fatal withdrawal',
-                         'explicit device discovery', 'one stable down interface', 'unavailable transmit refused',
+                         'late join publication gated by native commit', 'AP loss differs from fatal withdrawal',
+                         'explicit device discovery', 'one stable down interface', 'copied TX queue, overflow/errors, control drain, AP loss and fatal tested',
                          'real wlan ADT address and register geometry']}
-    report['passed'].append('boot defaults retained in DT and excluded from service nub publication; WLAN still published')
+    report['passed'].append('ADT defaults ignore flag/config retained; WLAN selected; live nub behavior not asserted')
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 

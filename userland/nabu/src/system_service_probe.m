@@ -8,6 +8,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <sys/attr.h>
@@ -129,13 +131,21 @@ static NSDictionary *wirelessSnapshot(void) {
             NSString *name = @(entry->ifa_name);
             NSMutableDictionary *record = bsd[name];
             if (!record) {
-                record = [@{@"flags": @(entry->ifa_flags), @"address_families": [NSMutableArray array]} mutableCopy];
+                record = [@{@"flags": @(entry->ifa_flags), @"address_families": [NSMutableArray array], @"ip_addresses": [NSMutableArray array]} mutableCopy];
                 bsd[name] = record;
             }
             if (entry->ifa_addr) {
                 NSNumber *family = @(entry->ifa_addr->sa_family);
                 if (![record[@"address_families"] containsObject:family])
                     [record[@"address_families"] addObject:family];
+                const void *address = NULL;
+                if (entry->ifa_addr->sa_family == AF_INET)
+                    address = &((struct sockaddr_in *)entry->ifa_addr)->sin_addr;
+                else if (entry->ifa_addr->sa_family == AF_INET6)
+                    address = &((struct sockaddr_in6 *)entry->ifa_addr)->sin6_addr;
+                char text[INET6_ADDRSTRLEN] = {0};
+                if (address && inet_ntop(entry->ifa_addr->sa_family, address, text, sizeof(text)))
+                    [record[@"ip_addresses"] addObject:@(text)];
             }
         }
         freeifaddrs(interfaces);
@@ -191,6 +201,19 @@ static NSDictionary *wirelessSnapshot(void) {
     }
     if (busyIterator) release(busyIterator);
     software[@"iokit_busy_services"] = @{@"iterator_status": @(iteratorStatus), @"entries": busy};
+    NSMutableDictionary *defaults = [NSMutableDictionary dictionary];
+    for (NSString *path in @[@"IODeviceTree:/defaults", @"IOService:/GenericARMPE/defaults"]) {
+        uint32_t entry = fromPath(0, path.UTF8String);
+        NSMutableDictionary *values = [@{@"found": @(entry != 0)} mutableCopy];
+        for (NSString *key in @[@"AAPL,ignore", @"sleep-disabled", @"kern.vm_compressor", @"name"]) {
+            id value = entry ? CFBridgingRelease(property(entry, (__bridge CFStringRef)key, NULL, 0)) : nil;
+            if ([value isKindOfClass:NSData.class]) values[key] = @{@"base64": [value base64EncodedStringWithOptions:0]};
+            else if (value) values[key] = value;
+        }
+        if (entry) release(entry);
+        defaults[path] = values;
+    }
+    software[@"defaults_nodes"] = defaults;
     software[@"system_configuration"] = systemConfigurationInventory();
     uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
     id value = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-wireless-report"), NULL, 0)) : nil;
