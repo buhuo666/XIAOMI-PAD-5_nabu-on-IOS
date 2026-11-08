@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$PROJECT_ROOT"
 mkdir -p log/ci artifacts/8796-reference build/downloads
-python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot ShengUfs nabu --report log/ci/source-checkouts.json
+python3 tools/fetch_sources.py --only hakios-8796-reference xnu-8796 DarwinBoot ShengUfs nabu XnuPrelink --report log/ci/source-checkouts.json
 python3 tools/build_nabu_input_bridge.py --output artifacts/nabu-input-bridge
 python3 tools/build_nabu_userland.py --work build/nabu-userland --output artifacts/nabu-userland
 python3 tools/check_nabu_userland.py --output log/ci/nabu-userland-check
