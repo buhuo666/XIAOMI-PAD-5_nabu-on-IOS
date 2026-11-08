@@ -29,7 +29,7 @@ template<class Transport> class Trial {
     uint64_t address=0;uint32_t handle=0,phase_start=0,next_token=0x400;
     uint32_t command=0,command_token=0,period_token[Periods]{};
     uint16_t command_port=0;uint8_t command_service=0;
-    bool timing=false,waiting=false;
+    bool timing=false,waiting=false,continuous_mode=false;
     void transition(Phase next){phase=next;timing=false;waiting=false;}
     void after_close(){transition(r.adm_opened?CoppClose:Done);}
     void failure(uint32_t opcode,uint32_t status,bool timeout=false){
@@ -76,7 +76,7 @@ template<class Transport> class Trial {
         if(phase==CoppClose)r.copp_close_sent=true;
     }
     void write_periods(uint32_t now){
-        for(unsigned i=0;i<Periods&&r.writes<TotalPeriods;++i){
+        for(unsigned i=0;i<Periods&&(continuous_mode||r.writes<TotalPeriods);++i){
             if(r.pending_mask&(1u<<i))continue;
             transport.playback_fill(i,r.writes*PeriodFrames,PeriodFrames);
             uint64_t at=address+PeriodBytes*i;uint8_t p[32]{};
@@ -88,12 +88,13 @@ template<class Transport> class Trial {
             ++r.writes;++r.commands;r.bytes_sent+=PeriodBytes;
             period_token[i]=token;r.pending_mask|=1u<<i;
         }
-        if(r.writes==TotalPeriods)transition(Drain);
+        if(!continuous_mode&&r.writes==TotalPeriods)transition(Drain);
     }
 public:
     constexpr explicit Trial(Transport &owner):transport(owner){}
-    void begin(uint64_t dma_address,uint32_t map_handle,uint32_t now){
+    void begin(uint64_t dma_address,uint32_t map_handle,uint32_t now,bool continuous=false){
         address=dma_address;handle=map_handle;r={};r.copp_id=0xffff;next_token=0x400;
+        continuous_mode=continuous;
         for(unsigned i=0;i<Periods;++i)period_token[i]=0;
         transition(AdmOpen);phase_start=now;timing=true;
     }
@@ -121,7 +122,11 @@ public:
                    u32(p+4)==uint32_t(at>>32)&&u32(p+8)==handle){
                     r.pending_mask&=~(1u<<i);
                     if(u32(p+12)){write_failure(opcode,u32(p+12));return;}
-                    ++r.completions;r.bytes_completed+=PeriodBytes;r.last_done_ms=now;return;
+                    ++r.completions;r.bytes_completed+=PeriodBytes;r.last_done_ms=now;
+                    // Continuous playback has no lifetime deadline. Keep the
+                    // existing six-second deadline for stalled data delivery.
+                    if(continuous_mode&&phase==Data)phase_start=now;
+                    return;
                 }
             }
         }

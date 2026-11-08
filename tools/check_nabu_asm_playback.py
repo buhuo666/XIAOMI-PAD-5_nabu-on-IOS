@@ -75,7 +75,7 @@ static Bytes response(const Packet&q,uint32_t opcode,const Bytes&p,bool ext=true
 }
 struct Fixture{
     IO io;NabuAsmPlayback::Trial<IO> trial{io};uint32_t now=0;size_t consumed=0;
-    Fixture(){trial.begin(0x110000000ULL,0x6a,now);}
+    explicit Fixture(bool continuous=false){trial.begin(0x110000000ULL,0x6a,now,continuous);}
     void receive(const Bytes&b){trial.receive(b.data(),b.size(),now);}
     Packet take(unsigned stage){trial.step(now);CHECK(io.sent.size()==consumed+1);auto q=io.sent.at(consumed++),e=expected(stage);
         CHECK(q.service==e.service&&q.port==e.port&&q.opcode==e.opcode&&q.data==e.data);return q;}
@@ -138,8 +138,25 @@ static void necessary_close_paths(){
     Fixture write;write.startup();write.trial.play();auto queued=write.writes();write.receive(write.done_event(queued[0],9));write.close();
     CHECK(write.trial.result().failed&&write.trial.result().completions==0);
 }
-int main(){wire_and_recycle(false);wire_and_recycle(true);necessary_close_paths();
-    std::printf("PASS: ADM/ASM production playback, %u assertions; vendor wire, 141 real completions and required close paths\n",checks);}
+static void continuous_until_finish(){
+    Fixture f(true);f.startup();f.trial.play();auto pending=f.writes();
+    while(f.trial.result().writes<480){
+        auto q=pending.front();pending.erase(pending.begin());f.now+=21;f.complete(q);
+        auto refill=f.writes();CHECK(refill.size()==1);pending.push_back(refill[0]);
+    }
+    CHECK(f.now>6000&&f.trial.result().writes>141&&!f.trial.result().eos_sent&&!f.trial.result().failed);
+    f.trial.finish();auto eos=f.take(5);CHECK(f.trial.result().writes==480);
+    for(auto&q:pending)f.complete(q);
+    // Run151 hardware returned RENDERED_EOS without a basic EOS ACK.
+    Packet event=eos;event.token=0;f.receive(response(event,0x10c1c,{}));f.trial.step(f.now);f.close();
+    CHECK(!f.trial.result().eos_acked&&f.trial.result().rendered&&!f.trial.result().timeout);
+    CHECK(f.trial.result().completions==480&&f.trial.result().bytes_completed==480*4096);
+    // Continuous mode still uses the existing timeout if WRITE_DONE stops.
+    Fixture stalled(true);stalled.startup();stalled.trial.play();stalled.writes();
+    stalled.now+=6000;stalled.trial.step(stalled.now);stalled.close();CHECK(stalled.trial.result().timeout);
+}
+int main(){wire_and_recycle(false);wire_and_recycle(true);necessary_close_paths();continuous_until_finish();
+    std::printf("PASS: ADM/ASM production playback, %u assertions; vendor wire, fixed/continuous recycling and required close paths\n",checks);}
 '''
 
 
@@ -159,6 +176,8 @@ def main():
         "vendor_revision":"d41f8e1a6827294af6a61adbe18544518e750166",
         "sanitizers":["address","undefined"],"coverage":["original ADM/ASM packet layouts",
             "four-slot ownership and out-of-order WRITE_DONE recycling","141 periods/577536 bytes",
+            "continuous 480-period playback beyond fixed length and six seconds, explicit finish",
+            "continuous completion progress deadline and stalled-write close",
             "EOS basic acknowledgement distinguished from rendered completion",
             "rendered-before/after-last-WRITE_DONE","early finish, write error and required stream/COPP close",
             "unconfirmed stream close retains mapping; unmap remains caller-owned"],

@@ -452,7 +452,7 @@ public:
     void finish_afe() {if(phase==Afe)afe.finish();}
     const NabuAfeTdm::Result &afe_result() const {return afe.result();}
     void begin_playback(uint32_t elapsed_ms) {
-        if(phase==Afe&&afe.ready()) {phase=Playback;playback.begin(map_address,r.map_handle,elapsed_ms);}
+        if(phase==Afe&&afe.ready()) {phase=Playback;playback.begin(map_address,r.map_handle,elapsed_ms,true);}
     }
     bool playback_ready() const {return phase==Playback&&playback.ready();}
     void play() {if(phase==Playback)playback.play();}

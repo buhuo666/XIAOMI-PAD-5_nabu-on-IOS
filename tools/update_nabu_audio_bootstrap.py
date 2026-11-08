@@ -26,6 +26,7 @@ def main():
     p.add_argument('--bluetooth-lifecycle', type=Path, help='Lifecycle service that preserves the driver operating baud')
     p.add_argument('--adsp-firmware', type=Path, help='Prepared original Nabu ADSP files for Boot APFS /fw')
     p.add_argument('--speaker-firmware', type=Path, help='Original Nabu CS35L41 Protection WMFW, four WMDR and music files for Boot APFS /fw')
+    p.add_argument('--native-audio-plugin',type=Path,help='Built NabuAudio.driver output provider for the real speaker backend')
     p.add_argument('--work', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
@@ -40,6 +41,9 @@ def main():
     shutil.copytree(a.bluetooth_hal, a.work / 'root/hal/BTAudioHALPlugin.driver', dirs_exist_ok=True)
     shutil.copy2(a.system_service_probe, a.work / 'root/sbin/system-service-probe')
     changed = ['hal/BTAudioHALPlugin.driver', 'sbin/system-service-probe']
+    if a.native_audio_plugin:
+        shutil.copytree(a.native_audio_plugin,a.work/'root/hal/NabuAudio.driver')
+        changed.append('hal/NabuAudio.driver')
     transport = None
     if a.bluetooth_lifecycle:
         shutil.copy2(a.bluetooth_lifecycle, a.work / 'root/sbin/nabu-bluetooth-lifecycle')
@@ -120,6 +124,8 @@ def main():
             'payload_bytes': adsp['file_bytes'], 'runtime_verified': False}
     if speaker:
         report['speaker_firmware'] = speaker
+    if a.native_audio_plugin:
+        report['native_audio_plugin']={'source':str(a.native_audio_plugin),'path':'/redwood/hal/NabuAudio.driver','runtime_verified':False}
     report['audio_service_update'] = {'baseline': str(a.baseline.resolve()),
         'baseline_tree': str(a.baseline_tree.resolve()), 'original_bluetooth_hal': str(a.bluetooth_hal.resolve()),
         'bundle_identifier': info['CFBundleIdentifier'],

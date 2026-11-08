@@ -23,3 +23,14 @@ ASPTX保持关闭。GPIO137/138密集采样和clock-detect/采样率寄存器随
 本地原厂wire/period回收、功放低音量与启停、GLINK端到端集成通过ASan/UBSan；ARM64
 对象编译通过，最大函数栈800字节。沿用第149轮bootstrap及第150轮0x48000额外DATA预留。
 云端构建、实际短音听感和完整关闭结果待验。原生常驻播放服务及麦克风仍未完成。
+
+
+实机：提交a2dc979/CI42489940785全通过。4颗保护核心与输出启停全部成功，GLOBAL开启后
+heartbeat从2增至5429/5536/5642/5744；由此确认前轮GLOBAL关闭时的静止值不等同core损坏。
+GPIO137/138各20000次密集读取分别观察15176/96次跳变，48k采样率寄存器为0xbb80。
+ADM实际COPP ID0合法；141写入/完成，共577536字节，pending0/underflow0，RENDERED_EOS1，
+ASM/COPPclose、AFE10命令、unmap、SMMU和DSP释放全部成功。EOS未见basic ack，但真实
+rendered事件已到达，不能据此误判未播放。用户明确听到声音，因时间短未分清左右，
+左右声道仍待下一轮延长引导音确认。3,293,445字节日志前缀及64MiB槽备份清空，
+APFS120→121/fullfsync正常；未有已提交结束头。已回Android、Wi-Fi和蓝牙关闭。
+后续接系统持续音频并延长引导音，麦克风仍待实现。实际DATA对齐另需16KiB，额外总预留0x4c000。

@@ -65,6 +65,11 @@ CORE均关闭、reset恢复。内部PCM与无线/蓝牙基线正常；3,622,008�
 SMMU与引脚清理正常。3,045,133字节连续日志前缀及64MiB槽备份清空，APFS120；
 下一步核对时钟与待帧语义。见[第150轮结果](../analysis/nabu-internal-audio-v150.md)。
 
+第151轮内置扬声器已实际出声：用户听到测试音，左右区分因时间短仍待确认。四路
+Protection/启停正常，141个PCM缓冲全部完成、无欠载，真实RENDERED_EOS及全链清理通过。
+3,293,445字节日志前缀及64MiB槽备份清空，APFS121。下一轮接系统持续播放并延长左右
+引导音；麦克风尚未完成。见[第151轮结果](../analysis/nabu-internal-audio-v151.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

@@ -145,6 +145,8 @@ jobs:
           python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
           python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
             --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace
+      - name: Compile Nabu native speaker audio provider
+        run: python3 tools/build_nabu_audio_plugin.py --output artifacts/nabu-audio-plugin
       - name: Verify linked kernel against the selected export contract
         if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
         run: python3 tools/check_nabu_export_contract.py --tree build/xnu8796-reference/tree --verify-generated --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-export-contract-linked.json
@@ -176,6 +178,7 @@ jobs:
             artifacts/nabu-input-bridge/
             artifacts/nabu-data-block/
             artifacts/nabu-wireless-objects/
+            artifacts/nabu-audio-plugin/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log
           retention-days: 14

@@ -26,11 +26,28 @@ extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
 extern "C" lck_mtx_t hakios_smmu_lock;
 extern "C" vm_offset_t ml_vtophys(vm_offset_t);
+extern "C" void hakios_audio_set_sink(const char *,uint32_t (*)(const int16_t *,uint32_t));
 
 namespace {
 static thread_call_t adsp_call;
 static char report[24576];
 static unsigned report_bytes;
+static int16_t *native_ring;
+static constexpr uint32_t NativeRingFrames=32768;
+static uint32_t native_head,native_tail;
+static uint64_t native_received,native_dropped,native_fed,native_silence;
+static uint32_t native_peak;
+static uint32_t native_sink(const int16_t *samples,uint32_t frames) {
+    uint32_t head=native_head,tail=__atomic_load_n(&native_tail,__ATOMIC_ACQUIRE);
+    uint32_t room=NativeRingFrames-(head-tail),take=frames<room?frames:room;
+    for(unsigned i=0;i<take;++i) {
+        unsigned at=(head+i)&(NativeRingFrames-1);
+        native_ring[at*2]=samples[i*2];native_ring[at*2+1]=samples[i*2+1];
+        for(unsigned ch=0;ch<2;++ch) {int32_t sample=samples[i*2+ch];uint32_t peak=sample<0?-sample:sample;if(peak>native_peak)native_peak=peak;}
+    }
+    __atomic_store_n(&native_head,head+take,__ATOMIC_RELEASE);
+    native_received+=take;native_dropped+=frames-take;return take;
+}
 
 static void publish() {
     IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
@@ -173,6 +190,16 @@ struct Trial {
     AmpCore amp_core[4]={AmpCore{amp_backend[0]},AmpCore{amp_backend[1]},AmpCore{amp_backend[2]},AmpCore{amp_backend[3]}};
     unsigned amp_touched=0;
     bool amps_finished=false;
+    bool native_attached=false;
+    unsigned stream_report_start=0;
+    void stream_report() {
+        report_bytes=stream_report_start;report[report_bytes]=0;
+        const auto &p=glink.playback_result();
+        log("NABU NATIVE AUDIO: attached=%u received=%llu fed=%llu silence=%llu dropped=%llu queued=%u peak=%u writes=%u done=%u underflows=%u failed=%u opcode=%#x status=%#x\n",
+            native_attached,native_received,native_fed,native_silence,native_dropped,
+            __atomic_load_n(&native_head,__ATOMIC_ACQUIRE)-native_tail,native_peak,p.writes,p.completions,p.underflows,p.failed,p.failed_opcode,p.status);
+        publish();
+    }
 
     bool prepare_tdm_pins() {
         // Original quat_tdm pinctrl: SOUTH GPIO137..142, qua_mi2s function1.
@@ -340,7 +367,7 @@ struct Trial {
             bool ok=amp_core[amp].enable_output();report_amplifier(amp,"enable");publish();
             if(!ok)return false;
         }
-        log("NABU AMP PLAY: four protected outputs enabled at -24 dB; test PCM is -20 dBFS\n");publish();return true;
+        log("NABU AMP PLAY: four protected outputs enabled at -24 dB; native PCM sink\n");publish();return true;
     }
     bool finish_amplifiers() {
         bool stopped=true;
@@ -358,16 +385,18 @@ struct Trial {
         return stopped||reset_low;
     }
     void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {
-        static const int16_t tone[]={0,428,848,1254,1638,1995,2317,2599,2837,3027,3164,3248,
-            3276,3248,3164,3027,2837,2599,2317,1995,1638,1254,848,428,0,-428,-848,-1254,
-            -1638,-1995,-2317,-2599,-2837,-3027,-3164,-3248,-3276,-3248,-3164,-3027,
-            -2837,-2599,-2317,-1995,-1638,-1254,-848,-428};
+        (void)first_frame;
         int16_t *samples=(int16_t *)((uint8_t *)dma.blocks[0].cpu+period*4096);
-        for(unsigned i=0;i<frames;++i) {
-            uint32_t frame=first_frame+i;int16_t sample=tone[frame%48];
-            samples[i*2]=(frame<48000||frame>=96000)?sample:0;
-            samples[i*2+1]=frame>=48000?sample:0;
+        if(!native_attached) {native_attached=true;hakios_audio_set_sink("Nabu protected CS35L41 speakers",native_sink);}
+        uint32_t tail=native_tail,head=__atomic_load_n(&native_head,__ATOMIC_ACQUIRE);
+        uint32_t available=head-tail,take=frames<available?frames:available;
+        for(unsigned i=0;i<take;++i) {
+            unsigned at=(tail+i)&(NativeRingFrames-1);
+            samples[i*2]=native_ring[at*2];samples[i*2+1]=native_ring[at*2+1];
         }
+        memset(samples+take*2,0,(frames-take)*4);
+        __atomic_store_n(&native_tail,tail+take,__ATOMIC_RELEASE);
+        native_fed+=take;native_silence+=frames-take;
         dma.platform.publish(dma.platform.cookie,samples,frames*4);
     }
 
@@ -579,19 +608,20 @@ struct Trial {
             log("NABU ADSP: GLINK probe queues unavailable\n"); return;
         }
         bool mapping = prepare_dma();
-        bool tdm=mapping&&prepare_tdm_pins(),amplifiers_done=false,output_attempted=false;
+        native_ring=(int16_t *)IOMalloc(NativeRingFrames*4);
+        bool tdm=mapping&&native_ring&&prepare_tdm_pins(),amplifiers_done=false,output_attempted=false;
         // Original audio-ion masks SID0x1b21 by0xf and embeds1 in address bits63:32.
         uint64_t tagged_iova = (uint64_t(NabuAudioDma::first_sid & 15) << 32) | NabuAudioDma::iova_base;
         log("NABU ADSP: host2 GLINK/APR protected speaker PCM trial begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
         uint64_t started; clock_get_uptime(&started);
-        uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
+        uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0,last_stream_report=0,playing_since=0;
         glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true,
             mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, false,tdm,tdm);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
             uint32_t elapsed = uint32_t(nanos / 1000000);
-            if (elapsed >= 180000) { glink.abort(); break; }
+            if(!playing_since&&elapsed>=180000) {glink.abort();break;}
             if (elapsed - last_peer_check >= 10) {
                 peer = state(); last_peer_check = elapsed;
                 if (!peer.valid || (peer.state & 3) != 2) { glink.abort(); break; }
@@ -613,14 +643,18 @@ struct Trial {
             if(glink.playback_ready()&&!output_attempted) {
                 output_attempted=true;
                 if(enable_amplifiers()) {
-                    log("NABU PCM PLAY: starting 3.008 seconds, left then right then both\n");publish();glink.play();
+                    log("NABU PCM PLAY: continuous native speaker stream, no generated test tone\n");publish();
+                    glink.play();playing_since=elapsed;stream_report_start=report_bytes;
                 } else glink.abort_playback();
                 continue;
             }
             if(glink.playback_done()) {
+                if(native_attached) {hakios_audio_set_sink("none",nullptr);native_attached=false;}
+                if(stream_report_start)stream_report();
                 if(!finish_amplifiers()) {retain_for_amp=true;break;}
                 glink.finish_playback();continue;
             }
+            if(playing_since&&!amps_finished&&elapsed-last_stream_report>=2000) {stream_report();last_stream_report=elapsed;}
             const NabuAdspGlink::Result &r = glink.result();
             if (r.rx != logged_rx && trace_count < 24) {
                 log("NABU ADSP GLINK: rx=%u last-command=%u cid=%u value=%#x elapsed-ms=%u\n",
@@ -629,6 +663,7 @@ struct Trial {
             }
             if (!glink.done()) IOSleep(1);
         }
+        if(native_attached) {hakios_audio_set_sink("none",nullptr);native_attached=false;}
         if(amp_touched&&!amps_finished&&!finish_amplifiers())retain_for_amp=true;
         const NabuAdspGlink::Result &r = glink.result();
         log("NABU ADSP GLINK: negotiated=%u features=%#x open=%u local=%u remote=%u remote-open=%u open-ack=%u tx=%u rx=%u unknown-channels=%u close-sent=%u close-ack=%u remote-closed=%u broken=%u timeout=%u error=%u\n",
@@ -684,6 +719,7 @@ struct Trial {
     }
     bool shutdown() { return !retain_for_amp&&pas(6, 1); }
     void release() {
+        if(native_ring) {IOFree(native_ring,NativeRingFrames*4);native_ring=nullptr;}
         restore_audio_pins();
         if (dma_va) {
             bool released = dma.release_after_stop();
