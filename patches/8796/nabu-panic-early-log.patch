@@ -1,0 +1,73 @@
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1061,6 +1061,61 @@
+ }
+ #endif /* defined (__x86_64__) */
+ 
++/* Keep the first panic before the debugger trap can lose its normal buffer.
++ * The existing loader logger owns both RAM capture and the final screen log. */
++extern int vsnprintf(char *, size_t, const char *, va_list);
++extern void loader_log_line(const char *);
++void nabu_panic_early_report(void);
++static unsigned int nabu_panic_first_state;
++static char nabu_panic_first_header[160], nabu_panic_first_reason[1024];
++
++void
++nabu_panic_early_report(void)
++{
++	unsigned int state = __atomic_load_n(&nabu_panic_first_state, __ATOMIC_ACQUIRE);
++	if (state == 2) {
++		loader_log_line(nabu_panic_first_header);
++		loader_log_line(nabu_panic_first_reason);
++	} else if (state == 1) {
++		loader_log_line("NABU PANIC FIRST: formatting incomplete\n");
++	}
++}
++
++static void
++nabu_panic_early_capture(const char *format, va_list *args, unsigned int reason,
++    uint64_t options, unsigned long caller)
++{
++	unsigned int expected = 0;
++	if (!__atomic_compare_exchange_n(&nabu_panic_first_state, &expected, 1, false,
++	    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
++		return;
++	}
++	static const char prefix[] = "NABU PANIC REASON: ";
++	size_t prefix_length = sizeof(prefix) - 1;
++	size_t capacity = sizeof(nabu_panic_first_reason) - prefix_length - 1;
++	memcpy(nabu_panic_first_reason, prefix, prefix_length);
++	va_list copy;
++	va_copy(copy, *args);
++	int count = vsnprintf(nabu_panic_first_reason + prefix_length, capacity, format, copy);
++	va_end(copy);
++	/* A single bounded line keeps the caller and reason together on screen. */
++	size_t end = prefix_length;
++	while (nabu_panic_first_reason[end]) {
++		if (nabu_panic_first_reason[end] == '\n' || nabu_panic_first_reason[end] == '\r') {
++			nabu_panic_first_reason[end] = ' ';
++		}
++		end++;
++	}
++	nabu_panic_first_reason[end++] = '\n';
++	nabu_panic_first_reason[end] = '\0';
++	snprintf(nabu_panic_first_header, sizeof(nabu_panic_first_header),
++	    "NABU PANIC FIRST: caller=0x%016lx reason=%u options=0x%016llx truncated=%u\n",
++	    caller, reason, (unsigned long long)options, (unsigned int)((size_t)count >= capacity));
++	__atomic_store_n(&nabu_panic_first_state, 2, __ATOMIC_RELEASE);
++	nabu_panic_early_report();
++}
++/* End first-panic loader-log capture. */
++
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wmissing-noreturn"
+ void
+@@ -1069,6 +1124,8 @@
+ {
+ #pragma clang diagnostic pop
+ 
++	nabu_panic_early_capture(panic_format_str, panic_args, reason, panic_options_mask, panic_caller);
++
+ #if defined(__x86_64__) && (DEVELOPMENT || DEBUG)
+ 	read_lbr();
+ #endif

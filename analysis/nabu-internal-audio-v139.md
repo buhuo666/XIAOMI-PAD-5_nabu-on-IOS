@@ -42,4 +42,29 @@ nabu-adsp-report并保存内核日志；主机测试覆盖MDT范围、host2 SMEM
 
 本地ARM64内核对象编译已通过；ASan/UBSan主机测试直接使用生产解析/拷贝/启停代码，
 覆盖host2隔离、SMP2P发布顺序、逐阶段失败清理、原机13段复制与4K/16K页边界/BSS保留。
-目前尚未部署第139轮，ADSP实机结果和内置播放/录音验收仍待取得。
+## 第139轮实机结果
+
+源码79c6be25、完整CI42458911302和探针CI42458911325均通过。新增数据段比原预留空间多12288字节，
+按16KiB对齐增加一次预留（总新增0x44000），重新链接和实际引导器解析检查通过。
+Boot APFS内13个固件文件经原生读取器读回一致，随后部署并临时启动。
+部署文件写入/读回后，ADB服务在最终GPT检查中断；保存失败记录，恢复连接后仅补完收尾检查，没有重复部署。
+
+用户照片确认`KERNEL LOG TAIL - HALTED`，未确认正常桌面。原生USB曾短暂出现，随后mux列表为空。
+完整64MiB槽已备份并清空，获得1,824,826字节连续前缀，未封口，不能声称覆盖最后停机过程。
+APFS计数108→109，fullfsync=ok。设备已回Android，蓝牙关闭、USB连接、耳机留盒。
+
+实机64.895秒已读到7820字节MDT和13段、14,399,712字节文件数据；host2分区、429/478/479分配成功。
+AOP adsp on确认，CX TURBO/XO投票完成。最后ADSP记录为64.898834秒
+`PAS1 command=1 arg1=0x27c984000 arg2=0`，没有返回记录。该行之后仍有IORegistry publish，
+之后才是SMC，因此尚不能区分publish内panic、SMC内问题或返回后的日志问题。
+
+照片首返LR=0xfffffff0072de110，当前构建符号/指令对应`panic_spin_forever+0xc`；
+ELR=0xfffffff0072dcf0c对应`DebuggerTrapWithState+0x84`的UDF。后者是panic主动陷阱，
+不能当作原始硬件异常。常规panic buffer未出现，下一轮需补早期panic原因和精确SMC前后标记。
+照片`STORAGE REPORT`中IO failures=0，没有证据把此次停机归因为存储故障。
+同次成功modem metadata地址为0x1ae144000，也超过4GiB，不能无依据套用32位地址限制。
+
+停机前Wi-Fi取得真实FW_READY并发布原生station，蓝牙3.2Mbps换速、固件/HCI初始化和原生串口发布成功。
+这只保留启动证据，本轮没有复测联网或耳机播放；ADSP ready、内置出声和录音均未通过。
+证据：log/host/audio-v139/result-summary.json、runtime-selected.txt、halt-user-photo-upright.png，
+及log/device/nabu-boot-20261108-139/runtime-log/。

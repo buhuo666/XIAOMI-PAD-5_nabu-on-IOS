@@ -12,6 +12,8 @@
 
 用户明确要求开始内置扬声器和麦克风。原机只读采集已保存ADSP签名固件、四路CS35L41保护/校准文件、mixer路由及实际控制状态。首轮独立PAS1 ADSP启停候选使用原机保留内存和APPS/ADSP host2通道，保留已通过的无线/蓝牙；不提前激活放大器或发布假内置音频路由。固件通过Boot APFS /fw载入以避免ADT容量限制。实现与验收边界见[内置音频起步](../analysis/nabu-internal-audio-v139.md)。
 
+第139轮已临时启动，用户照片确认HALTED；返回地址解析为panic_spin_forever。固件读取、host2分配及AOP/CX/XO请求通过，停在PAS1初始化入口记录之后，尚缺具体panic原因及真正SMC边界。已回收1,824,826字节连续前缀及64MiB槽并清空，APFS109。Wi-Fi与蓝牙启动证据保留，未复测使用；ADSP ready、扬声器和麦克风均未通过。下一轮补齐故障诊断，不凭最后一条日志直接改固件或硬件参数。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

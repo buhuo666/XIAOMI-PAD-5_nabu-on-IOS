@@ -20,6 +20,17 @@ HARNESS = r'''
 #include <vector>
 #include "NabuAdspProtocol.h"
 using namespace NabuAdsp;
+static std::string boundary_trace;
+static void loader_log_line(const char *line){boundary_trace=line;}
+@@TRACE_CODE@@
+static void test_trace() {
+    trace_smc("enter",1,0,0x42000201,0x82,0);
+    assert(boundary_trace=="NABU ADSP SMC enter command=0x0000000000000001 attempt=0x0000000000000000 MPIDR=0x0000000081000300 DAIF=0x0000000000000080 x0=0x0000000042000201 x1=0x0000000000000082 x6=0x0000000000000000\n");
+    trace_smc("return",6,99,UINT64_MAX,UINT64_MAX,UINT64_MAX);
+    assert(boundary_trace.size()<256&&boundary_trace.find("attempt=0x0000000000000063")!=std::string::npos);
+    assert(boundary_trace.find("x0=0xffffffffffffffff x1=0xffffffffffffffff x6=0xffffffffffffffff\n")!=std::string::npos);
+    puts("production allocation-free SMC boundary formatter and maximum register values passed");
+}
 static void store16(std::vector<uint8_t> &b, size_t at, uint16_t v) { b[at]=v; b[at+1]=v>>8; }
 static void store32(std::vector<uint8_t> &b, size_t at, uint32_t v) { store16(b,at,v);store16(b,at+2,v>>16); }
 struct Writer {
@@ -180,7 +191,7 @@ static void test_image(const char *directory) {
     }
     puts("production MDT bounds and copied segment/BSS/gap checks at 4K and 16K pages passed");
 }
-int main(int argc,char **argv){test_smem();test_lifecycle();test_image(argc==2?argv[1]:nullptr);}
+int main(int argc,char **argv){test_trace();test_smem();test_lifecycle();test_image(argc==2?argv[1]:nullptr);}
 '''
 
 
@@ -194,8 +205,11 @@ def main():
     start = driver.index('    bool copy_segments() {') + len('    bool copy_segments() {')
     end = driver.index('\n    }\n    bool auth_reset()', start)
     body = driver[start:end].replace('__asm__ volatile("dsb sy" ::: "memory");', '(void)0;')
+    trace = driver[driver.index('static __attribute__((noinline)) char *trace_text('):driver.index('static bool pas(')]
+    trace = trace.replace('__asm__ volatile("mrs %0, mpidr_el1\\n\\tmrs %1, daif" : "=r"(mpidr), "=r"(daif) : : "memory");',
+                          'mpidr = 0x81000300; daif = 0x80;')
     source, binary = args.output/'adsp.cpp', args.output/'adsp-test'
-    source.write_text(HARNESS.replace('@@COPY_BODY@@', body))
+    source.write_text(HARNESS.replace('@@COPY_BODY@@', body).replace('@@TRACE_CODE@@', trace))
     subprocess.run(host_command(['clang++-18', '-std=c++17', '-O1', '-g',
         '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
         '-I'+host_path(ROOT/'patches/nabu-audio'), host_path(source), '-o', host_path(binary)]), check=True)

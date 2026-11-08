@@ -15,6 +15,7 @@
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
 extern "C" const uint8_t *hakios_image_file(const char *, const char *, uint64_t *, int *);
+extern "C" void loader_log_line(const char *);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock;
 extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
@@ -46,11 +47,45 @@ static vm_offset_t map(const char *name, vm_offset_t physical, vm_size_t bytes, 
     log("NABU ADSP: map %s pa=%#llx bytes=%#llx ok=%u\n", name, (uint64_t)physical, (uint64_t)bytes, address != 0);
     return address;
 }
+// Narrow SCM boundary trace: stack formatting and the existing panic-capable
+// loader logger only. MPIDR records CPU affinity; DAIF is sampled before logging.
+// Do not allocate, publish registry properties or change the caller's IRQ state.
+static __attribute__((noinline)) char *trace_text(char *at, const char *text) {
+#pragma clang loop vectorize(disable) interleave(disable) unroll(disable)
+    while (*text) *at++ = *text++;
+    return at;
+}
+static __attribute__((noinline)) char *trace_hex(char *at, uint64_t value) {
+    at = trace_text(at, "0x");
+#pragma clang loop vectorize(disable) interleave(disable) unroll(disable)
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        unsigned digit = (value >> shift) & 15;
+        *at++ = digit < 10 ? '0' + digit : 'a' + digit - 10;
+    }
+    return at;
+}
+static __attribute__((noinline)) void trace_smc(const char *phase, unsigned command, unsigned attempt,
+    uint64_t x0, uint64_t x1, uint64_t x6) {
+    uint64_t mpidr, daif;
+    __asm__ volatile("mrs %0, mpidr_el1\n\tmrs %1, daif" : "=r"(mpidr), "=r"(daif) : : "memory");
+    char line[256];
+    char *at = trace_text(line, "NABU ADSP SMC "); at = trace_text(at, phase);
+    at = trace_text(at, " command="); at = trace_hex(at, command);
+    at = trace_text(at, " attempt="); at = trace_hex(at, attempt);
+    at = trace_text(at, " MPIDR="); at = trace_hex(at, mpidr);
+    at = trace_text(at, " DAIF="); at = trace_hex(at, daif);
+    at = trace_text(at, " x0="); at = trace_hex(at, x0);
+    at = trace_text(at, " x1="); at = trace_hex(at, x1);
+    at = trace_text(at, " x6="); at = trace_hex(at, x6);
+    *at++ = '\n'; *at = 0; loader_log_line(line);
+}
 static bool pas(unsigned command, uint64_t types, uint64_t b = 0, uint64_t c = 0) {
     uint64_t session = 0;
     log("NABU ADSP: PAS1 command=%u arg1=%#llx arg2=%#llx\n", command, b, c); publish();
     for (unsigned attempt = 0; attempt < 100; ++attempt) {
-        register uint64_t x0 __asm__("x0") = attempt ? 1 : 0x42000200 | command;
+        uint64_t request = attempt ? 1 : 0x42000200 | command;
+        trace_smc("enter", command, attempt, request, types, session);
+        register uint64_t x0 __asm__("x0") = request;
         register uint64_t x1 __asm__("x1") = types;
         register uint64_t x2 __asm__("x2") = 1;
         register uint64_t x3 __asm__("x3") = b;
@@ -60,10 +95,12 @@ static bool pas(unsigned command, uint64_t types, uint64_t b = 0, uint64_t c = 0
         register uint64_t x7 __asm__("x7") = 0;
         __asm__ volatile("smc #0" : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3), "+r"(x4), "+r"(x5), "+r"(x6), "+r"(x7)
             : : "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "memory");
+        uint64_t result = x0, response = x1;
         session = x6;
-        if (x0 != 1) {
-            log("NABU ADSP: PAS1 command=%u result=%lld response=%#llx\n", command, x0, x1); publish();
-            return x0 == 0 && x1 == 0;
+        trace_smc("return", command, attempt, result, response, session);
+        if (result != 1) {
+            log("NABU ADSP: PAS1 command=%u result=%lld response=%#llx\n", command, result, response); publish();
+            return result == 0 && response == 0;
         }
     }
     log("NABU ADSP: PAS1 command=%u continuation limit reached\n", command); return false;

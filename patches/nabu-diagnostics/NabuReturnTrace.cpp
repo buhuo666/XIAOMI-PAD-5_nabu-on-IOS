@@ -1,5 +1,5 @@
-// No allocation, new lock, device write, stack walk or pointed-to memory read.
-// The existing loader logger is the only output path, after storage reporting.
+// No allocation, new lock, device write, stack walk or crash-pointer probing.
+// Replay the saved panic text through the existing logger after storage reporting.
 using u32 = unsigned int;
 using u64 = unsigned long long;
 
@@ -13,6 +13,7 @@ static_assert(sizeof(NabuReturnTrace) == 64, "assembly record layout");
 extern "C" {
 NabuReturnTrace nabu_return_trace_record = {};
 void loader_log_line(const char *);
+void nabu_panic_early_report(void);
 }
 
 static char trace_line[192];
@@ -47,6 +48,7 @@ extern "C" void nabu_return_trace_report(void)
     if (state != 2) {
         char *p = text(trace_line, "NABU RETURN FIRST: incomplete state=");
         emit(hex(p, state));
+        nabu_panic_early_report();
         return;
     }
     char *p = text(trace_line, "NABU RETURN FIRST: LR=");
@@ -57,4 +59,5 @@ extern "C" void nabu_return_trace_report(void)
     p = text(trace_line, "NABU RETURN SYSREG (may be stale): ESR=");
     p = hex(p, r.esr); p = text(p, " FAR="); p = hex(p, r.far);
     p = text(p, " ELR="); p = hex(p, r.elr); emit(p);
+    nabu_panic_early_report();
 }
