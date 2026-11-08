@@ -23,3 +23,19 @@ log/host/audio-v144/glink-host-check*/report.json与kernel-compile/report.json�
 
 仍复用audio-v139 bootstrap及原机固件，只更换本轮内核。真实APR响应、AFE/ASM/ADM、
 内置扬声器出声和麦克风录音均未验收；实机依旧先查询服务再正常停止/释放DSP。
+
+## 实机结果
+
+源码34dcaf9、CI42473581159三项全部通过。桌面/原生USB正常，实际接收116个对端
+INTENT声明，最后IID0x73/size4096，52项未缓存，未触发错误。首次GET_STATE得到
+匹配token1的0x1290d回复，raw-state=1、ready=1；实际header field=0x81，即
+版本1、32字节扩展头、type0。既有按header长度取payload的解析正常工作。
+
+GLINK close-sent/close-ack/remote-closed均1，broken/timeout/error均0。
+ADSP stop-ack、PAS shutdown、AOP off及解除映射均成功，retained=0。
+Wi-Fi真实扫描与蓝牙初始化正常，内置音频路由尚未激活。
+
+3,072,373字节连续日志前缀与64MiB原始槽已备份清空，APFS113→114/fullfsync=ok。
+没有提交结束记录，不能声明覆盖完整关机。证据：log/host/audio-v144/adsp-report.txt、
+result-summary.json及log/device/nabu-boot-20261108-144/runtime-log/runtime.log，
+23316至23318行保留GLINK/APR结果，23536行保留清理结果。

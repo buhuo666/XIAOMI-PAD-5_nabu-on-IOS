@@ -333,10 +333,10 @@ struct Trial {
             tx.size != 16384 || rx.size != 16384) {
             log("NABU ADSP: GLINK probe queues unavailable\n"); return;
         }
-        log("NABU ADSP: host2 GLINK/APR core GET_STATE probe begins, local-channel=2 doorbell=8\n"); publish();
+        log("NABU ADSP: host2 GLINK/APR core GET_STATE and framework-version probe begins, local-channel=2 doorbell=8\n"); publish();
         uint64_t started; clock_get_uptime(&started);
         uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
-        glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size);
+        glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
@@ -366,6 +366,12 @@ struct Trial {
             r.apr_sent, r.queries, r.apr_response, r.token, r.apr_state, r.apr_ready,
             r.apr_packets, r.apr_ignored, r.basic_responses, r.basic_status,
             r.apr_field, r.apr_type, r.matched_opcode, r.matched_token);
+        log("NABU ADSP AVCS: version-sent=%u response=%u token=%#x basic-response=%u status=%#x timeout=%u invalid=%u field=%#x type=%u build=%u.%u.%u.%u services=%u\n",
+            r.version_sent, r.version_response, r.version_token, r.version_basic_response,
+            r.version_status, r.version_timeout, r.version_invalid, r.version_field, r.version_type,
+            r.build_version[0], r.build_version[1], r.build_version[2], r.build_version[3], r.service_count);
+        for (unsigned i = 0; i < r.service_count; ++i)
+            log("NABU ADSP AVCS: service=%#x api=%u branch=%u\n", r.services[i].id, r.services[i].api, r.services[i].branch);
         publish();
         // The fixed protocol buffers remain with Trial through PAS shutdown,
         // including the existing retain-until-reboot path on shutdown failure.

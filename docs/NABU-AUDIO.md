@@ -25,6 +25,11 @@ ADSP启停/释放、Wi-Fi扫描和蓝牙初始化正常，4,103,289字节日志�
 APFS113。第144轮改为消费多余声明，保留可用缓冲区与在途所有权，主机回归及ARM64编译通过，
 待整内核构建和实机APR验证。见[第144轮](../analysis/nabu-internal-audio-v144.md)。
 
+第144轮实测已通过：接收116个对端声明，GET_STATE首次返回匹配token1的state1，
+实际扩展头0x81；GLINK双向关闭、ADSP停止和资源释放全部成功。无线/蓝牙基线正常。
+3,072,373字节连续前缀和64MiB槽备份清空，APFS114。第145轮追加框架及服务API版本查询，
+主机回归与ARM64编译通过，尚待实机确认。内置出声/录音仍未验收。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

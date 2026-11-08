@@ -63,6 +63,19 @@ static Bytes basic_reply(uint32_t token, uint32_t status, uint32_t command=0x129
     Bytes b=reply(token); b.resize(28); put16(b,2,28); put32(b,16,0x110e8);
     put32(b,20,command); put32(b,24,status); return b;
 }
+static Bytes extended_reply(uint32_t token,uint32_t state=1) {
+    Bytes b=reply(token,state); b.insert(b.begin()+20,12,0); put16(b,0,0x81); put16(b,2,b.size()); return b;
+}
+static Bytes version_reply(uint32_t token,unsigned count=3) {
+    Bytes b=extended_reply(token); b.resize(52+count*12); put16(b,2,b.size()); put32(b,16,0x1292d);
+    for(unsigned i=0;i<4;++i)put32(b,32+i*4,10+i);
+    put32(b,48,count);
+    for(unsigned i=0;i<count;++i) {
+        put32(b,52+i*12,i==0?4:i==1?7:i==2?8:0x100+i);
+        put32(b,56+i*12,2+i); put32(b,60+i*12,5+i);
+    }
+    return b;
+}
 
 struct FakeIO {
     static constexpr uint32_t desc=0x100, tx=0x1000, rx=0x4000;
@@ -109,9 +122,9 @@ struct Fixture {
     NabuAdspGlink::Link<FakeIO> link;
     uint16_t peer=37;
     uint32_t peer_iid=91;
-    explicit Fixture(uint32_t size=4096,uint32_t start=0):io(size),link(io) {
+    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false):io(size),link(io) {
         io.initial_position(start);
-        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size));
+        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions));
         auto first=io.take(); CHECK(first.size()==1 && first[0]==frame(0,1,1));
     }
     std::vector<Bytes> step(uint32_t time) { link.step(time); return io.take(); }
@@ -359,6 +372,69 @@ static void many_peer_intents() {
     tx=busy.step(220); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==0);
     busy.io.inject(data_frame(busy.peer,1,reply(busy.link.result().token))); busy.step(230); busy.finish(240);
 }
+static uint32_t start_version_query(Fixture &f) {
+    f.establish(); auto ready_token=f.ask();
+    f.io.inject(frame(14,f.peer,f.peer_iid));
+    f.io.inject(data_frame(f.peer,1,extended_reply(ready_token)));
+    auto tx=f.step(110); CHECK(tx.size()==2 && tx[0]==frame(14,2,1));
+    const auto &q=tx[1]; CHECK(u16(q,0)==9 && u16(q,2)==2 && u32(q,4)==f.peer_iid);
+    CHECK(u32(q,8)==20 && u32(q,12)==0 && u16(q,16)==0x250 && u32(q,32)==0x1292c);
+    auto version_token=u32(q,28); CHECK(version_token!=ready_token);
+    CHECK(f.link.result().apr_ready && f.link.result().token==ready_token && f.link.result().apr_field==0x81);
+    CHECK(f.link.result().version_sent && f.link.result().version_token==version_token && !f.link.result().close_sent);
+    return version_token;
+}
+static void framework_versions() {
+    for(unsigned count:{0u,3u,25u}) {
+        Fixture f(4096,4088,true); auto token=start_version_query(f);
+        auto packet=version_reply(token,count);
+        // Preserve matching rules during the second command: stale ready
+        // and version tokens, wrong endpoints/opcodes cannot satisfy it.
+        auto wrong=version_reply(f.link.result().token,count);
+        f.io.inject(data_frame(f.peer,1,wrong)); f.step(111);
+        wrong=packet; wrong[4]=7; f.io.inject(data_frame(f.peer,1,wrong)); f.step(112);
+        wrong=extended_reply(token); f.io.inject(data_frame(f.peer,1,wrong)); f.step(113);
+        wrong=basic_reply(token,0,0x1290c); f.io.inject(data_frame(f.peer,1,wrong)); f.step(114);
+        CHECK(!f.link.result().version_response && !f.link.result().version_basic_response);
+        CHECK(f.link.result().apr_ready && f.link.result().apr_ignored==4);
+        size_t split=std::min(size_t(64),packet.size());
+        f.io.inject(data_frame(f.peer,20,Bytes(packet.begin(),packet.begin()+split),packet.size()-split));
+        // Small count zero uses one frame; the others cross a GLINK fragment.
+        if(packet.size()>64) {
+            CHECK(f.step(120).empty() && !f.link.result().version_response);
+            f.io.inject(data_frame(f.peer,20,Bytes(packet.begin()+64,packet.end()),0,12));
+        }
+        auto tx=f.step(121); CHECK(tx.size()==2 && tx.back()==frame(3,2,0));
+        const auto &r=f.link.result(); CHECK(r.apr_ready && r.apr_state==1 && r.queries==1);
+        CHECK(r.version_response && r.service_count==count && r.version_field==0x81 && r.version_type==0);
+        for(unsigned i=0;i<4;++i)CHECK(r.build_version[i]==10+i);
+        for(unsigned i=0;i<count;++i)CHECK(r.services[i].id==(i==0?4u:i==1?7u:i==2?8u:0x100+i) && r.services[i].api==2+i && r.services[i].branch==5+i);
+        CHECK(!r.version_timeout && !r.version_invalid); f.finish(130);
+    }
+    for(unsigned scenario=0;scenario<3;++scenario) {
+        Fixture f(4096,0,true); auto token=start_version_query(f); auto packet=version_reply(token);
+        if(scenario==0)packet.resize(48);
+        if(scenario==1)put32(packet,48,26);
+        if(scenario==2)packet.resize(packet.size()-1);
+        put16(packet,2,packet.size()); f.io.inject(data_frame(f.peer,1,packet)); auto tx=f.step(120);
+        CHECK(tx.size()==2 && f.link.result().version_invalid==scenario+1 && !f.link.result().version_response);
+        CHECK(f.link.result().apr_ready && !f.link.result().broken); f.finish(130);
+    }
+    for(unsigned status:{0u,3u}) {
+        Fixture f(4096,0,true); auto token=start_version_query(f);
+        f.io.inject(data_frame(f.peer,1,basic_reply(token,status,0x1292c))); auto tx=f.step(120);
+        CHECK(tx.size()==2 && f.link.result().version_basic_response && f.link.result().version_status==status);
+        CHECK(f.link.result().apr_ready && !f.link.result().version_response && !f.link.result().basic_responses); f.finish(130);
+    }
+    Fixture silent(4096,0,true); start_version_query(silent);
+    CHECK(silent.step(609).empty()); auto tx=silent.step(610);
+    CHECK(tx.size()==1 && tx[0]==frame(3,2,0)); CHECK(silent.link.result().apr_ready && silent.link.result().version_timeout);
+    CHECK(!silent.link.result().version_response); silent.finish(620);
+    Fixture no_buffer(4096,0,true); no_buffer.establish(); auto token=no_buffer.ask();
+    no_buffer.io.inject(data_frame(no_buffer.peer,1,extended_reply(token))); tx=no_buffer.step(110);
+    CHECK(tx.size()==2 && tx[1]==frame(7,2,20) && !no_buffer.link.result().version_sent);
+    no_buffer.step(1110); CHECK(no_buffer.link.result().version_timeout && no_buffer.link.result().apr_ready); no_buffer.finish(1120);
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -414,7 +490,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    many_peer_intents(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); framework_versions(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -442,6 +518,9 @@ def main():
                            "peer IID 0 transmit/reuse/retirement and local IID 0 rejection",
                            "160 peer intents before first query, individually and batched across wrap",
                            "full intent cache consumes surplus, admits usable sizes and preserves busy IDs",
+                           "actual field 0x81 extended-header readiness, CORE framework-version request/reply",
+                           "0/3/25 service entries, fragments, malformed counts/lengths, stale token isolation",
+                           "version unsupported/basic/timeout preserves proven readiness and closes",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

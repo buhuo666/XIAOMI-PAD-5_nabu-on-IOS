@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Bounded Nabu host-2 GLINK/APR core probe. No QRTR, AFE or PCM commands.
+// Bounded Nabu host-2 GLINK/APR core readiness/version probe. No AFE or PCM commands.
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
@@ -8,6 +8,7 @@ namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
     UnknownCommand, TxFull, VersionRejected, IntentUnavailable, FragmentMismatch, Aborted };
 enum IntentInvalidReason : uint32_t { IntentValid = 0, IntentZeroSize = 2 };
+struct ServiceVersion { uint32_t id, api, branch; };
 struct Result {
     bool negotiated, opened, remote_open, local_open_ack, apr_sent, apr_response, apr_ready;
     bool close_sent, close_ack, remote_closed, broken, timeout;
@@ -17,12 +18,16 @@ struct Result {
     uint32_t apr_field, apr_type, matched_opcode, matched_token;
     uint32_t peer_intents, last_peer_iid, last_peer_size, intent_invalid_reason;
     uint32_t peer_uncached, peer_replaced;
+    bool version_sent, version_response, version_basic_response, version_timeout;
+    uint32_t version_token, version_status, version_field, version_type, version_invalid;
+    uint32_t build_version[4], service_count;
+    ServiceVersion services[25];
 };
 
 template<class IO> class Link {
     struct LocalIntent { uint8_t data[512]; uint32_t fill, remaining; };
     struct RemoteIntent { uint32_t id, size; bool present, used; };
-    enum Phase { Idle, Opening, Querying, Closing, Finished };
+    enum Phase { Idle, Opening, Querying, VersionQuerying, Closing, Finished };
     IO &io;
     Result r{};
     LocalIntent local[20]{};
@@ -34,6 +39,8 @@ template<class IO> class Link {
     uint32_t now = 0, phase_start = 0, query_start = 0, query_due = 0, next_token = 1;
     bool requested_open = false, offered = false, channel_open = false;
     bool waiting_query = false, requested_intent = false;
+    bool include_versions = false;
+    uint32_t active_token = 0, active_opcode = 0;
 
     static uint16_t get16(const uint8_t *p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
     static uint32_t get32(const uint8_t *p) { return uint32_t(get16(p)) | uint32_t(get16(p + 2)) << 16; }
@@ -85,16 +92,37 @@ template<class IO> class Link {
         if ((field & 15) > 1 || header_bytes < 20 || packet_bytes < header_bytes || packet_bytes > bytes ||
             data[4] != 3 || data[5] != 4 || get16(data + 6) != 0 ||
             data[8] != 3 || data[9] != 5 || get16(data + 10) != 0 ||
-            !waiting_query || token != r.token) { ++r.apr_ignored; return; }
+            !waiting_query || token != active_token) { ++r.apr_ignored; return; }
         uint32_t payload = packet_bytes - header_bytes;
-        if (opcode == 0x1290d && payload >= 4) {
+        if (phase == Querying && opcode == 0x1290d && payload >= 4) {
             r.apr_field = field; r.apr_type = (field >> 8) & 3; r.matched_opcode = opcode; r.matched_token = token;
             r.apr_state = get32(data + header_bytes); r.apr_response = true; r.apr_ready = r.apr_state != 0;
             waiting_query = false; query_due = now + 50;
-        } else if (opcode == 0x110e8 && payload >= 8 && get32(data + header_bytes) == 0x1290c) {
-            r.apr_field = field; r.apr_type = (field >> 8) & 3; r.matched_opcode = opcode; r.matched_token = token;
-            ++r.basic_responses; r.basic_status = get32(data + header_bytes + 4);
-            // A basic success/unsupported response is not an audio-ready answer.
+        } else if (phase == VersionQuerying && opcode == 0x1292d) {
+            r.version_field = field; r.version_type = (field >> 8) & 3;
+            waiting_query = false;
+            // Original AVCS layout: four build words, count, then triples.
+            // The vendor exposes at most 25 services; preserve unknown IDs.
+            if (payload < 20) { r.version_invalid = 1; return; }
+            uint32_t count = get32(data + header_bytes + 16);
+            if (count > 25) { r.version_invalid = 2; return; }
+            if (payload < 20 + count * 12) { r.version_invalid = 3; return; }
+            for (unsigned i = 0; i < 4; ++i) r.build_version[i] = get32(data + header_bytes + i * 4);
+            r.service_count = count;
+            for (unsigned i = 0; i < count; ++i) {
+                const uint8_t *entry = data + header_bytes + 20 + i * 12;
+                r.services[i] = {get32(entry), get32(entry + 4), get32(entry + 8)};
+            }
+            r.version_response = true;
+        } else if (opcode == 0x110e8 && payload >= 8 && get32(data + header_bytes) == active_opcode) {
+            if (phase == VersionQuerying) {
+                r.version_field = field; r.version_type = (field >> 8) & 3;
+                r.version_basic_response = true; r.version_status = get32(data + header_bytes + 4);
+            } else {
+                r.apr_field = field; r.apr_type = (field >> 8) & 3; r.matched_opcode = opcode; r.matched_token = token;
+                ++r.basic_responses; r.basic_status = get32(data + header_bytes + 4);
+            }
+            // A basic response is neither a ready answer nor a service list.
             waiting_query = false; query_due = now + 50;
         } else ++r.apr_ignored;
     }
@@ -226,7 +254,7 @@ template<class IO> class Link {
             }
         }
     }
-    void query() {
+    void query(uint32_t opcode) {
         int chosen = -1;
         for (unsigned i = 0; i < 64; ++i) if (remote[i].present && !remote[i].used && remote[i].size >= QueryBytes &&
             (chosen < 0 || remote[i].size < remote[chosen].size)) chosen = int(i);
@@ -238,16 +266,20 @@ template<class IO> class Link {
         set16(data + 8, 0x250); set16(data + 10, QueryBytes);
         data[12] = 3; data[13] = 5; data[16] = 3; data[17] = 4;
         uint32_t token = next_token++;
-        set32(data + 20, token); set32(data + 24, 0x1290c);
+        set32(data + 20, token); set32(data + 24, opcode);
         if (send(9, uint16_t(r.lcid), remote[chosen].id, data, sizeof(data))) {
-            remote[chosen].used = true; r.token = token; r.apr_sent = true; ++r.queries;
+            remote[chosen].used = true; active_token = token; active_opcode = opcode;
+            if (opcode == 0x1290c) { r.token = token; r.apr_sent = true; ++r.queries; }
+            else { r.version_token = token; r.version_sent = true; }
             waiting_query = true; query_start = now;
         }
     }
 public:
     constexpr explicit Link(IO &operations) : io(operations) {}
-    bool begin(uint32_t desc, uint32_t tx_offset, uint32_t tx_size, uint32_t rx_offset, uint32_t rx_size) {
+    bool begin(uint32_t desc, uint32_t tx_offset, uint32_t tx_size, uint32_t rx_offset, uint32_t rx_size,
+        bool discover_services = false) {
         descriptor = desc; tx = tx_offset; tx_bytes = tx_size; rx = rx_offset; rx_bytes = rx_size;
+        include_versions = discover_services;
         if (phase != Idle || tx_size < 256 || rx_size < 256 || ((tx_size | rx_size) & 7)) { fail(InvalidQueues); return false; }
         r.features = 1; r.lcid = 2; phase = Opening; phase_start = 0;
         return send(0, 1, r.features);
@@ -257,12 +289,21 @@ public:
         now = elapsed_ms; pump(); if (r.broken) return;
         if (phase == Opening && now - phase_start >= 5000) { r.timeout = true; start_close(); }
         if (phase == Querying) {
-            if (r.apr_ready) start_close();
+            if (r.apr_ready) {
+                if (include_versions) { phase = VersionQuerying; phase_start = now; query_due = now; }
+                else start_close();
+            }
             else if (now - phase_start >= 3000) { r.timeout = true; start_close(); }
             else {
                 if (waiting_query && now - query_start >= 500) { waiting_query = false; query_due = now + 50; }
-                if (!waiting_query && channel_open && now >= query_due) query();
+                if (!waiting_query && channel_open && now >= query_due) query(0x1290c);
             }
+        }
+        if (phase == VersionQuerying) {
+            if (r.version_response || r.version_basic_response || r.version_invalid) start_close();
+            else if (now - phase_start >= 1000 || (waiting_query && now - query_start >= 500)) {
+                r.version_timeout = true; start_close();
+            } else if (!waiting_query && channel_open && now >= query_due) query(0x1292c);
         }
         if (phase == Closing) {
             if (r.close_ack) phase = Finished;
