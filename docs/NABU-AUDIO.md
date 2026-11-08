@@ -16,6 +16,8 @@
 
 第140轮新增诊断成功捕获PTE写入未对齐panic。ADSP解除硬件锁映射时未还原16KiB VM页起点，代码产生的PTE低位与照片一致；第141轮只修正ADSP的解除映射base/span，保留内核检查。第140轮1,704,631字节连续前缀和64MiB槽已备份清空，APFS110；最后约169KB只见屏幕捕获计数、未落盘，ADSP完整启停结果仍未知。详见[第140轮](../analysis/nabu-internal-audio-v140.md)、[第141轮](../analysis/nabu-internal-audio-v141.md)。
 
+第141轮已验证修复：正常桌面/USB，原机ADSP认证、13段加载、SMP2P READY/stop-ack、PAS shutdown和AOP off全部成功，映射完整释放，未再HALTED。host2 GLINK队列出现但尚未协商，APR/PCM与实际内置出声/录音仍未实现。Wi-Fi真实扫描与蓝牙初始化正常。3,520,657字节连续前缀及64MiB槽已备份清空，APFS111，设备Android、蓝牙关闭；后续先接通GLINK/APR。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

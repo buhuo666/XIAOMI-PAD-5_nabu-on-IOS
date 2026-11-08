@@ -19,3 +19,30 @@ base=trunc_page(address)，span=round_page(address-base+bytes)。每个ADSP可�
 这验证了已发现的释放契约错误，尚未证明实机停机消失或ADSP启停成功。
 
 沿用第139轮bootstrap及签名固件，上一轮APFS计数110。云端构建、实机结果及真正ADSP状态待取得。
+
+## 实机验收
+
+源码0623ee3f，完整CI42465448166全部通过（前次42465286905因两个依赖下载HTTP504失败，
+随后用同一源码重建）。用户确认第141轮正常桌面/USB，原生AudioInventory完整报告已读回。
+内核日志与在线报告均确认以下全过程：
+
+- PAS1 INIT、MEM_SETUP、AUTH_RESET均返回0，13段原机固件/BSS复制完成。
+- SMP2P状态0→0x6：ready=1、handover=1、fatal=0。
+- host2 GLINK描述及两端16KiB FIFO存在，RX head=8；尚未协商GLINK或发送APR。
+- 停止请求后状态0xe，stop-ack=1；PAS shutdown=0，AOP off确认。
+- 硬件锁VA末尾0x3000恢复到16KiB allocation起点；APCS末尾0xc同样恢复，19次解除映射完成。
+- 最终所有启停步骤为1、retained=0，未复现此前页表对齐panic。
+
+工作线程61.575763秒开始，61.701206秒ready，61.774924秒完整释放结束。
+INIT实际有3次SCM_INTERRUPTED续调，AUTH有7次，均最终成功；无需以未验证的IRQ/地址限制假设改动SMC。
+SMEM423文字仍为`SFR Init: wdog or kernel error suspected.`，但本轮实际fatal位始终0，
+ready和停止应答正常；保留该字符串，不凭文字单独诊断一次DSP崩溃。
+
+Wi-Fi保留FW_READY/原生station发布及真实热点扫描；蓝牙3.2Mbps固件/HCI初始化和原生串口正常。
+本轮不重测耳机播放或网络吞吐；扬声器与麦克风仍未启用。下一阶段为GLINK/APR音频服务查询，
+再推进AFE/PCM和Nabu板级音频路由。
+
+用户已回Android、蓝牙关闭、USB连接、耳机留盒。回收3,520,657字节有效连续前缀及64MiB原始槽，
+备份清空完成；ADSP完整启停在已提交前缀内，但整个运行没有封口头，不能宣称完整关机日志。
+APFS110→111，fullfsync=ok。证据为log/host/audio-v141/result-summary.json、adsp-report.txt、
+adsp-runtime-evidence.txt以及log/device/nabu-boot-20261108-141/runtime-log/。
