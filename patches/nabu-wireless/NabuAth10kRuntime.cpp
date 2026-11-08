@@ -19,6 +19,7 @@ extern "C" int nabu_ath10k_driver_start();
 extern "C" void nabu_ath10k_driver_stop();
 extern "C" void nabu_wlan_service_invalidate(int);
 extern "C" void nabu_wlan_service_summary();
+extern "C" void hakios_sta_sample_signal();
 extern "C" kern_return_t gic_v3_spi_attach(uint32_t,bool,void (*)(void *,uint32_t),void *);
 extern "C" void gic_v3_spi_mask(uint32_t);
 extern "C" void gic_v3_spi_unmask(uint32_t);
@@ -116,9 +117,14 @@ extern "C" bool nabu_wlan_runtime_failed() {
 }
 extern "C" void nabu_wlan_runtime_poll() {
     if(!dma||nabu_wlan_runtime_failed()||faults_pending())return;
-    if(++ticks%1000==0&&!dma->observe()) {
-        nabu_wireless_log("NABU ATH10K DMA: context observation failed status=%u\n",dma->status);
-        nabu_wlan_runtime_lost();
+    if(++ticks%1000==0) {
+        if(!dma->observe()) {
+            nabu_wireless_log("NABU ATH10K DMA: context observation failed status=%u\n",dma->status);
+            nabu_wlan_runtime_lost();
+            return;
+        }
+        // Short native state read; association generations protect event publication.
+        hakios_sta_sample_signal();
     }
 }
 extern "C" void nabu_wlan_runtime_lost() {

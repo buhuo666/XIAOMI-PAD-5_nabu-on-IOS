@@ -13,7 +13,10 @@ CASES = ('attach-off', 'attach-fatal', 'power', 'scan', 'lost', 'scan-fatal',
          'heard-fatal', 'state-fatal', 'state-detach', 'scan-detach', 'scan-off-on', 'power-fatal',
          'join-success', 'join-refused', 'join-no-commit', 'join-power-off', 'join-off-on',
          'join-leave', 'join-lost', 'join-lost-after-commit', 'join-fatal', 'join-replace',
-         'join-publication-race', 'join-commit-race', 'join-committed-off-on', 'join-off-active')
+         'join-publication-race', 'join-commit-race', 'join-committed-off-on', 'join-off-active',
+         'signal-current', 'signal-newjoin-pending', 'signal-newjoin-active', 'signal-publication-race',
+         'signal-off', 'signal-off-on', 'signal-leave', 'signal-lost', 'signal-fatal',
+         'signal-detach', 'signal-newjoin')
 
 
 def main():

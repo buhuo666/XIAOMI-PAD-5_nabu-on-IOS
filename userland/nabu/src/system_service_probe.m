@@ -582,7 +582,8 @@ int main(void) {
                         }
                         else if ([action isEqual:@"WirelessNativeScan"] ||
                                  [action isEqual:@"WirelessNativePowerOff"] ||
-                                 [action isEqual:@"WirelessNativePowerOn"]) {
+                                 [action isEqual:@"WirelessNativePowerOn"] ||
+                                 [action isEqual:@"WirelessNativeSignal"]) {
                             result[@"wireless_control"] = nabuWiFiControlTrial(action);
                             result[@"wireless"] = wirelessSnapshot();
                         }

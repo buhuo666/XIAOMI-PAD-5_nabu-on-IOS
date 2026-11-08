@@ -13,7 +13,10 @@ static struct gate power_gate = GATE_INIT, scan_gate = GATE_INIT, state_gate = G
 static struct gate channels_gate = GATE_INIT, heard_gate = GATE_INIT;
 static struct gate join_gate = GATE_INIT, join_return_gate = GATE_INIT;
 static struct gate commit_gate = GATE_INIT, event_gate = GATE_INIT;
+static struct gate signal_read_gate = GATE_INIT, signal_event_gate = GATE_INIT;
 static atomic_int backend_phase = HAKIOS_STA_IDLE, power_error, scan_error;
+static atomic_int backend_rssi = -43, signal_rssi;
+static atomic_uint signal_calls;
 static atomic_uint power_calls, scan_calls, heard_calls, state_calls;
 static bool power_history[16];
 static atomic_uint join_calls, commit_calls;
@@ -86,6 +89,14 @@ static int backend_power(bool on)
     if (!error) atomic_store(&backend_phase, on ? HAKIOS_STA_IDLE : HAKIOS_STA_OFF);
     return error;
 }
+void hakios_apple80211_signal(int rssi)
+{
+    /* A listener may query native flags; publication must not hold sta_lock. */
+    assert(hakios_sta_present() && hakios_sta_powered());
+    gate_enter(&signal_event_gate);
+    atomic_store(&signal_rssi, rssi);
+    atomic_fetch_add(&signal_calls, 1);
+}
 static int backend_scan(const struct hakios_sta_scan *what)
 {
     assert(what->passive); atomic_fetch_add(&scan_calls, 1);
@@ -121,9 +132,12 @@ static void backend_state(struct hakios_sta_state *state)
 {
     atomic_fetch_add(&state_calls, 1);
     int phase = atomic_load(&backend_phase);
+    int rssi = atomic_load(&backend_rssi);
+    if (is_sampler) gate_enter(&signal_read_gate);
     gate_enter(&state_gate);
     memset(state, 0, sizeof(*state)); state->phase = phase;
     state->bss.ssid[0] = 's'; state->bss.ssid_length = 1;
+    state->bss.rssi = rssi;
 }
 static unsigned backend_channels(struct hakios_sta_channel *channels, unsigned most)
 {
@@ -149,6 +163,10 @@ static void *detach_peer(void *arg)
 }
 static void *attach_peer(void *arg) { (void)arg; hakios_sta_attach(&backend); return NULL; }
 static void *state_peer(void *arg) { hakios_sta_state(arg); return NULL; }
+static void *signal_peer(void *arg)
+{
+    (void)arg; is_sampler = true; hakios_sta_sample_signal(); return NULL;
+}
 static pthread_t start_peer(void *(*entry)(void *), void *arg)
 {
     pthread_t thread; assert(!pthread_create(&thread, NULL, entry, arg)); return thread;
@@ -248,9 +266,95 @@ static void join_case(const char *mode)
     }
     finish();
 }
+static void signal_case(const char *mode)
+{
+    const struct hakios_sta_join request = {.ssid = {'x'}, .ssid_length = 1};
+    hakios_sta_sample_signal(); assert(!atomic_load(&state_calls));
+    backend.join = backend_join; hakios_sta_attach(&backend);
+    unsigned reads = atomic_load(&state_calls);
+    hakios_sta_sample_signal(); assert(atomic_load(&state_calls) == reads);
+    assert(!hakios_sta_ask_join(&request)); wait_idle();
+
+    if (!strcmp(mode, "signal-current")) {
+        hakios_sta_sample_signal(); hakios_sta_sample_signal();
+        assert(atomic_load(&signal_calls) == 2 && atomic_load(&signal_rssi) == -43);
+        atomic_store(&backend_rssi, -71); hakios_sta_sample_signal();
+        assert(atomic_load(&signal_calls) == 3 && atomic_load(&signal_rssi) == -71);
+        atomic_store(&backend_phase, HAKIOS_STA_SCANNING); hakios_sta_sample_signal();
+        assert(atomic_load(&signal_calls) == 3);
+        atomic_store(&backend_phase, HAKIOS_STA_JOINED);
+        assert(!hakios_sta_ask_leave()); wait_idle();
+        reads = atomic_load(&state_calls); hakios_sta_sample_signal();
+        assert(atomic_load(&signal_calls) == 3 && atomic_load(&state_calls) == reads);
+    } else if (!strcmp(mode, "signal-newjoin-pending")) {
+        /* The first new join has committed but has not returned to its worker.
+         * A second accepted join must not sample that previous JOINED state. */
+        gate_block(&join_return_gate); assert(!hakios_sta_ask_join(&request)); gate_await(&join_return_gate);
+        assert(!hakios_sta_ask_join(&request));
+        reads = atomic_load(&state_calls); hakios_sta_sample_signal();
+        assert(!atomic_load(&signal_calls) && atomic_load(&state_calls) == reads);
+        gate_release(&join_return_gate); wait_idle();
+        hakios_sta_sample_signal(); assert(atomic_load(&signal_calls) == 1);
+    } else if (!strcmp(mode, "signal-newjoin-active")) {
+        gate_block(&join_gate); assert(!hakios_sta_ask_join(&request)); gate_await(&join_gate);
+        reads = atomic_load(&state_calls); hakios_sta_sample_signal();
+        assert(!atomic_load(&signal_calls) && atomic_load(&state_calls) == reads);
+        gate_release(&join_gate); wait_idle();
+        hakios_sta_sample_signal(); assert(atomic_load(&signal_calls) == 1);
+    } else if (!strcmp(mode, "signal-publication-race")) {
+        gate_block(&signal_event_gate); pthread_t sample = start_peer(signal_peer, NULL);
+        gate_await(&signal_event_gate); pthread_t loss = start_peer(loss_peer, NULL);
+        while (!atomic_load(&mutation_waits)) sched_yield();
+        assert(!atomic_load(&mutation_done));
+        gate_release(&signal_event_gate); assert(!pthread_join(sample, NULL)); assert(!pthread_join(loss, NULL));
+        assert(atomic_load(&signal_calls) == 1 && atomic_load(&signal_rssi) == -43);
+        hakios_sta_sample_signal(); assert(atomic_load(&signal_calls) == 1);
+    } else {
+        gate_block(&signal_read_gate); pthread_t sample = start_peer(signal_peer, NULL);
+        gate_await(&signal_read_gate);
+        bool fatal = !strcmp(mode, "signal-fatal"), detach = !strcmp(mode, "signal-detach");
+        bool replaced = !strcmp(mode, "signal-newjoin"), power_cycle = !strcmp(mode, "signal-off-on");
+        pthread_t owner = {0};
+        if (fatal || detach) {
+            if (fatal) { hakios_sta_invalidate(EIO); assert_off(EIO); }
+            owner = start_peer(detach_peer, NULL);
+            while (!atomic_load(&drain_waits)) sched_yield();
+            assert(!atomic_load(&detached)); /* sample pins the backend until its query returns */
+        } else if (!strcmp(mode, "signal-off") || power_cycle) {
+            assert(!hakios_sta_ask_power(false)); wait_idle();
+            assert(!hakios_sta_powered());
+            if (power_cycle) {
+                assert(!hakios_sta_ask_power(true)); wait_idle();
+                atomic_store(&backend_rssi, -72); assert(!hakios_sta_ask_join(&request)); wait_idle();
+            }
+        } else if (!strcmp(mode, "signal-leave")) {
+            assert(!hakios_sta_ask_leave()); wait_idle();
+        } else if (!strcmp(mode, "signal-lost")) {
+            hakios_sta_lost(ECONNRESET);
+        } else {
+            assert(replaced);
+            atomic_store(&backend_rssi, -72); assert(!hakios_sta_ask_join(&request)); wait_idle();
+        }
+        gate_release(&signal_read_gate); assert(!pthread_join(sample, NULL));
+        if (fatal || detach) assert(!pthread_join(owner, NULL));
+        assert(!atomic_load(&signal_calls)); /* the captured old JOINED/-43 must not escape */
+        reads = atomic_load(&state_calls); hakios_sta_sample_signal();
+        if (replaced || power_cycle) {
+            assert(atomic_load(&signal_calls) == 1 && atomic_load(&signal_rssi) == -72);
+        } else {
+            assert(!atomic_load(&signal_calls) && atomic_load(&state_calls) == reads);
+        }
+    }
+    finish();
+}
 int main(int argc, char **argv)
 {
     assert(argc == 2); const char *mode = argv[1];
+    if (!strncmp(mode, "signal-", 7)) {
+        signal_case(mode);
+        printf("station %s passed: actual-source signal sampling, cancellation and backend lifetime\n", mode);
+        return 0;
+    }
     if (!strncmp(mode, "join-", 5)) {
         join_case(mode);
         printf("station %s passed: production join publication and cancellation interleaving\n", mode);

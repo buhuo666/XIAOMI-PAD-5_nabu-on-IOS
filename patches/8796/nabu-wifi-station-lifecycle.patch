@@ -692,7 +692,7 @@
  }
  
  bool
-@@ -331,16 +580,33 @@
+@@ -331,20 +580,75 @@
  hakios_sta_state(struct hakios_sta_state *state)
  {
  	const struct hakios_sta_ops *ops;
@@ -727,7 +727,49 @@
  		sta_reads--;
  		lck_mtx_unlock(&sta_lock);
  		thread_wakeup((event_t)&sta_calls);
-@@ -362,10 +628,13 @@
+ 	}
++}
++
++void
++hakios_sta_sample_signal(void)
++{
++	const struct hakios_sta_ops *ops;
++	struct hakios_sta_state state;
++	uint64_t generation, connection_generation;
++	bool publish;
++
++	lck_mtx_lock(&sta_lock);
++	ops = !sta_failed && sta_on && sta_want_on && sta_association_valid &&
++	    !asked_join && !asked_leave && (!sta_join_active || sta_join_committed) ? sta_ops : NULL;
++	generation = sta_generation;
++	connection_generation = sta_connection_generation;
++	if (ops != NULL) {
++		sta_reads++;
++	}
++	lck_mtx_unlock(&sta_lock);
++	if (ops == NULL) {
++		return;
++	}
++
++	/* state() is the non-sleeping backend query. Cancellation can proceed
++	 * while it runs; the reader count keeps detach from freeing its owner. */
++	ops->state(&state);
++	lck_mtx_lock(&sta_publish);
++	lck_mtx_lock(&sta_lock);
++	publish = current_locked(ops, generation) && connection_generation == sta_connection_generation &&
++	    sta_on && sta_want_on && sta_association_valid && !asked_join && !asked_leave &&
++	    (!sta_join_active || sta_join_committed) && state.phase == HAKIOS_STA_JOINED;
++	sta_reads--;
++	lck_mtx_unlock(&sta_lock);
++	if (publish) {
++		hakios_apple80211_signal(state.bss.rssi);
++	}
++	lck_mtx_unlock(&sta_publish);
++	thread_wakeup((event_t)&sta_calls);
+ }
+ 
+ unsigned
+@@ -362,10 +666,13 @@
  bool
  hakios_sta_address(uint8_t *address)
  {
@@ -775,3 +817,19 @@
  void     hakios_sta_lost(int error);                                   /* the network joined is gone by itself */
  
  /* ---- who wants a network: each asks and returns; the outcome is an event. 0, or an errno ---- */
+@@ -111,11 +120,15 @@
+ /* the `index`th access point the last scan heard: true, or false when there are not that many */
+ bool     hakios_sta_heard(unsigned index, struct hakios_sta_bss *bss);
+ void     hakios_sta_state(struct hakios_sta_state *state);
++/* Sample the current association; publish only if its instance and connection remain current. */
++void     hakios_sta_sample_signal(void);
+ unsigned hakios_sta_channels(struct hakios_sta_channel *channels, unsigned most);
+ bool     hakios_sta_address(uint8_t *address);
+ 
+ /* ---- the listener: drivers/wifi/hakios.apple80211.c ---- */
+ void     hakios_apple80211_event(enum hakios_sta_event event, int status);
++/* A short event publication: do not query the backend or mutate station state here. */
++void     hakios_apple80211_signal(int rssi);
+ void     hakios_apple80211_summary(void);                              /* what was asked in this run, to the log */
+ #endif
+ 

@@ -2,6 +2,7 @@
 """Test actual native control and association/data adapter against controlled peers."""
 import argparse
 import json
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -63,11 +64,39 @@ int main(void) {
     return 0;
 }
 '''
+    signal_start = source.index('void\nhakios_apple80211_signal(')
+    signal_end = source.index('\n/* What the station side says', signal_start)
+    event_enum = re.search(r'enum \{ EVENT_POWER_CHANGED.*?\};', source, re.S).group()
+    signal = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+static unsigned emitted;
+static int expected;
+static void post(unsigned code, const void *data, size_t length) {
+    const uint8_t *bytes=data;int32_t rssi;
+    assert(code==39 && length==180 && bytes[0]==1);
+    memcpy(&rssi,bytes+4,4);assert(rssi==expected);
+    for(unsigned i=1;i<180;i++) if(i<4||i>=8) assert(bytes[i]==0);
+    emitted++;
+}
+''' + event_enum + '\n' + source[signal_start:signal_end] + r'''
+int main(void) {
+    const int samples[]={-42,-90,-65,-127,0};
+    for(unsigned i=0;i<sizeof(samples)/sizeof(samples[0]);i++) {
+        expected=samples[i];hakios_apple80211_signal(expected);
+    }
+    assert(emitted==5);return 0;
+}
+'''
     service = (ROOT / 'patches/nabu-wireless/NabuWlanService.cpp').read_text()
     service = '\n'.join(s for s in service.splitlines() if not s.startswith('#include'))
     fixtures = ROOT / 'tools/fixtures/nabu_wifi_service'
     native = (fixtures / 'host.h').read_text() + '\n' + service + '\n' + (fixtures / 'replay.cpp').read_text()
     for name, text, compiler, standard in [('control', control, 'clang-18', 'c11'),
+                                           ('signal', signal, 'clang-18', 'c11'),
                                            ('service', native, 'clang++-18', 'c++17')]:
         src = out / (name + ('.c' if standard == 'c11' else '.cpp'))
         binary = out / (name + '-test')
@@ -93,7 +122,7 @@ int main(void) {
     report = {'hardware_tested': False, 'source_patch_applied': str(patch),
               'sanitizers': ['address', 'undefined'],
               'passed': ['no backend reports off', 'attached backend power preserved',
-                         'only CCMP and WPA2 capability bits advertised', 'Nabu driver identity',
+                         'only CCMP and WPA2 capability bits advertised', 'Nabu driver identity', '20F66 event39 encoding carries only valid real RSSI',
                          'backend MAC and readiness required', 'native power/scan preserve backend errors',
                          'late join publication gated by native commit', 'AP loss differs from fatal withdrawal',
                          'explicit device discovery', 'one stable down interface', 'copied TX queue, overflow/errors, control drain, AP loss and fatal tested',

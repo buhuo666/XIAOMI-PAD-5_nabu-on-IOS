@@ -49,6 +49,7 @@ static void IOLog(const char *,...){}
 static std::atomic<unsigned> station_invalidations{0};
 extern "C" void nabu_wlan_service_invalidate(int){++station_invalidations;}
 extern "C" void nabu_wlan_service_summary(){}
+extern "C" void hakios_sta_sample_signal(){}
 struct OSData {unsigned getLength(){return 6;}const void *getBytesNoCopy(){static uint8_t mac[6]={2,1,2,3,4,5};return mac;}};
 struct IORegistryEntry {static IORegistryEntry *fromPath(const char *,const char *){static IORegistryEntry entry;return &entry;}OSData *getProperty(const char *){static OSData mac;return &mac;}void release(){}};
 static constexpr const char *gIODTPlane="IODeviceTree";

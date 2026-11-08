@@ -43,6 +43,15 @@
      "the association request as Darwin userland 16.5 has it");
  _Static_assert(sizeof(struct apple80211_link_changed) == 32 && offsetof(struct apple80211_link_changed, reason) == 0x14,
      "the link event as Darwin userland 16.5 reads it");
+@@ -193,7 +197,7 @@
+ 
+ /* Apple80211's events (APPLE80211_M_...) */
+ enum { EVENT_POWER_CHANGED = 1, EVENT_SSID_CHANGED = 2, EVENT_BSSID_CHANGED = 3, EVENT_LINK_CHANGED = 4, EVENT_ASSOC_DONE = 9,
+-       EVENT_SCAN_DONE = 10 };
++       EVENT_SCAN_DONE = 10, EVENT_RSSI_CHANGED = 39 };
+ 
+ static const char interface_name[16] = "en0";   /* (drivers/net/hakios.net.c makes one interface, and that is its name) */
+ 
 @@ -294,7 +298,7 @@
  	switch (request->req_type) {
  	case 43:
@@ -146,3 +155,39 @@
  		what->security = HAKIOS_STA_WPA2_PSK;
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
+@@ -611,6 +649,23 @@
+ 		message.dv[1].data_ptr = __DECONST(void *, data);
+ 	}
+ 	kev_post_msg(&message);
++}
++
++/* 20F66 __dispatchlqmChangedEvent: only RSSI is valid; other metrics remain unavailable. */
++void
++hakios_apple80211_signal(int rssi)
++{
++	uint8_t payload[180] = { 0 };
++	int32_t value = rssi;
++	static unsigned said;
++
++	payload[0] = 1;
++	memcpy(payload + 4, &value, sizeof(value));
++	post(EVENT_RSSI_CHANGED, payload, sizeof(payload));
++	if (said < 16) {
++		said++;
++		printf("apple80211: signal update event 39, RSSI %d dBm\n", rssi);
++	}
+ }
+ 
+ /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
+@@ -726,8 +781,9 @@
+ 	error = is_set ? set(request, what, sizeof(what)) : get(request);
+ 	note(request, is_set, error);
+ 	/* (a request that is repeated for ever is said a few hundred times) */
+-	if (said < 800) {
+-		said++;
++	bool control = is_set && (request->req_type == 19 || request->req_type == 20 || request->req_type == 22);
++	if (said < 800 || control) {
++		if (said < 800) said++;
+ 		printf("apple80211: %s %s %d (%s), value %d, %u bytes%s: %s", who, is_set ? "sets" : "gets", request->req_type,
+ 		    type_name(request->req_type), request->req_val, request->req_len, what, error == 0 ? "answered\n" : error ==
+ 		    EOPNOTSUPP ? "REFUSED\n" : "");

@@ -34,7 +34,7 @@ static pthread_t worker_thread;
 static bool worker_created;
 static atomic_uint drain_waits;
 static atomic_uint mutation_waits;
-static _Thread_local bool is_worker, is_detacher, is_mutator;
+static _Thread_local bool is_worker, is_detacher, is_mutator, is_sampler;
 
 static void lck_mtx_lock(lck_mtx_t *lock) {
     int result = pthread_mutex_trylock(&lock->mutex);
