@@ -30,6 +30,7 @@ PRELUDE = r'''
 #include <vector>
 #include "NabuBluetoothTransport.h"
 #include "NabuBluetoothControl.h"
+#include "NabuBluetoothBootRx.h"
 using vm_offset_t=uintptr_t; using lck_grp_t=int; using lck_mtx_t=int;
 using thread_call_t=void*; using thread_call_param_t=void*; using kern_ctl_ref=void*;
 using errno_t=int; using u_long=unsigned long; using caddr_t=char*;
@@ -232,8 +233,21 @@ int main() {
     assert(logs[1].find("event=0xf opcode=0x200c status=12")!=std::string::npos);
     for(unsigned i=0;i<120;++i){uart_input={4,0x0e,4,1,0xe2,0xfc,1};uart_position=0;stream_drain_rx(false);}
     assert(stream_event_logs==96&&logs.size()==96);
+    // The boot reply may leave a consumed debug ACL prefix in its FIFO word.
+    // Native RX inherits that framing and drops only its unfinished packet.
+    reset();NabuBluetoothBootRx boot;boot.begin(0x1001);
+    const uint8_t prefix[]={2,0xdc,0x2e,8,0,4,0x0e};
+    for(uint8_t byte:prefix)boot.take(byte);
+    assert(boot.type==2&&boot.remaining==6);
+    stream_adopt_boot_rx(boot);
+    uart_input={4,1,3,0x0c,0,0xfd,4,0x0e,4,1,3,0x0c,0};
+    stream_drain_rx(false);
+    assert(!stream_discard_frame&&stream_rx_frame.boundary()&&stream_rx->count==7&&stream_ibs_wakes==0);
+    uint8_t delivered[7];assert(stream_rx->peek(delivered,7)==7);
+    assert(!memcmp(delivered,uart_input.data()+6,7));
     puts("Bluetooth native: H4 token boundaries, complete-frame TX, IBS ACK/wake/retry, exclusive owners, mbuf release, signed ioctl/short getopt and socket backpressure passed");
     puts("Bluetooth lifecycle: drain before FE, actual peer sleep, fixed deadline/error propagation, suspended-write refusal, reopen/wake and bounded opcode/status trace passed");
+    puts("Bluetooth boot/native handoff: consumed partial debug ACL prefix retained; tail dropped without interpreting embedded HCI/IBS bytes");
 }
 '''
 

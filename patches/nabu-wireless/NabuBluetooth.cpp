@@ -29,6 +29,7 @@
 #include "NabuWirelessLog.h"
 #include "NabuBluetoothTransport.h"
 #include "NabuBluetoothControl.h"
+#include "NabuBluetoothBootRx.h"
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern "C" lck_mtx_t hakios_rsc_lock;
@@ -152,10 +153,17 @@ static bool transmit(vm_offset_t uart, const uint8_t *bytes, unsigned count, boo
     return done;
 }
 
-static unsigned receive(vm_offset_t uart, uint8_t *bytes, unsigned capacity)
+static NabuBluetoothBootRx boot_rx;
+static unsigned receive(vm_offset_t uart, uint8_t *bytes, unsigned capacity,uint16_t opcode)
 {
-    unsigned size = 0;
+    boot_rx.begin(opcode);
+    unsigned debug_before=boot_rx.debug_frames,bytes_before=boot_rx.debug_bytes;
     for (unsigned elapsed = 0; elapsed < 1000; ++elapsed) {
+        uint32_t irq=rd(uart+0x640);
+        if(irq&((3u<<24)|(15u<<9))) {
+            nabu_wireless_log("NABU BT: boot RX UART error irq=%#x opcode=%#x\n",irq,opcode);
+            boot_rx.failed=true;
+        }
         uint32_t status = rd(uart + 0x804);
         unsigned words = status & 0x01ffffff;
         for (unsigned word = 0; word < words; ++word) {
@@ -165,13 +173,20 @@ static unsigned receive(vm_offset_t uart, uint8_t *bytes, unsigned capacity)
                 unsigned last = (status >> 28) & 7;
                 if (last && last < 4) valid = last;
             }
-            for (unsigned i = 0; i < valid && size < capacity; ++i) bytes[size++] = data >> (i * 8);
+            for (unsigned i = 0; i < valid; ++i)boot_rx.take(data>>(i*8));
         }
         wr(uart + 0x648, rd(uart + 0x640));
-        if (size >= 3 && bytes[0] == 4 && size >= 3u + bytes[2]) break;
+        if(boot_rx.response_bytes||boot_rx.failed)break;
         IOSleep(1);
     }
-    return size;
+    if(boot_rx.debug_frames!=debug_before)
+        nabu_wireless_log("NABU BT: boot RX drained QCA debug ACL frames=%u payload-bytes=%u opcode=%#x reply-bytes=%u partial-type=%u remaining=%u\n",
+            boot_rx.debug_frames-debug_before,boot_rx.debug_bytes-bytes_before,opcode,boot_rx.response_bytes,boot_rx.type,boot_rx.remaining);
+    if(boot_rx.failed||boot_rx.response_bytes>capacity) {
+        nabu_wireless_log("NABU BT: boot RX framing/capacity failure opcode=%#x type=%u reply-bytes=%u\n",opcode,boot_rx.type,boot_rx.response_bytes);
+        return 0;
+    }
+    memcpy(bytes,boot_rx.response,boot_rx.response_bytes);return boot_rx.response_bytes;
 }
 
 static void log_reply(const char *label, const uint8_t *reply, unsigned size)
@@ -195,7 +210,7 @@ static bool download_tlv(vm_offset_t uart, OSData *blob, const char *name, bool 
         at += size;
         if (!skip_intermediate || at == bytes) {
             uint8_t reply[256];
-            unsigned received = receive(uart, reply, sizeof(reply));
+            unsigned received = receive(uart, reply, sizeof(reply),0xfc00);
             // WCN3991 command-complete return payload is only {status, subcommand}.
             bool ok = received == 8 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 5 &&
                 reply[4] == 0 && reply[5] == 0xfc && reply[6] == 0 && reply[7] == 0x1e;
@@ -224,7 +239,7 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     if (ok) {
         const uint8_t reset[] = {1, 3, 0x0c, 0};
         ok = transmit(uart, reset, sizeof(reset));
-        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        unsigned size = ok ? receive(uart, reply, sizeof(reply),0x0c03) : 0;
         log_reply("HCI Reset", reply, size);
         ok = size == 7 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 4 &&
              reply[4] == 3 && reply[5] == 0x0c && reply[6] == 0;
@@ -232,7 +247,7 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     if (ok) {
         const uint8_t read_address[] = {1, 9, 0x10, 0};
         ok = transmit(uart, read_address, sizeof(read_address));
-        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        unsigned size = ok ? receive(uart, reply, sizeof(reply),0x1009) : 0;
         ok = size == 13 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 9 &&
              reply[5] == 0x10 && reply[6] == 0 && !memcmp(reply + 7, address->getBytesNoCopy(), 6);
         nabu_wireless_log("NABU BT: HCI address matches board=%u response-bytes=%u\n", ok, size);
@@ -240,7 +255,7 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     if (ok) {
         const uint8_t local_version[] = {1, 1, 0x10, 0};
         ok = transmit(uart, local_version, sizeof(local_version));
-        unsigned size = ok ? receive(uart, reply, sizeof(reply)) : 0;
+        unsigned size = ok ? receive(uart, reply, sizeof(reply),0x1001) : 0;
         log_reply("HCI Local Version", reply, size);
         ok = size == 15 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 1 && reply[5] == 0x10 && reply[6] == 0;
     }
@@ -341,6 +356,17 @@ static unsigned stream_command_logs, stream_event_logs;
 static unsigned stream_late_command_logs, stream_late_event_logs;
 static uint8_t stream_event_code, stream_event_prefix[4];
 static unsigned stream_event_payload_seen;
+
+static void stream_adopt_boot_rx(const NabuBluetoothBootRx &boot)
+{
+    // A FIFO word may contain the final boot reply and the next frame prefix.
+    // That prefix was consumed by the boot reader: drain its remaining frame
+    // before delivering complete new packets to the native consumer.
+    stream_rx_frame.type=boot.type;stream_rx_frame.header_bytes=boot.header_bytes;
+    stream_rx_frame.remaining=boot.remaining;
+    memcpy(stream_rx_frame.header,boot.header,sizeof(boot.header));
+    stream_discard_frame=boot.type!=0;
+}
 
 static bool trace_address_scan(unsigned opcode)
 {
@@ -1011,6 +1037,7 @@ static bool stream_start(vm_offset_t uart)
     if (!stream_tx) return false;
     bzero(stream_tx, sizeof(*stream_tx));
     stream_uart = uart;
+    stream_adopt_boot_rx(boot_rx);
     stream_termios.c_cflag = CS8 | CREAD | CLOCAL | CRTSCTS;
     stream_termios.c_ispeed = stream_termios.c_ospeed = 115200;
     stream_termios.c_cc[VMIN] = 1;
@@ -1080,7 +1107,7 @@ void nabu_bluetooth_version_trial()
     const uint8_t version[] = {1, 0, 0xfc, 1, 0x19};
     if (!transmit(uart, version, sizeof(version))) return;
     uint8_t reply[256];
-    unsigned size = receive(uart, reply, sizeof(reply));
+    unsigned size = receive(uart, reply, sizeof(reply),0xfc00);
     log_reply("ROM version", reply, size);
     bool version_ok = size >= 21 && reply[0] == 4 && reply[1] == 0x0e && reply[4] == 0 && reply[5] == 0xfc &&
         reply[6] == 0 && reply[7] == 0x19 && reply[8] == 12; // observed version payload length, not status
