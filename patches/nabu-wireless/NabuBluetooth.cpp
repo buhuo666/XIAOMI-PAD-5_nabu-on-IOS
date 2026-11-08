@@ -356,6 +356,7 @@ static unsigned stream_command_logs, stream_event_logs;
 static unsigned stream_late_command_logs, stream_late_event_logs;
 static uint8_t stream_event_code, stream_event_prefix[4];
 static unsigned stream_event_payload_seen;
+static unsigned stream_debug_acl_frames,stream_debug_acl_bytes;
 
 static void stream_adopt_boot_rx(const NabuBluetoothBootRx &boot)
 {
@@ -377,6 +378,29 @@ static void stream_clear_rx()
 {
     stream_rx->clear();
     stream_discard_frame = !stream_rx_frame.boundary();
+}
+
+static bool stream_accept_h4_byte(uint8_t byte,uint8_t previous_type,unsigned previous_header,bool discard)
+{
+    bool acl=previous_type==2||(!previous_type&&byte==2);
+    if(acl&&previous_type&&previous_header==3) {
+        const uint8_t *header=stream_rx_frame.header;
+        if(header[0]==0xdc&&header[1]==0x2e) {
+            stream_discard_frame=true;++stream_debug_acl_frames;
+            unsigned bytes=header[2]|header[3]<<8;stream_debug_acl_bytes+=bytes;
+            if(stream_debug_acl_frames<=4)nabu_wireless_log("NABU BT STREAM: QCA debug ACL frame=%u payload-bytes=%u; not delivered as connection data\n",stream_debug_acl_frames,bytes);
+        }
+    }
+    if(discard||stream_discard_frame||stream_rx_error)return true;
+    if(acl) {
+        // Hold the five-byte ACL prefix until the diagnostic handle is known.
+        if(!previous_type||previous_header<3)return true;
+        if(previous_header==3) {
+            uint32_t word=0;for(unsigned i=0;i<4;++i)word|=(uint32_t)stream_rx_frame.header[i]<<(i*8);
+            return stream_rx->push_word(2,1)&&stream_rx->push_word(word,4);
+        }
+    }
+    return stream_rx->push_word(byte,1);
 }
 
 // RX ownership transfers here only after the synchronous firmware/HCI sequence.
@@ -411,7 +435,7 @@ static void stream_drain_rx(bool discard)
             else if (kind == 3) { if (stream_ibs_tx == StreamTxWaking) stream_ibs_tx = StreamTxAwake; ++stream_ibs_acks; }
             else if (kind == 4) { stream_ibs_rx_awake = false; stream_rx_wake_waiting = false; ++stream_ibs_sleeps; }
             else if (kind < 0) { stream_rx_error = EPROTO; stream_clear_rx(); }
-            else if (!discard && !stream_discard_frame && !stream_rx_error && !stream_rx->push_word(byte, 1)) {
+            else if (!stream_accept_h4_byte(byte,previous_type,previous_header,discard)) {
                 stream_rx_error = EOVERFLOW; stream_clear_rx(); ++stream_overruns;
             }
             if (kind == 1 && stream_suspending) { stream_ibs_rx_awake = true; stream_idle_confirmed = false; }

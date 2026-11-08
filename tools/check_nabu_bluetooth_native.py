@@ -245,9 +245,26 @@ int main() {
     assert(!stream_discard_frame&&stream_rx_frame.boundary()&&stream_rx->count==7&&stream_ibs_wakes==0);
     uint8_t delivered[7];assert(stream_rx->peek(delivered,7)==7);
     assert(!memcmp(delivered,uart_input.data()+6,7));
+    // Full diagnostic packets must also be kept out of lifecycle/Apple HCI.
+    reset();unsigned debug_before=stream_debug_acl_frames;
+    std::vector<uint8_t> debug={2,0xdc,0x2e,0xed,1};
+    for(unsigned i=0;i<493;++i)debug.push_back(i%3?0xfd:4);
+    debug.insert(debug.end(),{4,0x0e,4,1,3,0x0c,0});
+    for(unsigned at=0;at<debug.size();++at) {
+        uart_input={debug[at]};uart_position=0;stream_drain_rx(false);
+    }
+    assert(stream_debug_acl_frames==debug_before+1&&stream_rx->count==7&&stream_ibs_wakes==0&&!stream_rx_error);
+    assert(stream_rx->peek(delivered,7)==7&&delivered[0]==4&&delivered[6]==0);
+    // Real connection ACL keeps every prefix and payload byte, even if its
+    // payload happens to contain the vendor diagnostic handle or IBS tokens.
+    reset();std::vector<uint8_t> acl={2,1,0x20,5,0,0xdc,0x2e,0xfd,4,0xfe};
+    for(uint8_t byte:acl){uart_input={byte};uart_position=0;stream_drain_rx(false);}
+    uint8_t normal[10];assert(stream_rx->peek(normal,10)==10&&!memcmp(normal,acl.data(),10));
+    assert(stream_ibs_wakes==0&&!stream_rx_error);
     puts("Bluetooth native: H4 token boundaries, complete-frame TX, IBS ACK/wake/retry, exclusive owners, mbuf release, signed ioctl/short getopt and socket backpressure passed");
     puts("Bluetooth lifecycle: drain before FE, actual peer sleep, fixed deadline/error propagation, suspended-write refusal, reopen/wake and bounded opcode/status trace passed");
     puts("Bluetooth boot/native handoff: consumed partial debug ACL prefix retained; tail dropped without interpreting embedded HCI/IBS bytes");
+    puts("Bluetooth native QCA debug ACL: full 493-byte diagnostic dropped across byte fragments; ordinary connection ACL delivered unchanged");
 }
 '''
 
@@ -259,7 +276,7 @@ def main():
     source = (ROOT/'patches/nabu-wireless/NabuBluetooth.cpp').read_text()
     framing = source.split('// BEGIN TESTABLE H4 FRAMING\n')[1].split('// END TESTABLE H4 FRAMING')[0]
     globals_source = source[source.index('static vm_offset_t stream_uart;'):source.index('static void stream_clear_rx()')]
-    functions = ''.join(function(source, name) for name in ['stream_clear_rx','stream_drain_rx','stream_tx_work','stream_socket_deliver',
+    functions = ''.join(function(source, name) for name in ['stream_clear_rx','stream_accept_h4_byte','stream_drain_rx','stream_tx_work','stream_socket_deliver',
         'stream_acquire','stream_release','stream_wait_space','stream_ctl_owner','stream_ctl_connect',
         'stream_ctl_disconnect','stream_ctl_send','stream_idle_wait','stream_idle_drained','stream_enter_idle','stream_ctl_setopt','stream_ctl_getopt'])
     cpp=args.output/'bluetooth-native.cpp';cpp.write_text(PRELUDE+framing+globals_source+MOCKS+functions+TESTS)

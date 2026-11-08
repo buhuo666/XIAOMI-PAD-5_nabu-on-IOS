@@ -48,6 +48,12 @@ Command Complete，再由各命令调用点验证status/数据。保留部分帧
 主机测试执行生产receive，覆盖493字节回归、65535字节帧、各分片、错误状态、
 部分帧保留及旧事件直达路径；ASan/UBSan通过。硬件修复仍待第129轮验证。
 
+继续核对发现`bluetooth_lifecycle.c:hci_command_data`同样只接受H4事件，若把
+调试ACL原样交给原生服务，后续Reset仍会EPROTO。因此原生UART接收也延迟提交
+ACL五字节头，识别0x2edc后完整丢弃该调试帧并记录计数；所有其他连接ACL原样
+转交。测试覆盖一字节碎片、调试载荷中的HCI/IBS伪前缀、普通ACL保持不变，以及
+boot/native交接时未完成调试帧继续排空。
+
 ## 回收证据
 
 - 日志`log/device/nabu-boot-20261108-128/runtime-log/runtime.log`：13,370,104字节。
