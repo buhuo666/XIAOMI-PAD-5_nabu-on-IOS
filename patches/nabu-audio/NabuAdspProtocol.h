@@ -114,7 +114,10 @@ Outcome run(Operations &ops) {
                 if (result.auth) {
                     result.ready = ops.wait_ready();
                     ops.observe();
-                    if (result.ready) result.stop_ack = ops.request_stop();
+                    if (result.ready) {
+                        ops.probe();
+                        result.stop_ack = ops.request_stop();
+                    }
                 }
             }
         }

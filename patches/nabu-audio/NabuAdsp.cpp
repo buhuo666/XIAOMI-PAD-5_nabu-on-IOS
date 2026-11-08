@@ -11,6 +11,7 @@
 #include <vm/memory_types.h>
 #include <pexpert/pexpert.h>
 #include "NabuAdspProtocol.h"
+#include "NabuAdspGlink.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
@@ -123,8 +124,21 @@ struct Trial {
     IOPhysicalAddress metadata_pa = 0;
     NabuSmem smem{};
     uint32_t last_state = 0xffffffff;
+    NabuAdspGlink::Link<Trial> glink{*this};
 
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
+    uint32_t read32(uint32_t offset) {
+        uint32_t value = rd(smem_va + offset);
+        __asm__ volatile("dsb sy" ::: "memory");
+        return value;
+    }
+    void write32(uint32_t offset, uint32_t value) {
+        __asm__ volatile("dsb sy" ::: "memory"); // FIFO bytes precede published head / tail.
+        put(offset, value);
+    }
+    uint8_t read8(uint32_t offset) { return smem.data[offset]; }
+    void write8(uint32_t offset, uint8_t value) { *(volatile uint8_t *)(smem_va + offset) = value; }
+    void ring() { wr(ipc, 1u << NabuAdsp::GlinkDoorbell); }
     bool allocate(uint16_t id, uint32_t bytes, uint32_t &offset) {
         lck_mtx_lock(&hakios_smem_alloc_lock);
         bool held = false;
@@ -307,6 +321,51 @@ struct Trial {
             log("NABU ADSP: crash-reason item423=%s\n", reason[0] ? reason : "(empty)");
         }
         publish();
+    }
+    void probe() {
+        NabuAdsp::Peer peer = state();
+        if (!peer.valid || (peer.state & 3) != 2) {
+            log("NABU ADSP: GLINK probe skipped: peer not ready or fatal\n"); return;
+        }
+        NabuSmemItem descriptor, tx, rx;
+        if (!NabuAdsp::find(smem, 478, descriptor) || descriptor.size != 32 ||
+            !NabuAdsp::find(smem, 479, tx) || !NabuAdsp::find(smem, 480, rx) ||
+            tx.size != 16384 || rx.size != 16384) {
+            log("NABU ADSP: GLINK probe queues unavailable\n"); return;
+        }
+        log("NABU ADSP: host2 GLINK/APR core GET_STATE probe begins, local-channel=2 doorbell=8\n"); publish();
+        uint64_t started; clock_get_uptime(&started);
+        uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
+        glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size);
+        while (!glink.done()) {
+            uint64_t current, nanos; clock_get_uptime(&current);
+            absolutetime_to_nanoseconds(current - started, &nanos);
+            uint32_t elapsed = uint32_t(nanos / 1000000);
+            if (elapsed >= 10000) { glink.abort(); break; }
+            if (elapsed - last_peer_check >= 10) {
+                peer = state(); last_peer_check = elapsed;
+                if (!peer.valid || (peer.state & 3) != 2) { glink.abort(); break; }
+            }
+            glink.step(elapsed);
+            const NabuAdspGlink::Result &r = glink.result();
+            if (r.rx != logged_rx && trace_count < 24) {
+                log("NABU ADSP GLINK: rx=%u last-command=%u cid=%u value=%#x elapsed-ms=%u\n",
+                    r.rx, r.last_command, r.last_cid, r.last_value, elapsed);
+                logged_rx = r.rx; ++trace_count;
+            }
+            if (!glink.done()) IOSleep(1);
+        }
+        const NabuAdspGlink::Result &r = glink.result();
+        log("NABU ADSP GLINK: negotiated=%u features=%#x open=%u local=%u remote=%u remote-open=%u open-ack=%u tx=%u rx=%u unknown-channels=%u close-sent=%u close-ack=%u remote-closed=%u broken=%u timeout=%u error=%u\n",
+            r.negotiated, r.features, r.opened, r.lcid, r.rcid, r.remote_open, r.local_open_ack,
+            r.tx, r.rx, r.unknown_channels, r.close_sent, r.close_ack, r.remote_closed, r.broken, r.timeout, r.error);
+        log("NABU ADSP APR: get-state-sent=%u queries=%u matched-response=%u token=%#x raw-state=%#x ready=%u packets=%u ignored=%u basic-responses=%u basic-status=%#x field=%#x type=%u matched-opcode=%#x matched-token=%#x; speaker/microphone routes inactive\n",
+            r.apr_sent, r.queries, r.apr_response, r.token, r.apr_state, r.apr_ready,
+            r.apr_packets, r.apr_ignored, r.basic_responses, r.basic_status,
+            r.apr_field, r.apr_type, r.matched_opcode, r.matched_token);
+        publish();
+        // The fixed protocol buffers remain with Trial through PAS shutdown,
+        // including the existing retain-until-reboot path on shutdown failure.
     }
     bool request_stop() {
         put(our_item + 36, 1); wr(ipc, 1u << NabuAdsp::Smp2pDoorbell);

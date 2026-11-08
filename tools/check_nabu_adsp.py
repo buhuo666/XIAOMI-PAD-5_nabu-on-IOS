@@ -89,21 +89,21 @@ struct Operations {
     bool proxy_vote(){return step("proxy");} bool init_image(){return step("init");}
     bool memory_setup(){return step("memory");} bool copy_segments(){return step("copy");}
     bool auth_reset(){return step("auth");} bool wait_ready(){return step("ready");}
-    void observe(){step("observe");} bool request_stop(){return step("stop");}
+    void observe(){step("observe");} void probe(){step("probe");} bool request_stop(){return step("stop");}
     bool shutdown(){return step("shutdown");} void release(){step("release");}
 };
 static bool called(const Operations &ops,const char *name){for(auto &s:ops.calls)if(s==name)return true;return false;}
 static void test_lifecycle() {
     Operations ok;Outcome r=run(ok);
-    assert((ok.calls==std::vector<std::string>{"prepare","on","proxy","init","memory","copy","auth","ready","observe","stop","shutdown","off","release"}));
+    assert((ok.calls==std::vector<std::string>{"prepare","on","proxy","init","memory","copy","auth","ready","observe","probe","stop","shutdown","off","release"}));
     assert(r.ready&&r.stop_ack&&r.shutdown&&r.off&&!r.retained);
     for(const char *failure:{"prepare","on","proxy","init","memory","copy","auth","ready","stop","off"}) {
         Operations ops;ops.failures.insert(failure);r=run(ops);
         assert(called(ops,"release")&&!r.retained);
         bool pas_reached=called(ops,"init");assert(called(ops,"shutdown")==pas_reached);
         assert(called(ops,"off")==called(ops,"on"));
-        if(std::string(failure)=="ready")assert(!called(ops,"stop")&&called(ops,"observe"));
-        if(std::string(failure)=="auth")assert(!called(ops,"observe")&&!called(ops,"stop"));
+        if(std::string(failure)=="ready")assert(!called(ops,"probe")&&!called(ops,"stop")&&called(ops,"observe"));
+        if(std::string(failure)=="auth")assert(!called(ops,"probe")&&!called(ops,"observe")&&!called(ops,"stop"));
     }
     for(const char *failure:{"","init","memory","copy","auth","ready","stop"}) {
         Operations ops;ops.failures={"shutdown",failure};r=run(ops);
