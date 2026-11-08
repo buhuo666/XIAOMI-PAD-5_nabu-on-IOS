@@ -217,8 +217,10 @@ static bool change_operating_baud(vm_offset_t uart, vm_offset_t gcc)
     uint8_t reply[256];
     unsigned size = receive(uart, reply, sizeof(reply), 0xfc48);
     log_reply("operating baud", reply, size);
+    // QCA unified FC48 uses BAUDRATE_CHANGE_SUCCESS=1 at byte6, unlike
+    // the standard HCI status0 used by Reset and the other commands below.
     bool ok = size == 7 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 4 &&
-        reply[4] == 0x48 && reply[5] == 0xfc && reply[6] == 0;
+        reply[4] == 0x48 && reply[5] == 0xfc && reply[6] == 1;
     nabu_wireless_log("NABU BT: operating baud=%u result=%u tx-clock=%#x rx-clock=%#x rfr=%#x\n",
         NABU_BT_OPERATING_BAUD, ok, rd(uart + 0x48), rd(uart + 0x4c), rd(uart + 0x2ac));
     return ok;

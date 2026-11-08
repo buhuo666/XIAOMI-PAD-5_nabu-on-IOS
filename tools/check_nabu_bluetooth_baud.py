@@ -11,7 +11,7 @@ from check_darwinboot_8796 import host_command, host_path
 ROOT = Path(__file__).resolve().parents[1]
 CASES = (
     'clock-initial', 'clock-operating', 'success', 'tx-failed', 'cancel-failed',
-    'clock-update-failed', 'clock-halted', 'reply-timeout', 'reply-status',
+    'clock-update-failed', 'clock-halted', 'reply-timeout', 'reply-status', 'reply-generic-zero',
     'reply-opcode', 'reply-packet-type', 'reply-event', 'reply-length',
     'reply-short', 'reply-long',
     'termios-operating', 'termios-zero-input', 'termios-stale-output',
@@ -51,7 +51,8 @@ static bool transition, command_sent, cancelled, clock_updated, clock_running, r
 static unsigned sends, receives, cancels, update_waits, branch_waits;
 static uint64_t elapsed_us, block_us, sent_us;
 static unsigned controller_baud = 115200;
-static std::vector<uint8_t> peer_reply = {4, 0x0e, 4, 1, 0x48, 0xfc, 0};
+// Exact run137 reply, validated against QCA unified FC48 semantics.
+static std::vector<uint8_t> peer_reply = {4, 0x0e, 4, 1, 0x48, 0xfc, 1};
 static unsigned register_writes;
 
 static uint32_t rd(vm_offset_t address) { return registers[address]; }
@@ -297,6 +298,7 @@ int main(int argc, char **argv) {
     } else {
         transition = true;
         if (mode == "reply-status") peer_reply[6] = 0x0c;
+        else if (mode == "reply-generic-zero") peer_reply[6] = 0;
         else if (mode == "reply-opcode") peer_reply[4] = 0x00;
         else if (mode == "reply-packet-type") peer_reply[0] = 2;
         else if (mode == "reply-event") peer_reply[1] = 0xff;
