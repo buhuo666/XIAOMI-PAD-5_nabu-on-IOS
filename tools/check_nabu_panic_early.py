@@ -183,7 +183,9 @@ void panic_entry_fixture(const char *format, va_list *args, unsigned long caller
 }
 ''', encoding="utf-8")
     arm_obj = args.output / "panic-early-arm64.o"
-    run(host_command(["clang", "-target", "arm64-apple-ios16.5", "-std=c11", "-Os", "-mkernel",
+    # This fixture declares every type itself. Avoid xcrun's implicit macOS SDK
+    # when compiling the iPhone ABI on the macOS CI host.
+    run(host_command(["clang", "-target", "arm64-apple-ios16.5", "-isysroot", "/", "-std=c11", "-Os", "-mkernel",
                       "-fno-builtin", "-fno-stack-protector", "-nostdinc", "-Wall", "-Wextra", "-Werror",
                       "-c", host_path(arm_source), "-o", host_path(arm_obj)]))
     arm_data = arm_obj.read_bytes()
