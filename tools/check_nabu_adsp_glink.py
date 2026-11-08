@@ -122,9 +122,9 @@ struct Fixture {
     NabuAdspGlink::Link<FakeIO> link;
     uint16_t peer=37;
     uint32_t peer_iid=91;
-    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false):io(size),link(io) {
+    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false,bool pcm=false):io(size),link(io) {
         io.initial_position(start);
-        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0));
+        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0,pcm));
         auto first=io.take(); CHECK(first.size()==1 && first[0]==frame(0,1,1));
     }
     std::vector<Bytes> step(uint32_t time) { link.step(time); return io.take(); }
@@ -483,6 +483,87 @@ static void memory_mapping() {
         f.io.inject(data_frame(f.peer,1,version_reply(token)));auto tx=f.step(120); // ASM API3 is not this validated contract.
         CHECK(tx.size()==2&&!f.link.result().map_sent&&f.link.result().version_response);f.finish(130);}
 }
+static Bytes pcm_response(uint32_t opcode,uint32_t token,const Bytes &payload) {
+    Bytes packet(32+payload.size());put16(packet,0,0x181);put16(packet,2,packet.size());
+    packet[4]=packet[8]=7;packet[5]=4;packet[9]=5;put16(packet,6,0x101);put16(packet,10,0x101);
+    put32(packet,12,token);put32(packet,16,opcode);std::copy(payload.begin(),payload.end(),packet.begin()+32);return packet;
+}
+static Bytes pcm_basic(const Bytes &query,uint32_t status=0) {
+    Bytes payload(8);put32(payload,0,u32(query,32));put32(payload,4,status);
+    return pcm_response(0x110e8,u32(query,28),payload);
+}
+static Bytes pcm_write_done(const Bytes &query,uint32_t status=0) {
+    Bytes payload(16);std::copy(query.begin()+36,query.begin()+48,payload.begin());put32(payload,12,status);
+    return pcm_response(0x10d99,u32(query,28),payload);
+}
+static Bytes pcm_read_done(const Bytes &query,uint32_t length=4096,uint32_t offset=0) {
+    Bytes payload(44);std::copy(query.begin()+36,query.begin()+48,payload.begin()+4);
+    put32(payload,16,length);put32(payload,20,offset);put32(payload,36,1);put32(payload,40,1);
+    return pcm_response(0x10d9a,u32(query,28),payload);
+}
+static Bytes begin_pcm(Fixture &f) {
+    auto token=start_mapping(f);f.io.inject(frame(14,f.peer,f.peer_iid));
+    f.io.inject(data_frame(f.peer,1,asm_map_reply(token)));auto tx=f.step(140);
+    CHECK(tx.size()==2);auto q=tx[1];CHECK(u32(q,32)==0x10d8d&&u32(q,8)==40);
+    CHECK(u16(q,22)==0x101&&u16(q,26)==0x101&&q[20]==7&&q[24]==7);
+    CHECK(u32(q,36)==0&&u32(q,40)==0x10c68&&u32(q,44)==0x10da5&&u32(q,48)==0x10da5);
+    CHECK(u16(q,52)==24&&u16(q,54)==0);return q;
+}
+static std::vector<Bytes> pcm_ack(Fixture &f,const Bytes &q,unsigned time,uint32_t status=0) {
+    f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,pcm_basic(q,status)));
+    auto tx=f.step(time);CHECK(!tx.empty()&&tx[0]==frame(14,2,1));tx.erase(tx.begin());return tx;
+}
+static std::vector<Bytes> pcm_start_transfer(Fixture &f) {
+    auto q=begin_pcm(f);auto tx=pcm_ack(f,q,150);CHECK(tx.size()==1);q=tx[0];
+    CHECK(u32(q,32)==0x10d98&&u32(q,36)==20&&u16(q,40)==2&&u16(q,42)==24&&u32(q,44)==48000);
+    CHECK(u16(q,48)==1&&u16(q,50)==0&&q[52]==1&&q[53]==2);
+    tx=pcm_ack(f,q,160);CHECK(tx.size()==1);q=tx[0];
+    CHECK(u32(q,32)==0x10c10&&u32(q,36)==0x10da3&&u32(q,40)==28&&u32(q,44)==0&&u32(q,48)==20);
+    CHECK(u16(q,52)==2&&u16(q,54)==24&&u32(q,56)==48000&&u16(q,60)==1&&q[64]==1&&q[65]==2);
+    tx=pcm_ack(f,q,170);CHECK(tx.size()==1);q=tx[0];CHECK(u32(q,32)==0x10daa&&u32(q,36)==0&&u32(q,40)==0&&u32(q,44)==0);
+    f.io.inject(intent_frame(f.peer,92));f.io.inject(intent_frame(f.peer,93));tx=pcm_ack(f,q,180);
+    CHECK(tx.size()==3&&u32(tx[0],32)==0x10dac&&u32(tx[1],32)==0x10dab&&u32(tx[2],32)==0x10bdb);
+    CHECK(u32(tx[0],36)==0x10002000&&u32(tx[0],40)==1&&u32(tx[0],44)==0x1234&&u32(tx[0],48)==4096);
+    CHECK(u32(tx[1],36)==0x10000000&&u32(tx[1],40)==1&&u32(tx[1],44)==0x1234&&u32(tx[1],48)==4096&&u32(tx[1],64)==0);
+    CHECK(f.link.pcm_result().running&&f.link.pcm_result().eos_sent&&!f.link.result().unmap_sent);return tx;
+}
+static void pcm_stream_lifecycle() {
+    for(bool reverse:{false,true}) {
+        Fixture f(4096,4088,true,true,true);auto queries=pcm_start_transfer(f);
+        auto read=pcm_read_done(queries[0]),write=pcm_write_done(queries[1]);
+        auto wrong=read;put32(wrong,12,u32(wrong,12)+999);f.io.inject(data_frame(f.peer,1,wrong));f.step(181);
+        wrong=read;put16(wrong,6,0);f.io.inject(data_frame(f.peer,1,wrong));f.step(182);
+        wrong=read;put32(wrong,44,0x8888);f.io.inject(data_frame(f.peer,1,wrong));f.step(183);
+        CHECK(!f.link.pcm_result().read_done&&f.link.pcm_result().ignored==3);
+        for(const auto &q:queries)f.io.inject(frame(14,f.peer,u32(q,4)));
+        f.io.inject(data_frame(f.peer,1,reverse?read:write));auto tx=f.step(190);CHECK(tx.size()==1&&!f.link.pcm_result().close_sent);
+        f.io.inject(data_frame(f.peer,1,reverse?write:read));tx=f.step(191);CHECK(tx.size()==2&&u32(tx[1],32)==0x10bcd);
+        auto close=tx[1];CHECK(f.link.pcm_result().read_done&&f.link.pcm_result().write_done&&!f.link.result().unmap_sent);
+        tx=pcm_ack(f,close,200);CHECK(tx.size()==1&&u32(tx[0],32)==0x10d94&&u16(tx[0],22)==0&&u16(tx[0],26)==0);
+        CHECK(f.link.pcm_result().closed&&!f.link.pcm_result().failed&&f.link.pcm_result().read_bytes==4096);
+        f.io.inject(data_frame(f.peer,1,asm_basic(f.link.result().unmap_token,0,0x10d94)));f.step(210);f.finish(220);
+    }
+    {Fixture f(4096,0,true,true,true);auto q=begin_pcm(f);auto tx=pcm_ack(f,q,150,3);
+        CHECK(tx.size()==1&&u32(tx[0],32)==0x10bcd&&f.link.pcm_result().failed&&!f.link.pcm_result().opened);
+        tx=pcm_ack(f,tx[0],160,3);CHECK(tx.size()==1&&tx[0]==frame(3,2,0)&&!f.link.result().unmap_sent);f.finish(170);}
+    for(bool close_reply:{false,true}) {
+        Fixture f(4096,0,true,true,true);auto qs=pcm_start_transfer(f);
+        for(const auto &q:qs)f.io.inject(frame(14,f.peer,u32(q,4)));
+        auto tx=f.step(1680);CHECK(tx.size()==1&&u32(tx[0],32)==0x10bcd&&f.link.pcm_result().timeout);
+        if(close_reply) {
+            auto next=pcm_ack(f,tx[0],1690);CHECK(next.size()==1&&u32(next[0],32)==0x10d94);
+            f.io.inject(data_frame(f.peer,1,asm_basic(f.link.result().unmap_token,0,0x10d94)));f.step(1700);f.finish(1710);
+        } else {
+            tx=f.step(2680);CHECK(tx.size()==1&&tx[0]==frame(3,2,0)&&!f.link.result().unmap_sent);f.finish(2690);
+        }
+    }
+    {Fixture f(4096,0,true,true,true);auto qs=pcm_start_transfer(f);
+        for(const auto &q:qs)f.io.inject(frame(14,f.peer,u32(q,4)));
+        f.io.inject(data_frame(f.peer,1,pcm_read_done(qs[0],4096,4)));auto tx=f.step(190);
+        CHECK(tx.size()==2&&f.link.pcm_result().failed&&!f.link.pcm_result().read_done&&f.link.pcm_result().status==0xfffffffe);
+        auto next=pcm_ack(f,tx[1],200);CHECK(u32(next[0],32)==0x10d94);
+        f.io.inject(data_frame(f.peer,1,asm_basic(f.link.result().unmap_token,0,0x10d94)));f.step(210);f.finish(220);}
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -538,7 +619,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    many_peer_intents(); framework_versions(); memory_mapping(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); framework_versions(); memory_mapping(); pcm_stream_lifecycle(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -571,6 +652,8 @@ def main():
                            "version unsupported/basic/timeout preserves proven readiness and closes",
                            "exact ASM2 map/unmap tagged IOVA bytes and handle, basic success without handle, endpoint/token isolation",
                            "map refusal, map/unmap timeout, unmap error and unsupported ASM API stay distinct",
+                           "non-tunneled PCM exact open/format/run/read/write/EOS/close wire sequence, both completion orders",
+                           "PCM endpoint/token/address/handle isolation, output bounds, timeout cleanup and no unmap after unconfirmed close",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

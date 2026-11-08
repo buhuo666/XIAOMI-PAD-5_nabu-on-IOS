@@ -187,6 +187,38 @@ struct Trial {
         if (!healthy) log("NABU ADSP DMA: observation failed status=%u\n", dma.status);
         return healthy;
     }
+    void prepare_pcm() {
+        uint8_t *memory=(uint8_t *)dma.blocks[0].cpu;
+        for(unsigned frame=0;frame<NabuAsmPcm::InputBytes/8;++frame)
+            for(unsigned ch=0;ch<2;++ch)
+                NabuAsmPcm::put32(memory+frame*8+ch*4,NabuAsmPcm::sample(frame,ch));
+        memset(memory+NabuAsmPcm::OutputOffset,0xa5,NabuAsmPcm::OutputBytes);
+        dma.platform.publish(dma.platform.cookie,memory,NabuAudioDma::block_bytes);
+    }
+    void observe_pcm() {
+        const auto &p=glink.pcm_result();
+        log("NABU ADSP PCM: open-sent=%u opened=%u input-format=%u output-format=%u running=%u read-sent=%u write-sent=%u eos-sent=%u read-done=%u write-done=%u close-sent=%u closed=%u failed=%u opcode=%#x status=%#x timeout=%u commands=%u ignored=%u\n",
+            p.open_sent,p.opened,p.input_format,p.output_format,p.running,p.read_sent,p.write_sent,p.eos_sent,
+            p.read_done,p.write_done,p.close_sent,p.closed,p.failed,p.failed_opcode,p.status,p.timeout,p.commands,p.ignored);
+        log("NABU ADSP PCM: read-status=%#x write-status=%#x bytes=%u offset=%u flags=%#x frames=%u read-token=%#x write-token=%#x\n",
+            p.read_status,p.write_status,p.read_bytes,p.read_offset,p.read_flags,p.read_frames,p.read_token,p.write_token);
+        if(!dma_active||!p.read_done||p.read_status)return;
+        uint8_t *output=(uint8_t *)dma.blocks[0].cpu+NabuAsmPcm::OutputOffset;
+        for(uintptr_t at=(uintptr_t)output;at<(uintptr_t)output+NabuAsmPcm::OutputBytes;at+=64)
+            __asm__ volatile("dc ivac, %0" :: "r"(at):"memory");
+        __asm__ volatile("dsb sy" ::: "memory");
+        unsigned matches=0,mismatches=0,changed=0;
+        for(unsigned i=0;i<NabuAsmPcm::OutputBytes;++i)changed+=output[i]!=0xa5;
+        const uint8_t *samples=output+p.read_offset;
+        for(unsigned i=0;i<p.read_bytes/4;++i) {
+            uint32_t expected=NabuAsmPcm::sample(i/2,i%2);
+            if(NabuAsmPcm::u32(samples+i*4)==expected)++matches;else ++mismatches;
+        }
+        log("NABU ADSP PCM: output-changed-bytes=%u matched-words=%u mismatched-words=%u exact=%u; synthetic memory roundtrip, no speaker/microphone route\n",
+            changed,matches,mismatches,p.read_bytes==NabuAsmPcm::InputBytes&&!mismatches&&!(p.read_flags&0x40000000));
+        for(unsigned i=0;i<p.read_bytes/4&&i<8;++i)
+            log("NABU ADSP PCM: sample[%u]=%#x expected=%#x\n",i,NabuAsmPcm::u32(samples+i*4),NabuAsmPcm::sample(i/2,i%2));
+    }
 
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
     uint32_t read32(uint32_t offset) {
@@ -396,18 +428,19 @@ struct Trial {
             log("NABU ADSP: GLINK probe queues unavailable\n"); return;
         }
         bool mapping = prepare_dma();
+        if(mapping)prepare_pcm();
         // Original audio-ion masks SID0x1b21 by0xf and embeds1 in address bits63:32.
         uint64_t tagged_iova = (uint64_t(NabuAudioDma::first_sid & 15) << 32) | NabuAudioDma::iova_base;
-        log("NABU ADSP: host2 GLINK/APR readiness/version/ASM memory probe begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
+        log("NABU ADSP: host2 GLINK/APR and non-tunneled PCM trial begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
         uint64_t started; clock_get_uptime(&started);
         uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
         glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true,
-            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0);
+            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, mapping);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
             uint32_t elapsed = uint32_t(nanos / 1000000);
-            if (elapsed >= 15000) { glink.abort(); break; }
+            if (elapsed >= 20000) { glink.abort(); break; }
             if (elapsed - last_peer_check >= 10) {
                 peer = state(); last_peer_check = elapsed;
                 if (!peer.valid || (peer.state & 3) != 2) { glink.abort(); break; }
@@ -439,9 +472,10 @@ struct Trial {
             r.build_version[0], r.build_version[1], r.build_version[2], r.build_version[3], r.service_count);
         for (unsigned i = 0; i < r.service_count; ++i)
             log("NABU ADSP AVCS: service=%#x api=%u branch=%u\n", r.services[i].id, r.services[i].api, r.services[i].branch);
-        log("NABU ADSP ASM: map-sent=%u response=%u token=%#x handle=%#x basic=%u status=%#x timeout=%u unmap-sent=%u response=%u token=%#x status=%#x timeout=%u; PCM inactive\n",
+        log("NABU ADSP ASM: map-sent=%u response=%u token=%#x handle=%#x basic=%u status=%#x timeout=%u unmap-sent=%u response=%u token=%#x status=%#x timeout=%u\n",
             r.map_sent, r.map_response, r.map_token, r.map_handle, r.map_basic_response, r.map_status,
             r.map_timeout, r.unmap_sent, r.unmap_response, r.unmap_token, r.unmap_status, r.unmap_timeout);
+        observe_pcm();
         if (dma_active) (void)dma_healthy();
         publish();
         // The fixed protocol buffers remain with Trial through PAS shutdown,

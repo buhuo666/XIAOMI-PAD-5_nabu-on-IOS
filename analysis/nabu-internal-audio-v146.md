@@ -30,3 +30,16 @@ APR保持GET_STATE和真实版本查询，只有ASM API2与音频DMA接入成功
 ASan/UBSan通过；GLINK共37,876条断言含内存访问检查。ADSP生命周期/页对齐解除映射
 回归通过。三项改动ARM64对象编译通过，最大函数栈ADSP576、控制器368、DMA144字节。
 证据目录为log/host/audio-v146/。完整CI和实机结果待验证；map成功也不代表PCM DMA或声音通过。
+
+## 实机结果
+
+源码91d5aee、CI42476443577全部通过。用户确认桌面/USB正常。音频接入bank53/asid54/
+slot8/SID0x1b21，IOVA0x10000000，16KiB内存PA0x279110000，3页页表；WLAN仍用
+bank54/asid55/slots6,7并正常扫描。ASM token3获得handle0xb0bfa118，token4解除
+映射返回status0；GLINK双向关闭正常。音频SMMU释放phase7/status0/retained0，
+ACTLR还原3，DSP stop-ack/shutdown/AOP off与其他映射释放成功。蓝牙初始化正常。
+
+回收3,050,571字节连续前缀及64MiB原始槽并备份清空，APFS115→116/fullfsync=ok。
+无提交结束记录，不声明完整关机覆盖。证据：log/host/audio-v146/adsp-report.txt、
+result-summary.json及log/device/nabu-boot-20261108-146/runtime-log/runtime.log，
+23557行SMMU、23925行ASM、24209行释放。实际PCM数据读写尚未测试。
