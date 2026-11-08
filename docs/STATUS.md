@@ -2,27 +2,18 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第128轮完整ath10k首次真实扫描成功：
-41信道、3251ms、31个热点（23个2.4GHz、8个5GHz），HTT/WMI及44MiB DMA实机通过。
-同轮蓝牙在固件下载后的Reset遇到QCA调试ACL帧，旧同步接收器截断后续数据，
-初始化未通过；第129轮正在修正该H4解析缺口。原生Wi-Fi界面/关联/IP仍待接入。
-日志已回收，APFS98，设备在Android且蓝牙关闭。详见
-[第128轮结果](../analysis/nabu-ath10k-scan-v128.md)。
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第129轮完整ath10k扫描复测成功：
+41信道、3251ms、33个热点（24个2.4GHz、9个5GHz），HTT/WMI及44MiB DMA通过。
+蓝牙完整排空493字节QCA诊断ACL后收到真实Reset成功回执，原生UART发布，生命周期
+boot/init与原版bluetoothd栈初始化通过。原生Wi-Fi界面、关联、IP仍待接入。
+2,918,176字节日志及完整64MiB槽已备份清空，APFS99，设备在Android且蓝牙关闭。
+详见[第129轮结果](../analysis/nabu-wireless-recovery-v129.md)。
 
-第110轮蓝牙原配对跨重启直连通过；
-第127轮日志已回收，APFS计数97，设备已回Android且蓝牙关闭。完整CI42407480663
-通过；QDSS时钟请求被实际接受后，首次收到FW_READY并完成CFG/MODE、HTC READY
-与WMI服务连接，捕获范围未再出现原0xb019b9bc异常。完整ath10k、HTT/WMI INIT、
-原生wifid及网络接口尚待接入，未取得扫描或联网。成功后固件常驻，本轮未执行
-PAS停止/QDSS撤票；第125/126轮SMMU停用/TLB同步与DMA释放成功证据保持。
-蓝牙原生HCI初始化基线保留，音频播放后置。根据本机ICNSS及
-WCN3990蓝牙节点建立驱动；现有Redwood/WCN6750代码不能直接用于Nabu。
-无线实现及实机证据见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
-
-v128候选已加入完整ath10k构建、原生DMA/CE IRQ桥和真实QRTR交接。47个后端
-对象已本地编译；44MiB DMA、QRTR并发关闭、GLINK交接和runtime退出测试通过。
-macOS合并链接及完整CI待执行，设备尚未部署。首轮以被动扫描验证完整协议栈，
-不启用旧基核尚未修正状态语义的原生station/network接口。
+第127轮补齐QDSS时钟后首次取得FW_READY、HTC READY及WMI服务连接；第128轮
+首次真实扫描31个热点，第129轮同时恢复蓝牙初始化。第110轮耳机原配对跨重启
+直连是此前基线，本轮未重测；音频与Wi-Fi联网期间的共同使用仍待验证。
+第125/126轮SMMU停用/TLB同步与DMA释放证据保留，第128/129轮仅停止扫描接口，
+没有执行PAS停止或QDSS撤票。无线实现见[NABU-WIRELESS.md](NABU-WIRELESS.md)。
 
 第76轮无线调查已通过桌面和USB检查，2,260,552字节日志及完整槽已回收清空，
 APFS计数46→47。modem通信项未建立，蓝牙引脚未复用到UART、串行时钟停止。
