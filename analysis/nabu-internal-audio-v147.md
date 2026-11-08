@@ -23,3 +23,18 @@ exact要求4096字节全部相符且没有元数据标记，不能仅凭回执�
 越界read、OPEN拒绝、传输超时、关闭未确认不unmap。ASan/UBSan通过46,992条断言
 （含内存访问检查），ARM64对象编译通过，最大函数栈576字节。证据log/host/audio-v147/。
 完整CI与实机往返结果待验证；内置扬声器和麦克风尚未验收。
+
+## 实机结果
+
+源码7a4159a、CI42477981351全通过，桌面/USB正常。流OPEN、输入输出格式、RUN、
+READ/WRITE/EOS、双方完成及CLOSE全部成功。返回4096字节、offset0/flags0，
+1024个采样字全部匹配、0不匹配，原预填输出有4086字节变化，exact=1。
+ASM解除映射、音频SMMU释放与DSP停止/资源释放继续成功，无线扫描及蓝牙初始化正常。
+
+3,383,655字节连续前缀和64MiB槽已备份清空，APFS116→117/fullfsync=ok；无提交
+结束记录，不声明完整关机覆盖。证据log/host/audio-v147/adsp-report.txt、
+result-summary.json及log/device/nabu-boot-20261108-147/runtime-log/runtime.log:24281。
+此结果证明DSP内部合成PCM数据路径，不是扬声器或麦克风实际使用通过。
+
+部署前Android Wi-Fi开启导致addr_assign_type3，地址仍与原机匹配；关闭Wi-Fi并
+重启Android后恢复type0，沿用已准备日志槽完成部署，未移除既有身份检查。

@@ -43,6 +43,11 @@ map/handle/unmap回执。内存保留至DSP停止确认后再释放，本地主�
 3,050,571字节连续前缀及64MiB槽备份清空，APFS116。第147轮通过DSP内部无物理端点
 的PCM往返验证数据路径；尚待真实样本结果，内置出声/录音仍未通过。
 
+第147轮DSP PCM往返实测4096字节、1024采样字全部匹配，流/内存/系统清理成功，
+日志3,383,655字节前缀及64MiB槽备份清空、APFS117。第148轮接入四路CS35L41控制
+总线，先确认身份/OTP/关断状态，保护固件和实际扬声器输出仍待实现；麦克风仍待
+SLIMbus/QMI与Tavil路径。详见[第148轮](../analysis/nabu-internal-audio-v148.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

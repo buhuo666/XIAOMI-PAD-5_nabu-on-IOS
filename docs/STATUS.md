@@ -2,6 +2,12 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
+第147轮DSP内部PCM往返通过：48k双声道S24-in32返回4096字节，1024个采样字全部
+匹配，流关闭/解除映射/SMMU和DSP释放成功。无线/蓝牙基线正常，3,383,655字节日志
+前缀及64MiB槽备份清空，APFS117。第148轮接四路CS35L41控制总线，读取身份/OTP/
+关断状态，主机协议及ARM64编译通过，云端/实机待验。内部扬声器和麦克风仍未验收。
+见[第147轮结果](../analysis/nabu-internal-audio-v147.md)、[第148轮候选](../analysis/nabu-internal-audio-v148.md)。
+
 第145轮真实音频服务版本查询通过：框架2.9.0.0，8项服务，AFE API7、ASM API2、ADM API4。APR就绪、GLINK双向关闭、DSP停止和释放全部成功，Wi-Fi扫描及蓝牙初始化正常。3,490,455字节连续前缀及64MiB槽已备份清空，APFS115，设备Android、蓝牙关闭、USB连接。下一步实现音频共享内存/SMMU和ASM map/unmap；内部PCM传输、扬声器出声与麦克风录音仍未通过。见[第144轮结果](../analysis/nabu-internal-audio-v144.md)、[第145轮结果](../analysis/nabu-internal-audio-v145.md)。
 
 第146轮已实现独立音频SMMU映射、WLAN/音频共享全局故障IRQ及ASM2 map/unmap。

@@ -48,6 +48,7 @@ jobs:
           python3 tools/check_nabu_modem_power.py --output log/ci/nabu-modem-power
           python3 tools/check_nabu_adsp.py --output log/ci/nabu-adsp
           python3 tools/check_nabu_adsp_glink.py --output log/ci/nabu-adsp-glink
+          python3 tools/check_nabu_amp_i2c.py --output log/ci/nabu-amp-i2c
           python3 tools/check_nabu_wireless_start.py --output log/ci/nabu-wireless-start
           python3 tools/check_nabu_wlan_config.py --output log/ci/nabu-wlan-config
           python3 tools/check_nabu_wlan_dma.py --output log/ci/nabu-wlan-dma
