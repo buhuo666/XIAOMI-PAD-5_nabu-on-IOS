@@ -18,6 +18,8 @@
 
 第141轮已验证修复：正常桌面/USB，原机ADSP认证、13段加载、SMP2P READY/stop-ack、PAS shutdown和AOP off全部成功，映射完整释放，未再HALTED。host2 GLINK队列出现但尚未协商，APR/PCM与实际内置出声/录音仍未实现。Wi-Fi真实扫描与蓝牙初始化正常。3,520,657字节连续前缀及64MiB槽已备份清空，APFS111，设备Android、蓝牙关闭；后续先接通GLINK/APR。
 
+第142轮GLINK协商和apr_audio_svc双向打开成功（本地CID2/远端CID4），随后INTENT解析InvalidFrame，APR尚未发送。确定存在peer IID0误拒绝的协议限制，第143轮据vendor修正并记录实际pair，不能将未记录的0值当已测结果。DSP停止/清理、Wi-Fi扫描及蓝牙初始化正常，3,489,383字节日志前缀和64MiB槽已备份清空，APFS112。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

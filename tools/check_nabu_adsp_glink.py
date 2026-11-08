@@ -256,6 +256,51 @@ static void states_basic_and_peer_intents() {
         f.step(170); CHECK(f.link.result().apr_ready); f.finish(180);
     }
 }
+static void zero_peer_intent_lifecycle() {
+    for(bool reuse:{true,false}) {
+        Fixture f; f.establish(); f.peer_iid=0;
+        CHECK(f.link.result().peer_intents==0);
+        // The peer's ID is not our local pool index: peer 0 is a valid
+        // advertised receive buffer while our receive IDs remain 1..20.
+        f.io.inject(intent_frame(f.peer,0,512));
+        CHECK(f.step(99).empty()); CHECK(!f.link.result().broken && !f.link.result().apr_sent);
+        CHECK(f.link.result().peer_intents==1 && f.link.result().last_peer_iid==0 &&
+              f.link.result().last_peer_size==512 && f.link.result().intent_invalid_reason==NabuAdspGlink::IntentValid);
+        auto tx=f.step(100); CHECK(tx.size()==1);
+        CHECK(u16(tx[0],0)==9 && u16(tx[0],2)==2 && u32(tx[0],4)==0);
+        uint32_t first=f.link.result().token; CHECK(first!=0 && f.link.result().queries==1);
+        f.io.inject(data_frame(f.peer,1,reply(first,0))); tx=f.step(110);
+        CHECK(tx.size()==1 && tx[0]==frame(14,2,1));
+        CHECK(f.link.result().apr_response && !f.link.result().apr_ready);
+        if(reuse) {
+            // A completion on the local CID must not release the peer's IID 0.
+            f.io.inject(frame(14,2,0)); tx=f.step(160);
+            CHECK(tx.size()==1 && tx[0]==frame(7,2,20) && f.link.result().queries==1);
+            f.io.inject(frame(14,f.peer,0)); tx=f.step(161);
+        } else {
+            f.io.inject(frame(6,f.peer,0)); tx=f.step(160);
+            CHECK(tx.size()==1 && tx[0]==frame(7,2,20) && f.link.result().queries==1);
+            // RX_DONE retired it; a late reuse event cannot recreate an intent.
+            f.io.inject(frame(14,f.peer,0)); CHECK(f.step(161).empty());
+            CHECK(f.link.result().queries==1);
+            f.io.inject(intent_frame(f.peer,0,512)); tx=f.step(162);
+        }
+        CHECK(tx.size()==1 && u16(tx[0],0)==9 && u16(tx[0],2)==2 && u32(tx[0],4)==0);
+        CHECK(f.link.result().peer_intents==(reuse?1u:2u));
+        uint32_t second=f.link.result().token; CHECK(second!=first && f.link.result().queries==2);
+        f.io.inject(data_frame(f.peer,20,reply(second))); tx=f.step(170);
+        CHECK(tx.size()==2 && tx[0]==frame(14,2,20) && tx[1]==frame(3,2,0));
+        CHECK(f.link.result().apr_ready && !f.link.result().broken); f.finish(180);
+    }
+    Fixture local_zero; local_zero.establish(); local_zero.peer_iid=0;
+    auto token=local_zero.ask(); local_zero.io.inject(data_frame(local_zero.peer,0,reply(token)));
+    local_zero.step(110); CHECK(local_zero.link.done() && local_zero.link.result().error==NabuAdspGlink::InvalidFrame);
+    CHECK(!local_zero.link.result().apr_ready);
+    Fixture empty; empty.establish(); empty.io.inject(intent_frame(empty.peer,0,0)); empty.step(99);
+    CHECK(empty.link.result().error==NabuAdspGlink::InvalidFrame && empty.link.result().peer_intents==1);
+    CHECK(empty.link.result().last_peer_iid==0 && empty.link.result().last_peer_size==0 &&
+          empty.link.result().intent_invalid_reason==NabuAdspGlink::IntentZeroSize);
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -310,7 +355,8 @@ static void tx_capacity_and_work_budget() {
 }
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
-    fragments_and_partial_frames(); states_basic_and_peer_intents(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
+    timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -335,6 +381,7 @@ def main():
               "coverage": ["bidirectional CID/IID", "VERSION feature negotiation", "Nabu DT 20x512 intents",
                            "exact APR request", "endpoint/token/length isolation", "raw GET_STATE including non-one",
                            "basic error separation", "wrap and fragments", "RX_DONE and reuse", "timeouts and close",
+                           "peer IID 0 transmit/reuse/retirement and local IID 0 rejection",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

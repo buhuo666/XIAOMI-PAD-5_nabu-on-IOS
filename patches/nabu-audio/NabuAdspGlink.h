@@ -7,6 +7,7 @@
 namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
     UnknownCommand, TxFull, VersionRejected, IntentUnavailable, FragmentMismatch, Aborted };
+enum IntentInvalidReason : uint32_t { IntentValid, IntentCapacity, IntentZeroSize };
 struct Result {
     bool negotiated, opened, remote_open, local_open_ack, apr_sent, apr_response, apr_ready;
     bool close_sent, close_ack, remote_closed, broken, timeout;
@@ -14,6 +15,7 @@ struct Result {
     uint32_t queries, apr_packets, apr_ignored, basic_responses, basic_status;
     uint32_t last_command, last_cid, last_value;
     uint32_t apr_field, apr_type, matched_opcode, matched_token;
+    uint32_t peer_intents, last_peer_iid, last_peer_size, intent_invalid_reason;
 };
 
 template<class IO> class Link {
@@ -148,9 +150,16 @@ template<class IO> class Link {
                 if (cid == r.rcid && r.remote_open) for (unsigned i = 0; i < value; ++i) {
                     uint8_t pair[8]; peek(pair, 8 + i * 8, 8);
                     uint32_t size = get32(pair), id = get32(pair + 4); int slot = -1;
+                    ++r.peer_intents; r.last_peer_iid = id; r.last_peer_size = size;
+                    r.intent_invalid_reason = IntentValid;
                     for (unsigned j = 0; j < 64; ++j) if (remote[j].present && remote[j].id == id) { slot = int(j); break; }
                     if (slot < 0) for (unsigned j = 0; j < 64; ++j) if (!remote[j].present) { slot = int(j); break; }
-                    if (slot < 0 || !id || !size) { fail(InvalidFrame); return; }
+                    // Remote IID zero is valid: vendor stores [id,id+1) in its
+                    // riids tree. Our local IDs starting at one are independent.
+                    if (slot < 0 || !size) {
+                        r.intent_invalid_reason = slot < 0 ? IntentCapacity : IntentZeroSize;
+                        fail(InvalidFrame); return;
+                    }
                     remote[slot] = {id, size, true, false}; requested_intent = false;
                 }
                 advance(bytes); break;
