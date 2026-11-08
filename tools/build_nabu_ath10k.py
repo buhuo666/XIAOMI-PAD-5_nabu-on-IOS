@@ -80,7 +80,8 @@ def acquire(args, cfg):
         temporary = destination.with_suffix(destination.suffix + '.partial')
         digest = hashlib.sha256()
         with open_build_input(opener.open, urllib.request.Request(source['url'], headers={
-                'User-Agent': 'nabu-ath10k-build'}), timeout=180) as stream, temporary.open('wb') as output:
+                'User-Agent': 'nabu-ath10k-build'}), timeout=180,
+                github_asset_api=source.get('github_asset_api')) as stream, temporary.open('wb') as output:
             while data := stream.read(1024 * 1024):
                 output.write(data)
                 digest.update(data)

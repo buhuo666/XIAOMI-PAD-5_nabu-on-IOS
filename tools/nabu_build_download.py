@@ -1,9 +1,10 @@
 """Retry the HTTP 504 responses observed while acquiring CI build inputs."""
 import time
 import urllib.error
+import urllib.request
 
 
-def open_build_input(open_url, request, timeout):
+def open_build_input(open_url, request, timeout, github_asset_api=None):
     for attempt in range(3):
         try:
             return open_url(request, timeout=timeout)
@@ -12,4 +13,7 @@ def open_build_input(open_url, request, timeout):
                 raise
             error.close()
             print(f'Build input HTTP 504; retry {attempt + 1}/2', flush=True)
+            if github_asset_api:
+                request = urllib.request.Request(github_asset_api, headers={
+                    'Accept': 'application/octet-stream', 'User-Agent': 'nabu-build-input'})
             time.sleep(2 * (attempt + 1))
