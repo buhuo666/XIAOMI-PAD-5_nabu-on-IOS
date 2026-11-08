@@ -122,9 +122,9 @@ struct Fixture {
     NabuAdspGlink::Link<FakeIO> link;
     uint16_t peer=37;
     uint32_t peer_iid=91;
-    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false,bool pcm=false):io(size),link(io) {
+    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false,bool pcm=false,bool afe=false):io(size),link(io) {
         io.initial_position(start);
-        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0,pcm));
+        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0,pcm,afe));
         auto first=io.take(); CHECK(first.size()==1 && first[0]==frame(0,1,1));
     }
     std::vector<Bytes> step(uint32_t time) { link.step(time); return io.take(); }
@@ -441,9 +441,10 @@ static Bytes asm_map_reply(uint32_t token,uint32_t handle=0x1234) {
 static Bytes asm_basic(uint32_t token,uint32_t status,uint32_t opcode) {
     auto packet=basic_reply(token,status,opcode);packet[4]=packet[8]=7;return packet;
 }
-static uint32_t start_mapping(Fixture &f) {
+static uint32_t start_mapping(Fixture &f,bool afe=false) {
     auto version_token=start_version_query(f);auto packet=version_reply(version_token);
     put32(packet,68,2); // Actual Nabu ASM API2.
+    if(afe)put32(packet,56,7); // Actual Nabu AFE API7.
     f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,packet));
     auto tx=f.step(120);CHECK(tx.size()==2&&tx[0]==frame(14,2,1));const auto &map=tx[1];
     CHECK(u16(map,0)==9&&u32(map,4)==f.peer_iid&&u32(map,8)==40&&map.size()==56);
@@ -564,6 +565,45 @@ static void pcm_stream_lifecycle() {
         auto next=pcm_ack(f,tx[1],200);CHECK(u32(next[0],32)==0x10d94);
         f.io.inject(data_frame(f.peer,1,asm_basic(f.link.result().unmap_token,0,0x10d94)));f.step(210);f.finish(220);}
 }
+static Bytes afe_basic(const Bytes &query) {
+    auto b=basic_reply(u32(query,28),0,u32(query,32));
+    b[4]=b[8]=4;b.insert(b.begin()+20,12,0);put16(b,0,0x181);put16(b,2,b.size());return b;
+}
+static void afe_after_unmap() {
+    Fixture f(4096,4088,true,true,false,true);auto token=start_mapping(f,true);
+    f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,asm_map_reply(token)));
+    auto tx=f.step(140);CHECK(tx.size()==2&&u32(tx[1],32)==0x10d94);
+    f.io.inject(frame(14,f.peer,f.peer_iid));
+    f.io.inject(data_frame(f.peer,1,asm_basic(u32(tx[1],28),0,0x10d94)));
+    tx=f.step(150);CHECK(tx.size()==2&&f.link.result().unmap_response&&!f.link.result().close_sent);
+    Bytes q=tx[1];unsigned now=151;
+    const uint32_t startup[]={0x100fa,0x100fc,0x100fc,0x100fc,0x100fa,0x100fa,0x100e5};
+    for(unsigned i=0;i<7;++i) {
+        CHECK(q[20]==4&&q[21]==5&&q[24]==4&&q[25]==4&&u16(q,22)==0&&u16(q,26)==0);
+        CHECK(u16(q,16)==0x250&&u32(q,8)<=96&&u32(q,32)==startup[i]&&u32(q,28)>=0x200);
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,afe_basic(q)));
+        tx=f.step(now++);CHECK(tx[0]==frame(14,2,1));
+        if(i<6) {CHECK(tx.size()==2);q=tx[1];}
+        else CHECK(tx.size()==1&&f.link.afe_ready()&&!f.link.result().close_sent);
+    }
+    CHECK(f.step(90160).empty()&&f.link.afe_ready()&&!f.link.done());
+    f.link.finish_afe();tx=f.step(90161);CHECK(tx.size()==1);q=tx[0];now=90162;
+    const uint32_t teardown[]={0x100e6,0x100fc,0x100fc};
+    for(unsigned i=0;i<3;++i) {
+        CHECK(q[20]==4&&u32(q,32)==teardown[i]);
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,afe_basic(q)));
+        tx=f.step(now++);CHECK(tx[0]==frame(14,2,1));
+        if(i<2) {CHECK(tx.size()==2);q=tx[1];}
+        else CHECK(tx.size()==2&&tx[1]==frame(3,2,0)&&f.link.result().close_sent);
+    }
+    CHECK(f.link.afe_result().clock_off&&f.link.afe_result().group_off&&f.link.afe_result().stopped);
+    CHECK(!f.link.afe_result().failed&&!f.link.afe_result().timeout);f.finish(now);
+    Fixture unsupported(4096,0,true,true,false,true);auto t=start_mapping(unsupported);
+    unsupported.io.inject(frame(14,unsupported.peer,unsupported.peer_iid));
+    unsupported.io.inject(data_frame(unsupported.peer,1,asm_map_reply(t)));tx=unsupported.step(140);
+    unsupported.io.inject(data_frame(unsupported.peer,1,asm_basic(u32(tx[1],28),0,0x10d94)));tx=unsupported.step(150);
+    CHECK(tx.size()==2&&tx[1]==frame(3,2,0)&&!unsupported.link.afe_ready());unsupported.finish(160);
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -619,7 +659,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    many_peer_intents(); framework_versions(); memory_mapping(); pcm_stream_lifecycle(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); framework_versions(); memory_mapping(); pcm_stream_lifecycle(); afe_after_unmap(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -654,6 +694,8 @@ def main():
                            "map refusal, map/unmap timeout, unmap error and unsupported ASM API stay distinct",
                            "non-tunneled PCM exact open/format/run/read/write/EOS/close wire sequence, both completion orders",
                            "PCM endpoint/token/address/handle isolation, output bounds, timeout cleanup and no unmap after unconfirmed close",
+                           "AFE7 after successful ASM unmap, service4 zero-port framing, seven startup commands and three cleanup commands",
+                           "90-second AFE hold, finish deadline refresh, 32-byte APR responses and unsupported AFE skip",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

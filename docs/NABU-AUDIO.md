@@ -54,6 +54,12 @@ I2C无错误，复位和引脚状态恢复。内部PCM4096字节再次完全匹�
 固件/四位置系数与本机校准预加载，GLOBAL/AMP/CORE保持关闭，实际出声/录音仍待验收。
 见[第148轮结果](../analysis/nabu-internal-audio-v148.md)。
 
+第149轮四路保护程序预加载已实测通过：各写程序30252字节、位置系数4440字节，
+芯片读回固件/算法身份、本机CAL_R/STATUS/CHECKSUM和CH_BAL全部吻合，GLOBAL/AMP/
+CORE均关闭、reset恢复。内部PCM与无线/蓝牙基线正常；3,622,008字节日志前缀及64MiB
+槽备份清空，APFS119。下一轮AFE时钟及保护核心心跳/邮箱验证，实际出声/录音仍待验收。
+见[第149轮结果](../analysis/nabu-internal-audio-v149.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。
