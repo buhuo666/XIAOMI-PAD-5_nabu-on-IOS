@@ -6,6 +6,7 @@
 #include "NabuAsmPcm.h"
 #include "NabuAfeTdm.h"
 #include "NabuAsmPlayback.h"
+#include "NabuAdspSlim.h"
 
 namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
@@ -52,6 +53,8 @@ template<class IO> class Link {
     bool pcm_enabled = false;
     bool afe_enabled = false;
     bool playback_enabled=false;
+    bool slim_enabled=false;
+    NabuAdspSlim::Channel<Link> slim{*this};
     NabuAsmPcm::Trial<Link> pcm{*this};
     NabuAfeTdm::Trial<Link> afe{*this};
     NabuAsmPlayback::Trial<Link> playback{*this};
@@ -156,6 +159,7 @@ template<class IO> class Link {
     }
     void start_close() {
         if (phase == Closing || phase == Finished) return;
+        if(slim_enabled) {io.slim_stop();slim.finish();}
         phase = Closing; phase_start = now; waiting_query = false; channel_open = false;
         if (requested_open) r.close_sent = send(3, uint16_t(r.lcid), 0);
         else phase = Finished;
@@ -180,6 +184,10 @@ template<class IO> class Link {
             }
             bytes = align8(bytes); if (avail < bytes) return;
             ++r.rx; r.last_command = command; r.last_cid = cid; r.last_value = value;
+            if(slim_enabled&&command!=0&&command!=1&&command!=13&&
+                slim.command(command,cid,value,chunk,left,r.features)) {
+                advance(bytes);continue;
+            }
             switch (command) {
             case 0:
                 advance(bytes);
@@ -313,6 +321,13 @@ template<class IO> class Link {
     }
 public:
     constexpr explicit Link(IO &operations) : io(operations) {}
+    bool slim_send(uint16_t cmd,uint16_t cid,uint32_t value,const uint8_t *p,uint32_t n) {
+        return send(cmd,cid,value,p,n);
+    }
+    void slim_peek(uint8_t *p,uint32_t offset,uint32_t bytes) {peek(p,offset,bytes);}
+    bool slim_ready() const {return slim_enabled&&slim.ready();}
+    void finish_slim() {if(slim_enabled)slim.finish();}
+    const NabuAdspSlim::Result &slim_result() const {return slim.result();}
     void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {io.playback_fill(period,first_frame,frames);}
     bool playback_send(uint8_t service,uint16_t port,uint32_t opcode,uint32_t token,const uint8_t *payload,uint32_t payload_bytes) {
         uint32_t packet_bytes=20+payload_bytes;int chosen=-1;
@@ -364,13 +379,14 @@ public:
     }
     bool begin(uint32_t desc, uint32_t tx_offset, uint32_t tx_size, uint32_t rx_offset, uint32_t rx_size,
         bool discover_services = false, uint64_t dma_address = 0, uint32_t dma_bytes = 0, bool pcm_trial = false,
-        bool afe_trial = false,bool playback_trial=false) {
+        bool afe_trial = false,bool playback_trial=false,bool slimbus=false) {
         descriptor = desc; tx = tx_offset; tx_bytes = tx_size; rx = rx_offset; rx_bytes = rx_size;
         include_versions = discover_services;
         map_address = dma_address; map_bytes = dma_bytes;
         pcm_enabled = pcm_trial;
         afe_enabled = afe_trial;
         playback_enabled=playback_trial;
+        slim_enabled=slimbus;
         if (phase != Idle || tx_size < 256 || rx_size < 256 || ((tx_size | rx_size) & 7)) { fail(InvalidQueues); return false; }
         r.features = 1; r.lcid = 2; phase = Opening; phase_start = 0;
         return send(0, 1, r.features);
@@ -378,6 +394,7 @@ public:
     void step(uint32_t elapsed_ms) {
         if (phase == Idle || phase == Finished) return;
         now = elapsed_ms; pump(); if (r.broken) return;
+        if(slim_enabled)slim.step(now,r.negotiated);
         if (phase == Opening && now - phase_start >= 5000) { r.timeout = true; start_close(); }
         if (phase == Querying) {
             if (r.apr_ready) {
@@ -440,8 +457,8 @@ public:
             }
         }
         if (phase == Closing) {
-            if (r.close_ack) phase = Finished;
-            else if (now - phase_start >= 1000) { r.timeout = true; phase = Finished; }
+            if (r.close_ack&&(!slim_enabled||slim.done())) phase = Finished;
+            else if (now - phase_start >= (slim_enabled?2500u:1000u)) { r.timeout = true; phase = Finished; }
         }
     }
     void abort() { fail(Aborted); }

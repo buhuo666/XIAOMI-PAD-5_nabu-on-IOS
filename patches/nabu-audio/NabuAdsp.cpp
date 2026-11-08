@@ -15,6 +15,8 @@
 #include "NabuAmpI2c.h"
 #include "NabuCs35l41.h"
 #include "NabuCs35l41Run.h"
+#include "NabuSlimNgd.h"
+#include "NabuTavil.h"
 #include "../nabu-wireless/NabuWlanController.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
@@ -27,6 +29,7 @@ extern "C" lck_mtx_t hakios_smem_alloc_lock;
 extern "C" lck_mtx_t hakios_smmu_lock;
 extern "C" vm_offset_t ml_vtophys(vm_offset_t);
 extern "C" void hakios_audio_set_sink(const char *,uint32_t (*)(const int16_t *,uint32_t));
+extern "C" bool hakios_audio_volume(uint32_t *,bool *,uint32_t *);
 
 namespace {
 static thread_call_t adsp_call;
@@ -190,14 +193,104 @@ struct Trial {
     AmpCore amp_core[4]={AmpCore{amp_backend[0]},AmpCore{amp_backend[1]},AmpCore{amp_backend[2]},AmpCore{amp_backend[3]}};
     unsigned amp_touched=0;
     bool amps_finished=false;
+    struct SlimRegisters {
+        vm_offset_t base=0;
+        uint32_t read(uint32_t offset) {return rd(base+offset);}
+        void write(uint32_t offset,uint32_t value) {wr(base+offset,value);}
+    } slim_io{};
+    NabuSlimNgd::Bus<SlimRegisters> slim_bus{slim_io};
+    NabuTavil::Codec<NabuSlimNgd::Bus<SlimRegisters>> codec{slim_bus};
+    vm_offset_t codec_reset=0;
+    uint32_t codec_reset_config=0,codec_reset_output=0;
+    bool mic_attempted=false,mic_started=false,mic_finished=false,codec_begun=false;
     bool native_attached=false;
+    uint32_t native_generation=0,native_gain=1u<<24,native_volume_below=0;
+    bool native_muted=false;
     unsigned stream_report_start=0;
+    void microphone_report() {
+        const auto &s=glink.slim_result();const auto &n=slim_bus.result();const auto &c=codec.result();
+        log("NABU MIC QMI: open=%u peer=%u server=%u node=%u port=%#x select=%u active=%u released=%u rx=%u tx=%u error=%u result=%u code=%u\n",
+            s.opened,s.peer,s.server,s.node,s.port,s.selected,s.active,s.released,s.rx,s.tx,s.error,s.qmi_result,s.qmi_error);
+        log("NABU MIC NGD: version=%#x bank=%#x status=%#x interrupt=%#x capability=%u reported=%u ready=%u tx=%u rx=%u last=%#x/%#x error=%u\n",
+            n.version,n.bank,n.status,n.interrupt,n.capability,n.reported,n.ready,n.tx,n.rx,n.last_tx0,n.last_rx0,n.error);
+        log("NABU MIC TAVIL: PGD=%#x IFD=%#x phase=%u step=%u major=%#x minor=%#x identified=%u error=%u; physical capture not yet active\n",
+            c.pgd,c.ifd,c.phase,c.step,c.major,c.minor,c.identified,c.error);publish();
+    }
+    bool codec_power() {
+        vm_offset_t db_va=map("codec-command-db",0x85f20000,0x20000,VM_WIMG_IO);
+        if(!db_va)return false;
+        NabuSmem db{(const volatile uint8_t *)db_va,0x20000};uint32_t bob=0,clock=0;
+        if(db.u32(4)==0x0c0330db)for(unsigned s=0;s<8;++s) {
+            unsigned slave=8+s*16,first=144+db.u16(slave+2),count=db.u16(slave+6);
+            if(!db.u16(slave)||!db.span(first,count*24))continue;
+            for(unsigned i=0;i<count;++i) {
+                unsigned at=first+i*24;char name[9]{};
+                for(unsigned j=0;j<8;++j)name[j]=db.data[at+j];
+                if(!strcmp(name,"bobc1"))bob=db.u32(at+16);
+                if(!strcmp(name,"lnbclka2"))clock=db.u32(at+16);
+            }
+        }
+        unmap(db_va,0x20000);
+        if(!bob||!clock) {log("NABU MIC: missing original resource bob=%#x lnbclk=%#x\n",bob,clock);return false;}
+        // S4 is the original 1.8V stub/always-on supply. BOB requests are in mV;
+        // PMIC5 BOB mode2 is the original PASS default. Clock is an enable vote.
+        uint32_t address[]={bob,bob+4,bob+8,clock+4},value[]={3300,1,2,1};
+        lck_mtx_lock(&hakios_rsc_lock);vm_offset_t tcs=rsc+0xd00;
+        if(!rd(tcs+0x18)||rd(tcs+0x1c)) {lck_mtx_unlock(&hakios_rsc_lock);return false;}
+        wr(rsc+0xd08,1);
+        for(unsigned i=0;i<4;++i) {wr(tcs+0x30+i*20,0x10108);wr(tcs+0x34+i*20,address[i]);wr(tcs+0x38+i*20,value[i]);}
+        wr(tcs+0x10,15);wr(tcs+0x1c,15);wr(tcs+0x14,1u<<16);wr(tcs+0x14,(1u<<16)|(1u<<24));
+        bool done=false;for(unsigned i=0;i<5000;++i) {if(rd(rsc+0xd04)&1) {done=true;break;}IODelay(10);}
+        uint32_t status[4];for(unsigned i=0;i<4;++i) {status[i]=rd(tcs+0x3c+i*20);done=done&&bool(status[i]&0x10000);}
+        wr(tcs+0x14,0);wr(tcs+0x1c,0);wr(tcs+0x10,0);wr(rsc+0xd08,1);lck_mtx_unlock(&hakios_rsc_lock);
+        log("NABU MIC: S4=1800000uV fixed; BOB=%#x 3300mV/pass/enable LNBB2=%#x enable; acknowledged=%u status=%#x/%#x/%#x/%#x; shared votes retained until reboot\n",
+            bob,clock,done,status[0],status[1],status[2],status[3]);return done;
+    }
+    bool prepare_microphone(uint32_t elapsed) {
+        if(!codec_power())return false;
+        codec_reset=map("Tavil-reset-GPIO143",0x3d8f000,0x1000,VM_WIMG_IO);
+        if(!codec_reset)return false;
+        codec_reset_config=rd(codec_reset);codec_reset_output=rd(codec_reset+4)&2;
+        // Preserve an already active reset, as the original codec helper does.
+        if(!(rd(codec_reset+4)&1)) {wr(codec_reset+4,0);wr(codec_reset,0x200);IOSleep(20);}
+        wr(codec_reset+4,2);wr(codec_reset,0x2c1);IOSleep(20);
+        slim_io.base=map("SLIM-NGD",0x171c0000,0x2c000,VM_WIMG_IO);
+        if(!slim_io.base)return false;
+        slim_bus.begin(elapsed);mic_started=true;return true;
+    }
+    void stop_microphone() {
+        if(mic_started) {slim_bus.stop();mic_started=false;}
+        if(slim_io.base) {unmap(slim_io.base,0x2c000);slim_io.base=0;}
+        if(codec_reset) {
+            wr(codec_reset+4,codec_reset_output);wr(codec_reset,codec_reset_config);
+            unmap(codec_reset,0x1000);codec_reset=0;
+        }
+    }
+    void slim_stop() {stop_microphone();}
+    void microphone_step(uint32_t elapsed) {
+        if(mic_finished)return;
+        if(glink.slim_result().error!=NabuAdspSlim::Ok) {mic_finished=true;microphone_report();stop_microphone();glink.finish_slim();return;}
+        if(!mic_attempted&&glink.slim_ready()) {
+            mic_attempted=true;
+            if(!prepare_microphone(elapsed)) {mic_finished=true;log("NABU MIC: codec power/reset preparation failed\n");microphone_report();stop_microphone();glink.finish_slim();}
+        }
+        if(!mic_started)return;
+        slim_bus.step(elapsed);
+        if(slim_bus.result().ready&&slim_bus.idle()&&!codec_begun) {codec.begin();codec_begun=true;}
+        if(codec_begun)codec.step(elapsed);
+        if(codec.done()||slim_bus.result().error) {
+            mic_finished=true;microphone_report();
+            if(!codec.result().identified) {stop_microphone();glink.finish_slim();}
+        }
+    }
     void stream_report() {
         report_bytes=stream_report_start;report[report_bytes]=0;
         const auto &p=glink.playback_result();
         log("NABU NATIVE AUDIO: attached=%u received=%llu fed=%llu silence=%llu dropped=%llu queued=%u peak=%u writes=%u done=%u underflows=%u failed=%u opcode=%#x status=%#x\n",
             native_attached,native_received,native_fed,native_silence,native_dropped,
             __atomic_load_n(&native_head,__ATOMIC_ACQUIRE)-native_tail,native_peak,p.writes,p.completions,p.underflows,p.failed,p.failed_opcode,p.status);
+        log("NABU NATIVE VOLUME: eighths-below=%u muted=%u generation=%u gain-q24=%u\n",
+            native_volume_below,native_muted,native_generation,native_gain);
         publish();
     }
 
@@ -388,11 +481,22 @@ struct Trial {
         (void)first_frame;
         int16_t *samples=(int16_t *)((uint8_t *)dma.blocks[0].cpu+period*4096);
         if(!native_attached) {native_attached=true;hakios_audio_set_sink("Nabu protected CS35L41 speakers",native_sink);}
+        uint32_t generation,below;bool muted;
+        // This runs on the DSP feeder, outside the audio writer's lock. The
+        // original volume ioctl stores the HAL setting for the physical sink.
+        if(hakios_audio_volume(&below,&muted,&generation)&&generation!=native_generation) {
+            native_generation=generation;native_volume_below=below;native_muted=muted;
+            uint64_t gain=1u<<24;
+            // 10^(-0.125/20) in Q24; calculate only when the user changes volume.
+            for(unsigned i=0;i<below;++i)gain=(gain*16537501+(1u<<23))>>24;
+            native_gain=muted?0:uint32_t(gain);
+        }
         uint32_t tail=native_tail,head=__atomic_load_n(&native_head,__ATOMIC_ACQUIRE);
         uint32_t available=head-tail,take=frames<available?frames:available;
         for(unsigned i=0;i<take;++i) {
             unsigned at=(tail+i)&(NativeRingFrames-1);
-            samples[i*2]=native_ring[at*2];samples[i*2+1]=native_ring[at*2+1];
+            samples[i*2]=int16_t((int64_t(native_ring[at*2])*native_gain)/(1<<24));
+            samples[i*2+1]=int16_t((int64_t(native_ring[at*2+1])*native_gain)/(1<<24));
         }
         memset(samples+take*2,0,(frames-take)*4);
         __atomic_store_n(&native_tail,tail+take,__ATOMIC_RELEASE);
@@ -616,7 +720,7 @@ struct Trial {
         uint64_t started; clock_get_uptime(&started);
         uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0,last_stream_report=0,playing_since=0;
         glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true,
-            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, false,tdm,tdm);
+            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, false,tdm,tdm,true);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
@@ -628,7 +732,8 @@ struct Trial {
                 if (dma_active && !dma_healthy()) { glink.abort(); break; }
             }
             glink.step(elapsed);
-            if(glink.afe_ready()&&!amplifiers_done) {
+            microphone_step(elapsed);
+            if(glink.afe_ready()&&!amplifiers_done&&mic_finished) {
                 log("NABU AFE: TDM clock/port acknowledged; preload and start four protection cores\n");publish();
                 amplifiers_done=true;
                 if(!prepare_amplifiers()) {
@@ -652,6 +757,7 @@ struct Trial {
                 if(native_attached) {hakios_audio_set_sink("none",nullptr);native_attached=false;}
                 if(stream_report_start)stream_report();
                 if(!finish_amplifiers()) {retain_for_amp=true;break;}
+                stop_microphone();
                 glink.finish_playback();continue;
             }
             if(playing_since&&!amps_finished&&elapsed-last_stream_report>=2000) {stream_report();last_stream_report=elapsed;}
@@ -664,6 +770,7 @@ struct Trial {
             if (!glink.done()) IOSleep(1);
         }
         if(native_attached) {hakios_audio_set_sink("none",nullptr);native_attached=false;}
+        stop_microphone();
         if(amp_touched&&!amps_finished&&!finish_amplifiers())retain_for_amp=true;
         const NabuAdspGlink::Result &r = glink.result();
         log("NABU ADSP GLINK: negotiated=%u features=%#x open=%u local=%u remote=%u remote-open=%u open-ack=%u tx=%u rx=%u unknown-channels=%u close-sent=%u close-ack=%u remote-closed=%u broken=%u timeout=%u error=%u\n",

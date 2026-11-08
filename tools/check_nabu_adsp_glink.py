@@ -82,6 +82,8 @@ struct FakeIO {
     std::array<uint8_t,65536> memory{};
     uint32_t size=4096, bells=0, writes=0;
     unsigned playback_fills=0;
+    unsigned slim_stops=0;
+    void slim_stop() {++slim_stops;}
     void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {
         CHECK(period<4&&frames==1024&&first_frame%1024==0);++playback_fills;
     }
