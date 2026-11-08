@@ -4,6 +4,10 @@
 
 第145轮真实音频服务版本查询通过：框架2.9.0.0，8项服务，AFE API7、ASM API2、ADM API4。APR就绪、GLINK双向关闭、DSP停止和释放全部成功，Wi-Fi扫描及蓝牙初始化正常。3,490,455字节连续前缀及64MiB槽已备份清空，APFS115，设备Android、蓝牙关闭、USB连接。下一步实现音频共享内存/SMMU和ASM map/unmap；内部PCM传输、扬声器出声与麦克风录音仍未通过。见[第144轮结果](../analysis/nabu-internal-audio-v144.md)、[第145轮结果](../analysis/nabu-internal-audio-v145.md)。
 
+第146轮已实现独立音频SMMU映射、WLAN/音频共享全局故障IRQ及ASM2 map/unmap。
+本地生产代码回归、并发中断移除验证及ARM64编译通过，云端构建和实机待验。
+见[第146轮候选](../analysis/nabu-internal-audio-v146.md)。
+
 第138轮蓝牙A2DP阶段通过：用户确认本地左右声道、Safari持续声音及蓝牙关闭/开启后重连播放均正常，Wi-Fi同时联网。3.2Mbps换速和固件/原生服务初始化通过，首次与重连保留251kbps AAC。完整连续日志前缀0次A2DP队列满丢包，151次传输快照无溢出/收发错误，累计TX约9.95MB。11,796,578字节连续前缀及64MiB原始槽已备份清空，APFS108，设备Android、蓝牙关闭、USB连接、耳机留盒。见[第138轮结果](../analysis/nabu-audio-v138.md)。
 
 视频画面未通过：Safari哔哩哔哩视频区域黑屏，播放时黑色闪烁、暂停后消失，其他网页内容正常。图形设备/视频解码/IOSurface/显示链路仍需定位，未将GPU作为已证实的唯一原因。当前按用户既定音频顺序继续内置扬声器与麦克风，传感器后置；Wi-Fi自动重连继续待修。音频进展见[NABU-AUDIO.md](NABU-AUDIO.md)。

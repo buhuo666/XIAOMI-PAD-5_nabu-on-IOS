@@ -12,6 +12,7 @@
 #include <pexpert/pexpert.h>
 #include "NabuAdspProtocol.h"
 #include "NabuAdspGlink.h"
+#include "../nabu-wireless/NabuWlanController.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t, vm_size_t);
@@ -20,6 +21,8 @@ extern "C" void loader_log_line(const char *);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock;
 extern "C" lck_mtx_t hakios_rsc_lock;
 extern "C" lck_mtx_t hakios_smem_alloc_lock;
+extern "C" lck_mtx_t hakios_smmu_lock;
+extern "C" vm_offset_t ml_vtophys(vm_offset_t);
 
 namespace {
 static thread_call_t adsp_call;
@@ -125,6 +128,65 @@ struct Trial {
     NabuSmem smem{};
     uint32_t last_state = 0xffffffff;
     NabuAdspGlink::Link<Trial> glink{*this};
+    NabuAudioDma dma{};
+    NabuWlanFault dma_faults{};
+    vm_offset_t dma_va = 0;
+    bool dma_active = false;
+
+    bool prepare_dma() {
+        dma_va = map("audio-SMMU", 0x15000000, 0x100000, VM_WIMG_IO);
+        if (!dma_va) return false;
+        NabuAudioDma::Platform ops{}; ops.cookie = this;
+        ops.allocate = [](void *, unsigned bytes) {
+            void *cpu = IOMallocContiguous(bytes, 16384, nullptr);
+            if (!cpu) return NabuAudioDma::Memory{};
+            bzero(cpu, bytes);
+            return NabuAudioDma::Memory{cpu, ml_vtophys((vm_offset_t)cpu)};
+        };
+        ops.release = [](void *, NabuAudioDma::Memory memory, unsigned bytes) { IOFreeContiguous(memory.cpu, bytes); };
+        ops.publish = [](void *, void *cpu, unsigned bytes) {
+            for (uintptr_t at = (uintptr_t)cpu; at < (uintptr_t)cpu + bytes; at += 64)
+                __asm__ volatile("dc civac, %0" :: "r"(at) : "memory");
+            __asm__ volatile("dsb sy" ::: "memory");
+        };
+        ops.lock = [](void *) { lck_mtx_lock(&hakios_smmu_lock); };
+        ops.unlock = [](void *) { lck_mtx_unlock(&hakios_smmu_lock); };
+        ops.io = {this, 0x100000,
+            [](void *x, size_t at, uint32_t *v) { *v = rd(((Trial *)x)->dma_va + at); return 0; },
+            [](void *x, size_t at, uint64_t *v) { *v = *(volatile uint64_t *)(((Trial *)x)->dma_va + at); return 0; },
+            [](void *x, size_t at, uint32_t v) { wr(((Trial *)x)->dma_va + at, v); return 0; },
+            [](void *x, size_t at, uint64_t v) { *(volatile uint64_t *)(((Trial *)x)->dma_va + at) = v; return 0; },
+            [](void *) { __asm__ volatile("dsb sy" ::: "memory"); return 0; }};
+        if (!dma.prepare(ops)) {
+            log("NABU ADSP DMA: prepare failed phase=%u status=%u\n", dma.prepare_failure, dma.status);
+            return false;
+        }
+        dma_active = dma.attach(
+            [](void *x, unsigned bank, const ArmSmmu4KIo *io) {
+                return nabu_smmu_fault_install((NabuWlanFault *)x, bank, io, NabuAudioDma::first_sid) ? 0 : -1;
+            },
+            [](void *x, unsigned) { nabu_smmu_fault_remove((NabuWlanFault *)x); }, &dma_faults);
+        log("NABU ADSP DMA: attached=%u phase=%u status=%u sid=%#x bank=%u asid=%u slot=%u iova=%#llx bytes=%u pa=%#llx tables=%u\n",
+            dma_active, dma.attach_phase, dma.status, NabuAudioDma::first_sid, dma.bank, dma.context.asid,
+            dma.routes[0].slot, NabuAudioDma::iova_base, NabuAudioDma::block_bytes, dma.blocks[0].physical,
+            (unsigned)dma.built.table_pages);
+        if (!dma_active) log("NABU ADSP DMA: selection=%u conflict-slot=%u smr=%#x s2cr=%#x CB-stage=%u stream-stage=%u\n",
+            dma.selection.stage, dma.selection.conflict_slot, dma.selection.conflict_smr,
+            dma.selection.conflict_s2cr, dma.program.phase, dma.stream_result.phase);
+        return dma_active;
+    }
+    bool dma_healthy() {
+        NabuWlanFault::Record context{}, global{};
+        uint32_t flags = dma_faults.snapshot(context, global);
+        if (flags) {
+            log("NABU ADSP DMA: fault flags=%u context=%#x address=%#llx sid=%#x global=%#x\n",
+                flags, context.status, context.address, context.sid, global.status);
+            dma.lost(); return false;
+        }
+        bool healthy = dma.observe();
+        if (!healthy) log("NABU ADSP DMA: observation failed status=%u\n", dma.status);
+        return healthy;
+    }
 
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
     uint32_t read32(uint32_t offset) {
@@ -333,18 +395,23 @@ struct Trial {
             tx.size != 16384 || rx.size != 16384) {
             log("NABU ADSP: GLINK probe queues unavailable\n"); return;
         }
-        log("NABU ADSP: host2 GLINK/APR core GET_STATE and framework-version probe begins, local-channel=2 doorbell=8\n"); publish();
+        bool mapping = prepare_dma();
+        // Original audio-ion masks SID0x1b21 by0xf and embeds1 in address bits63:32.
+        uint64_t tagged_iova = (uint64_t(NabuAudioDma::first_sid & 15) << 32) | NabuAudioDma::iova_base;
+        log("NABU ADSP: host2 GLINK/APR readiness/version/ASM memory probe begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
         uint64_t started; clock_get_uptime(&started);
         uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
-        glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true);
+        glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true,
+            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
             uint32_t elapsed = uint32_t(nanos / 1000000);
-            if (elapsed >= 10000) { glink.abort(); break; }
+            if (elapsed >= 15000) { glink.abort(); break; }
             if (elapsed - last_peer_check >= 10) {
                 peer = state(); last_peer_check = elapsed;
                 if (!peer.valid || (peer.state & 3) != 2) { glink.abort(); break; }
+                if (dma_active && !dma_healthy()) { glink.abort(); break; }
             }
             glink.step(elapsed);
             const NabuAdspGlink::Result &r = glink.result();
@@ -372,6 +439,10 @@ struct Trial {
             r.build_version[0], r.build_version[1], r.build_version[2], r.build_version[3], r.service_count);
         for (unsigned i = 0; i < r.service_count; ++i)
             log("NABU ADSP AVCS: service=%#x api=%u branch=%u\n", r.services[i].id, r.services[i].api, r.services[i].branch);
+        log("NABU ADSP ASM: map-sent=%u response=%u token=%#x handle=%#x basic=%u status=%#x timeout=%u unmap-sent=%u response=%u token=%#x status=%#x timeout=%u; PCM inactive\n",
+            r.map_sent, r.map_response, r.map_token, r.map_handle, r.map_basic_response, r.map_status,
+            r.map_timeout, r.unmap_sent, r.unmap_response, r.unmap_token, r.unmap_status, r.unmap_timeout);
+        if (dma_active) (void)dma_healthy();
         publish();
         // The fixed protocol buffers remain with Trial through PAS shutdown,
         // including the existing retain-until-reboot path on shutdown failure.
@@ -390,6 +461,12 @@ struct Trial {
     }
     bool shutdown() { return pas(6, 1); }
     void release() {
+        if (dma_va) {
+            bool released = dma.release_after_stop();
+            log("NABU ADSP DMA: released=%u phase=%u status=%u retained=%u offset=%#x expected=%#x actual=%#x\n",
+                released, dma.stop.phase, dma.status, !released, dma.stop.offset, dma.stop.expected, dma.stop.actual);
+            if (released) { dma_active = false; unmap(dma_va, 0x100000); dma_va = 0; }
+        }
         if (metadata) { IOFreeContiguous(metadata, NabuAdsp::MetadataLimit); metadata = nullptr; }
         if (hwlock) { unmap(hwlock, 0x1000); hwlock = 0; }
         if (smem_va) { unmap(smem_va, NabuAdsp::SmemSize); smem_va = 0; }

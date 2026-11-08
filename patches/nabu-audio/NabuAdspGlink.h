@@ -22,12 +22,15 @@ struct Result {
     uint32_t version_token, version_status, version_field, version_type, version_invalid;
     uint32_t build_version[4], service_count;
     ServiceVersion services[25];
+    bool map_sent, map_response, map_basic_response, map_timeout;
+    bool unmap_sent, unmap_response, unmap_timeout;
+    uint32_t map_token, map_handle, map_status, unmap_token, unmap_status;
 };
 
 template<class IO> class Link {
     struct LocalIntent { uint8_t data[512]; uint32_t fill, remaining; };
     struct RemoteIntent { uint32_t id, size; bool present, used; };
-    enum Phase { Idle, Opening, Querying, VersionQuerying, Closing, Finished };
+    enum Phase { Idle, Opening, Querying, VersionQuerying, Mapping, Unmapping, Closing, Finished };
     IO &io;
     Result r{};
     LocalIntent local[20]{};
@@ -41,6 +44,9 @@ template<class IO> class Link {
     bool waiting_query = false, requested_intent = false;
     bool include_versions = false;
     uint32_t active_token = 0, active_opcode = 0;
+    uint32_t active_service = 3, map_bytes = 0;
+    uint64_t map_address = 0;
+    uint32_t needed_bytes() const { return phase == Mapping ? 40 : phase == Unmapping ? 24 : QueryBytes; }
 
     static uint16_t get16(const uint8_t *p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
     static uint32_t get32(const uint8_t *p) { return uint32_t(get16(p)) | uint32_t(get16(p + 2)) << 16; }
@@ -90,8 +96,8 @@ template<class IO> class Link {
         uint16_t field = get16(data), packet_bytes = get16(data + 2);
         uint32_t header_bytes = ((field >> 4) & 15) * 4, token = get32(data + 12), opcode = get32(data + 16);
         if ((field & 15) > 1 || header_bytes < 20 || packet_bytes < header_bytes || packet_bytes > bytes ||
-            data[4] != 3 || data[5] != 4 || get16(data + 6) != 0 ||
-            data[8] != 3 || data[9] != 5 || get16(data + 10) != 0 ||
+            data[4] != active_service || data[5] != 4 || get16(data + 6) != 0 ||
+            data[8] != active_service || data[9] != 5 || get16(data + 10) != 0 ||
             !waiting_query || token != active_token) { ++r.apr_ignored; return; }
         uint32_t payload = packet_bytes - header_bytes;
         if (phase == Querying && opcode == 0x1290d && payload >= 4) {
@@ -114,8 +120,18 @@ template<class IO> class Link {
                 r.services[i] = {get32(entry), get32(entry + 4), get32(entry + 8)};
             }
             r.version_response = true;
+        } else if (phase == Mapping && opcode == 0x10d93 && payload >= 4) {
+            r.map_handle = get32(data + header_bytes);
+            if (r.map_handle) { r.map_response = true; waiting_query = false; }
+            else ++r.apr_ignored;
         } else if (opcode == 0x110e8 && payload >= 8 && get32(data + header_bytes) == active_opcode) {
-            if (phase == VersionQuerying) {
+            if (phase == Mapping) {
+                r.map_basic_response = true; r.map_status = get32(data + header_bytes + 4);
+                // Basic success does not supply the required mapping handle.
+                if (!r.map_status) return;
+            } else if (phase == Unmapping) {
+                r.unmap_status = get32(data + header_bytes + 4); r.unmap_response = true;
+            } else if (phase == VersionQuerying) {
                 r.version_field = field; r.version_type = (field >> 8) & 3;
                 r.version_basic_response = true; r.version_status = get32(data + header_bytes + 4);
             } else {
@@ -194,8 +210,8 @@ template<class IO> class Link {
                     // Only RX_DONE / RX_DONE_W_REUSE releases its ownership.
                     if (slot >= 0 && remote[slot].used) continue;
                     if (slot < 0) for (unsigned j = 0; j < 64; ++j) if (!remote[j].present) { slot = int(j); break; }
-                    if (slot < 0 && size >= QueryBytes) for (unsigned j = 0; j < 64; ++j)
-                        if (!remote[j].used && remote[j].size < QueryBytes) {
+                    if (slot < 0 && size >= needed_bytes()) for (unsigned j = 0; j < 64; ++j)
+                        if (!remote[j].used && remote[j].size < needed_bytes()) {
                             slot = int(j); ++r.peer_replaced; break;
                         }
                     // INTENT needs no acknowledgement. Consume surplus
@@ -255,31 +271,41 @@ template<class IO> class Link {
         }
     }
     void query(uint32_t opcode) {
+        uint32_t packet_bytes = needed_bytes();
         int chosen = -1;
-        for (unsigned i = 0; i < 64; ++i) if (remote[i].present && !remote[i].used && remote[i].size >= QueryBytes &&
+        for (unsigned i = 0; i < 64; ++i) if (remote[i].present && !remote[i].used && remote[i].size >= packet_bytes &&
             (chosen < 0 || remote[i].size < remote[chosen].size)) chosen = int(i);
         if (chosen < 0) {
-            if (!requested_intent) requested_intent = send(7, uint16_t(r.lcid), QueryBytes);
+            if (!requested_intent) requested_intent = send(7, uint16_t(r.lcid), packet_bytes);
             return;
         }
-        uint8_t data[28]{}; set32(data, QueryBytes); // GLINK chunk_size, left_size=0
-        set16(data + 8, 0x250); set16(data + 10, QueryBytes);
-        data[12] = 3; data[13] = 5; data[16] = 3; data[17] = 4;
+        uint8_t data[48]{}; set32(data, packet_bytes); // GLINK chunk_size, left_size=0
+        set16(data + 8, 0x250); set16(data + 10, uint16_t(packet_bytes));
+        uint8_t service = (phase == Mapping || phase == Unmapping) ? 7 : 3;
+        data[12] = service; data[13] = 5; data[16] = service; data[17] = 4;
         uint32_t token = next_token++;
         set32(data + 20, token); set32(data + 24, opcode);
-        if (send(9, uint16_t(r.lcid), remote[chosen].id, data, sizeof(data))) {
-            remote[chosen].used = true; active_token = token; active_opcode = opcode;
+        if (phase == Mapping) {
+            set16(data + 28, 3); set16(data + 30, 1); // SHMEM8_4K pool, one region; property_flags=0
+            set32(data + 36, uint32_t(map_address)); set32(data + 40, uint32_t(map_address >> 32));
+            set32(data + 44, map_bytes);
+        } else if (phase == Unmapping) set32(data + 28, r.map_handle);
+        if (send(9, uint16_t(r.lcid), remote[chosen].id, data, packet_bytes + 8)) {
+            remote[chosen].used = true; active_token = token; active_opcode = opcode; active_service = service;
             if (opcode == 0x1290c) { r.token = token; r.apr_sent = true; ++r.queries; }
-            else { r.version_token = token; r.version_sent = true; }
+            else if (opcode == 0x1292c) { r.version_token = token; r.version_sent = true; }
+            else if (opcode == 0x10d92) { r.map_token = token; r.map_sent = true; }
+            else { r.unmap_token = token; r.unmap_sent = true; }
             waiting_query = true; query_start = now;
         }
     }
 public:
     constexpr explicit Link(IO &operations) : io(operations) {}
     bool begin(uint32_t desc, uint32_t tx_offset, uint32_t tx_size, uint32_t rx_offset, uint32_t rx_size,
-        bool discover_services = false) {
+        bool discover_services = false, uint64_t dma_address = 0, uint32_t dma_bytes = 0) {
         descriptor = desc; tx = tx_offset; tx_bytes = tx_size; rx = rx_offset; rx_bytes = rx_size;
         include_versions = discover_services;
+        map_address = dma_address; map_bytes = dma_bytes;
         if (phase != Idle || tx_size < 256 || rx_size < 256 || ((tx_size | rx_size) & 7)) { fail(InvalidQueues); return false; }
         r.features = 1; r.lcid = 2; phase = Opening; phase_start = 0;
         return send(0, 1, r.features);
@@ -300,10 +326,27 @@ public:
             }
         }
         if (phase == VersionQuerying) {
-            if (r.version_response || r.version_basic_response || r.version_invalid) start_close();
+            if (r.version_response) {
+                bool asm_present = false;
+                for (unsigned i = 0; i < r.service_count; ++i)
+                    if (r.services[i].id == 7 && r.services[i].api == 2) asm_present = true;
+                if (asm_present && map_bytes) { phase = Mapping; phase_start = now; }
+                else start_close();
+            } else if (r.version_basic_response || r.version_invalid) start_close();
             else if (now - phase_start >= 1000 || (waiting_query && now - query_start >= 500)) {
                 r.version_timeout = true; start_close();
             } else if (!waiting_query && channel_open && now >= query_due) query(0x1292c);
+        }
+        if (phase == Mapping) {
+            if (r.map_response) { phase = Unmapping; phase_start = now; }
+            else if (r.map_basic_response && r.map_status) start_close();
+            else if (now - phase_start >= 1000) { r.map_timeout = true; start_close(); }
+            else if (!waiting_query && channel_open) query(0x10d92);
+        }
+        if (phase == Unmapping) {
+            if (r.unmap_response) start_close();
+            else if (now - phase_start >= 1000) { r.unmap_timeout = true; start_close(); }
+            else if (!waiting_query && channel_open) query(0x10d94);
         }
         if (phase == Closing) {
             if (r.close_ack) phase = Finished;

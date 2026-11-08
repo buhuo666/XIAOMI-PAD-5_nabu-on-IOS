@@ -35,6 +35,10 @@ GET_STATE、GLINK关闭、DSP停止和释放继续通过，无线/蓝牙基线�
 连续前缀及64MiB槽已备份清空，APFS115。下一步音频共享内存/SMMU与ASM map/unmap，
 内置PCM及真实出声/录音仍未通过。见[第145轮结果](../analysis/nabu-internal-audio-v145.md)。
 
+第146轮候选加入音频SID0x1b21独立映射、与WLAN共享公共故障IRQ以及ASM2共享内存
+map/handle/unmap回执。内存保留至DSP停止确认后再释放，本地主机与ARM64编译通过；
+尚待CI/实机。见[第146轮](../analysis/nabu-internal-audio-v146.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

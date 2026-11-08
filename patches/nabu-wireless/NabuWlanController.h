@@ -8,4 +8,7 @@
 extern "C" bool nabu_wlan_dma_attach_native(NabuWlanDma *owner);
 extern "C" uint32_t nabu_wlan_dma_faults_native(NabuWlanDma *owner,
     NabuWlanFault::Record *context,NabuWlanFault::Record *global);
+// Caller holds the shared SMMU configuration mutex; context ownership is exclusive.
+extern "C" bool nabu_smmu_fault_install(NabuWlanFault *,unsigned,const ArmSmmu4KIo *,unsigned sid);
+extern "C" void nabu_smmu_fault_remove(NabuWlanFault *);
 #endif

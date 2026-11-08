@@ -64,17 +64,17 @@ struct NabuWlanFault {
         // Preserve evidence. In particular, never clear a global fault that may
         // belong to USB/UFS, and do not retry or resume a DMA transaction in IRQ.
     }
-    bool install(unsigned selected_bank,const ArmSmmu4KIo &registers) {
+    bool install(unsigned selected_bank,const ArmSmmu4KIo &registers,uint32_t expected=0) {
         if(global_attached||context_attached||selected_bank>=80)return false;
         io=registers;bank=selected_bank;
         uint32_t id1=0,actlr=0;
         if(io.read32(io.cookie,0x24,&id1)||(id1>>31)||bank>=(id1&255))return false;
         context_offset=((1u<<(((id1>>28)&7)+1))+bank)*4096;
         if(context_offset+0x70>io.register_bytes||io.read32(io.cookie,context_offset+4,&actlr)||
-           actlr!=expected_actlr(0x640)||actlr!=expected_actlr(0x641))return false;
+           actlr!=expected)return false;
         pending=0;captured[0]=captured[1]=0;records[0]={};records[1]={};
-        // attach is exclusive: a pre-existing global/bank handler is a concrete
-        // ownership conflict. No detach/mask is issued for an unowned interrupt.
+        // Context attachment remains exclusive. The native adapter shares
+        // the global IRQ between WLAN/audio subscribers with drain on removal.
         if(irq.attach(irq.cookie,global_irq,false,interrupt,this))return false;
         global_attached=true;
         if(irq.attach(irq.cookie,context_irqs[bank],false,interrupt,this)) {

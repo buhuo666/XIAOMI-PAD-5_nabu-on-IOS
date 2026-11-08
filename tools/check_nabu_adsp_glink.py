@@ -122,9 +122,9 @@ struct Fixture {
     NabuAdspGlink::Link<FakeIO> link;
     uint16_t peer=37;
     uint32_t peer_iid=91;
-    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false):io(size),link(io) {
+    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false):io(size),link(io) {
         io.initial_position(start);
-        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions));
+        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0));
         auto first=io.take(); CHECK(first.size()==1 && first[0]==frame(0,1,1));
     }
     std::vector<Bytes> step(uint32_t time) { link.step(time); return io.take(); }
@@ -435,6 +435,54 @@ static void framework_versions() {
     CHECK(tx.size()==2 && tx[1]==frame(7,2,20) && !no_buffer.link.result().version_sent);
     no_buffer.step(1110); CHECK(no_buffer.link.result().version_timeout && no_buffer.link.result().apr_ready); no_buffer.finish(1120);
 }
+static Bytes asm_map_reply(uint32_t token,uint32_t handle=0x1234) {
+    auto packet=extended_reply(token,handle);packet[4]=packet[8]=7;put32(packet,16,0x10d93);return packet;
+}
+static Bytes asm_basic(uint32_t token,uint32_t status,uint32_t opcode) {
+    auto packet=basic_reply(token,status,opcode);packet[4]=packet[8]=7;return packet;
+}
+static uint32_t start_mapping(Fixture &f) {
+    auto version_token=start_version_query(f);auto packet=version_reply(version_token);
+    put32(packet,68,2); // Actual Nabu ASM API2.
+    f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,packet));
+    auto tx=f.step(120);CHECK(tx.size()==2&&tx[0]==frame(14,2,1));const auto &map=tx[1];
+    CHECK(u16(map,0)==9&&u32(map,4)==f.peer_iid&&u32(map,8)==40&&map.size()==56);
+    CHECK(map[20]==7&&map[21]==5&&map[24]==7&&map[25]==4&&u32(map,32)==0x10d92);
+    CHECK(u16(map,36)==3&&u16(map,38)==1&&u32(map,40)==0);
+    CHECK(u32(map,44)==0x10000000&&u32(map,48)==1&&u32(map,52)==16384);
+    CHECK(f.link.result().map_sent&&!f.link.result().map_response&&f.link.result().apr_ready);
+    return u32(map,28);
+}
+static void memory_mapping() {
+    for(unsigned unmap_status:{0u,5u}) {
+        Fixture f(4096,4088,true,true);auto token=start_mapping(f);
+        auto wrong=asm_map_reply(token);wrong[4]=3;f.io.inject(data_frame(f.peer,1,wrong));f.step(121);
+        f.io.inject(data_frame(f.peer,1,asm_map_reply(token-1)));f.step(122);
+        f.io.inject(data_frame(f.peer,1,asm_map_reply(token,0)));f.step(123);
+        CHECK(!f.link.result().map_response&&f.link.result().apr_ignored==3);
+        f.io.inject(data_frame(f.peer,1,asm_basic(token,0,0x10d92)));auto tx=f.step(130);
+        CHECK(tx.size()==1&&f.link.result().map_basic_response&&!f.link.result().map_response&&!f.link.result().close_sent);
+        f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,asm_map_reply(token)));
+        tx=f.step(140);CHECK(tx.size()==2);const auto &unmap=tx[1];
+        CHECK(u16(unmap,0)==9&&u32(unmap,8)==24&&unmap.size()==40&&u32(unmap,32)==0x10d94&&u32(unmap,36)==0x1234);
+        auto ut=u32(unmap,28);CHECK(ut!=token&&f.link.result().map_response&&f.link.result().map_handle==0x1234);
+        f.io.inject(data_frame(f.peer,1,asm_basic(token,0,0x10d94)));f.step(141);CHECK(!f.link.result().unmap_response);
+        f.io.inject(data_frame(f.peer,1,asm_basic(ut,unmap_status,0x10d94)));tx=f.step(150);
+        CHECK(tx.size()==2&&f.link.result().unmap_response&&f.link.result().unmap_status==unmap_status);
+        CHECK(f.link.result().apr_ready&&f.link.result().version_response);f.finish(160);
+    }
+    {Fixture f(4096,0,true,true);auto token=start_mapping(f);
+        f.io.inject(data_frame(f.peer,1,asm_basic(token,3,0x10d92)));auto tx=f.step(130);
+        CHECK(tx.size()==2&&f.link.result().map_status==3&&!f.link.result().map_response&&!f.link.result().unmap_sent);f.finish(140);}
+    {Fixture f(4096,0,true,true);start_mapping(f);auto tx=f.step(1120);
+        CHECK(tx.size()==1&&f.link.result().map_timeout&&!f.link.result().unmap_sent);f.finish(1130);}
+    {Fixture f(4096,0,true,true);auto token=start_mapping(f);
+        f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,asm_map_reply(token)));f.step(140);
+        auto tx=f.step(1140);CHECK(tx.size()==1&&f.link.result().map_response&&f.link.result().unmap_timeout&&!f.link.result().unmap_response);f.finish(1150);}
+    {Fixture f(4096,0,true,true);auto token=start_version_query(f);
+        f.io.inject(data_frame(f.peer,1,version_reply(token)));auto tx=f.step(120); // ASM API3 is not this validated contract.
+        CHECK(tx.size()==2&&!f.link.result().map_sent&&f.link.result().version_response);f.finish(130);}
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -490,7 +538,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    many_peer_intents(); framework_versions(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); framework_versions(); memory_mapping(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -521,6 +569,8 @@ def main():
                            "actual field 0x81 extended-header readiness, CORE framework-version request/reply",
                            "0/3/25 service entries, fragments, malformed counts/lengths, stale token isolation",
                            "version unsupported/basic/timeout preserves proven readiness and closes",
+                           "exact ASM2 map/unmap tagged IOVA bytes and handle, basic success without handle, endpoint/token isolation",
+                           "map refusal, map/unmap timeout, unmap error and unsupported ASM API stay distinct",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

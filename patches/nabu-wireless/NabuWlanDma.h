@@ -3,12 +3,17 @@
 #include "../../src/ArmSmmu4K-nabu/ArmSmmu4KStreams.h"
 #include "../nabu-usb/NabuUsbSmmu.h"
 
-struct NabuWlanDma {
-    static constexpr unsigned block_bytes=65536, block_count=128, table_bytes=65536;
+// Same ownership/cleanup engine for the proven WLAN mapping and one Nabu audio region.
+template<unsigned BlockBytes, unsigned BlockCount, unsigned TableBytes,
+    uint64_t IovaBase, uint16_t FirstSid, unsigned StreamCount>
+struct NabuSmmuDma {
+    static constexpr unsigned block_bytes=BlockBytes, block_count=BlockCount, table_bytes=TableBytes;
+    static constexpr unsigned stream_count=StreamCount;
+    static constexpr uint16_t first_sid=FirstSid;
     // Helium ath10k's LinuxKPI pool uses one contiguous CPU/IOVA span.
     static constexpr unsigned ath10k_bytes=44u<<20,ath10k_table_bytes=131072;
-    static constexpr uint64_t iova_base=0xa0000000ULL;
-    // Neither WLAN SID matches qcom,actlr; the vendor writes zero for this CB.
+    static constexpr uint64_t iova_base=IovaBase;
+    // Neither WLAN SID nor audio SID0x1b21 matches qcom,actlr: vendor writes zero.
     static constexpr uint32_t wlan_actlr=0;
     struct Memory { void *cpu=nullptr;uint64_t physical=0; };
     struct Buffer { void *cpu=nullptr;uint32_t iova=0,bytes=0; };
@@ -71,23 +76,24 @@ struct NabuWlanDma {
     void configure_io() {
         raw_io=platform.io;
         platform.io={this,raw_io.register_bytes,
-            [](void *cookie,size_t at,uint32_t *v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.read32(d.raw_io.cookie,at,v);},
-            [](void *cookie,size_t at,uint64_t *v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.read64(d.raw_io.cookie,at,v);},
+            [](void *cookie,size_t at,uint32_t *v){auto &d=*(NabuSmmuDma *)cookie;return d.raw_io.read32(d.raw_io.cookie,at,v);},
+            [](void *cookie,size_t at,uint64_t *v){auto &d=*(NabuSmmuDma *)cookie;return d.raw_io.read64(d.raw_io.cookie,at,v);},
             [](void *cookie,size_t at,uint32_t v) {
-                auto &d=*(NabuWlanDma *)cookie;
+                auto &d=*(NabuSmmuDma *)cookie;
                 // Qualcomm's firmware can ignore FAULT writes and replace
-                // BYPASS writes with FAULT. Encode only our two leased S2CRs.
+                // BYPASS writes with FAULT. Encode only this owner's leased S2CRs.
                 // Reads always return untouched hardware values to ArmSmmu4K.
-                if(d.qcom_fault_encoding&&(v&0x30000)==0x20000&&
-                   (at==0xc00+4*d.routes[0].slot||at==0xc00+4*d.routes[1].slot))v^=0x30000;
+                bool owned=false;
+                for(unsigned i=0;i<stream_count;++i)owned|=at==0xc00+4*d.routes[i].slot;
+                if(d.qcom_fault_encoding&&(v&0x30000)==0x20000&&owned)v^=0x30000;
                 return d.raw_io.write32(d.raw_io.cookie,at,v);
             },
-            [](void *cookie,size_t at,uint64_t v){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.write64(d.raw_io.cookie,at,v);},
-            [](void *cookie){auto &d=*(NabuWlanDma *)cookie;return d.raw_io.barrier(d.raw_io.cookie);}};
+            [](void *cookie,size_t at,uint64_t v){auto &d=*(NabuSmmuDma *)cookie;return d.raw_io.write64(d.raw_io.cookie,at,v);},
+            [](void *cookie){auto &d=*(NabuSmmuDma *)cookie;return d.raw_io.barrier(d.raw_io.cookie);}};
     }
     bool fault_routes() {
         bool exact=true;
-        for(unsigned i=0;i<2;++i) {
+        for(unsigned i=0;i<stream_count;++i) {
             unsigned at=0xc00+4*routes[i].slot;
             if(!write(at,0x20000)){status=ArmSmmu4KIoError;return false;}
             fault_direct[i]=fault_readback[i]=read(at);
@@ -97,7 +103,7 @@ struct NabuWlanDma {
         if(exact)return true;
         // Only try the documented encoding when the conventional write was
         // ignored on our still-invalid slots. No stream can match these yet.
-        for(unsigned i=0;i<2;++i) {
+        for(unsigned i=0;i<stream_count;++i) {
             if(read(0x800+4*routes[i].slot)!=old_smr[i]||
                (fault_direct[i]!=0x20000&&fault_direct[i]!=old_s2cr[i])) {
                 status=ArmSmmu4KStateMismatch;return false;
@@ -105,7 +111,7 @@ struct NabuWlanDma {
         }
         if(read_failed){status=ArmSmmu4KIoError;return false;}
         bool ok=true;
-        for(unsigned i=0;i<2&&ok;++i) {
+        for(unsigned i=0;i<stream_count&&ok;++i) {
             unsigned at=0xc00+4*routes[i].slot;
             ok=write(at,0x10000);
             fault_readback[i]=read(at);
@@ -115,7 +121,7 @@ struct NabuWlanDma {
             status=read_failed?ArmSmmu4KIoError:ArmSmmu4KStateMismatch;
             // A standard SMMU would interpret 0x10000 as BYPASS. Slots remain
             // invalid; request FAULT again and leave the instance unstarted.
-            for(unsigned i=0;i<2;++i)(void)write(0xc00+4*routes[i].slot,0x20000);
+            for(unsigned i=0;i<stream_count;++i)(void)write(0xc00+4*routes[i].slot,0x20000);
             return false;
         }
         qcom_fault_encoding=true;return true;
@@ -199,20 +205,21 @@ struct NabuWlanDma {
             uint32_t smr=read(kSmrBase+4*i),s2cr=read(kS2crBase+4*i);
             if(smr&kSmrValid) {
                 unsigned mask=(smr>>16)&0x7fff;
-                // FDT SID=0x640/MASK=1 covers both 0x640 and 0x641.
-                if(!((0x640^smr)&~mask&stream_id_mask(info))||
-                   !((0x641^smr)&~mask&stream_id_mask(info))) {
+                bool conflict=false;
+                for(unsigned n=0;n<stream_count;++n)
+                    conflict|=!(((first_sid+n)^smr)&~mask&stream_id_mask(info));
+                if(conflict) {
                     selection.conflict_slot=i;selection.conflict_smr=smr;selection.conflict_s2cr=s2cr;
                     status=ArmSmmu4KBusy;return false;
                 }
                 if(((s2cr>>16)&3)==0&&(s2cr&255)<kMaxBanks)used[s2cr&255]=true;
-            } else if(free_count<2) {
-                routes[free_count]={i,(uint16_t)(0x640+free_count)};
+            } else if(free_count<stream_count) {
+                routes[free_count]={i,(uint16_t)(first_sid+free_count)};
                 old_smr[free_count]=smr;old_s2cr[free_count]=s2cr;++free_count;
                 selection.free_slots=free_count;
             }
         }
-        if(read_failed||free_count!=2){status=read_failed?ArmSmmu4KIoError:ArmSmmu4KBusy;return false;}
+        if(read_failed||free_count!=stream_count){status=read_failed?ArmSmmu4KIoError:ArmSmmu4KBusy;return false;}
         selection.stage=4;
         for(unsigned b=info.num_cb-1;b>0&&b>=info.num_s2_cb;--b) {
             unsigned cb=context_offset(info.global_pages,b);
@@ -249,7 +256,7 @@ struct NabuWlanDma {
         status=read_failed?ArmSmmu4KIoError:ArmSmmu4KBusy;
         return false;
     }
-    // Caller keeps WLAN stopped/mission mode OFF. registrar must install real
+    // Caller keeps this master's DMA requests stopped. registrar must install real
     // bank/global fault handling and confirm platform ACTLR/security setup.
     // No default registrar exists: a guessed readiness flag cannot activate it.
     bool restore_actlr() {
@@ -285,10 +292,10 @@ struct NabuWlanDma {
             state=Retained;mutated=true;
             attach_phase=4;
             ok=fault_routes();
-            if(ok){attach_phase=5;status=ArmSmmu4KCheckFaultedStreams(&platform.io,routes,2,bank,
+            if(ok){attach_phase=5;status=ArmSmmu4KCheckFaultedStreams(&platform.io,routes,stream_count,bank,
                 ArmSmmu4KShareabilityFromTransaction,&stream_result);ok=status==0;}
             if(ok){attach_phase=6;context_started=true;status=ArmSmmu4KProgramDisabledContext(&platform.io,bank,&context,10000,&program);ok=status==0;}
-            if(ok){attach_phase=7;status=ArmSmmu4KAttachStreams(&platform.io,&streams,routes,2,bank,&context,&stream_result);ok=status==0;}
+            if(ok){attach_phase=7;status=ArmSmmu4KAttachStreams(&platform.io,&streams,routes,stream_count,bank,&context,&stream_result);ok=status==0;}
             if(ok){attach_phase=8;state=Active;}
         }
         platform.unlock(platform.cookie);return ok;
@@ -324,7 +331,7 @@ struct NabuWlanDma {
         if(!mutated){release_memory();return true;}
         platform.lock(platform.cookie);
         bool ok=true;stop.phase=StopOwnership;
-        for(unsigned i=0;i<2&&ok;++i) {
+        for(unsigned i=0;i<stream_count&&ok;++i) {
             unsigned at=0x800+4*routes[i].slot;uint32_t v=read(at);
             if(read_failed||(v!=old_smr[i]&&v!=(0x80000000u|routes[i].sid)))
                 ok=stop_mismatch(at,0x80000000u|routes[i].sid,v);
@@ -338,7 +345,7 @@ struct NabuWlanDma {
         }
         if(ok) {
             stop.phase=StopFaultRoutes;
-            for(unsigned i=0;i<2&&ok;++i)ok=stop_register(0xc00+4*routes[i].slot,0x20000);
+            for(unsigned i=0;i<stream_count&&ok;++i)ok=stop_register(0xc00+4*routes[i].slot,0x20000);
         }
         if(ok&&context_started) {
             stop={};stop.phase=StopDisableContext;
@@ -348,14 +355,14 @@ struct NabuWlanDma {
         }
         if(ok) {
             stop.phase=StopRestoreRoutes;
-            for(unsigned i=0;i<2&&ok;++i) {
+            for(unsigned i=0;i<stream_count&&ok;++i) {
                 ok=stop_register(0x800+4*routes[i].slot,old_smr[i])&&
                    stop_register(0xc00+4*routes[i].slot,old_s2cr[i]);
             }
         }
         if(ok) {
             // PAS is stopped, the owned context is disabled/TLB-synchronized,
-            // and both SMRs are restored to their original invalid values.
+            // and our SMRs are restored to their original invalid values.
             // Inert CBAR/TCR/TTBR/MAIR contents do not keep tables live. Like
             // vendor destroy_domain_context, leave them for the next owner.
             // v124 CBAR54 ignores a zero write and retains 0x1f300.
@@ -368,6 +375,10 @@ struct NabuWlanDma {
         return ok;
     }
 };
+
+// WLAN's exact previous geometry; audio uses one 16KiB allocation and SID0x1b21.
+using NabuWlanDma=NabuSmmuDma<65536,128,65536,0xa0000000ULL,0x640,2>;
+using NabuAudioDma=NabuSmmuDma<16384,1,16384,0x10000000ULL,0x1b21,1>;
 
 // Native implementation allocates real physical memory and provides actual
 // SMMU MMIO/cache operations. Creation/preparation performs no SMMU writes.

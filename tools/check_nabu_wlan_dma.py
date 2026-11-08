@@ -57,15 +57,15 @@ struct Peer {
         regs[(128+3)*4096]=1;regs[(128+3)*4096+0x24]=4<<16;
         regs[(128+4)*4096]=1;regs[(128+4)*4096+0x24]=5<<16;
     }
-    NabuWlanDma::Platform ops() {
-        NabuWlanDma::Platform p{};p.cookie=this;
+    template<class Dma=NabuWlanDma> typename Dma::Platform ops() {
+        typename Dma::Platform p{};p.cookie=this;
         p.allocate=[](void *x,unsigned bytes){auto &s=*(Peer *)x;++s.allocations;
-            if(s.allocations==s.fail_alloc)return NabuWlanDma::Memory{};
+            if(s.allocations==s.fail_alloc)return typename Dma::Memory{};
             void *cpu=aligned_alloc(16384,bytes);assert(cpu);memset(cpu,0,bytes);
             uint64_t pa=s.next_pa;s.next_pa+=bytes+65536;
             if(s.bad_pa)pa+=1;
-            s.memory[cpu]=pa;s.sizes[cpu]=bytes;return NabuWlanDma::Memory{cpu,pa};};
-        p.release=[](void *x,NabuWlanDma::Memory m,unsigned bytes){auto &s=*(Peer *)x;
+            s.memory[cpu]=pa;s.sizes[cpu]=bytes;return typename Dma::Memory{cpu,pa};};
+        p.release=[](void *x,typename Dma::Memory m,unsigned bytes){auto &s=*(Peer *)x;
             assert(s.memory.at(m.cpu)==m.physical&&s.sizes.at(m.cpu)==bytes);
             assert(s.memory.erase(m.cpu)==1);s.sizes.erase(m.cpu);++s.releases;free(m.cpu);};
         p.publish=[](void *x,void *,unsigned){++((Peer *)x)->published;};
@@ -112,7 +112,7 @@ struct Peer {
         for(unsigned at:write_addresses)assert(at!=0x800&&at!=0xc00&&at!=0x804&&at!=0xc04&&at!=0);
     }
 };
-static uint64_t walk(const NabuWlanDma &d,uint64_t va) {
+template<class Dma> static uint64_t walk(const Dma &d,uint64_t va) {
     uint64_t *tables=(uint64_t *)d.tables.cpu;unsigned page=0;
     for(unsigned level=1;level<=3;++level) {
         uint64_t entry=tables[page*512+((va>>(39-9*level))&511)];assert((entry&3)==3);
@@ -123,6 +123,34 @@ static uint64_t walk(const NabuWlanDma &d,uint64_t va) {
     abort();
 }
 int main() {
+    // Both owners share a hardware SMMU while keeping separate banks, streams,
+    // tables and IRQ ownership. Audio cleanup must leave live WLAN untouched.
+    {Peer p; NabuWlanDma wlan; NabuAudioDma audio;
+        p.qcom_fault_quirk=true; p.ignore_cbar_clear=true; p.tcr2_read_as_one=true;
+        assert(wlan.prepare_ath10k(p.ops())&&wlan.attach(Peer::install,Peer::remove,&p));
+        auto wlan_bank=wlan.bank, wlan_slot=wlan.routes[0].slot;
+        auto wlan_memory=wlan.ath10k_arena.cpu;
+        assert(audio.prepare(p.ops<NabuAudioDma>())&&audio.allocated==1&&audio.built.table_pages==3);
+        assert(audio.attach(Peer::install,Peer::remove,&p));
+        assert(audio.bank!=wlan_bank&&audio.routes[0].slot!=wlan_slot&&audio.routes[0].sid==0x1b21);
+        NabuAudioDma::Buffer buffer; assert(audio.buffer(16384,16384,buffer)&&buffer.iova==0x10000000);
+        for(unsigned page=0;page<4;++page)assert(walk(audio,buffer.iova+page*4096)==audio.blocks[0].physical+page*4096);
+        assert(wlan.observe()&&audio.observe());
+        assert(audio.release_after_stop()&&audio.state==NabuAudioDma::Empty&&p.memory.size()==2);
+        assert(wlan.observe()&&wlan.ath10k_arena.cpu==wlan_memory&&wlan.bank==wlan_bank);
+        assert(wlan.release_after_stop()&&p.memory.empty()&&p.installed==2&&p.removed==2); p.foreign_unchanged();
+    }
+    {Peer p; NabuAudioDma audio;
+        p.regs[0x808]=0x80011b20; p.regs[0xc08]=7; // Existing masked route covers audio SID.
+        assert(audio.prepare(p.ops<NabuAudioDma>()));
+        assert(!audio.attach(Peer::install,Peer::remove,&p)&&audio.status==ArmSmmu4KBusy&&p.writes==0);
+        assert(audio.release_after_stop()&&p.memory.empty()&&p.regs[0x808]==0x80011b20);
+    }
+    {Peer p; NabuAudioDma audio; assert(audio.prepare(p.ops<NabuAudioDma>()));
+        assert(audio.attach(Peer::install,Peer::remove,&p)); p.timeout=true;
+        assert(!audio.release_after_stop()&&audio.state!=NabuAudioDma::Empty&&p.releases==0&&p.removed==0);
+        p.timeout=false; assert(audio.release_after_stop()&&p.memory.empty()&&p.removed==1);
+    }
     {Peer p;NabuWlanDma d;p.ignore_cbar_clear=true;p.qcom_fault_quirk=true;p.tcr2_read_as_one=true;
         // Match v124: bank 55 remains owned, WLAN leases bank 54 and slots 6/7.
         for(unsigned i=0;i<4;++i){p.regs[0x808+4*i]=0x80000060+0x10*i;p.regs[0xc08+4*i]=55;}
@@ -395,7 +423,7 @@ int main() {
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
-    puts("WLAN DMA production allocation callbacks above 4GiB, original 2048 and ath10k 11264 4K translations, exact allocation/free sizes, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
+    puts("Simultaneous audio/WLAN leases, audio SID0x1b21 and four-page translation/cleanup isolation; WLAN DMA production allocation callbacks above 4GiB, original 2048 and ath10k 11264 4K translations, exact allocation/free sizes, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
 }
 '''
 def main():

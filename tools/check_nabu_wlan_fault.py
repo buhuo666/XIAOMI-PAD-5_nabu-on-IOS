@@ -12,7 +12,10 @@ HARNESS=r'''
 #include <map>
 #include <set>
 #include <vector>
+#include <atomic>
+#include <thread>
 #include "NabuWlanFault.h"
+#include "NabuSharedSmmuIrq.h"
 struct Peer {
     struct Handler {void (*fn)(void *,uint32_t);void *cookie;};
     std::map<unsigned,uint32_t> memory;
@@ -39,7 +42,53 @@ struct Peer {
     }
     void fire(unsigned id){auto h=handlers.at(id);h.fn(h.cookie,id);}
 };
+struct Binding {
+    Peer &peer; NabuSharedSmmuIrq &hub; NabuWlanFault &fault;
+    NabuWlanFault::IrqOps ops() {
+        return {this,
+            [](void *x,unsigned id,bool edge,void (*fn)(void *,uint32_t),void *cookie) {
+                auto &b=*(Binding *)x;
+                if(id==97)return b.hub.join(fn,cookie);
+                auto ops=b.peer.irqs();return ops.attach(ops.cookie,id,edge,fn,cookie);
+            },
+            [](void *x,unsigned id){auto &b=*(Binding *)x;auto ops=b.peer.irqs();ops.mask(ops.cookie,id);},
+            [](void *x,unsigned id){auto &b=*(Binding *)x;if(id==97)b.hub.leave(&b.fault);
+                else {auto ops=b.peer.irqs();ops.detach(ops.cookie,id);}}};
+    }
+};
+static void shared_irq_cases() {
+    {Peer p;NabuSharedSmmuIrq hub;hub.irq=p.irqs();hub.pause=[](){std::this_thread::yield();};
+        NabuWlanFault wlan,audio;Binding w{p,hub,wlan},a{p,hub,audio};wlan.irq=w.ops();audio.irq=a.ops();
+        assert(wlan.install(55,p.io())&&audio.install(54,p.io()));
+        assert(hub.users==2&&p.handlers.size()==3);
+        unsigned cb=(64+54)*4096;p.memory[cb+0x58]=2;p.memory[cb+0x60]=0x10000000;p.memory[0x1400+54*4]=0x1b21;
+        p.fire(NabuWlanFault::context_irqs[54]);NabuWlanFault::Record c{},g{};
+        assert(audio.snapshot(c,g)==1&&c.sid==0x1b21&&wlan.snapshot(c,g)==0);
+        audio.remove();assert(hub.users==1&&p.handlers.count(97)&&p.handlers.count(368));
+        p.memory[0x48]=2;p.fire(97);assert(wlan.snapshot(c,g)==2&&g.status==2);
+        wlan.remove();assert(hub.users==0&&p.handlers.empty());
+    }
+    {Peer p;NabuSharedSmmuIrq hub;hub.irq=p.irqs();hub.pause=[](){std::this_thread::yield();};
+        NabuWlanFault wlan,audio;Binding w{p,hub,wlan},a{p,hub,audio};wlan.irq=w.ops();audio.irq=a.ops();
+        assert(wlan.install(55,p.io()));p.fail_irq=NabuWlanFault::context_irqs[54];
+        assert(!audio.install(54,p.io())&&hub.users==1&&p.handlers.count(97)&&p.detached.empty());
+        wlan.remove();assert(p.handlers.empty());
+    }
+    // Removal must wait for a callback that already acquired this subscriber.
+    {Peer p;NabuSharedSmmuIrq hub;hub.irq=p.irqs();hub.pause=[](){std::this_thread::yield();};
+        struct State {std::atomic<bool> entered{false},release{false},left{false};} state;
+        auto handler=[](void *x,uint32_t){auto &s=*(State *)x;s.entered=true;
+            while(!s.release.load())std::this_thread::yield();};
+        assert(hub.join(handler,&state)==0);
+        std::thread firing([&]{p.fire(97);});while(!state.entered.load())std::this_thread::yield();
+        std::thread removing([&]{hub.leave(&state);state.left=true;});
+        while(__atomic_load_n(&hub.subscribers[0].handler,__ATOMIC_SEQ_CST))std::this_thread::yield();
+        assert(!state.left.load());state.release=true;firing.join();removing.join();
+        assert(state.left.load()&&p.handlers.empty());
+    }
+}
 int main() {
+    shared_irq_cases();
     assert(NabuWlanFault::global_irq==golden_irqs[0]);
     for(unsigned b=0;b<80;++b)assert(NabuWlanFault::context_irqs[b]==golden_irqs[b+1]);
     for(unsigned n=0;n<6;++n){const auto &a=NabuWlanFault::actlr_table[n];
@@ -66,7 +115,7 @@ int main() {
         assert(p.memory[0x48]==2&&p.memory[cb+0x58]==0x40000002&&p.writes==0); // Never clear foreign global evidence.
         f.remove();assert(p.handlers.empty()&&p.detached==std::vector<unsigned>({368,97}));
     }
-    puts("Nabu original FDT IRQ/ACTLR oracle, exclusive global/context registration, real fault record layout, first-fault retention and no SMMU/security writes passed");
+    puts("Shared global IRQ lifetime, in-flight callback drain, audio context isolation and failed second registration rollback; Nabu FDT IRQ/ACTLR oracle, real fault record layout, first-fault retention and no SMMU/security writes passed");
 }
 '''
 def main():
