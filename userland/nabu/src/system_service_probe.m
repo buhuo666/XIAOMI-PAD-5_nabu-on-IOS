@@ -47,6 +47,66 @@ extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
 extern NSDictionary *nabuWiFiControlTrial(NSString *action);
 
+static void saveReport(NSDictionary *report, NSString *name);
+
+static NSDictionary *systemConfigurationInventory(void) {
+    static BOOL started;
+    NSString *path = [reportDirectory stringByAppendingPathComponent:@"wireless-system-configuration.json"];
+    if (!started) {
+        started = YES;
+        saveReport(@{@"stage": @"queued", @"pid": @(getpid())}, @"wireless-system-configuration.json");
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            @autoreleasepool {
+                NSMutableDictionary *out = [@{@"pid": @(getpid()), @"read_only": @YES,
+                    @"started_time": @((long long)time(NULL))} mutableCopy];
+                void (^checkpoint)(NSString *) = ^(NSString *stage) {
+                    out[@"stage"] = stage;
+                    out[@"updated_time"] = @((long long)time(NULL));
+                    saveReport(out, @"wireless-system-configuration.json");
+                };
+                checkpoint(@"load-framework");
+                void *sc = dlopen("/System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration", RTLD_NOW);
+                if (!sc) { checkpoint(@"framework-unavailable"); return; }
+                CFTypeRef (*create)(CFAllocatorRef, CFStringRef, void *, void *) = dlsym(sc, "SCDynamicStoreCreate");
+                CFTypeRef (*copyValue)(CFTypeRef, CFStringRef) = dlsym(sc, "SCDynamicStoreCopyValue");
+                int (*scError)(void) = dlsym(sc, "SCError");
+                checkpoint(@"create-session");
+                CFTypeRef store = create(NULL, CFSTR("Nabu wireless inventory"), NULL, NULL);
+                out[@"session_created"] = @(store != NULL);
+                if (store) {
+                    for (NSString *key in @[@"State:/Network/Interface", @"Plugin:InterfaceNamer"]) {
+                        checkpoint([@"read:" stringByAppendingString:key]);
+                        id value = CFBridgingRelease(copyValue(store, (__bridge CFStringRef)key));
+                        out[key] = value ?: NSNull.null;
+                        out[[key stringByAppendingString:@":error"]] = @(value ? 0 : scError());
+                    }
+                    CFRelease(store);
+                } else out[@"session_error"] = @(scError());
+                CFArrayRef (*copyAll)(void) = dlsym(sc, "SCNetworkInterfaceCopyAll");
+                CFStringRef (*bsdName)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetBSDName");
+                CFStringRef (*interfaceType)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetInterfaceType");
+                checkpoint(@"SCNetworkInterfaceCopyAll-enter");
+                CFArrayRef all = copyAll();
+                checkpoint(@"SCNetworkInterfaceCopyAll-return");
+                NSMutableArray *interfaces = [NSMutableArray array];
+                if (all) {
+                    for (CFIndex i = 0; i < CFArrayGetCount(all); ++i) {
+                        CFTypeRef entry = CFArrayGetValueAtIndex(all, i);
+                        [interfaces addObject:@{@"bsd_name": (__bridge id)bsdName(entry) ?: NSNull.null,
+                            @"type": (__bridge id)interfaceType(entry) ?: NSNull.null}];
+                    }
+                    CFRelease(all);
+                }
+                out[@"interfaces"] = interfaces;
+                dlclose(sc);
+                checkpoint(@"complete");
+            }
+        });
+    }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    return data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : @{@"stage": @"queued"};
+}
+
 static NSDictionary *wirelessSnapshot(void) {
     NSMutableDictionary *software = [NSMutableDictionary dictionary];
     NSMutableArray *jobs = [NSMutableArray array];
@@ -81,37 +141,6 @@ static NSDictionary *wirelessSnapshot(void) {
         freeifaddrs(interfaces);
     }
     software[@"bsd_interfaces"] = bsd;
-    void *sc = dlopen("/System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration", RTLD_NOW);
-    if (sc) {
-        CFTypeRef (*create)(CFAllocatorRef, CFStringRef, void *, void *) = dlsym(sc, "SCDynamicStoreCreate");
-        CFTypeRef (*copyValue)(CFTypeRef, CFStringRef) = dlsym(sc, "SCDynamicStoreCopyValue");
-        int (*scError)(void) = dlsym(sc, "SCError");
-        CFTypeRef store = create(NULL, CFSTR("Nabu wireless inventory"), NULL, NULL);
-        NSMutableDictionary *dynamic = [NSMutableDictionary dictionary];
-        dynamic[@"session_created"] = @(store != NULL);
-        if (store) {
-            id state = CFBridgingRelease(copyValue(store, CFSTR("State:/Network/Interface")));
-            dynamic[@"interface_list_error"] = @(state ? 0 : scError());
-            dynamic[@"interface_list"] = state ?: NSNull.null;
-            CFRelease(store);
-        } else dynamic[@"session_error"] = @(scError());
-        CFArrayRef (*copyAll)(void) = dlsym(sc, "SCNetworkInterfaceCopyAll");
-        CFStringRef (*bsdName)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetBSDName");
-        CFStringRef (*interfaceType)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetInterfaceType");
-        CFArrayRef all = copyAll();
-        NSMutableArray *networkInterfaces = [NSMutableArray array];
-        if (all) {
-            for (CFIndex i = 0; i < CFArrayGetCount(all); ++i) {
-                CFTypeRef entry = CFArrayGetValueAtIndex(all, i);
-                [networkInterfaces addObject:@{@"bsd_name": (__bridge id)bsdName(entry) ?: NSNull.null,
-                    @"type": (__bridge id)interfaceType(entry) ?: NSNull.null}];
-            }
-            CFRelease(all);
-        }
-        dynamic[@"configured_interface_list"] = networkInterfaces;
-        software[@"system_configuration"] = dynamic;
-        dlclose(sc);
-    }
     void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
     if (!kit) return @{@"read_only": @YES, @"error": @"IOKit unavailable", @"software": software};
     uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
@@ -142,6 +171,27 @@ static NSDictionary *wirelessSnapshot(void) {
         classes[name] = @{@"status": @(status), @"count": @(count), @"entries": entries};
     }
     software[@"iokit_matching_classes"] = classes;
+    int (*iterate)(uint32_t, const char *, uint32_t, uint32_t *) = dlsym(kit, "IORegistryCreateIterator");
+    int (*busyState)(uint32_t, uint32_t *) = dlsym(kit, "IOServiceGetBusyState");
+    int (*getPath)(uint32_t, const char *, char *) = dlsym(kit, "IORegistryEntryGetPath");
+    int (*getClass)(uint32_t, char *) = dlsym(kit, "IOObjectGetClass");
+    NSMutableArray *busy = [NSMutableArray array];
+    uint32_t busyIterator = 0, busyEntry = 0;
+    int iteratorStatus = iterate(0, "IOService", 1, &busyIterator);
+    if (!iteratorStatus) while ((busyEntry = next(busyIterator))) {
+        uint32_t count = 0;
+        if (!busyState(busyEntry, &count) && count) {
+            char path[512] = {0}, name[128] = {0};
+            int pathStatus = getPath(busyEntry, "IOService", path);
+            getClass(busyEntry, name);
+            [busy addObject:@{@"path": @(path), @"path_status": @(pathStatus),
+                @"class": @(name), @"busy": @(count)}];
+        }
+        release(busyEntry);
+    }
+    if (busyIterator) release(busyIterator);
+    software[@"iokit_busy_services"] = @{@"iterator_status": @(iteratorStatus), @"entries": busy};
+    software[@"system_configuration"] = systemConfigurationInventory();
     uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
     id value = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-wireless-report"), NULL, 0)) : nil;
     NSMutableDictionary *crash = [NSMutableDictionary dictionary];
