@@ -59,6 +59,7 @@ def main():
         sources.append(('NabuWireless',ROOT/'patches/nabu-wireless/NabuWireless.cpp'))
         sources.append(('NabuBluetooth',ROOT/'patches/nabu-wireless/NabuBluetooth.cpp'))
         sources.append(('NabuModem',ROOT/'patches/nabu-wireless/NabuModem.cpp'))
+        sources.append(('NabuAdsp',ROOT/'patches/nabu-audio/NabuAdsp.cpp'))
         sources.append(('NabuGlink',ROOT/'patches/nabu-wireless/NabuGlink.cpp'))
         sources.append(('NabuRmtfs',ROOT/'patches/nabu-wireless/NabuRmtfs.cpp'))
         sources.append(('NabuMsa',ROOT/'patches/nabu-wireless/NabuMsa.cpp'))

@@ -8,6 +8,10 @@
 
 视频未通过：Safari哔哩哔哩视频区域黑屏，播放时黑色闪烁、暂停后消失，评论等网页内容正常。日志有空IOGPU设备引用、ANGLE及预解码错误，也有视频帧入队；将图形/视频链路列为独立待修，尚未确定唯一原因。不能把声音通过写成视频画面正常。详见[第138轮结果](../analysis/nabu-audio-v138.md)。
 
+## 第139轮内置音频起步
+
+用户明确要求开始内置扬声器和麦克风。原机只读采集已保存ADSP签名固件、四路CS35L41保护/校准文件、mixer路由及实际控制状态。首轮独立PAS1 ADSP启停候选使用原机保留内存和APPS/ADSP host2通道，保留已通过的无线/蓝牙；不提前激活放大器或发布假内置音频路由。固件通过Boot APFS /fw载入以避免ADT容量限制。实现与验收边界见[内置音频起步](../analysis/nabu-internal-audio-v139.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

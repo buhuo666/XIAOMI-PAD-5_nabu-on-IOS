@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <AVFAudio/AVFAudio.h>
 #include <errno.h>
+#include <dlfcn.h>
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -84,6 +85,20 @@ static NSDictionary *audioFiles(void) {
     return out;
 }
 
+static id audioHardwareReport(void) {
+    void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    if (!kit) return NSNull.null;
+    uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
+    CFTypeRef (*property)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = dlsym(kit, "IORegistryEntryCreateCFProperty");
+    int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
+    uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
+    id report = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-adsp-report"), NULL, 0)) : nil;
+    if (chosen) release(chosen);
+    dlclose(kit);
+    if ([report isKindOfClass:NSData.class]) report = [[NSString alloc] initWithData:report encoding:NSUTF8StringEncoding];
+    return report ?: NSNull.null;
+}
+
 static void little32(uint8_t *out, uint32_t value) { value = CFSwapInt32HostToLittle(value); memcpy(out, &value, 4); }
 static void little16(uint8_t *out, uint16_t value) { value = CFSwapInt16HostToLittle(value); memcpy(out, &value, 2); }
 
@@ -127,6 +142,7 @@ static void audioRun(NSString *action, NSString *identifier) {
     AVAudioSessionCategoryOptions oldOptions = 0;
     @try {
         report[@"files"] = audioFiles();
+        report[@"adsp"] = audioHardwareReport();
         audioCheckpoint(report, @"AVAudioSession-enter");
         session = AVAudioSession.sharedInstance;
         audioCheckpoint(report, @"session-snapshot-enter");

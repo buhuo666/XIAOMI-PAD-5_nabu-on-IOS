@@ -116,6 +116,7 @@ def main():
     ap.add_argument('--wlan-board',type=Path,help='Original board parameters for QMI download and calibration report')
     ap.add_argument('--wlan-native-service',action='store_true',help='Publish the real wlan device and native en0 for service discovery; station control is separate')
     ap.add_argument('--bluetooth-transport', action='store_true', help='Keep the initialized Bluetooth UART running and publish its board capabilities')
+    ap.add_argument('--adsp-trial', action='store_true', help='Run the bounded Nabu PAS1 ADSP boot/readiness/shutdown trial')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
@@ -183,6 +184,14 @@ def main():
         entry['args'] += ' nabu-wireless=' + ('5' if a.modem_glink else '4' if a.modem_firmware else '3' if a.bluetooth_firmware else '2' if a.bluetooth_version else '1')
         if a.bluetooth_transport:
             entry['args'] += ' nabu-bt-transport=1'
+        assert config_bytes.count(old_args.encode())==1
+        config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
+    if a.adsp_trial:
+        kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
+        assert kernel_report['data_block']['adsp_trial'], 'ADSP trial requires its linked Nabu driver'
+        assert a.bootstrap and json.loads(a.bootstrap.with_name('bootstrap-report.json').read_text()).get('adsp_firmware'), 'ADSP trial requires original firmware in Boot APFS'
+        old_args=entry['args']
+        entry['args'] += ' nabu-adsp=1'
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:

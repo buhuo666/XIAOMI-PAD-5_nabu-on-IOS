@@ -24,6 +24,7 @@ def main():
     p.add_argument('--bluetooth-hal', type=Path, required=True)
     p.add_argument('--system-service-probe', type=Path, required=True)
     p.add_argument('--bluetooth-lifecycle', type=Path, help='Lifecycle service that preserves the driver operating baud')
+    p.add_argument('--adsp-firmware', type=Path, help='Prepared original Nabu ADSP files for Boot APFS /fw')
     p.add_argument('--work', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
@@ -58,7 +59,27 @@ def main():
     check = subprocess.run(host_command([host_path(ROOT / 'build/apfsprogs/apfsck/apfsck'),
         '-c', '-u', '-w', host_path(init)]), capture_output=True, check=True)
     (a.output / 'NabuInit-apfsck.log').write_bytes(check.stdout + check.stderr)
-    for name in ('Boot.apfs', 'App.apfs'):
+    adsp = None
+    if a.adsp_firmware:
+        adsp = json.loads((a.adsp_firmware / 'firmware.json').read_text())
+        assert adsp['pas_id'] == 1 and adsp['base'] == 0x8be00000 and adsp['reserved_bytes'] == 0x2200000
+        fw = a.work / 'boot/fw'
+        fw.mkdir(exist_ok=True)
+        for name in [adsp['metadata']] + [s['file'] for s in adsp['segments'] if s['file']]:
+            shutil.copy2(a.adsp_firmware / name, fw / name)
+        boot_nodes = read_tree(str(a.work / 'boot'))
+        bootstrap_permissions(boot_nodes)
+        boot = a.output / 'Boot.apfs'
+        volume = Volume(0, 'Boot', boot_nodes, False, 1683900000 * 1000000000, None, [])
+        container = Container([volume], 256, boot.name)
+        container.layout()
+        container.write(str(boot))
+        check = subprocess.run(host_command([host_path(ROOT / 'build/apfsprogs/apfsck/apfsck'),
+            '-c', '-u', '-w', host_path(boot)]), capture_output=True, check=True)
+        (a.output / 'Boot-apfsck.log').write_bytes(check.stdout + check.stderr)
+    else:
+        shutil.copy2(a.baseline / 'Boot.apfs', a.output / 'Boot.apfs')
+    for name in ('App.apfs',):
         shutil.copy2(a.baseline / name, a.output / name)
     combined = a.output / 'bootstrap.apfs'
     with combined.open('wb') as output:
@@ -75,17 +96,22 @@ def main():
     report.update(bytes=combined.stat().st_size, sha256=hashlib.sha256(combined.read_bytes()).hexdigest(),
         device_execution_validated=False)
     for item in report['containers']:
-        if item['name'] == 'NabuInit.apfs':
-            item.update(bytes=init.stat().st_size, sha256=hashlib.sha256(init.read_bytes()).hexdigest())
+        if item['name'] == 'NabuInit.apfs' or (adsp and item['name'] == 'Boot.apfs'):
+            image = a.output / item['name']
+            item.update(bytes=image.stat().st_size, sha256=hashlib.sha256(image.read_bytes()).hexdigest())
+    if adsp:
+        report['adsp_firmware'] = {'source': str(a.adsp_firmware), 'path': 'Boot APFS /fw',
+            'pas_id': adsp['pas_id'], 'base': adsp['base'], 'reserved_bytes': adsp['reserved_bytes'],
+            'payload_bytes': adsp['file_bytes'], 'runtime_verified': False}
     report['audio_service_update'] = {'baseline': str(a.baseline.resolve()),
         'baseline_tree': str(a.baseline_tree.resolve()), 'original_bluetooth_hal': str(a.bluetooth_hal.resolve()),
         'bundle_identifier': info['CFBundleIdentifier'],
         'changed_root_files': changed, 'bluetooth_transport': transport,
         'bluetooth_lifecycle': str(a.bluetooth_lifecycle) if a.bluetooth_lifecycle else None,
         'hal_files': [str(x.relative_to(a.bluetooth_hal)) for x in sorted(a.bluetooth_hal.rglob('*')) if x.is_file()],
-        'boot_and_app_containers_unchanged': True, 'runtime_verified': False,
+        'boot_and_app_containers_unchanged': not bool(adsp), 'app_container_unchanged': True, 'runtime_verified': False,
         'interpretation': 'Restores a hidden original output provider; audible playback still needs a live A2DP trial.'}
-    report['filesystem_check'] = 'Regenerated NabuInit: apfsck -c -u -w passed; baseline Boot/App copied'
+    report['filesystem_check'] = 'Regenerated NabuInit and optional firmware Boot: apfsck -c -u -w passed; remaining baseline containers copied'
     (a.output / 'bootstrap-report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report['audio_service_update'], indent=2))
 
