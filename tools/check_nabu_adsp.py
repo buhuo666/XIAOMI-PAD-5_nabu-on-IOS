@@ -9,11 +9,13 @@ from check_darwinboot_8796 import host_command, host_path
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r'''
 #include <cassert>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -116,17 +118,47 @@ using vm_size_t=size_t;
 static constexpr unsigned VM_WIMG_WCOMB=6;
 static size_t page_size,active_bytes,mappings;
 static uintptr_t active_address;
-static std::vector<uint8_t> dsp_memory(MemorySize);
+static std::map<uintptr_t,size_t> allocations;
+alignas(16384) static std::array<uint8_t,MemorySize> dsp_memory;
 static uintptr_t trunc_page(uintptr_t x){return x&~(page_size-1);}
 static uintptr_t round_page(uintptr_t x){return (x+page_size-1)&~(page_size-1);}
 static uintptr_t map(const char *,uintptr_t pa,size_t bytes,unsigned flags){
     assert(!active_bytes&&flags==VM_WIMG_WCOMB&&pa%page_size==0&&bytes%page_size==0);
     assert(pa>=MemoryBase&&pa+bytes<=MemoryEnd);active_bytes=bytes;++mappings;
-    return active_address=uintptr_t(dsp_memory.data())+pa-MemoryBase;
+    active_address=uintptr_t(dsp_memory.data())+pa-MemoryBase;
+    allocations[active_address]=bytes;return active_address;
 }
-static void ml_io_unmap(uintptr_t address,size_t bytes){assert(address==active_address&&bytes==active_bytes);active_bytes=0;}
+static void ml_io_unmap(uintptr_t address,size_t bytes){
+    assert(address==active_address&&bytes==active_bytes);
+    assert(allocations.at(address)==bytes);allocations.erase(address);active_bytes=0;
+}
 static void log(const char *,...){}
 static void publish(){}
+@@UNMAP_CODE@@
+static void test_unmap() {
+    struct Case{uintptr_t physical;size_t bytes,span4k,span16k;};
+    const Case cases[]={
+        {0x01f43000,0x1000,0x1000,0x4000}, // lock3: returned VA +0x3000 at 16K
+        {0x17c0000c,4,0x1000,0x4000}, // APCS: returned VA +0xc at either size
+        {0x0c300000,0x1000,0x1000,0x4000},
+        {0x18220000,0x4000,0x4000,0x4000},
+        {0x86000000,0x200000,0x200000,0x200000},
+        {0x85f20000,0x20000,0x20000,0x20000},
+        {0x8be00000,0x4000,0x4000,0x4000},
+        {0x8be03000,0x4000,0x4000,0x8000} // page-offset range crossing into next VM page
+    };
+    for(size_t page:{4096u,16384u})for(const auto &test:cases) {
+        page_size=page;active_address=0x10000000;
+        active_bytes=page==4096?test.span4k:test.span16k;
+        uintptr_t left=active_address-page,right=active_address+active_bytes;
+        allocations={{left,page},{active_address,active_bytes},{right,page}};
+        uintptr_t returned=active_address+(test.physical&(page-1));
+        unmap(returned,test.bytes);
+        assert(!active_bytes&&allocations.size()==2&&allocations.at(left)==page&&allocations.at(right)==page);
+        allocations.clear();
+    }
+    puts("production unmap restores exact 4K/16K VM allocations for lock3/APCS/AOP/RPMh/SMEM/command-db/segments; adjacent allocations preserved");
+}
 struct CopyTrial {
     Image image{};
     bool copy_segments() {
@@ -191,7 +223,7 @@ static void test_image(const char *directory) {
     }
     puts("production MDT bounds and copied segment/BSS/gap checks at 4K and 16K pages passed");
 }
-int main(int argc,char **argv){test_trace();test_smem();test_lifecycle();test_image(argc==2?argv[1]:nullptr);}
+int main(int argc,char **argv){test_trace();test_smem();test_lifecycle();test_unmap();test_image(argc==2?argv[1]:nullptr);}
 '''
 
 
@@ -208,8 +240,9 @@ def main():
     trace = driver[driver.index('static __attribute__((noinline)) char *trace_text('):driver.index('static bool pas(')]
     trace = trace.replace('__asm__ volatile("mrs %0, mpidr_el1\\n\\tmrs %1, daif" : "=r"(mpidr), "=r"(daif) : : "memory");',
                           'mpidr = 0x81000300; daif = 0x80;')
+    unmap = driver[driver.index('static void unmap('):driver.index('// Narrow SCM boundary trace:')]
     source, binary = args.output/'adsp.cpp', args.output/'adsp-test'
-    source.write_text(HARNESS.replace('@@COPY_BODY@@', body).replace('@@TRACE_CODE@@', trace))
+    source.write_text(HARNESS.replace('@@COPY_BODY@@', body).replace('@@TRACE_CODE@@', trace).replace('@@UNMAP_CODE@@', unmap))
     subprocess.run(host_command(['clang++-18', '-std=c++17', '-O1', '-g',
         '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
         '-I'+host_path(ROOT/'patches/nabu-audio'), host_path(source), '-o', host_path(binary)]), check=True)

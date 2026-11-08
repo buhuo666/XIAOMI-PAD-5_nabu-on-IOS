@@ -47,6 +47,15 @@ static vm_offset_t map(const char *name, vm_offset_t physical, vm_size_t bytes, 
     log("NABU ADSP: map %s pa=%#llx bytes=%#llx ok=%u\n", name, (uint64_t)physical, (uint64_t)bytes, address != 0);
     return address;
 }
+static void unmap(vm_offset_t address, vm_size_t bytes) {
+    // io_map returns allocation base + physical page offset. ml_io_unmap
+    // expects the full VM allocation, including on 16K VM / 4K hardware pages.
+    vm_offset_t base = trunc_page(address);
+    vm_size_t span = round_page(address - base + bytes);
+    log("NABU ADSP: unmap va=%#llx bytes=%#llx base=%#llx span=%#llx\n",
+        (uint64_t)address, (uint64_t)bytes, (uint64_t)base, (uint64_t)span);
+    ml_io_unmap(base, span);
+}
 // Narrow SCM boundary trace: stack formatting and the existing panic-capable
 // loader logger only. MPIDR records CPU affinity; DAIF is sampled before logging.
 // Do not allocate, publish registry properties or change the caller's IRQ state.
@@ -219,7 +228,7 @@ struct Trial {
                 }
             }
         }
-        ml_io_unmap(db_va, 0x20000);
+        unmap(db_va, 0x20000);
         if (!address[0] || !address[1]) return false;
         log("NABU ADSP: XO resource=%#x value=%u\n", address[1], value[1]);
         lck_mtx_lock(&hakios_rsc_lock);
@@ -250,7 +259,7 @@ struct Trial {
             vm_offset_t target = mapping + segment.physical - page;
             if (segment.file_bytes) memcpy((void *)target, segment.file, segment.file_bytes);
             bzero((void *)(target + segment.file_bytes), segment.memory_bytes - segment.file_bytes);
-            __asm__ volatile("dsb sy" ::: "memory"); ml_io_unmap(mapping, bytes);
+            __asm__ volatile("dsb sy" ::: "memory"); unmap(mapping, bytes);
             log("NABU ADSP: copied b%02u pa=%#x file=%u memory=%u\n", segment.index, segment.physical, segment.file_bytes, segment.memory_bytes);
         }
         publish(); return true;
@@ -314,11 +323,11 @@ struct Trial {
     bool shutdown() { return pas(6, 1); }
     void release() {
         if (metadata) { IOFreeContiguous(metadata, NabuAdsp::MetadataLimit); metadata = nullptr; }
-        if (hwlock) { ml_io_unmap(hwlock, 0x1000); hwlock = 0; }
-        if (smem_va) { ml_io_unmap(smem_va, NabuAdsp::SmemSize); smem_va = 0; }
-        if (rsc) { ml_io_unmap(rsc, 0x4000); rsc = 0; }
-        if (ipc) { ml_io_unmap(ipc, 4); ipc = 0; }
-        if (aop) { ml_io_unmap(aop, 0x1000); aop = 0; }
+        if (hwlock) { unmap(hwlock, 0x1000); hwlock = 0; }
+        if (smem_va) { unmap(smem_va, NabuAdsp::SmemSize); smem_va = 0; }
+        if (rsc) { unmap(rsc, 0x4000); rsc = 0; }
+        if (ipc) { unmap(ipc, 4); ipc = 0; }
+        if (aop) { unmap(aop, 0x1000); aop = 0; }
         // hakios_image_file returns borrowed pointers into the mounted boot image.
     }
 };

@@ -2,7 +2,7 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-用户在第138轮验收后明确开始内置扬声器与麦克风。第139轮原机ADSP固件读取、host2共享内存、AOP/CX/XO请求成功，随后在PAS1初始化入口附近panic停机，具体原因未进入常规panic日志；下一轮补精确调用边界和早期panic记录。1,824,826字节连续日志前缀及64MiB槽已备份清空，APFS109，设备已回Android、蓝牙关闭、USB连接。内置实际出声/录音尚未通过。见[内置音频起步及第139轮结果](../analysis/nabu-internal-audio-v139.md)。
+用户在第138轮验收后明确开始内置扬声器与麦克风。第140轮早期panic诊断取得write_pte_fast页表组未对齐原因；ADSP硬件锁映射带0x3000页内偏移，直接解除该地址的代码错误与照片吻合。第141轮将ADSP解除映射统一恢复到原VM分配的base/span，保留pmap检查。第140轮1,704,631字节连续前缀及64MiB槽已备份清空，APFS110，设备Android、蓝牙关闭、USB连接；ADSP ready及内置出声/录音仍未通过。见[第140轮结果](../analysis/nabu-internal-audio-v140.md)与[第141轮候选](../analysis/nabu-internal-audio-v141.md)。
 
 第138轮蓝牙A2DP阶段通过：用户确认本地左右声道、Safari持续声音及蓝牙关闭/开启后重连播放均正常，Wi-Fi同时联网。3.2Mbps换速和固件/原生服务初始化通过，首次与重连保留251kbps AAC。完整连续日志前缀0次A2DP队列满丢包，151次传输快照无溢出/收发错误，累计TX约9.95MB。11,796,578字节连续前缀及64MiB原始槽已备份清空，APFS108，设备Android、蓝牙关闭、USB连接、耳机留盒。见[第138轮结果](../analysis/nabu-audio-v138.md)。
 
