@@ -11,3 +11,16 @@
 重连复核见log/host/wireless-v135/reconnect-review.md：331.353秒开电后15次扫描及SCAN_DONE成功，目标AP出现，但逐请求日志304.659秒已达800条上限；不能断言wifid未发ASSOCIATE。下轮让SET19/20/22结果继续记录，不擅自改变内核standing策略。
 
 主机实际源码：station37项（新增11个信号取消/寿命用例）ASan/UBSan和严格编译通过；adapter与event39实际编码测试通过；runtime5项通过；修改的arm64 runtime对象编译通过。完整CI、部署与图标验收结果待后续记录。
+
+
+## 第135轮结果：信号格修复已验收（2026-11-08）
+
+源码bec9c699153d5c4ec863a93c9a1a25365e15ecb1，完整CI42449579323及probe CI42449579312全通过。桌面正常。用户手选WPA2网络后确认顶部信号格正常、网页正常；关闭Wi-Fi再开启仍需手选，之后信号格及网页再次确认正常。底层读回RSSI=-42dBm，en0仍取得192.168.137.104。日志首次RSSI event39于93.749秒出现，前16条实际值-45..-41dBm；没有用固定满格或伪造噪声/范围。
+
+关联分别于92.943、336.529秒成功；poweroff266.541、poweron281.367秒成功。SET19/20/22日志已取消旧800条上限，本轮poweron到用户手选前没有ASSOCIATE请求；继续核对wifid自动加入条件，不先改内核自动连接策略。
+
+诊断MobileWiFi manager可创建但CopyDevices为NULL：原件确认客户端/服务端要求com.apple.wifi.manager-access Boolean true，而此probe缺少，不能用该诊断空列表解释SpringBoard。其补权修改尚未部署。用户UI结果与原生RSSI日志足以确认本轮图标修复；尚未测试实际远近变化与各档信号阈值。
+
+蓝牙清单正常返回；本轮蓝牙处于关闭，HCI Reset及deepsleep/idle生命周期成功、共享资源保留，没有原版Stack initialization complete日志，不能沿用上一轮当作本轮开栈验收。
+
+设备已回Android、蓝牙关闭、USB连接。6,086,093字节连续日志及完整64MiB槽已备份清空，无终止记录；APFS104→105、fullfsync成功。证据见log/host/wireless-v135/result-summary.json及log/device/nabu-boot-20261108-135/runtime-log。
