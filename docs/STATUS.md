@@ -2,12 +2,12 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-当前优先级已按用户要求切换到Wi-Fi和蓝牙。第129轮完整ath10k扫描复测成功：
-41信道、3251ms、33个热点（24个2.4GHz、9个5GHz），HTT/WMI及44MiB DMA通过。
-蓝牙完整排空493字节QCA诊断ACL后收到真实Reset成功回执，原生UART发布，生命周期
-boot/init与原版bluetoothd栈初始化通过。原生Wi-Fi界面、关联、IP仍待接入。
-2,918,176字节日志及完整64MiB槽已备份清空，APFS99，设备在Android且蓝牙关闭。
-详见[第129轮结果](../analysis/nabu-wireless-recovery-v129.md)。
+当前优先级已按用户要求切换到Wi-Fi和蓝牙。第130轮原版wifid已启动，发现新发布的
+en0并实际走IOCTL路径；GET12成功，GET96/97被拒绝，正在核对原版调用契约。
+独立ath10k扫描34个热点（25个2.4GHz、9个5GHz），蓝牙boot/init和原版系统栈通过。
+原生station控制、关联及IP仍待接入，en0保持down。2,834,552字节日志及完整64MiB
+槽已备份清空，APFS100，设备在Android且蓝牙关闭。详见
+[第130轮结果](../analysis/nabu-wifi-service-v130.md)。
 
 第127轮补齐QDSS时钟后首次取得FW_READY、HTC READY及WMI服务连接；第128轮
 首次真实扫描31个热点，第129轮同时恢复蓝牙初始化。第110轮耳机原配对跨重启

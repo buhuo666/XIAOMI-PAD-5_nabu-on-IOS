@@ -2,17 +2,19 @@
 
 更新：2026-11-08。用户在第75轮体验验收后明确开始修复无线功能。
 
-最新实测为第129轮：完整ath10k扫描收到33个热点（24个2.4GHz、9个5GHz）。
-蓝牙诊断ACL解析修复通过，Reset、地址/版本查询、生命周期boot/init与原版
-bluetoothd栈初始化均成功。尚未关联或联网，也未接入原生Wi-Fi设置服务。
+最新实测为第130轮：独立ath10k扫描收到34个热点（25个2.4GHz、9个5GHz）。
+原版wifid已启动，发现新发布的en0并发出实际IOCTL；GET12成功，GET96/97拒绝，
+原生station控制尚未接入。蓝牙Reset、地址/版本查询、生命周期boot/init与原版
+bluetoothd栈初始化均成功。尚未关联或联网。
 蓝牙第110轮的开关/配对/跨重启直连仅作为此前基线，本轮未重测耳机。
 声音播放留到声音服务阶段，
 Wi-Fi联网期间的蓝牙共同使用尚待验证。详见
 [第110轮回收结果](../analysis/nabu-bluetooth-cold-boot-v110.md)。以下各轮按历史保留。
 
 v128首次验证固定版本Helium ath10k的冷启动交接、44MiB DMA池及HTT/WMI扫描；
-v129复测通过并恢复蓝牙。第129轮2,918,176字节日志及64MiB槽已备份清空，
-APFS99，设备在Android。见[第129轮记录](../analysis/nabu-wireless-recovery-v129.md)。
+v129复测通过并恢复蓝牙，v130补齐原生服务发现。第130轮2,834,552字节日志及
+64MiB槽已备份清空，APFS100，设备在Android。见
+[第130轮记录](../analysis/nabu-wifi-service-v130.md)。
 
 ## 实机硬件依据
 

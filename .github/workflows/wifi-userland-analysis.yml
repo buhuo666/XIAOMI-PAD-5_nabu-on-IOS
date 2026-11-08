@@ -1,0 +1,62 @@
+name: nabu16 - Wi-Fi native interface analysis
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/wifi-userland-analysis.yml'
+      - 'analysis/wifi/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wifi-userland:
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Read selected original Wi-Fi executable
+        run: python3 analysis/wifi/extract_original_userland.py
+      - name: Download the existing pinned Ghidra release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/wifi-userland/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('log/ci/wifi-userland/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          if 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest() != asset['digest']:
+              raise RuntimeError('Ghidra download digest mismatch')
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Build the required native macOS decompiler
+        run: |
+          export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+          build/ghidra_12.2_PUBLIC/support/gradle/gradlew -p build/ghidra_12.2_PUBLIC/support/gradle buildNatives
+      - name: Recover native interface matching and bind callers
+        run: |
+          export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+          mkdir -p build/ghidra-wifi-userland
+          for name in wifid; do
+            build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-wifi-userland "$name" -import "log/ci/wifi-userland/$name" -analysisTimeoutPerFile 300 -scriptPath analysis/wifi -postScript ExportWiFiUserland.java log/ci/wifi-userland "$name" -log "log/ci/wifi-userland/$name-ghidra.log"
+          done
+          python3 - <<'PY'
+          import json,pathlib
+          for name in ('wifid',):
+              report=json.loads(pathlib.Path('log/ci/wifi-userland', name+'-decompilation.json').read_text())
+              if report['decompiled'] == 0: raise RuntimeError(name+' produced no decompiled functions')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: wifi-userland-analysis-${{ github.run_number }}
+          path: |
+            log/ci/wifi-userland/*.c
+            log/ci/wifi-userland/*.asm
+            log/ci/wifi-userland/*.json
+            log/ci/wifi-userland/*.log
+          retention-days: 14
