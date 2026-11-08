@@ -186,7 +186,7 @@ NSDictionary *nabuBluetoothTransportTrial(void) {
 
 NSDictionary *nabuBluetoothSocketTrial(void) {
     NSMutableDictionary *result = [@{
-        @"scope": @"Exclusive UART control socket; configure raw 115200 mode and repeat read-only HCI queries, no discovery or pairing",
+        @"scope": @"Exclusive UART control socket; configure raw mode at the driver-reported baud with RTS/CTS and repeat read-only HCI queries, no discovery or pairing",
         @"control_name": @"com.apple.uart.bluetooth",
         @"all_responses_successful": @NO
     } mutableCopy];
@@ -225,9 +225,7 @@ NSDictionary *nabuBluetoothSocketTrial(void) {
         result[@"input_speed_before"] = @(cfgetispeed(&attributes));
         result[@"output_speed_before"] = @(cfgetospeed(&attributes));
         cfmakeraw(&attributes);
-        status = cfsetspeed(&attributes, 115200);
-        result[@"cfsetspeed_errno"] = @(status ? errno : 0);
-        if (status) break;
+        attributes.c_cflag |= CCTS_OFLOW | CRTS_IFLOW;
         status = setsockopt(fd, NabuControlProtocol, (int)TIOCSETA, &attributes, sizeof(attributes));
         result[@"set_termios_errno"] = @(status ? errno : 0);
         if (status) break;

@@ -58,6 +58,7 @@ jobs:
           python3 tools/check_nabu_ath10k_glink.py --output log/ci/nabu-ath10k-glink
           python3 tools/check_nabu_ath10k_runtime.py --output log/ci/nabu-ath10k-runtime
           python3 tools/check_nabu_bluetooth_boot_rx.py --output log/ci/nabu-bluetooth-boot-rx
+          python3 tools/check_nabu_bluetooth_baud.py --output log/ci/nabu-bluetooth-baud
           python3 tools/check_nabu_bluetooth_native.py --output log/ci/nabu-bluetooth-native
           python3 tools/check_nabu_wifi_service.py --output log/ci/nabu-wifi-service
           python3 tools/check_nabu_wifi_station.py --output log/ci/nabu-wifi-station

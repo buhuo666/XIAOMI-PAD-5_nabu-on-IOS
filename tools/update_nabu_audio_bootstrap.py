@@ -23,6 +23,7 @@ def main():
     p.add_argument('--baseline-tree', type=Path, required=True)
     p.add_argument('--bluetooth-hal', type=Path, required=True)
     p.add_argument('--system-service-probe', type=Path, required=True)
+    p.add_argument('--bluetooth-lifecycle', type=Path, help='Lifecycle service that preserves the driver operating baud')
     p.add_argument('--work', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
@@ -34,8 +35,19 @@ def main():
     assert 'AudioServerPlugIn_Create' in info['CFPlugInFactories'].values()
     shutil.copytree(a.baseline_tree, a.work)
     a.output.mkdir(parents=True)
-    shutil.copytree(a.bluetooth_hal, a.work / 'root/hal/BTAudioHALPlugin.driver')
+    shutil.copytree(a.bluetooth_hal, a.work / 'root/hal/BTAudioHALPlugin.driver', dirs_exist_ok=True)
     shutil.copy2(a.system_service_probe, a.work / 'root/sbin/system-service-probe')
+    changed = ['hal/BTAudioHALPlugin.driver', 'sbin/system-service-probe']
+    transport = None
+    if a.bluetooth_lifecycle:
+        shutil.copy2(a.bluetooth_lifecycle, a.work / 'root/sbin/nabu-bluetooth-lifecycle')
+        job_path = a.work / 'root/LaunchDaemons/com.apple.bluetoothd.plist'
+        job = plistlib.loads(job_path.read_bytes())
+        jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
+        transport = jobs['environment_overrides']['com.apple.bluetoothd']['BT_HCI_TRANSPORT']
+        job['EnvironmentVariables']['BT_HCI_TRANSPORT'] = transport
+        job_path.write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
+        changed.extend(['sbin/nabu-bluetooth-lifecycle', 'LaunchDaemons/com.apple.bluetoothd.plist'])
     nodes = read_tree(str(a.work / 'root'))
     bootstrap_permissions(nodes)
     init = a.output / 'NabuInit.apfs'
@@ -54,6 +66,12 @@ def main():
             with (a.output / name).open('rb') as source:
                 shutil.copyfileobj(source, output)
     report = json.loads((a.baseline / 'bootstrap-report.json').read_text())
+    if transport:
+        report['environment_overrides']['com.apple.bluetoothd']['BT_HCI_TRANSPORT'] = transport
+        report['bluetooth_lifecycle'] = {
+            'source': str(a.bluetooth_lifecycle), 'service': 'com.apple.BlueTool',
+            'operating_baud': 'Preserve the driver-reported rate; enable RTS/CTS',
+            'runtime_verified': False}
     report.update(bytes=combined.stat().st_size, sha256=hashlib.sha256(combined.read_bytes()).hexdigest(),
         device_execution_validated=False)
     for item in report['containers']:
@@ -62,7 +80,8 @@ def main():
     report['audio_service_update'] = {'baseline': str(a.baseline.resolve()),
         'baseline_tree': str(a.baseline_tree.resolve()), 'original_bluetooth_hal': str(a.bluetooth_hal.resolve()),
         'bundle_identifier': info['CFBundleIdentifier'],
-        'changed_root_files': ['hal/BTAudioHALPlugin.driver', 'sbin/system-service-probe'],
+        'changed_root_files': changed, 'bluetooth_transport': transport,
+        'bluetooth_lifecycle': str(a.bluetooth_lifecycle) if a.bluetooth_lifecycle else None,
         'hal_files': [str(x.relative_to(a.bluetooth_hal)) for x in sorted(a.bluetooth_hal.rglob('*')) if x.is_file()],
         'boot_and_app_containers_unchanged': True, 'runtime_verified': False,
         'interpretation': 'Restores a hidden original output provider; audible playback still needs a live A2DP trial.'}

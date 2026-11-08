@@ -2,6 +2,9 @@
 #pragma once
 #include <stdint.h>
 
+// Original Nabu Android operating rate; the first ROM query still uses 115200.
+#define NABU_BT_OPERATING_BAUD         3200000u
+
 // Nabu-owned lifecycle options on com.apple.uart.bluetooth (SYSPROTO_CONTROL).
 // IBS_IDLE takes exactly uint32_t version=1. Its synchronous 2000ms deadline
 // covers draining, FE transmission and observing the controller's RX-side idle.

@@ -77,21 +77,23 @@ static bool enable_supply(vm_offset_t rsc, const char *name, uint32_t resource, 
     return done && (status[0] & 0x10000) && (status[1] & 0x10000) && (status[2] & 0x10000);
 }
 
-static bool serial_clock(vm_offset_t gcc)
+static bool serial_clock(vm_offset_t gcc, bool operating = false)
 {
     // Run76: wrapper2 AHB vote bits1/2 already set; serial3 bit7 absent.
-    // 300MHz GPLL0-even * 384/15625 = 7.3728MHz. Same table entry as Android.
+    // Android GCC table: 7.3728MHz for ROM, 102.4MHz for 3.2M/32x sampling.
+    unsigned m = operating ? 128 : 384, n = operating ? 375 : 15625;
     wr(gcc + 0x52014, rd(gcc + 0x52014) | 0x86);
     uint32_t cfg = rd(gcc + 0x1e4dc);
-    wr(gcc + 0x1e4e0, 384);
-    wr(gcc + 0x1e4e4, (~(15625u - 384u)) & 0xffff);
-    wr(gcc + 0x1e4e8, (~15625u) & 0xffff);
+    wr(gcc + 0x1e4e0, m);
+    wr(gcc + 0x1e4e4, (~(n - m)) & 0xffff);
+    wr(gcc + 0x1e4e8, (~n) & 0xffff);
     wr(gcc + 0x1e4dc, (cfg & ~0x371fu) | 0x2601);
     wr(gcc + 0x1e4d8, rd(gcc + 0x1e4d8) | 3);
     bool updated = wait_bit(gcc + 0x1e4d8, 1, false, 10000);
     bool running = updated && wait_bit(gcc + 0x1e4d4, 0x80000000, false, 10000);
-    nabu_wireless_log("NABU BT: clock updated=%u running=%u vote=%#x serial=%#x rcg=%#x cfg=%#x\n",
-        updated, running, rd(gcc + 0x52014), rd(gcc + 0x1e4d4), rd(gcc + 0x1e4d8), rd(gcc + 0x1e4dc));
+    nabu_wireless_log("NABU BT: clock operating=%u updated=%u running=%u vote=%#x serial=%#x rcg=%#x cfg=%#x m=%#x n=%#x d=%#x\n",
+        operating, updated, running, rd(gcc + 0x52014), rd(gcc + 0x1e4d4), rd(gcc + 0x1e4d8), rd(gcc + 0x1e4dc),
+        rd(gcc + 0x1e4e0), rd(gcc + 0x1e4e4), rd(gcc + 0x1e4e8));
     return running;
 }
 
@@ -197,6 +199,31 @@ static void log_reply(const char *label, const uint8_t *reply, unsigned size)
     nabu_wireless_log("NABU BT: %s RX bytes=%u data=%s\n", label, size, hex);
 }
 
+static bool change_operating_baud(vm_offset_t uart, vm_offset_t gcc)
+{
+    // Original Nabu sequence: ROM version, FC48 at 115200, new-speed CC, TLV.
+    // Hold the controller's TX through RFR while its response changes speed.
+    wr(uart + 0x2ac, 0x80000000u);
+    IODelay(10);
+    wr(uart + 0x2ac, 0x80000002u);
+    const uint8_t command[] = {1, 0x48, 0xfc, 1, 0x11};
+    if (!transmit(uart, command, sizeof(command))) return false;
+    // WCN3991 qca_set_baudrate allows 1-10ms for controller processing.
+    IOSleep(10);
+    if (!cancel_commands(uart) || !serial_clock(gcc, true)) return false;
+    wr(uart + 0x48, 0x11); wr(uart + 0x4c, 0x11);
+    wr(uart + 0x630, 1u << 27);
+    wr(uart + 0x2ac, 0); // restore automatic RTS after new-speed RX is running
+    uint8_t reply[256];
+    unsigned size = receive(uart, reply, sizeof(reply), 0xfc48);
+    log_reply("operating baud", reply, size);
+    bool ok = size == 7 && reply[0] == 4 && reply[1] == 0x0e && reply[2] == 4 &&
+        reply[4] == 0x48 && reply[5] == 0xfc && reply[6] == 0;
+    nabu_wireless_log("NABU BT: operating baud=%u result=%u tx-clock=%#x rx-clock=%#x rfr=%#x\n",
+        NABU_BT_OPERATING_BAUD, ok, rd(uart + 0x48), rd(uart + 0x4c), rd(uart + 0x2ac));
+    return ok;
+}
+
 static bool download_tlv(vm_offset_t uart, OSData *blob, const char *name, bool skip_intermediate)
 {
     const uint8_t *data = (const uint8_t *)blob->getBytesNoCopy();
@@ -233,7 +260,7 @@ extern "C" bool nabu_bluetooth_load_firmware(vm_offset_t uart)
     OSData *nvm = OSDynamicCast(OSData, entry->getProperty("nvm"));
     OSData *address = OSDynamicCast(OSData, entry->getProperty("address-hci"));
     if (!patch || !nvm || !address || address->getLength() != 6) { entry->release(); return false; }
-    nabu_wireless_log("NABU BT: loading original crbtfw32 at 115200; nvm uses this board address, sleep mask bits cleared\n");
+    nabu_wireless_log("NABU BT: loading original crbtfw32 at %u; nvm uses this board address, sleep mask bits cleared\n", NABU_BT_OPERATING_BAUD);
     bool ok = download_tlv(uart, patch, "rampatch", true) && download_tlv(uart, nvm, "nvm", false);
     uint8_t reply[256];
     if (ok) {
@@ -342,6 +369,7 @@ static unsigned stream_minimum = 1;
 static bool stream_opened;
 static int stream_rx_error, stream_tx_error;
 static uint64_t stream_received, stream_written, stream_overruns;
+static uint64_t stream_next_tx_trace = 65536;
 static kern_ctl_ref stream_ctl_ref;
 static uint32_t stream_socket_unit;
 static bool stream_socket_closing, stream_socket_enqueuing;
@@ -539,7 +567,15 @@ static void stream_tx_work(thread_call_param_t, thread_call_param_t)
         bool sent_command = (log_command || log_late) && !stream_tx_error;
         if (sent_command && log_command) ++stream_command_logs;
         if (sent_command && log_late) ++stream_late_command_logs;
+        bool trace_data = stream_written >= stream_next_tx_trace;
+        uint64_t written = stream_written, received = stream_received, overruns = stream_overruns;
+        unsigned queued = stream_tx->count, rx_queued = stream_rx->count;
+        int rx_error = stream_rx_error, tx_error = stream_tx_error;
+        if (trace_data) stream_next_tx_trace = stream_written + 65536;
         lck_mtx_unlock(stream_rx_lock);
+        if (trace_data)
+            IOLog("NABU BT TRAFFIC: tx=%llu rx=%llu tx-queued=%u rx-queued=%u overruns=%llu errors=%d/%d baud=%u\n",
+                written, received, queued, rx_queued, overruns, rx_error, tx_error, NABU_BT_OPERATING_BAUD);
         if (sent_command && log_command) nabu_wireless_log("NABU BT HCI: TX opcode=%#x bytes=%u\n", command_opcode, (unsigned)packet);
         if (sent_command && log_command && log_parameters)
             nabu_wireless_log("NABU BT HCI PARAM: opcode=%#x parameter-bytes=%u captured=%u raw=%s\n",
@@ -740,9 +776,9 @@ static int stream_write(dev_t, struct uio *uio, int ioflag)
 
 static int stream_set_termios(const struct user_termios &settings, bool flush)
 {
-    // This candidate exposes the exact 115200/8N1 mode already used by the board.
-    // Changing the controller's baud rate also needs its vendor HCI transaction.
-    if (settings.c_ospeed != 115200 || (settings.c_ispeed && settings.c_ispeed != 115200) ||
+    // FC48 and the NVM selected the operating rate before publishing this node.
+    // Native clients may configure raw mode but must not change one UART end.
+    if (settings.c_ospeed != NABU_BT_OPERATING_BAUD || (settings.c_ispeed && settings.c_ispeed != NABU_BT_OPERATING_BAUD) ||
         (settings.c_cflag & CSIZE) != CS8 || !(settings.c_cflag & CREAD) ||
         (settings.c_cflag & (PARENB | CSTOPB | CDTR_IFLOW | CDSR_OFLOW | CCAR_OFLOW))) return EINVAL;
     if ((settings.c_iflag & (ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY | PARMRK)) ||
@@ -750,11 +786,13 @@ static int stream_set_termios(const struct user_termios &settings, bool flush)
     wr(stream_uart + 0x25c, (settings.c_cflag & CCTS_OFLOW) ? 0 : 2);
     wr(stream_uart + 0x2ac, (settings.c_cflag & CRTS_IFLOW) ? 0 : 0x80000001u);
     lck_mtx_lock(stream_rx_lock);
-    stream_termios = settings; stream_termios.c_ispeed = 115200;
+    stream_termios = settings; stream_termios.c_ispeed = NABU_BT_OPERATING_BAUD;
     stream_minimum = settings.c_cc[VMIN];
     if (flush) { stream_clear_rx(); stream_rx_error = 0; stream_drain_rx(true); }
     wakeup(stream_rx);
     lck_mtx_unlock(stream_rx_lock);
+    nabu_wireless_log("NABU BT STREAM: termios baud=%llu cflag=%#llx rfr=%#x tx-config=%#x\n",
+        (uint64_t)settings.c_ospeed, (uint64_t)settings.c_cflag, rd(stream_uart + 0x2ac), rd(stream_uart + 0x25c));
     return 0;
 }
 
@@ -768,7 +806,7 @@ static int stream_control(u_long command, caddr_t data)
     case TIOCSETA_64: case TIOCSETAW_64: case TIOCSETAF_64:
         error = stream_set_termios(*(const struct user_termios *)data, command == TIOCSETAF_64); break;
     case 0x80085402: // IOSSIOSPEED, 64-bit speed_t
-        if (*(const uint64_t *)data != 115200) error = EINVAL;
+        if (*(const uint64_t *)data != NABU_BT_OPERATING_BAUD) error = EINVAL;
         break;
     case 0x80085408: { // Original AppleOnboardSerial minimum read size
         uint64_t minimum = *(const uint64_t *)data;
@@ -1063,7 +1101,7 @@ static bool stream_start(vm_offset_t uart)
     stream_uart = uart;
     stream_adopt_boot_rx(boot_rx);
     stream_termios.c_cflag = CS8 | CREAD | CLOCAL | CRTSCTS;
-    stream_termios.c_ispeed = stream_termios.c_ospeed = 115200;
+    stream_termios.c_ispeed = stream_termios.c_ospeed = NABU_BT_OPERATING_BAUD;
     stream_termios.c_cc[VMIN] = 1;
     int major = cdevsw_add(-1, &stream_cdevsw);
     if (major < 0) return false;
@@ -1081,7 +1119,7 @@ static bool stream_start(vm_offset_t uart)
     nabu_wireless_log("NABU BT STREAM: control=com.apple.uart.bluetooth register=%d id=%u\n", control_error, registration.ctl_id);
     thread_call_enter(stream_call);
     stream_publish_identity();
-    nabu_wireless_log("NABU BT STREAM: /dev/uart.bluetooth major=%d ready; baud=115200 rx-poll=1ms capacity=%u\n", major, NabuBluetoothRx::capacity);
+    nabu_wireless_log("NABU BT STREAM: /dev/uart.bluetooth major=%d ready; baud=%u rx-poll=1ms capacity=%u\n", major, NABU_BT_OPERATING_BAUD, NabuBluetoothRx::capacity);
     nabu_wireless_log("NABU BT STREAM: IBS packet-boundary adapter enabled; TX remains awake after handshake\n");
     return true;
 }
@@ -1143,7 +1181,7 @@ void nabu_bluetooth_version_trial()
     }
     nabu_wireless_log("NABU BT: trial complete version-response=%u irq=%#x status=%#x ios=%#x\n",
         version_ok, rd(uart + 0x640), rd(uart + 0x40), rd(uart + 0x908));
-    bool initialized = version_ok && level >= 3 && nabu_bluetooth_load_firmware(uart);
+    bool initialized = version_ok && level >= 3 && change_operating_baud(uart, gcc) && nabu_bluetooth_load_firmware(uart);
     uint32_t persistent = 0;
     PE_parse_boot_argn("nabu-bt-transport", &persistent, sizeof(persistent));
     if (initialized && persistent && stream_start(uart)) return;

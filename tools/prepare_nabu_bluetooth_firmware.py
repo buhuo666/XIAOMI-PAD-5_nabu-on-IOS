@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the board's own Bluetooth firmware for an awake 115200-baud trial."""
+"""Prepare the board's own Bluetooth firmware with the selected UART operating rate."""
 import argparse
 import json
 from pathlib import Path
@@ -13,6 +13,7 @@ def main():
     ap.add_argument('--address-hci', type=Path, required=True)
     ap.add_argument('--rom-version', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
+    ap.add_argument('--baud', type=int, choices=[115200, 3200000], default=3200000)
     args = ap.parse_args()
     version = json.loads(args.rom_version.read_text())
     patch = (args.firmware / 'crbtfw32.tlv').read_bytes()
@@ -38,9 +39,9 @@ def main():
             updates.append({'tag': tag, 'operation': 'retain this board address from Android HCI log'})
         elif tag == 17:
             assert length == 6
-            nvm[data] &= ~0x80  # host IBS support is not yet running
-            nvm[data + 1] = 0   # 115200; do not change the proven UART clock in this trial
-            updates.append({'tag': tag, 'operation': '115200 baud, in-band sleep disabled'})
+            nvm[data] &= ~0x80  # retain the existing Nabu sleep-mask policy
+            nvm[data + 1] = 0x11 if args.baud == 3200000 else 0
+            updates.append({'tag': tag, 'operation': f'{args.baud} baud, existing sleep mask retained'})
         elif tag == 27:
             assert length == 9
             nvm[data] &= ~1
@@ -53,7 +54,7 @@ def main():
     (args.output / 'address-hci.bin').write_bytes(address)
     report = {'rampatch': 'rampatch.tlv', 'nvm': 'nvm.bin', 'address_hci': 'address-hci.bin',
               'rampatch_bytes': len(patch), 'nvm_bytes': len(nvm), 'rampatch_unchanged': True,
-              'source': str(args.firmware), 'rom': version, 'nvm_updates': updates,
+              'source': str(args.firmware), 'rom': version, 'nvm_updates': updates, 'operating_baud': args.baud,
               'device_vendor_files_modified': False, 'runtime_verified': False}
     (args.output / 'firmware.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

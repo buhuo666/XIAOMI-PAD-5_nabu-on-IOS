@@ -175,7 +175,34 @@ static void test_command_family(void) {
     }
 }
 
+static void test_controller_termios(void) {
+    const speed_t operating_rates[] = {115200, 3200000};
+    for (size_t i = 0; i < sizeof(operating_rates)/sizeof(operating_rates[0]); ++i) {
+        struct termios attributes = {0};
+        attributes.c_ispeed = attributes.c_ospeed = operating_rates[i];
+        attributes.c_iflag = ICRNL | IXON;
+        attributes.c_oflag = OPOST;
+        attributes.c_cflag = CREAD | CS7 | PARENB;
+        attributes.c_lflag = ICANON | ECHO;
+        attributes.c_cc[VMIN] = 0;
+        attributes.c_cc[VTIME] = 5;
+        configure_controller_termios(&attributes);
+        assert(cfgetispeed(&attributes) == operating_rates[i]);
+        assert(cfgetospeed(&attributes) == operating_rates[i]);
+        assert(!(attributes.c_iflag & (ICRNL | IXON)));
+        assert(!(attributes.c_oflag & OPOST));
+        assert(!(attributes.c_lflag & (ICANON | ECHO)));
+        assert((attributes.c_cflag & CSIZE) == CS8);
+        assert(!(attributes.c_cflag & PARENB));
+        assert((attributes.c_cflag & (CREAD | CCTS_OFLOW | CRTS_IFLOW)) ==
+               (CREAD | CCTS_OFLOW | CRTS_IFLOW));
+        assert(attributes.c_cc[VMIN] == 1 && attributes.c_cc[VTIME] == 0);
+    }
+    puts("Controller raw termios preserves driver-reported 115200 and 3200000 baud with RTS/CTS");
+}
+
 int main(void) {
+    test_controller_termios();
     for (unsigned mode = 0; mode < 8; ++mode) {
         int pair[2];
         assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);

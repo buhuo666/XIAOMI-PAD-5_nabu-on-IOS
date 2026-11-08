@@ -156,6 +156,14 @@ static int diagnose_command_family(int fd) {
     return error ? error : size == 1 ? preparation_error : EPROTO;
 }
 
+static void configure_controller_termios(struct termios *attributes) {
+    /* Keep the operating baud reported by the driver after controller boot. */
+    cfmakeraw(attributes);
+    attributes->c_cflag |= CCTS_OFLOW | CRTS_IFLOW;
+    attributes->c_cc[VMIN] = 1;
+    attributes->c_cc[VTIME] = 0;
+}
+
 static int connect_controller(void) {
     int fd = socket(NabuSystemFamily, SOCK_STREAM, NabuControlProtocol);
     if (fd < 0) return -1;
@@ -174,11 +182,7 @@ static int connect_controller(void) {
     struct termios attributes;
     socklen_t size = sizeof(attributes);
     if (getsockopt(fd, NabuControlProtocol, (int)TIOCGETA, &attributes, &size)) goto fail;
-    cfmakeraw(&attributes);
-    cfsetispeed(&attributes, B115200);
-    cfsetospeed(&attributes, B115200);
-    attributes.c_cc[VMIN] = 1;
-    attributes.c_cc[VTIME] = 0;
+    configure_controller_termios(&attributes);
     if (setsockopt(fd, NabuControlProtocol, (int)TIOCSETA, &attributes, sizeof(attributes))) goto fail;
     return fd;
 fail: {
