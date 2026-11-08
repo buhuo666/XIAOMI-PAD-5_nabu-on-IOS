@@ -45,6 +45,7 @@ extern NSDictionary *nabuBluetoothSnapshot(void);
 extern NSDictionary *nabuBluetoothUseSingleAdvertising(void);
 extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
+extern NSDictionary *nabuWiFiControlTrial(NSString *action);
 
 static NSDictionary *wirelessSnapshot(void) {
     NSMutableDictionary *software = [NSMutableDictionary dictionary];
@@ -80,6 +81,37 @@ static NSDictionary *wirelessSnapshot(void) {
         freeifaddrs(interfaces);
     }
     software[@"bsd_interfaces"] = bsd;
+    void *sc = dlopen("/System/Library/Frameworks/SystemConfiguration.framework/SystemConfiguration", RTLD_NOW);
+    if (sc) {
+        CFTypeRef (*create)(CFAllocatorRef, CFStringRef, void *, void *) = dlsym(sc, "SCDynamicStoreCreate");
+        CFTypeRef (*copyValue)(CFTypeRef, CFStringRef) = dlsym(sc, "SCDynamicStoreCopyValue");
+        int (*scError)(void) = dlsym(sc, "SCError");
+        CFTypeRef store = create(NULL, CFSTR("Nabu wireless inventory"), NULL, NULL);
+        NSMutableDictionary *dynamic = [NSMutableDictionary dictionary];
+        dynamic[@"session_created"] = @(store != NULL);
+        if (store) {
+            id state = CFBridgingRelease(copyValue(store, CFSTR("State:/Network/Interface")));
+            dynamic[@"interface_list_error"] = @(state ? 0 : scError());
+            dynamic[@"interface_list"] = state ?: NSNull.null;
+            CFRelease(store);
+        } else dynamic[@"session_error"] = @(scError());
+        CFArrayRef (*copyAll)(void) = dlsym(sc, "SCNetworkInterfaceCopyAll");
+        CFStringRef (*bsdName)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetBSDName");
+        CFStringRef (*interfaceType)(CFTypeRef) = dlsym(sc, "SCNetworkInterfaceGetInterfaceType");
+        CFArrayRef all = copyAll();
+        NSMutableArray *networkInterfaces = [NSMutableArray array];
+        if (all) {
+            for (CFIndex i = 0; i < CFArrayGetCount(all); ++i) {
+                CFTypeRef entry = CFArrayGetValueAtIndex(all, i);
+                [networkInterfaces addObject:@{@"bsd_name": (__bridge id)bsdName(entry) ?: NSNull.null,
+                    @"type": (__bridge id)interfaceType(entry) ?: NSNull.null}];
+            }
+            CFRelease(all);
+        }
+        dynamic[@"configured_interface_list"] = networkInterfaces;
+        software[@"system_configuration"] = dynamic;
+        dlclose(sc);
+    }
     void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
     if (!kit) return @{@"read_only": @YES, @"error": @"IOKit unavailable", @"software": software};
     uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
@@ -93,9 +125,21 @@ static NSDictionary *wirelessSnapshot(void) {
         uint32_t iterator = 0, entry = 0;
         int status = services(0, matching(name.UTF8String), &iterator);
         unsigned count = 0;
-        if (status == 0) while ((entry = next(iterator))) { ++count; release(entry); }
+        NSMutableArray *entries = [NSMutableArray array];
+        if (status == 0) while ((entry = next(iterator))) {
+            ++count;
+            NSMutableDictionary *properties = [NSMutableDictionary dictionary];
+            for (NSString *key in @[@"IOInterfaceName", @"BSD Name", @"IOInterfaceNamePrefix",
+                                    @"IOInterfaceType", @"IOInterfaceUnit", @"IOBuiltin",
+                                    @"IO80211InterfaceRole", @"IO80211VirtualInterfaceRole"]) {
+                id value = CFBridgingRelease(property(entry, (__bridge CFStringRef)key, NULL, 0));
+                if (value) properties[key] = value;
+            }
+            [entries addObject:properties];
+            release(entry);
+        }
         if (iterator) release(iterator);
-        classes[name] = @{@"status": @(status), @"count": @(count)};
+        classes[name] = @{@"status": @(status), @"count": @(count), @"entries": entries};
     }
     software[@"iokit_matching_classes"] = classes;
     uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
@@ -461,6 +505,12 @@ int main(void) {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
                         else if ([action isEqual:@"WirelessInventory"]) {
                             result[@"read_only"] = @YES;
+                            result[@"wireless"] = wirelessSnapshot();
+                        }
+                        else if ([action isEqual:@"WirelessNativeScan"] ||
+                                 [action isEqual:@"WirelessNativePowerOff"] ||
+                                 [action isEqual:@"WirelessNativePowerOn"]) {
+                            result[@"wireless_control"] = nabuWiFiControlTrial(action);
                             result[@"wireless"] = wirelessSnapshot();
                         }
                         else if ([action isEqual:@"BluetoothInventory"]) {

@@ -26,7 +26,8 @@ NABU_REMAP = {f'lx_{name}': f'nabu_ath10k_driver_{name}'
 NABU_REMAP.update({f'lx_os_{name}': f'nabu_ath10k_os_{name}' for name in (
     'radio_memory', 'map_registers', 'print', 'tell', 'option', 'firmware',
     'rproc_boot', 'radio_powered', 'radio_address', 'irq_attach', 'irq_enable',
-    'irq_disable', 'irq_detach_all')})
+    'irq_disable', 'irq_detach_all', 'station', 'station_lost',
+    'net_attach', 'net_link', 'net_input')})
 
 
 def save(path, value):
@@ -139,6 +140,28 @@ def worker(args, cfg):
     build_root.mkdir(exist_ok=True)
     upstream.B, upstream.CACHE = build_root, args.work / 'cache'
     upstream.subprocess = OfflineSubprocess
+    # Keep the pinned checkout intact. Only the explicitly patched backend
+    # sources are staged into this build variant.
+    reference_patches = [ROOT / p for p in cfg.get('reference_patches', [])]
+    if reference_patches:
+        staged = build_root / 'reference'
+        stamp = {'commit': cfg['reference_commit'],
+                 'patches': {str(p.relative_to(ROOT)): p.read_text() for p in reference_patches}}
+        marker = staged / '.nabu-source.json'
+        if marker.exists():
+            if json.loads(marker.read_text()) != stamp:
+                raise RuntimeError('Use a fresh build variant for changed reference patches')
+        else:
+            shutil.copytree(args.reference / 'wifi/lx', staged / 'wifi/lx')
+            shutil.copytree(args.reference / 'xnu/files/bsd/sys', staged / 'xnu/files/bsd/sys')
+            for patch in reference_patches:
+                for line in patch.read_text().splitlines():
+                    if line.startswith('+++ b/'):
+                        target = staged / line[6:]
+                        target.write_text(target.read_text(), newline='\n')
+                subprocess.run(['patch', '-s', '-p1', '-d', str(staged), '-i', str(patch)], check=True)
+            save(marker, stamp)
+        upstream.ROOT, upstream.W = staged, staged / 'wifi/lx'
     for name, source in cfg['sources'].items():
         if upstream.SOURCES[name] != (source['filename'], source['url'], source['sha256']):
             raise RuntimeError('Reference dependency contract differs: ' + name)
@@ -154,7 +177,7 @@ def worker(args, cfg):
         output = (build_root if local_patches else args.work) / name
         stamp = {'dependency': cfg['sources'][name], 'reference_commit': cfg['reference_commit'],
                  'strip': strip, 'members': list(members),
-                 'patches': [str(p.relative_to(args.reference)) for p in patches]}
+                 'patches': [str(p.relative_to(upstream.ROOT)) for p in patches]}
         if local_patches:
             stamp['project_patches'] = {str(p.relative_to(ROOT)): p.read_text() for p in local_patches}
         marker = output / '.nabu-source.json'
@@ -206,6 +229,12 @@ def worker(args, cfg):
             (undefined if fields[1] == 'U' else definitions).add(fields[0])
         object_records.append({'path': str(path), 'bytes': len(raw)})
     external = sorted(undefined - definitions)
+    if args.nabu_platform:
+        callbacks = ('station', 'station_lost', 'net_attach', 'net_link', 'net_input')
+        if any('_lx_os_' + name in external for name in callbacks):
+            raise RuntimeError('Backend still references the old native station/network adapter')
+        if any('_nabu_ath10k_os_' + name not in external for name in callbacks):
+            raise RuntimeError('Backend is missing a required Nabu station/network boundary')
     libc = set('memcmp memcpy memmove memset strcmp strncmp strlen strnlen strchr strrchr strlcpy strlcat bzero snprintf vsnprintf __stack_chk_fail __stack_chk_guard'.split())
     unexpected = [s for s in external if s.lstrip('_') not in {n.lstrip('_') for n in libc}
                   and not s.startswith(('_lx_os_', '_nabu_ath10k_os_', '_qmi_', '_hakios_qmi_', 'section$'))]
@@ -215,6 +244,7 @@ def worker(args, cfg):
     report = {'reference_commit': cfg['reference_commit'], 'reference_path': str(args.reference),
               'target': 'arm64-apple-ios16.5',
               'build_variant': cfg['build_variant'], 'project_patches': cfg['project_patches'],
+              'reference_patches': cfg.get('reference_patches', []),
               'nabu_platform': args.nabu_platform, 'symbol_remaps': remap,
               'driver_objects': len(driver), 'sae_objects': len(crypto), 'objects': object_records,
               'undefined': external, 'unexpected_undefined': unexpected,

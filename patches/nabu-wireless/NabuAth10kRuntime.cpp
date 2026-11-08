@@ -17,6 +17,7 @@ extern "C" void ml_io_unmap(vm_offset_t,vm_size_t);
 extern "C" int lx_os_thread(const char *,void (*)(void *),void *);
 extern "C" int nabu_ath10k_driver_start();
 extern "C" void nabu_ath10k_driver_stop();
+extern "C" void nabu_wlan_service_invalidate(int);
 extern "C" kern_return_t gic_v3_spi_attach(uint32_t,bool,void (*)(void *,uint32_t),void *);
 extern "C" void gic_v3_spi_mask(uint32_t);
 extern "C" void gic_v3_spi_unmask(uint32_t);
@@ -42,9 +43,10 @@ static bool irq_thread_started;
 static void driver_worker(void *) {
     int result=nabu_ath10k_driver_start();
     IOLockLock(state_lock);start_result=result;
-    if(result){failed=true;stop_requested=true;}
+    if(result){failed=true;firmware_live=false;stop_requested=true;}
     IOLockUnlock(state_lock);
-    nabu_wireless_log("NABU ATH10K: start and passive scan returned=%d; native station/network publication disabled in this trial\n",result);
+    if(result)nabu_wlan_service_invalidate(result);
+    nabu_wireless_log("NABU ATH10K: start and native station offer returned=%d; scans are requested through native control\n",result);
     IOLockLock(state_lock);
     while(!stop_requested)IOLockSleep(state_lock,&stop_requested,THREAD_UNINT);
     IOLockUnlock(state_lock);
@@ -120,7 +122,9 @@ extern "C" void nabu_wlan_runtime_poll() {
 }
 extern "C" void nabu_wlan_runtime_lost() {
     if(!state_lock)return;
-    IOLockLock(state_lock);firmware_live=false;failed=true;stop_requested=true;
+    IOLockLock(state_lock);firmware_live=false;failed=true;IOLockUnlock(state_lock);
+    nabu_wlan_service_invalidate(ENXIO);
+    IOLockLock(state_lock);stop_requested=true;
     IOLockWakeup(state_lock,&stop_requested,false);IOLockUnlock(state_lock);
     if(dma)dma->lost();
 }
@@ -172,8 +176,8 @@ extern "C" void *nabu_ath10k_os_map_registers(unsigned long long pa,unsigned lon
 extern "C" void nabu_ath10k_os_print(const char *text){IOLog("NABU ATH10K: %s",text);}
 extern "C" void nabu_ath10k_os_tell(const char *text){nabu_wireless_log("NABU ATH10K: %s",text);}
 extern "C" unsigned nabu_ath10k_os_option(const char *name) {
-    // A passive scan is the first data-path acceptance step. No credentials.
-    return !strcmp(name,"wifi_scan")||!strcmp(name,"wifi_irq");
+    // Register and retain the real station; native requests own scan and power.
+    return !strcmp(name,"wifi_keep")||!strcmp(name,"wifi_irq");
 }
 extern "C" int nabu_ath10k_os_radio_powered() {
     if(!state_lock)return 0;

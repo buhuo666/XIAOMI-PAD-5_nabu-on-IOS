@@ -53,8 +53,10 @@ int main(void) {
         assert(power[0]==1 && power[1]==1 && power[2]==(p&&on));
         assert(!power[3]&&!power[4]&&!power[5]);
     }
-    present=false;r=(struct apple80211req){12,sizeof(caps),caps};
-    assert(get(&r)==0);for(unsigned i=0;i<sizeof(caps);i++)assert(!caps[i]);
+    for(unsigned p=0;p<2;p++) {
+        present=p;r=(struct apple80211req){12,sizeof(caps),caps};
+        assert(get(&r)==0);for(unsigned i=0;i<sizeof(caps);i++)assert(!caps[i]);
+    }
     r=(struct apple80211req){44,sizeof(name),name};assert(get(&r)==0);
     assert(strstr(name,"Nabu")&&strstr(name,"WCN399x")&&!strstr(name,"WCN6750"));
     return 0;
@@ -67,6 +69,11 @@ int main(void) {
 #include <cstdint>
 #include <cstring>
 #include <cstddef>
+#include <cerrno>
+#define KERNEL 1
+extern "C" {
+#include <sys/hakios.sta.h>
+}
 using mbuf_t=void *;
 struct hakios_net_link { const char *name;unsigned unit;uint8_t address[6];bool wireless,up;
     bool (*transmit)(mbuf_t,size_t);unsigned (*poll)(); };
@@ -83,6 +90,19 @@ struct IORegistryEntry {
 #define OSDynamicCast(type,value) (value)
 static const char *gIODTPlane="IODeviceTree";
 static void nabu_wireless_log(const char *,...){}
+static const hakios_sta_ops *attached_ops;
+static bool live=true;
+static unsigned invalidations, lost_calls, link_calls, power_calls, scan_calls;
+static int scan_errno;
+extern "C" int nabu_ath10k_os_radio_powered(){return live;}
+void hakios_sta_attach(const hakios_sta_ops *ops){attached_ops=ops;}
+extern "C" void hakios_sta_invalidate(int){++invalidations;attached_ops=nullptr;}
+bool hakios_sta_present(){return attached_ops!=nullptr;}
+bool hakios_sta_powered(){return attached_ops!=nullptr;}
+void hakios_sta_lost(int error){assert(error==ECONNRESET);++lost_calls;}
+void hakios_net_link_state(bool up){assert(!up);++link_calls;}
+static int raw_power(bool on){++power_calls;return on?EIO:0;}
+static int raw_scan(const hakios_sta_scan *what){++scan_calls;assert(what->passive);return scan_errno;}
 extern "C" bool hakios_net_attach(const hakios_net_link *link) {
     ++attaches;assert(link->wireless&&!link->up&&link->unit==0&&!link->poll);
     assert(!memcmp(link->address,address,6));assert(!link->transmit(nullptr,0));return true;
@@ -91,7 +111,22 @@ extern "C" bool hakios_net_attach(const hakios_net_link *link) {
 int main() {
     nabu_wlan_service_publish();assert(!attaches);
     selected=true;nabu_wlan_service_publish();assert(attaches==1);
-    nabu_wlan_service_publish();assert(attaches==1);return 0;
+    nabu_wlan_service_publish();assert(attaches==1);
+    hakios_sta_ops raw={};raw.power=raw_power;raw.scan=raw_scan;
+    uint8_t wrong[6]={0};nabu_ath10k_os_net_attach(wrong);
+    nabu_ath10k_os_station(&raw);assert(!attached_ops);
+    nabu_ath10k_os_net_attach(address);live=false;
+    nabu_ath10k_os_station(&raw);assert(!attached_ops);
+    live=true;nabu_ath10k_os_station(&raw);assert(attached_ops&&!attached_ops->join);
+    assert(attached_ops->power(true)==EIO&&attached_ops->power(false)==0&&power_calls==2);
+    hakios_sta_scan scan={};scan.passive=true;
+    assert(attached_ops->scan(&scan)==0);scan_errno=ETIMEDOUT;
+    assert(attached_ops->scan(&scan)==ETIMEDOUT&&scan_calls==2);
+    nabu_ath10k_os_net_link(1);nabu_ath10k_os_net_input(wrong,sizeof(wrong));
+    nabu_ath10k_os_station_lost(ECONNRESET);assert(attached_ops&&lost_calls==1);
+    nabu_wlan_service_invalidate(ENXIO);assert(invalidations==1&&!attached_ops);
+    nabu_ath10k_os_station(nullptr);assert(!backend&&link_calls>=3&&attaches==1);
+    return 0;
 }
 '''
     for name, text, compiler, standard in [('control', control, 'clang-18', 'c11'),
@@ -100,6 +135,7 @@ int main() {
         binary = out / (name + '-test')
         src.write_text(text)
         subprocess.run(host_command([compiler, '-std=' + standard, '-fsanitize=address,undefined',
+            '-I' + host_path(ROOT / 'src/hakios-8796/xnu/files/bsd'),
             '-fno-sanitize-recover=all', '-fno-omit-frame-pointer', '-g', host_path(src), '-o', host_path(binary)]), check=True)
         result = subprocess.run(host_command([host_path(binary)]), capture_output=True, check=True)
         (out / (name + '.log')).write_bytes(result.stdout + result.stderr)
@@ -114,7 +150,9 @@ int main() {
     report = {'hardware_tested': False, 'source_patch_applied': str(patch),
               'sanitizers': ['address', 'undefined'],
               'passed': ['no backend reports off', 'attached backend power preserved',
-                         'no backend advertises no encryption capabilities', 'Nabu driver identity',
+                         'scan-only backend advertises no encryption capabilities', 'Nabu driver identity',
+                         'backend MAC and readiness required', 'native power/scan preserve backend errors',
+                         'association unavailable and link-up refused', 'AP loss differs from fatal withdrawal',
                          'explicit device discovery', 'one stable down interface', 'unavailable transmit refused',
                          'real wlan ADT address and register geometry']}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

@@ -11,6 +11,7 @@ on:
       - 'userland/nabu/src/experience_probe.m'
       - 'userland/nabu/src/experience_compat.m'
       - 'userland/nabu/src/bluetooth_probe.m'
+      - 'userland/nabu/src/wifi_control_probe.m'
       - 'userland/nabu/system-service-probe.entitlements.plist'
   workflow_dispatch:
 permissions:

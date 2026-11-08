@@ -1,0 +1,30 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -947,6 +947,8 @@
+ /* ---- the station: an interface, a scan ---------------------------------------------------------------- */
+ 
+ /* The radio started and an interface in station mode on it, as mac80211 brings one up. 0, or an errno. */
++static void station_down(struct lx_radio *radio);
++
+ static int
+ station_up(struct lx_radio *radio)
+ {
+@@ -994,6 +996,9 @@
+ 		}
+ 	}
+ 	mutex_unlock(&hw->wiphy->mtx);
++	if (ret != 0) {
++		station_down(radio);
++	}
+ 	return (-ret);
+ }
+ 
+@@ -2023,7 +2028,7 @@
+ {
+ 	struct lx_radio *radio = the_radio;
+ 
+-	if (radio == NULL || radio->vif == NULL) {
++	if (radio == NULL) {
+ 		return;
+ 	}
+ 	lx_station_say();

@@ -21,10 +21,11 @@ def main():
     experience_source = ROOT / 'userland/nabu/src/experience_probe.m'
     experience_compat = ROOT / 'userland/nabu/src/experience_compat.m'
     bluetooth_source = ROOT / 'userland/nabu/src/bluetooth_probe.m'
+    wifi_source = ROOT / 'userland/nabu/src/wifi_control_probe.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source), str(wifi_source),
                '-framework', 'Foundation', '-framework', 'CoreFoundation', '-framework', 'ImageIO',
                '-framework', 'CoreGraphics', '-framework', 'UIKit', '-o', str(binary)]
     subprocess.run(command, check=True)
@@ -41,6 +42,7 @@ def main():
               'network_calls': False, 'runtime_verified': False,
               'wireless_software_inventory': ['wifid job files and device-tree requirements',
                   'IO80211Controller/IO80211Interface/IONetworkInterface matching counts',
+                  'IORegistry interface discovery properties and SystemConfiguration dynamic interface list',
                   'BSD interface names, flags and address families'],
               'signed_entitlements': signed_entitlements,
               'daemon_container_query_diagnostic': True,

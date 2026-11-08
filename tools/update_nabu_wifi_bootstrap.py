@@ -24,12 +24,17 @@ def main():
     p.add_argument('--inputs', type=Path, default=ROOT / 'build/nabu-userland-inputs-v1')
     p.add_argument('--work', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--system-service-probe', type=Path)
     a = p.parse_args()
     jobs = json.loads((ROOT / 'userland/nabu/jobs.json').read_text())
     label = 'com.apple.wifid'
     assert label in jobs['source_job_allow'] and label not in jobs['run_at_boot']
     shutil.copytree(a.baseline_tree, a.work)
     a.output.mkdir(parents=True)
+    changed = ['LaunchDaemons/com.apple.wifid.plist']
+    if a.system_service_probe:
+        shutil.copy2(a.system_service_probe, a.work / 'root/sbin/system-service-probe')
+        changed.append('sbin/system-service-probe')
     restoration = apply_service_policy(a.inputs, a.work / 'root/LaunchDaemons',
                                        {'source_job_allow': [label]})
     job_path = a.work / 'root/LaunchDaemons' / (label + '.plist')
@@ -66,7 +71,7 @@ def main():
     report.setdefault('service_restoration', []).extend(restoration)
     report['wifi_service_update'] = {'baseline': str(a.baseline.resolve()),
         'baseline_tree': str(a.baseline_tree.resolve()),
-        'changed_root_files': ['LaunchDaemons/com.apple.wifid.plist'],
+        'changed_root_files': changed,
         'original_conditions_preserved': True, 'device_tree_requirement': job['_LimitLoadToDeviceTree'],
         'mach_services': list(job['MachServices']), 'boot_and_app_containers_unchanged': True,
         'runtime_verified': False}

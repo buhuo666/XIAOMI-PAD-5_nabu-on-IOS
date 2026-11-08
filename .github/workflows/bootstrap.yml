@@ -60,6 +60,7 @@ jobs:
           python3 tools/check_nabu_bluetooth_boot_rx.py --output log/ci/nabu-bluetooth-boot-rx
           python3 tools/check_nabu_bluetooth_native.py --output log/ci/nabu-bluetooth-native
           python3 tools/check_nabu_wifi_service.py --output log/ci/nabu-wifi-service
+          python3 tools/check_nabu_wifi_station.py --output log/ci/nabu-wifi-station
       - name: Retain wireless protocol results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -84,7 +85,9 @@ jobs:
             --linker "$(xcrun --find ld)"
           test -f artifacts/nabu-ath10k/ath10k.o
       - name: Replay the ready-only registration handoff
-        run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/ready-only-v128-xcode-r2/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
+        run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/native-station-v131-r3/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
+      - name: Replay station startup rollback
+        run: python3 tools/check_nabu_ath10k_station.py --source build/nabu-ath10k/native-station-v131-r3/reference/wifi/lx/src/lx_80211.c --output log/ci/nabu-ath10k-station
       - name: Retain the combined backend and build evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

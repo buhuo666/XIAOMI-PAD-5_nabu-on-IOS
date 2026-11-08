@@ -46,6 +46,8 @@ static void thread_block(void *){std::unique_lock<std::mutex> lock(scheduler_loc
 static void thread_wakeup(event_t){std::lock_guard<std::mutex> guard(scheduler_lock);++scheduler_generation;scheduler_event.notify_all();}
 static void nabu_wireless_log(const char *format,...){char text[700];va_list args;va_start(args,format);vsnprintf(text,sizeof(text),format,args);va_end(args);}
 static void IOLog(const char *,...){}
+static std::atomic<unsigned> station_invalidations{0};
+extern "C" void nabu_wlan_service_invalidate(int){++station_invalidations;}
 struct OSData {unsigned getLength(){return 6;}const void *getBytesNoCopy(){static uint8_t mac[6]={2,1,2,3,4,5};return mac;}};
 struct IORegistryEntry {static IORegistryEntry *fromPath(const char *,const char *){static IORegistryEntry entry;return &entry;}OSData *getProperty(const char *){static OSData mac;return &mac;}void release(){}};
 static constexpr const char *gIODTPlane="IODeviceTree";
@@ -141,7 +143,7 @@ int main(int argc,char **argv) {
         allow_start=failure;allow_stop=false;
         assert(nabu_wlan_runtime_start());await(starts,1);
         if(!failure){nabu_wlan_runtime_lost();assert(!nabu_ath10k_os_radio_powered());allow_start=true;}
-        await(stops,1);assert(nabu_wlan_runtime_failed()&&!nabu_ath10k_os_radio_powered()&&!nabu_wlan_runtime_quiesced());
+        await(stops,1);assert(station_invalidations>0&&nabu_wlan_runtime_failed()&&!nabu_ath10k_os_radio_powered()&&!nabu_wlan_runtime_quiesced());
         nabu_wlan_runtime_stop();assert(releases==0&&unmaps==0);
         allow_stop=true;driver_host.join();assert(nabu_wlan_runtime_quiesced());
         release_ok=false;nabu_wlan_runtime_stop();assert(releases==1&&unmaps==0);
