@@ -20,6 +20,11 @@
 
 第142轮GLINK协商和apr_audio_svc双向打开成功（本地CID2/远端CID4），随后INTENT解析InvalidFrame，APR尚未发送。确定存在peer IID0误拒绝的协议限制，第143轮据vendor修正并记录实际pair，不能将未记录的0值当已测结果。DSP停止/清理、Wi-Fi扫描及蓝牙初始化正常，3,489,383字节日志前缀和64MiB槽已备份清空，APFS112。
 
+第143轮已确认零IID兼容让解析推进至第65个对端声明，触及本地64项表容量；APR仍未发送。
+ADSP启停/释放、Wi-Fi扫描和蓝牙初始化正常，4,103,289字节日志前缀及64MiB槽备份清空，
+APFS113。第144轮改为消费多余声明，保留可用缓冲区与在途所有权，主机回归及ARM64编译通过，
+待整内核构建和实机APR验证。见[第144轮](../analysis/nabu-internal-audio-v144.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

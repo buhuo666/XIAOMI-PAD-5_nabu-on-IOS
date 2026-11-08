@@ -16,4 +16,15 @@ RX_DONE按ID查找对象，不要求非零。APPS本地intent分配从1起属于
 额外确认普通DONE退役IID0后，迟到的DONE_REUSE不能将其复活，必须收到新声明；
 本地IID0和零长度意图仍按各自契约拒绝。结果为log/host/audio-v143/glink-host-check*/report.json。
 ARM64对象编译通过，最大函数栈576字节。设备Android、蓝牙关闭、USB连接，APFS112；
-整内核构建和实机验证待完成。
+整内核构建和实机验证待完成（候选时记录；实际结果见下）。
+
+实测源码fa9f701，CI42471227687全通过。用户确认桌面/USB正常。零IID兼容使
+解析继续至第65个对端声明（IID0x40、size512），当前64项元数据表触发capacity错误，
+而非零长度错误。GLINK协商、双向OPEN成功，APR仍未发送，不能表述为音频服务就绪。
+ADSP ready、stop-ack、PAS shutdown、AOP off与解除映射全部成功，retained=0。
+无线扫描及蓝牙初始化正常，内置扬声器/麦克风没有启用。
+
+返回Android后回收4,103,289字节连续日志前缀和64MiB原始槽，已备份清空。
+APFS112→113、fullfsync=ok；没有提交结束记录，不声明覆盖完整关机过程。
+证据：log/host/audio-v143/adsp-report.txt、result-summary.json及
+log/device/nabu-boot-20261108-143/runtime-log/runtime.log（GLINK摘要23553行、清理23773行）。

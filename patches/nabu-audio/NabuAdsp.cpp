@@ -359,8 +359,9 @@ struct Trial {
         log("NABU ADSP GLINK: negotiated=%u features=%#x open=%u local=%u remote=%u remote-open=%u open-ack=%u tx=%u rx=%u unknown-channels=%u close-sent=%u close-ack=%u remote-closed=%u broken=%u timeout=%u error=%u\n",
             r.negotiated, r.features, r.opened, r.lcid, r.rcid, r.remote_open, r.local_open_ack,
             r.tx, r.rx, r.unknown_channels, r.close_sent, r.close_ack, r.remote_closed, r.broken, r.timeout, r.error);
-        log("NABU ADSP GLINK: peer-intents=%u last-iid=%#x last-size=%u intent-invalid=%u (0=none,1=capacity,2=zero-size)\n",
-            r.peer_intents, r.last_peer_iid, r.last_peer_size, r.intent_invalid_reason);
+        log("NABU ADSP GLINK: peer-intents=%u last-iid=%#x last-size=%u intent-invalid=%u uncached=%u replaced=%u (0=none,2=zero-size)\n",
+            r.peer_intents, r.last_peer_iid, r.last_peer_size, r.intent_invalid_reason,
+            r.peer_uncached, r.peer_replaced);
         log("NABU ADSP APR: get-state-sent=%u queries=%u matched-response=%u token=%#x raw-state=%#x ready=%u packets=%u ignored=%u basic-responses=%u basic-status=%#x field=%#x type=%u matched-opcode=%#x matched-token=%#x; speaker/microphone routes inactive\n",
             r.apr_sent, r.queries, r.apr_response, r.token, r.apr_state, r.apr_ready,
             r.apr_packets, r.apr_ignored, r.basic_responses, r.basic_status,

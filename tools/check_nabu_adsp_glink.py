@@ -301,6 +301,64 @@ static void zero_peer_intent_lifecycle() {
     CHECK(empty.link.result().last_peer_iid==0 && empty.link.result().last_peer_size==0 &&
           empty.link.result().intent_invalid_reason==NabuAdspGlink::IntentZeroSize);
 }
+static void many_peer_intents() {
+    for(bool batched:{false,true}) {
+        Fixture f(4096,4088); f.establish();
+        // The real DSP advertised IID 0..64 before our initial query. Keep
+        // receiving beyond that point, including a single multi-pair frame.
+        Bytes pairs;
+        for(unsigned i=0;i<160;++i) {
+            if(batched) {
+                size_t p=pairs.size(); pairs.resize(p+8); put32(pairs,p,512); put32(pairs,p+4,i);
+            } else {
+                f.io.inject(intent_frame(f.peer,i)); CHECK(f.step(1).empty());
+                CHECK(!f.link.result().broken);
+            }
+        }
+        if(batched) { f.io.inject(frame(5,f.peer,160,pairs)); CHECK(f.step(1).empty()); }
+        CHECK(!f.link.result().broken && !f.link.result().apr_sent && f.link.result().peer_intents==160);
+        CHECK(f.io.read32(FakeIO::desc+8)==f.io.read32(FakeIO::desc+12));
+        auto tx=f.step(100); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==0);
+        auto token=f.link.result().token;
+        f.io.inject(data_frame(f.peer,1,reply(token))); tx=f.step(110);
+        CHECK(tx.size()==2 && f.link.result().apr_ready && !f.link.result().broken); f.finish();
+    }
+    // A full cache of buffers too small for GET_STATE must admit a usable one.
+    Fixture small; small.establish();
+    for(unsigned i=0;i<64;++i) { small.io.inject(intent_frame(small.peer,i,8)); small.step(1); }
+    small.io.inject(intent_frame(small.peer,0x12345678,20)); auto tx=small.step(100);
+    CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==0x12345678);
+    small.io.inject(data_frame(small.peer,1,reply(small.link.result().token))); small.step(110); small.finish();
+
+    for(bool reuse:{false,true}) {
+        Fixture f; f.establish();
+        for(unsigned i=0;i<64;++i) { f.io.inject(intent_frame(f.peer,i)); f.step(1); }
+        tx=f.step(100); CHECK(tx.size()==1 && u32(tx[0],4)==0);
+        auto first=f.link.result().token;
+        // More advertisements and a repeated busy IID must not release IID 0.
+        f.io.inject(intent_frame(f.peer,0));
+        for(unsigned i=64;i<96;++i) f.io.inject(intent_frame(f.peer,i));
+        f.io.inject(data_frame(f.peer,1,reply(first,0))); f.step(110);
+        tx=f.step(160); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==1);
+        auto second=f.link.result().token;
+        f.io.inject(frame(reuse?14:6,f.peer,0));
+        f.io.inject(data_frame(f.peer,1,reply(second,0))); f.step(170);
+        tx=f.step(220); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==(reuse?0u:2u));
+        f.io.inject(data_frame(f.peer,1,reply(f.link.result().token))); f.step(230);
+        CHECK(f.link.result().apr_ready && !f.link.result().broken); f.finish(240);
+    }
+    // With one suitable buffer in flight, admit a new suitable advertisement
+    // by replacing an unused undersized entry, never the busy buffer.
+    Fixture busy; busy.establish(); busy.peer_iid=0; auto first=busy.ask();
+    for(unsigned i=1;i<64;++i) { busy.io.inject(intent_frame(busy.peer,i,8)); busy.step(101); }
+    busy.io.inject(intent_frame(busy.peer,999,20));
+    busy.io.inject(data_frame(busy.peer,1,reply(first,0))); busy.step(110);
+    tx=busy.step(160); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==999);
+    busy.io.inject(frame(14,busy.peer,0));
+    busy.io.inject(data_frame(busy.peer,1,reply(busy.link.result().token,0))); busy.step(170);
+    tx=busy.step(220); CHECK(tx.size()==1 && u16(tx[0],0)==9 && u32(tx[0],4)==0);
+    busy.io.inject(data_frame(busy.peer,1,reply(busy.link.result().token))); busy.step(230); busy.finish(240);
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -356,7 +414,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -382,6 +440,8 @@ def main():
                            "exact APR request", "endpoint/token/length isolation", "raw GET_STATE including non-one",
                            "basic error separation", "wrap and fragments", "RX_DONE and reuse", "timeouts and close",
                            "peer IID 0 transmit/reuse/retirement and local IID 0 rejection",
+                           "160 peer intents before first query, individually and batched across wrap",
+                           "full intent cache consumes surplus, admits usable sizes and preserves busy IDs",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

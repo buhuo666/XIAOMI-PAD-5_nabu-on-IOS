@@ -7,7 +7,7 @@
 namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
     UnknownCommand, TxFull, VersionRejected, IntentUnavailable, FragmentMismatch, Aborted };
-enum IntentInvalidReason : uint32_t { IntentValid, IntentCapacity, IntentZeroSize };
+enum IntentInvalidReason : uint32_t { IntentValid = 0, IntentZeroSize = 2 };
 struct Result {
     bool negotiated, opened, remote_open, local_open_ack, apr_sent, apr_response, apr_ready;
     bool close_sent, close_ack, remote_closed, broken, timeout;
@@ -16,6 +16,7 @@ struct Result {
     uint32_t last_command, last_cid, last_value;
     uint32_t apr_field, apr_type, matched_opcode, matched_token;
     uint32_t peer_intents, last_peer_iid, last_peer_size, intent_invalid_reason;
+    uint32_t peer_uncached, peer_replaced;
 };
 
 template<class IO> class Link {
@@ -25,7 +26,9 @@ template<class IO> class Link {
     IO &io;
     Result r{};
     LocalIntent local[20]{};
+    // A bounded cache for this GET_STATE probe, not a peer protocol limit.
     RemoteIntent remote[64]{};
+    static constexpr uint32_t QueryBytes = 20;
     Phase phase = Idle;
     uint32_t descriptor = 0, tx = 0, tx_bytes = 0, rx = 0, rx_bytes = 0;
     uint32_t now = 0, phase_start = 0, query_start = 0, query_due = 0, next_token = 1;
@@ -152,14 +155,26 @@ template<class IO> class Link {
                     uint32_t size = get32(pair), id = get32(pair + 4); int slot = -1;
                     ++r.peer_intents; r.last_peer_iid = id; r.last_peer_size = size;
                     r.intent_invalid_reason = IntentValid;
-                    for (unsigned j = 0; j < 64; ++j) if (remote[j].present && remote[j].id == id) { slot = int(j); break; }
-                    if (slot < 0) for (unsigned j = 0; j < 64; ++j) if (!remote[j].present) { slot = int(j); break; }
                     // Remote IID zero is valid: vendor stores [id,id+1) in its
                     // riids tree. Our local IDs starting at one are independent.
-                    if (slot < 0 || !size) {
-                        r.intent_invalid_reason = slot < 0 ? IntentCapacity : IntentZeroSize;
+                    if (!size) {
+                        r.intent_invalid_reason = IntentZeroSize;
                         fail(InvalidFrame); return;
                     }
+                    for (unsigned j = 0; j < 64; ++j) if (remote[j].present && remote[j].id == id) { slot = int(j); break; }
+                    // An advertisement cannot complete an outstanding send.
+                    // Only RX_DONE / RX_DONE_W_REUSE releases its ownership.
+                    if (slot >= 0 && remote[slot].used) continue;
+                    if (slot < 0) for (unsigned j = 0; j < 64; ++j) if (!remote[j].present) { slot = int(j); break; }
+                    if (slot < 0 && size >= QueryBytes) for (unsigned j = 0; j < 64; ++j)
+                        if (!remote[j].used && remote[j].size < QueryBytes) {
+                            slot = int(j); ++r.peer_replaced; break;
+                        }
+                    // INTENT needs no acknowledgement. Consume surplus
+                    // advertisements without using their buffers. Keep every
+                    // in-flight entry until its completion; never send a
+                    // synthetic RX_DONE for a buffer we have not used.
+                    if (slot < 0) { ++r.peer_uncached; continue; }
                     remote[slot] = {id, size, true, false}; requested_intent = false;
                 }
                 advance(bytes); break;
@@ -213,14 +228,14 @@ template<class IO> class Link {
     }
     void query() {
         int chosen = -1;
-        for (unsigned i = 0; i < 64; ++i) if (remote[i].present && !remote[i].used && remote[i].size >= 20 &&
+        for (unsigned i = 0; i < 64; ++i) if (remote[i].present && !remote[i].used && remote[i].size >= QueryBytes &&
             (chosen < 0 || remote[i].size < remote[chosen].size)) chosen = int(i);
         if (chosen < 0) {
-            if (!requested_intent) requested_intent = send(7, uint16_t(r.lcid), 20);
+            if (!requested_intent) requested_intent = send(7, uint16_t(r.lcid), QueryBytes);
             return;
         }
-        uint8_t data[28]{}; set32(data, 20); // GLINK chunk_size, left_size=0
-        set16(data + 8, 0x250); set16(data + 10, 20);
+        uint8_t data[28]{}; set32(data, QueryBytes); // GLINK chunk_size, left_size=0
+        set16(data + 8, 0x250); set16(data + 10, QueryBytes);
         data[12] = 3; data[13] = 5; data[16] = 3; data[17] = 4;
         uint32_t token = next_token++;
         set32(data + 20, token); set32(data + 24, 0x1290c);

@@ -2,7 +2,7 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-第142轮ADSP基础启停继续通过，GLINK版本协商及apr_audio_svc双向打开成功；处理对端INTENT声明时退出，APR查询尚未发送。固定vendor源码确认peer IID0合法，当前驱动错误拒绝，第143轮修正并补实际IID/size观测。3,489,383字节连续前缀及64MiB槽已备份清空，APFS112，设备Android、蓝牙关闭、USB连接。内置扬声器出声/麦克风录音仍未通过。见[第142轮结果](../analysis/nabu-internal-audio-v142.md)、[第143轮候选](../analysis/nabu-internal-audio-v143.md)。
+第143轮零IID兼容后解析推进至第65个对端INTENT声明（IID0x40、size512），触及本地64项缓存上限；GLINK双向打开成功，APR仍未发送。ADSP完整启停/释放、Wi-Fi扫描及蓝牙初始化正常，4,103,289字节连续前缀及64MiB槽已备份清空，APFS113，设备Android、蓝牙关闭、USB连接。第144轮消费多余声明并保留在途缓冲区所有权，生产代码主机回归与ARM64对象编译通过，云端构建/实机待验。内置扬声器出声/麦克风录音仍未通过。见[第143轮结果](../analysis/nabu-internal-audio-v143.md)、[第144轮候选](../analysis/nabu-internal-audio-v144.md)。
 
 第138轮蓝牙A2DP阶段通过：用户确认本地左右声道、Safari持续声音及蓝牙关闭/开启后重连播放均正常，Wi-Fi同时联网。3.2Mbps换速和固件/原生服务初始化通过，首次与重连保留251kbps AAC。完整连续日志前缀0次A2DP队列满丢包，151次传输快照无溢出/收发错误，累计TX约9.95MB。11,796,578字节连续前缀及64MiB原始槽已备份清空，APFS108，设备Android、蓝牙关闭、USB连接、耳机留盒。见[第138轮结果](../analysis/nabu-audio-v138.md)。
 
