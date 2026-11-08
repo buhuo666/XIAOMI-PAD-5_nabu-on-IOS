@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// User-requested24dB native speaker boost; HAL attenuation remains in eighths.
+// User-requested12dB native speaker boost; HAL attenuation remains in eighths.
 #pragma once
 #include <stdint.h>
 namespace NabuPcmGain {
-static constexpr unsigned BoostDb=24;
-// round(10^(24/20)*2^24), and round(10^(-0.125/20)*2^24).
-static constexpr uint32_t Maximum=265900954,Step=16537501;
+static constexpr unsigned BoostDb=12;
+// round(10^(12/20)*2^24), and round(10^(-0.125/20)*2^24).
+static constexpr uint32_t Maximum=66791300,Step=16537501;
 inline uint32_t gain(unsigned below,bool muted) {
     if(muted)return 0;
     uint64_t g=Maximum;
