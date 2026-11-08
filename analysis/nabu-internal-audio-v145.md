@@ -23,3 +23,30 @@ GET_STATE结果不被版本请求覆盖，旧token或不匹配服务/命令不�
 
 整内核构建和实机版本查询待验证。仍未配置板级AFE/TDM/SLIMbus、放大器或麦克风，
 尚无内部PCM收发及真实出声/录音验收结果。
+
+## 实机结果
+
+源码92b2c79、CI42474729208全通过，桌面和USB正常。GET_STATE再次返回state1；
+版本查询token2收到0x181扩展头的真实回复，框架2.9.0.0，8项服务如下：
+
+| 服务ID | API | branch |
+| --- | --- | --- |
+| 0x3 CORE | 5 | 0 |
+| 0x4 AFE | 7 | 0 |
+| 0x7 ASM | 2 | 0 |
+| 0x8 ADM | 4 | 0 |
+| 0xd LSM | 3 | 0 |
+| 0x9 MVM | 2 | 0 |
+| 0xa CVS | 1 | 0 |
+| 0xb CVP | 2 | 0 |
+
+GLINK双向关闭、DSP stop-ack/shutdown/AOP off及映射释放成功，错误/超时为0。
+Wi-Fi扫描和蓝牙初始化正常。回收3,490,455字节连续前缀及64MiB原始槽，备份清空，
+APFS114→115/fullfsync=ok；无提交结束记录，完整关机覆盖不作声明。
+证据：log/host/audio-v145/adsp-report.txt、result-summary.json与
+log/device/nabu-boot-20261108-145/runtime-log/runtime.log:23934（版本）、24159（清理）。
+
+下一步内存契约已保存至log/host/audio-v145/pcm-memory-contract-notes.md：
+真实SMMU SID0x1b21，APR地址高字按原机mask0xf编码为1，IOVA默认0x10000000。
+当前WLAN独占公共SMMU全局故障IRQ97，音频接入需实现共享分发并保留各自上下文所有权，
+不能直接再安装第二个独占全局处理器。

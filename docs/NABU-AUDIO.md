@@ -30,6 +30,11 @@ APFS113。第144轮改为消费多余声明，保留可用缓冲区与在途所�
 3,072,373字节连续前缀和64MiB槽备份清空，APFS114。第145轮追加框架及服务API版本查询，
 主机回归与ARM64编译通过，尚待实机确认。内置出声/录音仍未验收。
 
+第145轮真实版本查询已通过：框架2.9.0.0，共8项服务，AFE API7、ASM API2、ADM API4。
+GET_STATE、GLINK关闭、DSP停止和释放继续通过，无线/蓝牙基线正常。3,490,455字节
+连续前缀及64MiB槽已备份清空，APFS115。下一步音频共享内存/SMMU与ASM map/unmap，
+内置PCM及真实出声/录音仍未通过。见[第145轮结果](../analysis/nabu-internal-audio-v145.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

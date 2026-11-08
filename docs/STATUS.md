@@ -2,7 +2,7 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-第144轮APR首次实测通过：接收116个对端声明，GET_STATE取得匹配token1的state1响应（扩展头0x81），GLINK双向关闭、ADSP停止与资源释放成功。Wi-Fi扫描和蓝牙初始化正常，3,072,373字节连续前缀及64MiB槽备份清空，APFS114，设备Android、蓝牙关闭、USB连接。第145轮追加框架/服务API版本查询，为AFE/ASM/ADM配置提供实机依据；主机协议回归和ARM64编译通过，云端/实机待验。内置扬声器出声/麦克风录音仍未通过。见[第144轮结果](../analysis/nabu-internal-audio-v144.md)、[第145轮候选](../analysis/nabu-internal-audio-v145.md)。
+第145轮真实音频服务版本查询通过：框架2.9.0.0，8项服务，AFE API7、ASM API2、ADM API4。APR就绪、GLINK双向关闭、DSP停止和释放全部成功，Wi-Fi扫描及蓝牙初始化正常。3,490,455字节连续前缀及64MiB槽已备份清空，APFS115，设备Android、蓝牙关闭、USB连接。下一步实现音频共享内存/SMMU和ASM map/unmap；内部PCM传输、扬声器出声与麦克风录音仍未通过。见[第144轮结果](../analysis/nabu-internal-audio-v144.md)、[第145轮结果](../analysis/nabu-internal-audio-v145.md)。
 
 第138轮蓝牙A2DP阶段通过：用户确认本地左右声道、Safari持续声音及蓝牙关闭/开启后重连播放均正常，Wi-Fi同时联网。3.2Mbps换速和固件/原生服务初始化通过，首次与重连保留251kbps AAC。完整连续日志前缀0次A2DP队列满丢包，151次传输快照无溢出/收发错误，累计TX约9.95MB。11,796,578字节连续前缀及64MiB原始槽已备份清空，APFS108，设备Android、蓝牙关闭、USB连接、耳机留盒。见[第138轮结果](../analysis/nabu-audio-v138.md)。
 
