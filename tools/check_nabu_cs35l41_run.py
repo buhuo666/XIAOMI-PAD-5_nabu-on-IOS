@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host exercise of the production no-output CS35L41 HALO run/stop trial."""
+"""Exercise production CS35L41 protected low-volume playback and core lifecycle."""
 import argparse
 import json
 from pathlib import Path
@@ -23,6 +23,8 @@ struct Bus {
     bool persistent=false,drop_resume=false,drop_pause=false,bad_resume=false,bad_pause=false;
     bool heartbeat_stuck=false,core_stuck=false,core_drop=false;
     bool dsploaded=true,clocks=true,enabled=false;
+    bool allow_output=false,pcm_running=false,pdn_pending=false;
+    unsigned pdn_wait=0;
     uint32_t start_state=0,cspl_state=0,cspl_error=0,fault=0,mpu_fault=0;
     unsigned test_key=0,mpu_key=0,rx_delays=0,tx_delays=0;
     unsigned resume_commands=0,pause_commands=0,mpu_writes=0;
@@ -67,9 +69,9 @@ struct Bus {
     }
     bool write(uint32_t address,uint32_t value) {
         assert(clocks); // caller cannot withdraw BCLK before returning core_off
-        if(address==0x2014||address==0x2018)assert(!(value&1));
+        if((address==0x2014||address==0x2018)&&(value&1))assert(allow_output&&pcm_running);
         if(address==0x4800)assert(!(value&15));
-        assert(address!=0x2084); // no main-amp power-up patch
+        if(address==0x2084)assert(allow_output&&test_key==2);
         if(!operation('w',address,value))return false;
         if(address==0x40) {
             if(value==0x55)test_key=1;
@@ -97,7 +99,19 @@ struct Bus {
         }
         if(address==0x02b80010)assert(!(reg[0x02bc1000]&1));
         if(address==0x2c04&&enabled)assert(!(reg[0x02bc1000]&1));
-        if(address==0x10814||address==0x10014) {reg[address]&=~value;return true;}
+        if(address==0x10814||address==0x10014||address==0x10010) {reg[address]&=~value;return true;}
+        if(address==0x2014&&(value&1)) {
+            assert(reg[0x2018]&1);assert(reg[0x2084]==0x002f1aa0);
+            assert((reg[0x6000]&0x3fff)==0x3a04&&(reg[0x6c04]&0x3e0)==(18<<5));
+            assert((reg[0x4c00]&0x7f)==0x32);
+            assert((reg[0x201c]&0x100010)==0x100010);
+            assert((reg[0x3804]&1)&&!(reg[0x3800]&0xff)&&(reg[0x2018]&0x30)==0x20);
+            assert(reg[0x6404]==0x02005308&&reg[0x6808]==0x3f75);
+        }
+        if(address==0x2014&&!(value&1)&&(reg[address]&1)) {
+            assert(!(reg[0x2018]&1));assert((reg[0x6000]&0x3ff8)==0x2678);
+            assert(pause_commands);pdn_pending=true;pdn_wait=0;
+        }
         if(address==0x13020) {
             assert(!(reg[0x10914]&(1<<20)));
             assert(!(reg[0x10814]&(1<<20))&&!(reg[0x10014]&(1<<21)));
@@ -112,6 +126,7 @@ struct Bus {
         if(us==300) {
             if(!rx_delays)++rx_delays;else ++tx_delays;
         } else if(us==1000) {
+            if(pdn_pending&&++pdn_wait>=2){reg[0x10010]|=0x00800000;pdn_pending=false;}
             if(pending&&(reg[0x02bc1000]&1)) {
                 ++ack_wait;
                 if(ack_wait>=ack_at&&!((pending==1&&drop_pause)||(pending!=1&&drop_resume))) {
@@ -119,6 +134,8 @@ struct Bus {
                     reg[0x13004]=pending==1?(bad_pause?0:1):(bad_resume?1:0);pending=0;
                 }
             }
+        } else if(us==4000) {
+            assert(allow_output&&(reg[0x6000]&0x3ff8)==0x2678);
         } else {
             assert(us==100000);++observations;
             if((reg[0x02bc1000]&1)&&!heartbeat_stuck&&observations>=heartbeat_at)++reg[0x02800784];
@@ -158,7 +175,7 @@ int main() {
     assert(good.configured&&good.core_started&&good.heartbeat_changed&&good.diagnostics);
     assert(good.resume.command==2&&good.resume.sent&&good.resume.ack&&good.resume.matched&&good.resume.polls==2);
     assert(good.pause.command==1&&good.pause.sent&&good.pause.ack&&good.pause.matched&&good.pause.polls==2);
-    assert(good.heartbeat_first==7&&good.heartbeat_last==8&&good.heartbeat_polls==1);
+    assert(good.heartbeat_first==7&&good.heartbeat_last==12&&good.heartbeat_polls==5);
     assert(good.pll_before==0x10010&&good.pll_after==good.pll_before&&good.pll_raw3==0x100);
     assert(good.halo_state==2&&!good.cspl_state&&!good.cspl_error);
     assert(baseline.reg[0x10814]==0x44&&baseline.reg[0x10014]==8);
@@ -169,7 +186,7 @@ int main() {
     {Bus b;b.start_state=1;Trial<Bus> p(b);auto r=p.run();assert(r.complete&&r.resume.command==2);off(b,r);}
     {Bus b;b.start_state=3;Trial<Bus> p(b);auto r=p.run();assert(r.error==MailboxState&&r.pause.ack);off(b,r);}
     {Bus b;b.heartbeat_at=5;Trial<Bus> p(b);auto r=p.run();assert(r.complete&&r.heartbeat_polls==5);off(b,r);}
-    {Bus b;b.heartbeat_stuck=true;Trial<Bus> p(b);auto r=p.run();assert(r.error==HeartbeatUnchanged&&r.heartbeat_polls==5&&r.pause.ack);off(b,r);}
+    {Bus b;b.heartbeat_stuck=true;Trial<Bus> p(b);auto r=p.run();assert(r.complete&&r.error==Ok&&!r.heartbeat_changed&&r.heartbeat_polls==5&&r.pause.ack);off(b,r);}
     {Bus b;b.drop_resume=true;Trial<Bus> p(b);auto r=p.run();assert(r.error==MailboxTimeout&&!r.resume.ack&&r.resume.polls==5&&r.pause.ack);off(b,r);}
     {Bus b;b.drop_pause=true;Trial<Bus> p(b);auto r=p.run();assert(r.error==MailboxTimeout&&!r.pause.ack&&r.pause.polls==5);off(b,r);}
     {Bus b;b.bad_resume=true;Trial<Bus> p(b);auto r=p.run();assert(r.error==MailboxState&&r.resume.ack&&!r.resume.matched&&r.pause.ack);off(b,r);}
@@ -178,6 +195,7 @@ int main() {
     {Bus b;b.cspl_state=1;Trial<Bus> p(b);auto r=p.run();assert(r.error==ProtectionError&&r.cspl_state==1);off(b,r);}
     {Bus b;b.fault=0x100;Trial<Bus> p(b);auto r=p.run();assert(r.error==HardwareFault&&r.fault_running[0]==0x40000100);off(b,r);}
     {Bus b;b.mpu_fault=0x20000;Trial<Bus> p(b);auto r=p.run();assert(r.error==HardwareFault&&r.mpu_fault[0]==0x20000);off(b,r);}
+    {Bus b;b.reg[0x02800780]=1;Trial<Bus> p(b);auto r=p.run();assert(r.error==HaloState&&!r.started);off(b,r);}
     {Bus b;b.dsploaded=false;Trial<Bus> p(b);auto r=p.run();assert(r.error==NotPreloaded&&!r.core_started);off(b,r);}
     {Bus b;b.reg[0x2018]|=1;Trial<Bus> p(b);auto r=p.run();assert(r.error==NotQuiescent&&!r.core_started);off(b,r);}
     {Bus b;b.core_drop=true;Trial<Bus> p(b);auto r=p.run();assert(r.error==ReadbackMismatch&&!r.core_started);off(b,r);}
@@ -198,7 +216,35 @@ int main() {
     }
     {Bus b;b.fail_at=25;b.persistent=true;Trial<Bus> p(b);auto r=p.run();
         assert(r.error==Io&&!r.cleanup&&!r.clocks_may_stop);}
-    printf("production CS35L41 HALO trial: source PLL/format/monitor/MPU/rate/start order, W1C mailbox ACK Resume/Reinit/Pause, live/stuck heartbeat, protection/fault diagnostics, no AMP/GLOBAL/ASPTX enable, %u I/O exits and %u withheld clock removals passed\n",injected,withheld);
+    // Four independent instances retain each preloaded speaker calibration and
+    // channel balance. The actual physical PCM stream is owned by the caller.
+    const uint32_t calibration[]={9301,9342,9630,9717};
+    for(unsigned speaker=0;speaker<4;++speaker) {
+        Bus b;b.allow_output=true;b.heartbeat_stuck=true;
+        b.reg[0x02800268]=calibration[speaker];b.reg[0x02800270]=1;
+        b.reg[0x02800274]=calibration[speaker]+1;b.reg[0x02800374]=speaker%2?0x400000:0;
+        b.reg[0x6000]=0x8000;Trial<Bus> p(b);
+        assert(p.start()&&p.result().started&&!p.result().output_enabled);
+        assert(!p.result().heartbeat_changed&&!b.pause_commands&&(b.reg[0x02bc1000]&1));
+        b.pcm_running=true;assert(p.enable_output());
+        assert(p.result().output_enabled&&p.result().volume_code==0x740&&p.result().volume_reg==0xba04);
+        assert(p.observe());assert(p.stop_output());
+        assert(!(b.reg[0x2014]&1)&&!(b.reg[0x2018]&1)&&(b.reg[0x02bc1000]&1));
+        auto r=p.finish();assert(r.complete&&r.muted&&r.output_stopped&&r.pdn_done&&r.pdn_polls==3);
+        assert(p.finish().complete&&b.pause_commands==1);off(b,r);
+        assert(b.reg[0x02800268]==calibration[speaker]&&b.reg[0x02800270]==1);
+        assert(b.reg[0x02800274]==calibration[speaker]+1&&b.reg[0x02800374]==(speaker%2?0x400000u:0));
+        assert((b.reg[0x6000]&0xbfff)==0xa67c&&(b.reg[0x4c00]&0x7f)==0);
+        size_t ampOn=find(b,'w',0x2018,0x3721),pup=find(b,'w',0x2084,0x2f1aa0);
+        size_t globalOn=find(b,'w',0x2014,1),mute=find(b,'w',0x6000,0xa67c);
+        size_t ampOff=find(b,'w',0x2018,0x3720,mute),pause=find(b,'w',0x13020,1);
+        size_t globalOff=find(b,'w',0x2014,0,globalOn+1),pdnClear=find(b,'w',0x10010,0x800000);
+        size_t pdn=find(b,'w',0x2084,0x2f1aa3),coreOff=find(b,'w',0x02bc1000,0);
+        size_t pllRestore=find(b,'w',0x2c04,0x10010,globalOff);
+        assert(ampOn<pup&&pup<globalOn&&globalOn<mute&&mute<ampOff&&ampOff<pause&&
+            pause<globalOff&&globalOff<pdnClear&&pdnClear<pdn&&pdn<coreOff&&coreOff<pllRestore);
+    }
+    printf("production CS35L41: four protected -24dB playback lifecycles, calibration/channel preservation, AMP/PUP/GLOBAL startup and mute/AMP/Pause/GLOBAL/PDN/core stop order, HALO2/mailbox validation, nonfatal static heartbeat, no ASPTX output; %u existing I/O exits and %u withheld clock removals passed\n",injected,withheld);
 }
 '''
 

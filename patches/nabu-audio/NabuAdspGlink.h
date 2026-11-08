@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include "NabuAsmPcm.h"
 #include "NabuAfeTdm.h"
+#include "NabuAsmPlayback.h"
 
 namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
@@ -32,7 +33,7 @@ struct Result {
 template<class IO> class Link {
     struct LocalIntent { uint8_t data[512]; uint32_t fill, remaining; };
     struct RemoteIntent { uint32_t id, size; bool present, used; };
-    enum Phase { Idle, Opening, Querying, VersionQuerying, Mapping, Pcm, Unmapping, Afe, Closing, Finished };
+    enum Phase { Idle, Opening, Querying, VersionQuerying, Mapping, Pcm, Unmapping, Afe, Playback, Closing, Finished };
     IO &io;
     Result r{};
     LocalIntent local[20]{};
@@ -50,9 +51,11 @@ template<class IO> class Link {
     uint64_t map_address = 0;
     bool pcm_enabled = false;
     bool afe_enabled = false;
+    bool playback_enabled=false;
     NabuAsmPcm::Trial<Link> pcm{*this};
     NabuAfeTdm::Trial<Link> afe{*this};
-    uint32_t needed_bytes() const { return phase == Afe ? 96 : phase == Pcm ? 56 : phase == Mapping ? 40 : phase == Unmapping ? 24 : QueryBytes; }
+    NabuAsmPlayback::Trial<Link> playback{*this};
+    uint32_t needed_bytes() const { return phase == Afe ? 96 : phase == Playback ? 52 : phase == Pcm ? 56 : phase == Mapping ? 40 : phase == Unmapping ? 24 : QueryBytes; }
 
     static uint16_t get16(const uint8_t *p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
     static uint32_t get32(const uint8_t *p) { return uint32_t(get16(p)) | uint32_t(get16(p + 2)) << 16; }
@@ -100,6 +103,7 @@ template<class IO> class Link {
         ++r.apr_packets;
         if (phase == Pcm) { pcm.receive(data, bytes, now); return; }
         if (phase == Afe) { afe.receive(data, bytes, now); return; }
+        if (phase == Playback) { playback.receive(data, bytes, now); return; }
         if (bytes < 20) { ++r.apr_ignored; return; }
         uint16_t field = get16(data), packet_bytes = get16(data + 2);
         uint32_t header_bytes = ((field >> 4) & 15) * 4, token = get32(data + 12), opcode = get32(data + 16);
@@ -309,6 +313,22 @@ template<class IO> class Link {
     }
 public:
     constexpr explicit Link(IO &operations) : io(operations) {}
+    void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {io.playback_fill(period,first_frame,frames);}
+    bool playback_send(uint8_t service,uint16_t port,uint32_t opcode,uint32_t token,const uint8_t *payload,uint32_t payload_bytes) {
+        uint32_t packet_bytes=20+payload_bytes;int chosen=-1;
+        for(unsigned i=0;i<64;++i)if(remote[i].present&&!remote[i].used&&remote[i].size>=packet_bytes&&
+            (chosen<0||remote[i].size<remote[chosen].size))chosen=int(i);
+        if(chosen<0) {
+            if(!requested_intent)requested_intent=send(7,uint16_t(r.lcid),packet_bytes);
+            return false;
+        }
+        uint8_t data[60]{};set32(data,packet_bytes);set16(data+8,0x250);set16(data+10,uint16_t(packet_bytes));
+        data[12]=data[16]=service;data[13]=5;data[17]=4;
+        set16(data+14,port);set16(data+18,port);set32(data+20,token);set32(data+24,opcode);
+        for(unsigned i=0;i<payload_bytes;++i)data[28+i]=payload[i];
+        if(!send(9,uint16_t(r.lcid),remote[chosen].id,data,packet_bytes+8))return false;
+        remote[chosen].used=true;return true;
+    }
     bool afe_send(uint32_t opcode,uint32_t token,const uint8_t *payload,uint32_t payload_bytes) {
         uint32_t packet_bytes=20+payload_bytes;int chosen=-1;
         for(unsigned i=0;i<64;++i)if(remote[i].present&&!remote[i].used&&remote[i].size>=packet_bytes&&
@@ -344,12 +364,13 @@ public:
     }
     bool begin(uint32_t desc, uint32_t tx_offset, uint32_t tx_size, uint32_t rx_offset, uint32_t rx_size,
         bool discover_services = false, uint64_t dma_address = 0, uint32_t dma_bytes = 0, bool pcm_trial = false,
-        bool afe_trial = false) {
+        bool afe_trial = false,bool playback_trial=false) {
         descriptor = desc; tx = tx_offset; tx_bytes = tx_size; rx = rx_offset; rx_bytes = rx_size;
         include_versions = discover_services;
         map_address = dma_address; map_bytes = dma_bytes;
         pcm_enabled = pcm_trial;
         afe_enabled = afe_trial;
+        playback_enabled=playback_trial;
         if (phase != Idle || tx_size < 256 || rx_size < 256 || ((tx_size | rx_size) & 7)) { fail(InvalidQueues); return false; }
         r.features = 1; r.lcid = 2; phase = Opening; phase_start = 0;
         return send(0, 1, r.features);
@@ -383,7 +404,8 @@ public:
         }
         if (phase == Mapping) {
             if (r.map_response) {
-                if (pcm_enabled) { phase = Pcm; pcm.begin(map_address, r.map_handle, now); }
+                if(playback_enabled&&afe_enabled) {phase=Afe;afe.begin(now);}
+                else if (pcm_enabled) { phase = Pcm; pcm.begin(map_address, r.map_handle, now); }
                 else phase = Unmapping;
                 phase_start = now;
             }
@@ -403,13 +425,20 @@ public:
                 bool afe_present=false;
                 for(unsigned i=0;i<r.service_count;++i)
                     if(r.services[i].id==4&&r.services[i].api==7)afe_present=true;
-                if(afe_enabled&&afe_present&&!r.unmap_status) {phase=Afe;afe.begin(now);}
+                if(afe_enabled&&afe_present&&!r.unmap_status&&!playback_enabled) {phase=Afe;afe.begin(now);}
                 else start_close();
             }
             else if (now - phase_start >= 1000) { r.unmap_timeout = true; start_close(); }
             else if (!waiting_query && channel_open) query(0x10d94);
         }
-        if(phase==Afe) {afe.step(now);if(afe.done())start_close();}
+        if(phase==Playback)playback.step(now);
+        if(phase==Afe) {
+            afe.step(now);
+            if(afe.done()) {
+                if(playback_enabled&&!playback.result().mapping_retained) {phase=Unmapping;phase_start=now;waiting_query=false;}
+                else start_close();
+            }
+        }
         if (phase == Closing) {
             if (r.close_ack) phase = Finished;
             else if (now - phase_start >= 1000) { r.timeout = true; phase = Finished; }
@@ -422,5 +451,14 @@ public:
     bool afe_ready() const {return phase==Afe&&afe.ready();}
     void finish_afe() {if(phase==Afe)afe.finish();}
     const NabuAfeTdm::Result &afe_result() const {return afe.result();}
+    void begin_playback(uint32_t elapsed_ms) {
+        if(phase==Afe&&afe.ready()) {phase=Playback;playback.begin(map_address,r.map_handle,elapsed_ms);}
+    }
+    bool playback_ready() const {return phase==Playback&&playback.ready();}
+    void play() {if(phase==Playback)playback.play();}
+    void abort_playback() {if(phase==Playback)playback.finish();}
+    bool playback_done() const {return phase==Playback&&playback.done();}
+    void finish_playback() {if(phase==Playback) {phase=Afe;afe.finish();}}
+    const NabuAsmPlayback::Result &playback_result() const {return playback.result();}
 };
 } // namespace NabuAdspGlink

@@ -2,6 +2,11 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
+第150轮AFE七项启动/三项关闭应答全部通过；TL保护核心Resume/Pause邮箱应答成功，
+但GLOBAL/AMP关闭时heartbeat2保持不变，持续音频处理未确认。输出/核心、AFE、DSP/
+SMMU与引脚清理正常。3,045,133字节连续日志前缀及64MiB槽备份清空，APFS120；
+下一步核对时钟与待帧语义。见[第150轮结果](../analysis/nabu-internal-audio-v150.md)。
+
 第149轮四路CS35L41原机保护程序、位置系数和本机校准全部实测读回通过，GLOBAL/
 AMP/CORE保持关闭，复位恢复。内部PCM、Wi-Fi扫描和蓝牙初始化正常。3,622,008字节
 日志前缀及64MiB槽备份清空，APFS119。下一步AFE时钟和保护核心心跳/邮箱；实际

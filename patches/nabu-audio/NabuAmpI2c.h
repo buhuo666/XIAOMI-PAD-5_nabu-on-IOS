@@ -44,7 +44,7 @@ template<class Pins> class Bus {
         return bit(!more,sample);
     }
 public:
-    explicit Bus(Pins &io):pins(io) {}
+    constexpr explicit Bus(Pins &io):pins(io) {}
     bool read_register(uint8_t address,uint32_t reg,uint32_t &value) {
         failure=Ok;value=0;pins.take();
         pins.line(false,true);pins.line(true,true);delay();

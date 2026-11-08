@@ -81,6 +81,10 @@ struct FakeIO {
     static constexpr uint32_t desc=0x100, tx=0x1000, rx=0x4000;
     std::array<uint8_t,65536> memory{};
     uint32_t size=4096, bells=0, writes=0;
+    unsigned playback_fills=0;
+    void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {
+        CHECK(period<4&&frames==1024&&first_frame%1024==0);++playback_fills;
+    }
     explicit FakeIO(uint32_t ring_size=4096):size(ring_size) {}
     uint8_t read8(uint32_t at) { return memory.at(at); }
     uint32_t read32(uint32_t at) {
@@ -122,9 +126,9 @@ struct Fixture {
     NabuAdspGlink::Link<FakeIO> link;
     uint16_t peer=37;
     uint32_t peer_iid=91;
-    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false,bool pcm=false,bool afe=false):io(size),link(io) {
+    explicit Fixture(uint32_t size=4096,uint32_t start=0,bool versions=false,bool mapping=false,bool pcm=false,bool afe=false,bool playback=false):io(size),link(io) {
         io.initial_position(start);
-        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0,pcm,afe));
+        CHECK(link.begin(FakeIO::desc,FakeIO::tx,size,FakeIO::rx,size,versions,mapping?0x110000000ULL:0,mapping?16384:0,pcm,afe,playback));
         auto first=io.take(); CHECK(first.size()==1 && first[0]==frame(0,1,1));
     }
     std::vector<Bytes> step(uint32_t time) { link.step(time); return io.take(); }
@@ -604,6 +608,52 @@ static void afe_after_unmap() {
     unsupported.io.inject(data_frame(unsupported.peer,1,asm_basic(u32(tx[1],28),0,0x10d94)));tx=unsupported.step(150);
     CHECK(tx.size()==2&&tx[1]==frame(3,2,0)&&!unsupported.link.afe_ready());unsupported.finish(160);
 }
+static Bytes playback_basic(const Bytes &q) {
+    auto b=pcm_basic(q);b[4]=b[8]=q[20];put16(b,6,u16(q,26));put16(b,10,u16(q,22));return b;
+}
+static void protected_playback_bridge() {
+    Fixture f(4096,4088,true,true,false,true,true);unsigned now=140;auto token=start_mapping(f,true);
+    f.io.inject(frame(14,f.peer,f.peer_iid));f.io.inject(data_frame(f.peer,1,asm_map_reply(token)));
+    auto tx=f.step(now++);CHECK(tx.size()==2&&!f.link.result().unmap_sent);Bytes q=tx[1];
+    for(unsigned i=0;i<7;++i) {
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,afe_basic(q)));
+        tx=f.step(now++);if(i<6){CHECK(tx.size()==2);q=tx[1];}
+    }
+    CHECK(f.link.afe_ready());now=90150;f.link.begin_playback(now);tx=f.step(now++);
+    CHECK(tx.size()==1);q=tx[0];CHECK(q[20]==8&&u16(q,22)==0x9030&&u32(q,32)==0x10326);
+    auto reply=playback_basic(q);put32(reply,16,0x10329);put16(reply,6,7);put32(reply,32,0);put16(reply,36,7);put16(reply,38,0);
+    f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,reply));tx=f.step(now++);q=tx.back();
+    const uint32_t controls[]={0x10db3,0x10325,0x10d98,0x10daa};
+    for(unsigned i=0;i<4;++i) {
+        CHECK(u32(q,32)==controls[i]&&q[20]==(i==1?8:7));
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));
+        tx=f.step(now++);if(i<3){CHECK(tx.size()==2);q=tx[1];}
+    }
+    CHECK(f.link.playback_ready()&&!f.link.result().unmap_sent);
+    f.io.inject(intent_frame(f.peer,92));f.io.inject(intent_frame(f.peer,93));f.io.inject(intent_frame(f.peer,94));
+    f.link.play();tx=f.step(now++);CHECK(tx.size()==4&&f.io.playback_fills==4);auto writes=tx;
+    f.link.abort_playback();
+    for(const auto &w:writes) {
+        f.io.inject(frame(14,f.peer,u32(w,4)));f.io.inject(data_frame(f.peer,1,pcm_write_done(w)));
+    }
+    tx=f.step(now++);q=tx.back();CHECK(u32(q,32)==0x10bdb&&f.link.playback_result().completions==4);
+    f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));
+    f.io.inject(data_frame(f.peer,2,pcm_response(0x10c1c,0,{})));f.step(now++);tx=f.step(now++);
+    CHECK(tx.size()==1);q=tx[0];CHECK(u32(q,32)==0x10bcd);
+    f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));tx=f.step(now++);q=tx.back();
+    CHECK(q[20]==8&&u16(q,22)==7&&u32(q,32)==0x10327);
+    f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));f.step(now++);
+    CHECK(f.link.playback_done()&&!f.link.result().unmap_sent);
+    f.link.finish_playback();tx=f.step(now++);q=tx[0];
+    for(unsigned i=0;i<3;++i) {
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,afe_basic(q)));
+        tx=f.step(now++);if(i<2)q=tx.back();
+    }
+    tx=f.step(now++);CHECK(tx.size()==1&&u32(tx[0],32)==0x10d94);q=tx[0];
+    f.io.inject(data_frame(f.peer,1,asm_basic(u32(q,28),0,0x10d94)));f.step(now++);
+    CHECK(f.link.result().unmap_response&&f.link.playback_result().closed&&f.link.playback_result().copp_closed);
+    f.finish(now);
+}
 static void timeouts_close_and_failure() {
     Fixture no_peer; CHECK(no_peer.step(4999).empty() && !no_peer.link.done());
     CHECK(no_peer.step(5000).empty() && no_peer.link.done() && no_peer.link.result().timeout);
@@ -659,7 +709,7 @@ static void tx_capacity_and_work_budget() {
 int main() {
     success_and_wrap(); negotiation_and_channels(); identity_and_lengths();
     fragments_and_partial_frames(); states_basic_and_peer_intents(); zero_peer_intent_lifecycle();
-    many_peer_intents(); framework_versions(); memory_mapping(); pcm_stream_lifecycle(); afe_after_unmap(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
+    many_peer_intents(); framework_versions(); memory_mapping(); pcm_stream_lifecycle(); afe_after_unmap(); protected_playback_bridge(); timeouts_close_and_failure(); tx_capacity_and_work_budget();
     std::printf("PASS: production GLINK/APR; %u assertions; ring, CID/IID, state, deadline and close cases\n",checks);
 }
 '''
@@ -696,6 +746,7 @@ def main():
                            "PCM endpoint/token/address/handle isolation, output bounds, timeout cleanup and no unmap after unconfirmed close",
                            "AFE7 after successful ASM unmap, service4 zero-port framing, seven startup commands and three cleanup commands",
                            "90-second AFE hold, finish deadline refresh, 32-byte APR responses and unsupported AFE skip",
+                           "mapped playback AFE/ADM/ASM handoff, real period completion, rendered EOS, COPP close, AFE stop before unmap",
                            "TX exhaustion stays finished", "64-frame per-step budget"],
               "device_executed": False, "pcm_or_sound_verified": False}
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Nabu Protection HALO run/stop trial, after NabuCs35l41 preload and external
-// 12.288MHz BCLK + 48kHz frame sync. GLOBAL_EN and AMP_EN remain zero throughout.
+// Nabu Protection HALO and short speaker-playback lifecycle, after preload and
+// external 12.288MHz BCLK + 48kHz frame sync. start() leaves the output disabled;
+// the caller starts its PCM stream before explicitly calling enable_output().
 // Source: MiCode audio-kernel d41f8e1a6827294af6a61adbe18544518e750166,
 // cs35l41_v2/cs35l41.c:195,706,1963,2116,2335,2408 and wm_adsp.c:3339,3372,3689.
 #pragma once
@@ -8,9 +9,12 @@
 
 namespace NabuCs35l41Run {
 enum Error { Ok, Io, NotPreloaded, NotQuiescent, ReadbackMismatch,
-    MailboxState, MailboxTimeout, HeartbeatUnchanged, ProtectionError, HardwareFault };
+    MailboxState, MailboxTimeout, HeartbeatUnchanged, ProtectionError, HardwareFault,
+    HaloState, InvalidState, PowerDownTimeout };
 enum Phase { Idle, Entry, Configure, Pll, Mpu, Rates, Core, Resume, Observe, Pause,
-    Stop, Restore, Complete };
+    Stop, Restore, Complete, Output, Mute, PowerDown };
+// cs35l41_set_vol: 817=0dB, each step1/8dB. 625=817-24*8; 625+0x4cf=0x740.
+static constexpr uint32_t LowVolumeCode=0x740, MuteVolumeCode=0x4cf;
 struct Mailbox {
     uint32_t command=0,state=0,polls=0;
     bool sent=false,ack=false,matched=false;
@@ -22,11 +26,16 @@ struct Result {
     uint32_t core_running=0,core_after=0,pwr1_after=0,pwr2_after=0;
     uint32_t heartbeat_first=0,heartbeat_last=0,heartbeat_polls=0;
     uint32_t halo_state=0,cspl_state=0,cspl_error=0;
+    uint32_t clock_detect=0,global_sample_rate=0,dsp_clock=0,ctrl_override=0;
+    uint32_t volume_code=0,volume_reg=0,pwr1_active=0,pwr2_active=0,dac_source=0;
+    uint32_t pdn_polls=0,pdn_status=0;
     uint32_t fault_before[4]{},fault_running[4]{},mpu_fault[3]{};
     Mailbox resume{},pause{};
     bool configured=false,core_started=false,heartbeat_changed=false;
     bool diagnostics=false,core_off=false,output_off=false,cleanup=false;
     bool clocks_may_stop=false,complete=false;
+    bool started=false,output_attempted=false,output_enabled=false,muted=false;
+    bool output_stopped=false,pdn_done=false;
 };
 
 // Backend selects one already preloaded chip:
@@ -39,6 +48,7 @@ template<class Backend> class Trial {
     uint32_t old_asp=0,old_pwr2=0,old_pwr3=0;
     bool saved=false,pll_saved=false,core_attempted=false,pause_attempted=false;
     bool test_unlocked=false,mpu_unlocked=false;
+    bool global_attempted=false,stopped=false,finished=false;
     void phase(Phase value) {if(r.error==Ok)r.phase=value;}
     bool fail(Error e,uint32_t reg=0,uint32_t detail=0) {
         if(r.error==Ok) {r.error=e;r.failed_reg=reg;r.detail=detail;}
@@ -62,6 +72,10 @@ template<class Backend> class Trial {
         ok=read(0x02800258,r.cspl_state)&&ok;
         ok=read(0x0280025c,r.cspl_error)&&ok;
         ok=read(0x10098,r.pll_raw3)&&ok;
+        ok=read(0x14000,r.clock_detect)&&ok;
+        ok=read(0x0280079c,r.global_sample_rate)&&ok;
+        ok=read(0x2c08,r.dsp_clock)&&ok;
+        ok=read(0x2020,r.ctrl_override)&&ok;
         ok=faults(r.fault_running)&&ok;
         for(unsigned i=0;i<3;++i)ok=read(0x02bc3104+i*8,r.mpu_fault[i])&&ok;
         r.diagnostics=ok;return ok;
@@ -127,6 +141,20 @@ template<class Backend> class Trial {
         }
         return true;
     }
+    bool power_patch(uint32_t value) {
+        test_unlocked=true;
+        if(!write(0x40,0x55)||!write(0x40,0xaa)||!write(0x2084,value)||
+            !write(0x40,0xcc)||!write(0x40,0x33))return false;
+        test_unlocked=false;return true;
+    }
+    bool state_ok() {
+        if(r.halo_state!=2)return fail(HaloState,0x02800780,r.halo_state);
+        if(r.cspl_state||r.cspl_error)return fail(ProtectionError,0x02800258,r.cspl_error?r.cspl_error:r.cspl_state);
+        const uint32_t amp_faults=0x800281c0;
+        if((r.fault_running[0]&amp_faults)||r.mpu_fault[0]||r.mpu_fault[1]||r.mpu_fault[2])
+            return fail(HardwareFault,0x10010,r.fault_running[0]);
+        return true;
+    }
     bool work() {
         phase(Entry);uint32_t value,pwr1,core;
         if(!read(0x2014,pwr1)||!read(0x2018,old_pwr2)||!read(0x02bc1000,core))return false;
@@ -152,30 +180,23 @@ template<class Backend> class Trial {
         if(initial>2)return fail(MailboxState,0x13004,initial);
         if(!mailbox(initial==2?3:2,r.resume))return false;
         phase(Observe);
+        // Cirrus HDA smart_amp() accepts HALO_STATE_CODE_RUN=2, independently
+        // of GLOBAL_EN. Run150 confirms mailbox execution with heartbeat=2.
+        for(unsigned i=0;i<15;++i) {
+            if(!read(0x02800780,r.halo_state))return false;
+            if(r.halo_state==2)break;
+            io.delay_us(1000);
+        }
         if(!read(0x02800784,r.heartbeat_first))return false;
         r.heartbeat_last=r.heartbeat_first;
-        // A bounded observation, not an asserted firmware heartbeat period.
-        for(unsigned i=0;i<5;++i) {
-            io.delay_us(100000);++r.heartbeat_polls;
-            if(!read(0x02800784,r.heartbeat_last))return false;
-            if(r.heartbeat_last!=r.heartbeat_first) {r.heartbeat_changed=true;break;}
-        }
         if(!diagnostics())return false;
-        if(r.cspl_state||r.cspl_error)return fail(ProtectionError,0x02800258,r.cspl_error?r.cspl_error:r.cspl_state);
-        const uint32_t amp_faults=0x800281c0;
-        if((r.fault_running[0]&amp_faults)||r.mpu_fault[0]||r.mpu_fault[1]||r.mpu_fault[2])
-            return fail(HardwareFault,0x10010,r.fault_running[0]);
-        if(!r.heartbeat_changed)return fail(HeartbeatUnchanged,0x02800784,r.heartbeat_last);
-        phase(Pause);pause_attempted=true;
-        return mailbox(1,r.pause);
+        return state_ok();
     }
     void cleanup() {
         bool ok=true;uint32_t core=0;
         // Capture diagnostic state while the core/clocks still exist on errors.
         if(core_attempted&&!r.diagnostics)ok=diagnostics()&&ok;
-        if(core_attempted&&!pause_attempted) {
-            phase(Pause);pause_attempted=true;ok=mailbox(1,r.pause)&&ok;
-        }
+        ok=stop_output()&&ok;
         phase(Stop);
         if(core_attempted)ok=update(0x02bc7000,1,0)&&ok;
         // Try both read/modify and readback even when another cleanup step failed.
@@ -206,6 +227,7 @@ template<class Backend> class Trial {
                 ok=write(0x201c,old_pwr3)&&ok;
                 ok=read(0x2018,r.pwr2_after)&&ok;
             }
+            ok=update(0x4c00,0x7f,0)&&ok;
             if(pll_saved)ok=write(0x2c04,r.pll_before)&&ok;
             ok=read(0x2c04,r.pll_after)&&ok;
         }
@@ -213,14 +235,79 @@ template<class Backend> class Trial {
         r.clocks_may_stop=r.core_off;r.cleanup=ok;
     }
 public:
-    explicit Trial(Backend &owner):io(owner) {}
-    Result run() {
+    constexpr explicit Trial(Backend &owner):io(owner) {}
+    bool start() {
         r=Result{};saved=pll_saved=core_attempted=pause_attempted=false;
         test_unlocked=mpu_unlocked=false;
-        bool passed=work();cleanup();
-        r.complete=passed&&r.error==Ok&&r.cleanup;
+        global_attempted=stopped=finished=false;
+        r.started=work();return r.started;
+    }
+    bool enable_output() {
+        if(!r.started||stopped||finished||r.error!=Ok)return fail(InvalidState);
+        if(r.output_enabled)return true;
+        phase(Output);r.output_attempted=true;
+        // Original Nabu music settings; only DAC output volume is reduced.
+        // Preserve each chip's loaded Protection, CAL_* and CH_BAL controls.
+        if(!update(0x6000,0x3fff,(LowVolumeCode<<3)|4)||
+            !update(0x6c04,0x3e0,18<<5)||!update(0x201c,0x100010,0x100010)||
+            !update(0x3804,1,1)||!update(0x3800,0xff,0)||!update(0x2018,0x30,0x20)||
+            !write(0x6404,0x02005308)||!write(0x6808,0x3f75)||
+            !update(0x4c00,0x7f,0x32))return false;
+        r.volume_code=LowVolumeCode;
+        if(!verify(0x6000,0x3fff,(LowVolumeCode<<3)|4,r.volume_reg)||
+            !verify(0x4c00,0x7f,0x32,r.dac_source))return false;
+        // DAPM sets Main AMP before its POST_PMU power-up patch and GLOBAL_EN.
+        if(!update(0x2018,1,1)||!power_patch(0x002f1aa0))return false;
+        global_attempted=true;
+        if(!update(0x2014,1,1))return false;
+        io.delay_us(1000);
+        if(!verify(0x2014,1,1,r.pwr1_active)||!verify(0x2018,1,1,r.pwr2_active))return false;
+        r.output_enabled=true;return observe();
+    }
+    bool observe() {
+        if(!r.started||stopped||finished)return fail(InvalidState);
+        phase(Observe);++r.heartbeat_polls;
+        if(!read(0x02800784,r.heartbeat_last)||!diagnostics())return false;
+        r.heartbeat_changed|=r.heartbeat_last!=r.heartbeat_first;
+        return state_ok(); // heartbeat/clock-detect remain raw observations
+    }
+    bool stop_output() {
+        if(stopped)return r.output_stopped;
+        stopped=true;bool ok=true;
+        if(r.output_attempted) {
+            phase(Mute);
+            r.muted=update(0x6000,0x3ff8,MuteVolumeCode<<3);
+            ok=r.muted&&ok;io.delay_us(4000); // selected4ms soft ramp
+            ok=update(0x2018,1,0)&&ok;
+        }
+        if(core_attempted&&!pause_attempted) {
+            phase(Pause);pause_attempted=true;ok=mailbox(1,r.pause)&&ok;
+        }
+        if(global_attempted) {
+            phase(PowerDown);ok=update(0x2014,1,0)&&ok;
+            for(unsigned i=0;i<100;++i) {
+                ++r.pdn_polls;
+                if(!read(0x10010,r.pdn_status)) {ok=false;break;}
+                if(r.pdn_status&0x00800000) {r.pdn_done=true;break;}
+                io.delay_us(1000);
+            }
+            if(!r.pdn_done)ok=fail(PowerDownTimeout,0x10010,r.pdn_status);
+            ok=write(0x10010,0x00800000)&&ok;
+        }
+        if(r.output_attempted)ok=power_patch(0x002f1aa3)&&ok;
+        r.output_stopped=ok;return ok;
+    }
+    Result finish() {
+        if(finished)return r;
+        cleanup();finished=true;
+        r.complete=r.started&&r.error==Ok&&r.cleanup;
         if(r.complete)r.phase=Complete;
         return r;
+    }
+    const Result &result() const {return r;}
+    Result run() {
+        if(start())for(unsigned i=0;i<5;++i) {io.delay_us(100000);if(!observe())break;}
+        return finish();
     }
 };
 } // namespace NabuCs35l41Run

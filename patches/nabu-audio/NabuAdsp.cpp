@@ -138,6 +138,41 @@ struct Trial {
     vm_offset_t tdm_pins=0,amp_reset=0;
     uint32_t tdm_config[6]{},tdm_output[6]{},amp_reset_config=0,amp_reset_output=0;
     bool retain_for_amp=false;
+    struct AmpPins {
+        vm_offset_t base=0;
+        uint32_t config[2]{},output[2]{};
+        void take() {for(unsigned i=0;i<2;++i){config[i]=rd(base+i*0x1000);output[i]=rd(base+i*0x1000+4)&2;}}
+        void restore() {
+            for(unsigned i=0;i<2;++i)wr(base+i*0x1000+4,output[i]);
+            for(unsigned i=0;i<2;++i)wr(base+i*0x1000,config[i]);
+        }
+        void line(bool scl,bool high) {
+            vm_offset_t at=base+(scl?0x1000:0);
+            wr(at+4,0);wr(at,3|(high?0:0x200)); // input releases, output only drives low
+        }
+        bool level(bool scl) {return (rd(base+(scl?0x1000:0)+4)&1)!=0;}
+        void delay_us(unsigned us) {IODelay(us);}
+    } amp_io{};
+    NabuAmpI2c::Bus<AmpPins> amp_bus{amp_io};
+    struct AmpBackend {
+        NabuAmpI2c::Bus<AmpPins> &bus;
+        uint8_t address;
+        unsigned bus_error=0;
+        bool result(bool ok) {if(!ok&&!bus_error)bus_error=bus.error();return ok;}
+        bool read(uint32_t reg,uint32_t &value) {return result(bus.read_register(address,reg,value));}
+        bool write(uint32_t reg,uint32_t value) {return result(bus.write_register(address,reg,value));}
+        bool raw_write(uint32_t reg,const uint8_t *data,uint32_t bytes) {return result(bus.raw_write(address,reg,data,bytes));}
+        void delay_us(uint32_t us) {if(us>=1000)IOSleep((us+999)/1000);else IODelay(us);}
+        const uint8_t *firmware(const char *name,uint32_t &bytes) {
+            uint64_t size=0;const uint8_t *data=hakios_image_file("fw",name,&size,nullptr);
+            bytes=uint32_t(size);return data;
+        }
+    };
+    AmpBackend amp_backend[4]={{amp_bus,0x43},{amp_bus,0x41},{amp_bus,0x42},{amp_bus,0x40}};
+    using AmpCore=NabuCs35l41Run::Trial<AmpBackend>;
+    AmpCore amp_core[4]={AmpCore{amp_backend[0]},AmpCore{amp_backend[1]},AmpCore{amp_backend[2]},AmpCore{amp_backend[3]}};
+    unsigned amp_touched=0;
+    bool amps_finished=false;
 
     bool prepare_tdm_pins() {
         // Original quat_tdm pinctrl: SOUTH GPIO137..142, qua_mi2s function1.
@@ -155,6 +190,7 @@ struct Trial {
         return true;
     }
     void restore_audio_pins() {
+        if(amp_io.base) {unmap(amp_io.base,0x2000);amp_io.base=0;}
         if(amp_reset) {
             wr(amp_reset+4,amp_reset_output);wr(amp_reset,amp_reset_config);
             log("NABU AMP CORE: reset restored=%#x/%#x after AFE teardown\n",rd(amp_reset),rd(amp_reset+4));
@@ -254,86 +290,85 @@ struct Trial {
         for(unsigned i=0;i<p.read_bytes/4&&i<8;++i)
             log("NABU ADSP PCM: sample[%u]=%#x expected=%#x\n",i,NabuAsmPcm::u32(samples+i*4),NabuAsmPcm::sample(i/2,i%2));
     }
-    bool exercise_amplifiers() {
-        // Original Nabu DT: qup7 GPIO98/99 in SOUTH tile; shared reset92 in NORTH.
-        vm_offset_t pins=map("amp-I2C-GPIO98-99",0x03d62000,0x2000,VM_WIMG_IO);
-        vm_offset_t reset=map("amp-reset-GPIO92",0x0395c000,0x1000,VM_WIMG_IO);
-        if(!pins||!reset) {if(pins)unmap(pins,0x2000);if(reset)unmap(reset,0x1000);return true;}
-        amp_reset=reset; amp_reset_config=rd(reset); amp_reset_output=rd(reset+4)&2;
-        struct Pins {
-            vm_offset_t base;
-            uint32_t config[2],output[2];
-            void take() {for(unsigned i=0;i<2;++i){config[i]=rd(base+i*0x1000);output[i]=rd(base+i*0x1000+4)&2;}}
-            void restore() {
-                for(unsigned i=0;i<2;++i)wr(base+i*0x1000+4,output[i]);
-                for(unsigned i=0;i<2;++i)wr(base+i*0x1000,config[i]);
+    void observe_tdm_pins() {
+        for(unsigned pin=0;pin<2;++pin) {
+            uint32_t last=rd(tdm_pins+pin*0x1000+4)&1,changes=0,ones=0;
+            uint64_t start,end,nanos;clock_get_uptime(&start);
+            for(unsigned i=0;i<20000;++i) {
+                uint32_t bit=rd(tdm_pins+pin*0x1000+4)&1;
+                changes+=bit!=last;ones+=bit;last=bit;
             }
-            void line(bool scl,bool high) {
-                vm_offset_t at=base+(scl?0x1000:0);
-                wr(at+4,0);wr(at,3|(high?0:0x200)); // input releases, output only drives low
-            }
-            bool level(bool scl) {return (rd(base+(scl?0x1000:0)+4)&1)!=0;}
-            void delay_us(unsigned us) {IODelay(us);}
-        } io{pins,{},{}};
-        log("NABU AMP: pins gpio98=%#x/%#x gpio99=%#x/%#x reset92=%#x/%#x\n",
-            rd(pins),rd(pins+4),rd(pins+0x1000),rd(pins+0x1004),rd(reset),rd(reset+4));
-        // One shared reset pulse before all four preloads, matching vendor timing.
-        wr(reset+4,0);wr(reset,0x200);IOSleep(2);wr(reset+4,2);IOSleep(2);
-        NabuAmpI2c::Bus<Pins> bus(io);
-        struct Backend {
-            NabuAmpI2c::Bus<Pins> &bus;
-            uint8_t address;
-            unsigned bus_error=0;
-            bool result(bool ok) {if(!ok&&!bus_error)bus_error=bus.error();return ok;}
-            bool read(uint32_t reg,uint32_t &value) {return result(bus.read_register(address,reg,value));}
-            bool write(uint32_t reg,uint32_t value) {return result(bus.write_register(address,reg,value));}
-            bool raw_write(uint32_t reg,const uint8_t *data,uint32_t bytes) {return result(bus.raw_write(address,reg,data,bytes));}
-            void delay_us(uint32_t us) {if(us>=1000)IOSleep((us+999)/1000);else IODelay(us);}
-            const uint8_t *firmware(const char *name,uint32_t &bytes) {
-                uint64_t size=0;const uint8_t *data=hakios_image_file("fw",name,&size,nullptr);
-                bytes=uint32_t(size);return data;
-            }
-        };
-        unsigned completed=0,cores=0;bool cores_stopped=true;
-        for(unsigned amp=0;amp<4;++amp) {
-            const auto &position=NabuCs35l41::Positions[amp];Backend backend{bus,position.address};
-            log("NABU AMP PRELOAD: %s address=%#x begins; output and HALO core disabled\n",position.name,position.address);publish();
-            NabuCs35l41::Preloader<Backend> loader(backend);auto r=loader.run(amp);
-            log("NABU AMP PRELOAD: %s complete=%u phase=%u error=%u reg=%#x detail=%#x bus-error=%u\n",
-                position.name,r.complete,r.phase,r.error,r.failed_reg,r.detail,backend.bus_error);
-            log("NABU AMP PRELOAD: %s chip=%#x revision=%#x otp-id=%#x otp-device=%#x map=%u trim-writes=%u\n",
-                position.name,r.devid,r.revid,r.otp_id,r.devid_otp,r.otp_map,r.otp_writes);
-            log("NABU AMP PRELOAD: %s program=%u/%u coefficients=%u/%u identity=%u firmware=%#x version=%#x algorithms=%u CSPL-XM=%#x YM=%#x\n",
-                position.name,r.program_bytes,r.program_blocks,r.coefficient_bytes,r.coefficient_blocks,
-                r.identity_verified,r.firmware_id,r.firmware_version,r.algorithm_count,r.cspl_xm,r.cspl_ym);
-            log("NABU AMP PRELOAD: %s CAL_R=%u STATUS=%u CHECKSUM=%u CH_BAL=%#x quiet=%u PWR1=%#x PWR2=%#x CORE=%#x\n",
-                position.name,r.cal_r,r.cal_status,r.cal_checksum,r.ch_bal,r.quiet,r.pwr1,r.pwr2,r.core);
-            completed+=r.complete;publish();
-            if(!r.complete)break;
-            NabuCs35l41Run::Trial<Backend> core(backend);auto k=core.run();
-            log("NABU AMP CORE: %s complete=%u phase=%u error=%u reg=%#x detail=%#x bus-error=%u\n",
-                position.name,k.complete,k.phase,k.error,k.failed_reg,k.detail,backend.bus_error);
-            log("NABU AMP CORE: %s configured=%u started=%u PLL=%#x/%#x/%#x raw3=%#x core=%#x/%#x heartbeat=%u->%u changed=%u polls=%u\n",
-                position.name,k.configured,k.core_started,k.pll_before,k.pll_running,k.pll_after,k.pll_raw3,
-                k.core_running,k.core_after,k.heartbeat_first,k.heartbeat_last,k.heartbeat_changed,k.heartbeat_polls);
-            log("NABU AMP CORE: %s resume cmd=%u sent=%u ack=%u state=%u matched=%u polls=%u; pause sent=%u ack=%u state=%u matched=%u polls=%u\n",
-                position.name,k.resume.command,k.resume.sent,k.resume.ack,k.resume.state,k.resume.matched,k.resume.polls,
-                k.pause.sent,k.pause.ack,k.pause.state,k.pause.matched,k.pause.polls);
-            log("NABU AMP CORE: %s HALO=%#x CSPL=%#x error=%#x faults=%#x/%#x/%#x/%#x MPU=%#x/%#x/%#x\n",
-                position.name,k.halo_state,k.cspl_state,k.cspl_error,k.fault_running[0],k.fault_running[1],
-                k.fault_running[2],k.fault_running[3],k.mpu_fault[0],k.mpu_fault[1],k.mpu_fault[2]);
-            log("NABU AMP CORE: %s cleanup=%u core-off=%u output-off=%u PWR1=%#x PWR2=%#x clocks-may-stop=%u\n",
-                position.name,k.cleanup,k.core_off,k.output_off,k.pwr1_after,k.pwr2_after,k.clocks_may_stop);
-            cores+=k.complete;cores_stopped=cores_stopped&&k.clocks_may_stop;publish();
-            if(!k.complete)break;
+            clock_get_uptime(&end);absolutetime_to_nanoseconds(end-start,&nanos);
+            log("NABU AFE PINS: gpio%u reads=20000 changes=%u ones=%u elapsed-ns=%llu; activity sample, not frequency measurement\n",137+pin,changes,ones,nanos);
         }
-        // Keep shared reset asserted until the AFE has withdrawn external clocks.
-        wr(reset+4,0);wr(reset,0x200);IOSleep(2);
-        bool reset_low=(rd(reset+4)&1)==0;
-        log("NABU AMP CORE: preloaded=%u/4 passed=%u/4 cores-stopped=%u shared-reset-low=%u; GLOBAL/AMP stayed off\n",
-            completed,cores,cores_stopped,reset_low);
-        unmap(pins,0x2000);publish();
-        return cores_stopped||reset_low;
+    }
+    void report_amplifier(unsigned amp,const char *when) {
+        const auto &k=amp_core[amp].result();const char *name=NabuCs35l41::Positions[amp].name;
+        log("NABU AMP PLAY: %s %s started=%u enabled=%u complete=%u phase=%u error=%u reg=%#x detail=%#x bus-error=%u\n",
+            name,when,k.started,k.output_enabled,k.complete,k.phase,k.error,k.failed_reg,k.detail,amp_backend[amp].bus_error);
+        log("NABU AMP PLAY: %s HALO=%#x CSPL=%#x error=%#x heartbeat=%u->%u PLL=%#x raw3=%#x detect=%#x sample-rate=%#x DSP-clock=%#x override=%#x\n",
+            name,k.halo_state,k.cspl_state,k.cspl_error,k.heartbeat_first,k.heartbeat_last,k.pll_running,k.pll_raw3,
+            k.clock_detect,k.global_sample_rate,k.dsp_clock,k.ctrl_override);
+        log("NABU AMP PLAY: %s resume=%u/%u/%u pause=%u/%u/%u volume-code=%#x volume=%#x PWR-active=%#x/%#x DAC=%#x\n",
+            name,k.resume.sent,k.resume.ack,k.resume.state,k.pause.sent,k.pause.ack,k.pause.state,
+            k.volume_code,k.volume_reg,k.pwr1_active,k.pwr2_active,k.dac_source);
+        log("NABU AMP PLAY: %s faults=%#x/%#x/%#x/%#x MPU=%#x/%#x/%#x muted=%u PDN=%u cleanup=%u core-off=%u output-off=%u clocks-may-stop=%u\n",
+            name,k.fault_running[0],k.fault_running[1],k.fault_running[2],k.fault_running[3],
+            k.mpu_fault[0],k.mpu_fault[1],k.mpu_fault[2],k.muted,k.pdn_done,k.cleanup,k.core_off,k.output_off,k.clocks_may_stop);
+    }
+    bool prepare_amplifiers() {
+        amp_io.base=map("amp-I2C-GPIO98-99",0x03d62000,0x2000,VM_WIMG_IO);
+        amp_reset=map("amp-reset-GPIO92",0x0395c000,0x1000,VM_WIMG_IO);
+        if(amp_reset) {amp_reset_config=rd(amp_reset);amp_reset_output=rd(amp_reset+4)&2;}
+        if(!amp_io.base||!amp_reset)return false;
+        observe_tdm_pins();
+        wr(amp_reset+4,0);wr(amp_reset,0x200);IOSleep(2);wr(amp_reset+4,2);IOSleep(2);
+        for(unsigned amp=0;amp<4;++amp) {
+            const auto &position=NabuCs35l41::Positions[amp];
+            NabuCs35l41::Preloader<AmpBackend> loader(amp_backend[amp]);auto r=loader.run(amp);
+            log("NABU AMP PRELOAD: %s complete=%u error=%u reg=%#x program=%u coefficients=%u identity=%u CAL_R=%u STATUS=%u CHECKSUM=%u CH_BAL=%#x quiet=%u\n",
+                position.name,r.complete,r.error,r.failed_reg,r.program_bytes,r.coefficient_bytes,
+                r.identity_verified,r.cal_r,r.cal_status,r.cal_checksum,r.ch_bal,r.quiet);publish();
+            if(!r.complete)return false;
+            amp_touched=amp+1;bool ok=amp_core[amp].start();report_amplifier(amp,"start");publish();
+            if(!ok)return false;
+        }
+        return true;
+    }
+    bool enable_amplifiers() {
+        for(unsigned amp=0;amp<4;++amp) {
+            bool ok=amp_core[amp].enable_output();report_amplifier(amp,"enable");publish();
+            if(!ok)return false;
+        }
+        log("NABU AMP PLAY: four protected outputs enabled at -24 dB; test PCM is -20 dBFS\n");publish();return true;
+    }
+    bool finish_amplifiers() {
+        bool stopped=true;
+        for(unsigned amp=0;amp<amp_touched;++amp) {
+            if(amp_core[amp].result().output_enabled)amp_core[amp].observe();
+            auto r=amp_core[amp].finish();stopped=stopped&&r.clocks_may_stop;
+            report_amplifier(amp,"finish");
+        }
+        bool reset_low=false;
+        if(amp_reset) {
+            wr(amp_reset+4,0);wr(amp_reset,0x200);IOSleep(2);reset_low=(rd(amp_reset+4)&1)==0;
+        }
+        amps_finished=true;
+        log("NABU AMP PLAY: cores-stopped=%u shared-reset-low=%u before AFE clock removal\n",stopped,reset_low);publish();
+        return stopped||reset_low;
+    }
+    void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {
+        static const int16_t tone[]={0,428,848,1254,1638,1995,2317,2599,2837,3027,3164,3248,
+            3276,3248,3164,3027,2837,2599,2317,1995,1638,1254,848,428,0,-428,-848,-1254,
+            -1638,-1995,-2317,-2599,-2837,-3027,-3164,-3248,-3276,-3248,-3164,-3027,
+            -2837,-2599,-2317,-1995,-1638,-1254,-848,-428};
+        int16_t *samples=(int16_t *)((uint8_t *)dma.blocks[0].cpu+period*4096);
+        for(unsigned i=0;i<frames;++i) {
+            uint32_t frame=first_frame+i;int16_t sample=tone[frame%48];
+            samples[i*2]=(frame<48000||frame>=96000)?sample:0;
+            samples[i*2+1]=frame>=48000?sample:0;
+        }
+        dma.platform.publish(dma.platform.cookie,samples,frames*4);
     }
 
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
@@ -544,15 +579,14 @@ struct Trial {
             log("NABU ADSP: GLINK probe queues unavailable\n"); return;
         }
         bool mapping = prepare_dma();
-        if(mapping)prepare_pcm();
-        bool tdm=mapping&&prepare_tdm_pins(),amplifiers_done=false;
+        bool tdm=mapping&&prepare_tdm_pins(),amplifiers_done=false,output_attempted=false;
         // Original audio-ion masks SID0x1b21 by0xf and embeds1 in address bits63:32.
         uint64_t tagged_iova = (uint64_t(NabuAudioDma::first_sid & 15) << 32) | NabuAudioDma::iova_base;
-        log("NABU ADSP: host2 GLINK/APR and non-tunneled PCM trial begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
+        log("NABU ADSP: host2 GLINK/APR protected speaker PCM trial begins, local-channel=2 doorbell=8 dma=%u\n", mapping); publish();
         uint64_t started; clock_get_uptime(&started);
         uint32_t logged_rx = 0, trace_count = 0, last_peer_check = 0;
         glink.begin(descriptor.offset, tx.offset, tx.size, rx.offset, rx.size, true,
-            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, mapping,tdm);
+            mapping ? tagged_iova : 0, mapping ? NabuAudioDma::block_bytes : 0, false,tdm,tdm);
         while (!glink.done()) {
             uint64_t current, nanos; clock_get_uptime(&current);
             absolutetime_to_nanoseconds(current - started, &nanos);
@@ -565,16 +599,27 @@ struct Trial {
             }
             glink.step(elapsed);
             if(glink.afe_ready()&&!amplifiers_done) {
-                log("NABU AFE: TDM clock/port acknowledged; begin protection core trial with GLOBAL/AMP off\n");publish();
+                log("NABU AFE: TDM clock/port acknowledged; preload and start four protection cores\n");publish();
                 amplifiers_done=true;
-                if(!exercise_amplifiers()) {
-                    retain_for_amp=true;
-                    log("NABU AFE: amplifier stop/reset unconfirmed; keep clock and DSP until reboot\n");
-                    break;
+                if(!prepare_amplifiers()) {
+                    if(!finish_amplifiers()) {retain_for_amp=true;break;}
+                    glink.finish_afe();
+                } else {
+                    clock_get_uptime(&current);absolutetime_to_nanoseconds(current-started,&nanos);
+                    glink.begin_playback(uint32_t(nanos/1000000));
                 }
-                glink.finish_afe();
-                // Refresh the deadline before processing teardown after lengthy I2C loads.
                 continue;
+            }
+            if(glink.playback_ready()&&!output_attempted) {
+                output_attempted=true;
+                if(enable_amplifiers()) {
+                    log("NABU PCM PLAY: starting 3.008 seconds, left then right then both\n");publish();glink.play();
+                } else glink.abort_playback();
+                continue;
+            }
+            if(glink.playback_done()) {
+                if(!finish_amplifiers()) {retain_for_amp=true;break;}
+                glink.finish_playback();continue;
             }
             const NabuAdspGlink::Result &r = glink.result();
             if (r.rx != logged_rx && trace_count < 24) {
@@ -584,6 +629,7 @@ struct Trial {
             }
             if (!glink.done()) IOSleep(1);
         }
+        if(amp_touched&&!amps_finished&&!finish_amplifiers())retain_for_amp=true;
         const NabuAdspGlink::Result &r = glink.result();
         log("NABU ADSP GLINK: negotiated=%u features=%#x open=%u local=%u remote=%u remote-open=%u open-ack=%u tx=%u rx=%u unknown-channels=%u close-sent=%u close-ack=%u remote-closed=%u broken=%u timeout=%u error=%u\n",
             r.negotiated, r.features, r.opened, r.lcid, r.rcid, r.remote_open, r.local_open_ack,
@@ -611,7 +657,13 @@ struct Trial {
         log("NABU AFE: stop-sent=%u stopped=%u group-off-sent=%u off=%u clock-off-sent=%u off=%u failed=%u timeout=%u opcode=%#x status=%#x cleanup-failed=%u commands=%u ignored=%u\n",
             a.stop_sent,a.stopped,a.group_off_sent,a.group_off,a.clock_off_sent,a.clock_off,
             a.failed,a.timeout,a.failed_opcode,a.status,a.cleanup_failed,a.commands,a.ignored);
-        observe_pcm();
+        const auto &p=glink.playback_result();
+        log("NABU PCM PLAY: ADM=%u COPP=%u ASM=%u route=%u format=%u run=%u play=%u writes=%u done=%u bytes=%u/%u pending=%#x underflows=%u\n",
+            p.adm_opened,p.copp_id,p.asm_opened,p.routed,p.formatted,p.running,p.play_started,p.writes,
+            p.completions,p.bytes_sent,p.bytes_completed,p.pending_mask,p.underflows);
+        log("NABU PCM PLAY: EOS=%u ack=%u rendered=%u stream-closed=%u COPP-closed=%u mapping-retained=%u failed=%u timeout=%u opcode=%#x status=%#x first-ms=%u last-ms=%u\n",
+            p.eos_sent,p.eos_acked,p.rendered,p.closed,p.copp_closed,p.mapping_retained,p.failed,
+            p.timeout,p.failed_opcode,p.status,p.first_write_ms,p.last_done_ms);
         if (dma_active) (void)dma_healthy();
         publish();
         // The fixed protocol buffers remain with Trial through PAS shutdown,
@@ -650,7 +702,7 @@ struct Trial {
 };
 static Trial trial;
 static void worker(thread_call_param_t, thread_call_param_t) {
-    log("NABU ADSP: bounded PAS1 trial begins; speaker/microphone routes inactive\n"); publish();
+    log("NABU ADSP: bounded PAS1 protected speaker trial begins; microphone inactive\n"); publish();
     NabuAdsp::Outcome result = NabuAdsp::run(trial);
     log("NABU ADSP: result prepared=%u aop-on=%u proxy=%u init=%u mem=%u copied=%u auth=%u ready=%u stop-ack=%u shutdown=%u aop-off=%u retained=%u\n",
         result.prepared, result.aop_on, result.proxy, result.init, result.memory, result.copied, result.auth,

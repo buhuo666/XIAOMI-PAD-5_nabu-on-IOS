@@ -52,6 +52,7 @@ jobs:
           python3 tools/check_nabu_cs35l41.py --output log/ci/nabu-cs35l41
           python3 tools/check_nabu_cs35l41_run.py --output log/ci/nabu-cs35l41-run
           python3 tools/check_nabu_afe_tdm.py --output log/ci/nabu-afe-tdm
+          python3 tools/check_nabu_asm_playback.py --output log/ci/nabu-asm-playback
           python3 tools/check_nabu_wireless_start.py --output log/ci/nabu-wireless-start
           python3 tools/check_nabu_wlan_config.py --output log/ci/nabu-wlan-config
           python3 tools/check_nabu_wlan_dma.py --output log/ci/nabu-wlan-dma

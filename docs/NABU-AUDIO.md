@@ -60,6 +60,11 @@ CORE均关闭、reset恢复。内部PCM与无线/蓝牙基线正常；3,622,008�
 槽备份清空，APFS119。下一轮AFE时钟及保护核心心跳/邮箱验证，实际出声/录音仍待验收。
 见[第149轮结果](../analysis/nabu-internal-audio-v149.md)。
 
+第150轮AFE七项启动/三项关闭应答全部通过；TL保护核心Resume/Pause邮箱应答成功，
+但GLOBAL/AMP关闭时heartbeat2保持不变，持续音频处理未确认。输出/核心、AFE、DSP/
+SMMU与引脚清理正常。3,045,133字节连续日志前缀及64MiB槽备份清空，APFS120；
+下一步核对时钟与待帧语义。见[第150轮结果](../analysis/nabu-internal-audio-v150.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。
