@@ -665,3 +665,16 @@ FAULT检查Busy，尚未编程页表或启动PAS。第122轮依据Linux Qualcomm
 源码23bb7a5、完整CI42444116789；复用第132轮probe/bootstrap。用户确认正常桌面、Wi-Fi开关可操作且热点列表正常。原版wifid于98.354秒开始真实扫描，后续多次返回0；bluetoothd原版栈初始化完成。InterfaceNamer记录START/STACK/en0/COMPLETE约0.174秒完成，SCNetworkInterfaceCopyAll同秒返回，但defaults末端仍busy1。因此不能认定AAPL,ignore消除了忙节点或使启动变快；上轮持久化命名状态是待证实解释。下一轮对比实时DT和IOService的defaults属性。
 
 设备已回Android、蓝牙关闭。3,499,357字节连续日志前缀和完整64MiB槽已备份清空；日志无终止记录，不能写成正常关机封口日志。APFS102→103、fullfsync成功，Android引导分区不变。关联、IP与数据流量仍未验收。
+
+
+## 第134轮：原生WPA2联网通过（2026-11-08）
+
+源码4d5bf5906e739712b1dffb4e7bf949f8358cec19，完整CI42446906692和probe CI42446906693全部通过。临时启动后用户确认桌面正常；设置选择WPA2网络后出现对勾，Safari新网页及刷新正常。122.140秒真实join返回0、JOINED；en0取得192.168.137.104；主机4次Ping全部成功。首次原版ASSOCIATE实际为592字节、auth1/8、cipher6和32字节PMK，符合原件合同。
+
+313.468秒poweroff成功、331.353秒poweron成功；用户反馈需重新选择网络，365.607秒第二次join成功，网页恢复。自动重连未通过，先核对wifid是否发起请求，不自行增加内核自动连接策略。蓝牙开关可操作，开启后用户确认网页仍正常，bluetoothd原版栈初始化完成；未验证蓝牙配对或音频。
+
+用户补充蓝牙开启时正进行浏览器测速下载，因此285–486ms的那组Ping受不同流量负载干扰，撤销蓝牙共存故障假设；关闭蓝牙后的8次Ping为1–2ms，只记录条件和结果。553.412秒接口累计发送187473帧/19429284B、接收420816帧/619760495B，丢弃2出/0入；不能把这些累计数当作吞吐基准或全部空口完成。
+
+用户新报告状态栏有Wi-Fi图标但信号强度显示不正确。GET106 RSSI_BOUNDS的16字节请求和GET17 NOISE的52字节请求被拒，GET16 RSSI合同及原版信号格计算正在核对，尚未确定修复。实时DT和IOService的defaults都含AAPL,ignore=1、sleep-disabled=1、compressor=2，busy节点依然存在；InterfaceNamer COMPLETE正常快速发布，原因仍未解。
+
+已回Android、蓝牙关闭、USB连接。7,294,588字节连续日志和完整64MiB槽已备份清空；无终止记录，不称为正常关机封口。APFS103→104、fullfsync成功。证据：log/host/wireless-v134/result-summary.json及log/device/nabu-boot-20261108-134/runtime-log。尚未部署第135轮。
