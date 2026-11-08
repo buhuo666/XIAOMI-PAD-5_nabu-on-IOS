@@ -48,6 +48,7 @@ extern NSDictionary *nabuBluetoothUseSingleAdvertising(void);
 extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
 extern NSDictionary *nabuWiFiControlTrial(NSString *action);
+extern NSDictionary *nabuAudioRequest(NSString *action, NSString *identifier);
 
 static void saveReport(NSDictionary *report, NSString *name);
 
@@ -586,6 +587,9 @@ int main(void) {
                                  [action isEqual:@"WirelessNativeSignal"]) {
                             result[@"wireless_control"] = nabuWiFiControlTrial(action);
                             result[@"wireless"] = wirelessSnapshot();
+                        }
+                        else if ([action isEqual:@"AudioInventory"] || [action isEqual:@"AudioBluetoothPlaybackTrial"]) {
+                            result[@"audio"] = nabuAudioRequest(action, request[@"ID"] ?: @"");
                         }
                         else if ([action isEqual:@"BluetoothInventory"]) {
                             result[@"read_only"] = @YES;

@@ -2,7 +2,9 @@
 
 更新：2026-11-08，Asia/Shanghai。
 
-当前优先级是Wi-Fi和蓝牙。第131轮接通原生station，34.189秒成功发布；原版wifid
+当前优先级已由用户于第135轮后切换到音频服务和实际播放。Wi-Fi已通过WPA2联网、网页/下载和信号格，自动重连待修；设备Android、蓝牙关闭、APFS105。先做原生服务/路由与蓝牙耳机，再内置扬声器、麦克风，传感器后置。音频进展见[NABU-AUDIO.md](NABU-AUDIO.md)。
+
+以下为早期无线记录：第131轮接通原生station，34.189秒成功发布；原版wifid
 首次查询POWER及硬件/监管信道。蓝牙boot/init和原版栈成功。用户反馈黑屏，无苹果
 logo或桌面；显示最初6帧后停止提交，SpringBoard启动停住，尚未验收本轮扫描/开关。
 原件已定位SystemConfiguration等待InterfaceNamer完成标记的路径，正在核对实机

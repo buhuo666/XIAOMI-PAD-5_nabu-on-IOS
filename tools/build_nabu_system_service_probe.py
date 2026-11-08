@@ -22,12 +22,13 @@ def main():
     experience_compat = ROOT / 'userland/nabu/src/experience_compat.m'
     bluetooth_source = ROOT / 'userland/nabu/src/bluetooth_probe.m'
     wifi_source = ROOT / 'userland/nabu/src/wifi_control_probe.m'
+    audio_source = ROOT / 'userland/nabu/src/audio_probe.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source), str(wifi_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source), str(wifi_source), str(audio_source),
                '-framework', 'Foundation', '-framework', 'CoreFoundation', '-framework', 'ImageIO',
-               '-framework', 'CoreGraphics', '-framework', 'UIKit', '-o', str(binary)]
+               '-framework', 'CoreGraphics', '-framework', 'UIKit', '-framework', 'AVFAudio', '-o', str(binary)]
     subprocess.run(command, check=True)
     entitlements = ROOT / 'userland/nabu/system-service-probe.entitlements.plist'
     subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none',
@@ -51,7 +52,8 @@ def main():
               'wallpaper_source': str(wallpaper_source.relative_to(ROOT)),
               'sqlite_vnode_observer': str(sqlite_watch_source.relative_to(ROOT)),
               'experience_compatibility': 'Compiled without constructor; explicit ExperienceCompatibilityTrial after paired request',
-              'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request'}
+              'wallpaper_diagnostic': 'Explicit read-only WallpaperInventory request',
+              'audio_diagnostic': 'Explicit AudioInventory or A2DP-only 3s low-amplitude AudioBluetoothPlaybackTrial; asynchronous progressive report; no microphone recording or system volume changes'}
     report['bluetooth_single_advertising_policy'] = {
         'action': 'BluetoothUseSingleAdvertising', 'uid': 501,
         'domain': 'com.apple.MobileBluetooth.debug', 'section': 'LE',
