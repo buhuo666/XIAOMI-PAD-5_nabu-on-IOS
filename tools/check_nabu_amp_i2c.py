@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise production Nabu 32-bit I2C reads against scripted open-drain wire replies."""
+"""Exercise production Nabu I2C reads and packed writes against open-drain wire replies."""
 import argparse
 import json
 from pathlib import Path
@@ -45,6 +45,27 @@ int main() {
         Pins p;p.script(address,0x0001001c,0x35a40);NabuAmpI2c::Bus<Pins> bus(p);uint32_t value;
         assert(bus.read_register(address,0x1001c,value)&&value==0x35a40&&bus.error()==NabuAmpI2c::Ok);
         assert(p.index==90&&p.starts==2&&p.stops==1&&p.restored==1&&!p.taken);
+        Pins q;q.tx(address<<1);
+        for(uint8_t byte:{0x02,0x80,0x02,0x68,0x00,0x00,0x25,0xf5})q.tx(byte);
+        NabuAmpI2c::Bus<Pins> writer(q);
+        assert(writer.write_register(address,0x02800268,9717)&&writer.error()==NabuAmpI2c::Ok);
+        assert(q.index==81&&q.starts==1&&q.stops==1&&q.restored==1&&!q.taken);
+    }
+    for(unsigned bytes:{12,20,60}) {
+        uint8_t payload[60];for(unsigned i=0;i<bytes;++i)payload[i]=uint8_t(i*7+3);
+        Pins p;p.tx(0x86);for(uint8_t byte:{0x03,0x80,0x00,0x3c})p.tx(byte);
+        for(unsigned i=0;i<bytes;++i)p.tx(payload[i]);
+        NabuAmpI2c::Bus<Pins> bus(p);
+        assert(bus.raw_write(0x43,0x0380003c,payload,bytes));
+        assert(p.index==9*(5+bytes)&&p.starts==1&&p.stops==1&&p.restored==1);
+    }
+    for(unsigned fail=0;fail<9;++fail) {
+        Pins p;const uint8_t bytes[]={0x82,0x02,0xbc,0x10,0x00,0x12,0x34,0x56,0x78};
+        for(unsigned i=0;i<=fail;++i)p.tx(bytes[i],i!=fail);
+        NabuAmpI2c::Bus<Pins> bus(p);
+        assert(!bus.write_register(0x41,0x02bc1000,0x12345678));
+        assert(bus.error()==(fail==0?NabuAmpI2c::AddressNack:fail<5?NabuAmpI2c::RegisterNack:NabuAmpI2c::DataNack));
+        assert(p.index==p.bits.size()&&p.restored==1&&p.stops==1);
     }
     for(unsigned fail=0;fail<6;++fail) {
         Pins p;uint8_t bytes[]={0x80,0x12,0x34,0x56,0x78,0x81};
@@ -60,7 +81,14 @@ int main() {
     {Pins p;p.fail_rise=3;p.script(0x40,0,0);NabuAmpI2c::Bus<Pins> bus(p);uint32_t value;
         assert(!bus.read_register(0x40,0,value)&&bus.error()==NabuAmpI2c::ClockHeldLow);
         assert(p.restored==1&&p.waits>=100&&p.index==2);}
-    puts("production I2C: four Nabu addresses, 32-bit big-endian register/data, repeated START, byte ACK/final NACK, every outbound NACK, idle/clock hold failures and pin restoration passed");
+    {Pins p;p.idle=false;NabuAmpI2c::Bus<Pins> bus(p);
+        assert(!bus.write_register(0x40,0,0)&&bus.error()==NabuAmpI2c::BusNotIdle);
+        assert(p.starts==0&&p.restored==1&&p.index==0);}
+    {Pins p;p.fail_rise=48;p.tx(0x80);for(unsigned i=0;i<4;++i)p.tx(0);p.tx(0);
+        NabuAmpI2c::Bus<Pins> bus(p);
+        assert(!bus.write_register(0x40,0,0)&&bus.error()==NabuAmpI2c::ClockHeldLow);
+        assert(p.restored==1&&p.waits>=100&&p.index==47);}
+    puts("production I2C: four Nabu addresses, BE32 register reads/writes, 12/20/60-byte unchanged packed writes, repeated START, ACK/final NACK, address/register/data NACK, idle/clock hold failures and pin restoration passed");
 }
 '''
 def main():

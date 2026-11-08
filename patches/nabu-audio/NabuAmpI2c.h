@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 namespace NabuAmpI2c {
-enum Error { Ok, BusNotIdle, ClockHeldLow, AddressNack, RegisterNack, ReadAddressNack };
+enum Error { Ok, BusNotIdle, ClockHeldLow, AddressNack, RegisterNack, ReadAddressNack, DataNack };
 template<class Pins> class Bus {
     Pins &pins;
     Error failure=Ok;
@@ -54,6 +54,21 @@ public:
         if(ok)ok=start()&&write(uint8_t((address<<1)|1),ReadAddressNack);
         for(unsigned i=0;ok&&i<4;++i) {uint8_t byte;ok=read(byte,i<3);if(ok)value=(value<<8)|byte;}
         bool stopped=stop();pins.restore();return ok&&stopped;
+    }
+    // WMFW packed payload is already in bus byte order. One transaction keeps
+    // its 12-byte XM/YM or 20-byte PM groups intact; it is not a BE32 word loop.
+    bool raw_write(uint8_t address,uint32_t reg,const uint8_t *data,uint32_t bytes) {
+        failure=Ok;pins.take();
+        pins.line(false,true);pins.line(true,true);delay();
+        if(!pins.level(false)||!pins.level(true)) {failure=BusNotIdle;pins.restore();return false;}
+        bool ok=start()&&write(uint8_t(address<<1),AddressNack);
+        for(int shift=24;ok&&shift>=0;shift-=8)ok=write(uint8_t(reg>>shift),RegisterNack);
+        for(uint32_t i=0;ok&&i<bytes;++i)ok=write(data[i],DataNack);
+        bool stopped=stop();pins.restore();return ok&&stopped;
+    }
+    bool write_register(uint8_t address,uint32_t reg,uint32_t value) {
+        const uint8_t data[]={uint8_t(value>>24),uint8_t(value>>16),uint8_t(value>>8),uint8_t(value)};
+        return raw_write(address,reg,data,sizeof(data));
     }
     Error error() const {return failure;}
 };

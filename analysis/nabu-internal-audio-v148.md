@@ -22,5 +22,20 @@ GPIO92及I2C引脚配置。读取DEVID0、REVID4、OTP状态0x1001c/0x10018、PW
 
 生产I2C主机测试已覆盖四地址、32位双大端、重复START、ACK/NACK、各阶段拒绝、
 时钟持续拉低和引脚恢复；ASan/UBSan通过。ARM64对象编译通过、最大函数栈576字节。
-CI增加该测试；整内核构建与真实I2C结果待验证。另有独立只读调查汇总保护固件与
-麦克风SLIMbus/QMI前置，保存于log/host/audio-v148/。
+CI增加该测试；提交832f7b3、完整CI42482427909三个任务通过，随后实机正常桌面和USB。
+
+四颗BR/TR/BL/TL（地址0x40/41/42/43）全部读回DEVID=0x35a40、REVID=0xb2。
+IRQ1_STATUS4=3（OTP_DONE=1）、IRQ1_STATUS3=0x20000000（OTP_ERROR=0）；
+PWR_CTRL1=0、PWR_CTRL2=0x3321、PWR_CTRL3=0x1000010。总线错误为0。
+GLOBAL_EN关闭，PWR_CTRL2中的AMP_EN复位默认位仍为1；不能把全部输出相关位称为0。
+GPIO98/99原配置0x1，reset92原配置0x1/输出0，结束已恢复。
+
+DSP内部PCM再次返回4096字节，1024采样字全匹配，流关闭/映射解除/SMMU与DSP释放
+正常。Wi-Fi真实扫描和蓝牙初始化报告均保存。用户已回Android，蓝牙和Wi-Fi关闭。
+4,451,068字节连续前缀及64MiB原始槽备份清空；无已提交结束头，不声明完整关机日志。
+APFS117→118，fullfsync=ok。结果见log/host/audio-v148/result-summary.json。
+
+独立只读调查已固定原机保护固件/位置系数/OTP/校准契约，以及麦克风SLIMbus/QMI
+前置，保存于log/host/audio-v148/amp-protection-contract.md和mic-transport-contract.md。
+下一轮写入保护程序和各位置系数，读回实际运行时ID及校准，保持GLOBAL/AMP/CORE关闭。
+本轮只证明四颗控制总线可用，实际扬声器出声和麦克风录音仍未验收。

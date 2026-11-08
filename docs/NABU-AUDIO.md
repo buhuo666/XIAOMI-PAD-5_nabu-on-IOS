@@ -48,6 +48,12 @@ map/handle/unmap回执。内存保留至DSP停止确认后再释放，本地主�
 总线，先确认身份/OTP/关断状态，保护固件和实际扬声器输出仍待实现；麦克风仍待
 SLIMbus/QMI与Tavil路径。详见[第148轮](../analysis/nabu-internal-audio-v148.md)。
 
+第148轮四颗CS35L41全部实测DEVID0x35a40、B2修订，OTP完成无错误、GLOBAL_EN为0，
+I2C无错误，复位和引脚状态恢复。内部PCM4096字节再次完全匹配，Wi-Fi扫描和蓝牙
+初始化正常。4,451,068字节日志连续前缀及64MiB槽备份清空、APFS118。下一轮保护
+固件/四位置系数与本机校准预加载，GLOBAL/AMP/CORE保持关闭，实际出声/录音仍待验收。
+见[第148轮结果](../analysis/nabu-internal-audio-v148.md)。
+
 ## 第136轮候选
 
 现有run134/135日志确认mediaserverd启动并保持running；bluetoothd注册A2DP Source。第110轮曾验证OPPO Enco Air5 Pro连接、AAC-LC/44.1kHz协商，但尚未验证音频实际出声。

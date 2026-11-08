@@ -13,6 +13,7 @@
 #include "NabuAdspProtocol.h"
 #include "NabuAdspGlink.h"
 #include "NabuAmpI2c.h"
+#include "NabuCs35l41.h"
 #include "../nabu-wireless/NabuWlanController.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
@@ -220,7 +221,7 @@ struct Trial {
         for(unsigned i=0;i<p.read_bytes/4&&i<8;++i)
             log("NABU ADSP PCM: sample[%u]=%#x expected=%#x\n",i,NabuAsmPcm::u32(samples+i*4),NabuAsmPcm::sample(i/2,i%2));
     }
-    void probe_amplifiers() {
+    void preload_amplifiers() {
         // Original Nabu DT: qup7 GPIO98/99 in SOUTH tile; shared reset92 in NORTH.
         vm_offset_t pins=map("amp-I2C-GPIO98-99",0x03d62000,0x2000,VM_WIMG_IO);
         vm_offset_t reset=map("amp-reset-GPIO92",0x0395c000,0x1000,VM_WIMG_IO);
@@ -243,27 +244,42 @@ struct Trial {
         log("NABU AMP: pins gpio98=%#x/%#x gpio99=%#x/%#x reset92=%#x/%#x\n",
             rd(pins),rd(pins+4),rd(pins+0x1000),rd(pins+0x1004),rd(reset),rd(reset+4));
         uint32_t saved_reset=rd(reset),saved_output=rd(reset+4)&2;
-        // One shared reset pulse before all four identities, matching vendor timing.
+        // One shared reset pulse before all four preloads, matching vendor timing.
         wr(reset+4,0);wr(reset,0x200);IOSleep(2);wr(reset+4,2);IOSleep(2);
         NabuAmpI2c::Bus<Pins> bus(io);
-        const char *names[] = {"BR","TR","BL","TL"};
-        const uint32_t registers[]={0x0,0x4,0x1001c,0x10018,0x2014,0x2018,0x201c};
-        for(unsigned amp=0;amp<4;++amp) {
-            unsigned address=0x40+amp;bool complete=true;uint32_t values[7]{};
-            for(unsigned i=0;i<7;++i) {
-                bool ok=bus.read_register(uint8_t(address),registers[i],values[i]);
-                log("NABU AMP: %s address=%#x reg=%#x ok=%u value=%#x bus-error=%u\n",
-                    names[amp],address,registers[i],ok,values[i],bus.error());
-                if(!ok) {complete=false;break;}
+        struct Backend {
+            NabuAmpI2c::Bus<Pins> &bus;
+            uint8_t address;
+            unsigned bus_error=0;
+            bool result(bool ok) {if(!ok&&!bus_error)bus_error=bus.error();return ok;}
+            bool read(uint32_t reg,uint32_t &value) {return result(bus.read_register(address,reg,value));}
+            bool write(uint32_t reg,uint32_t value) {return result(bus.write_register(address,reg,value));}
+            bool raw_write(uint32_t reg,const uint8_t *data,uint32_t bytes) {return result(bus.raw_write(address,reg,data,bytes));}
+            void delay_us(uint32_t us) {IODelay(us);}
+            const uint8_t *firmware(const char *name,uint32_t &bytes) {
+                uint64_t size=0;const uint8_t *data=hakios_image_file("fw",name,&size,nullptr);
+                bytes=uint32_t(size);return data;
             }
-            uint32_t expected=(values[1]&15)%2?0x35b40:0x35a40;
-            bool identity=complete&&(values[0]==expected||values[0]==0x35a41);
-            log("NABU AMP: %s identity=%u otp-done=%u otp-error=%u global-enable=%u; register reads only, protection firmware not loaded\n",
-                names[amp],identity,complete&&(values[2]&2)!=0,complete&&(values[3]&0x80000000)!=0,
-                complete&&(values[4]&1)!=0);
+        };
+        unsigned completed=0;
+        for(unsigned amp=0;amp<4;++amp) {
+            const auto &position=NabuCs35l41::Positions[amp];Backend backend{bus,position.address};
+            log("NABU AMP PRELOAD: %s address=%#x begins; output and HALO core disabled\n",position.name,position.address);publish();
+            NabuCs35l41::Preloader<Backend> loader(backend);auto r=loader.run(amp);
+            log("NABU AMP PRELOAD: %s complete=%u phase=%u error=%u reg=%#x detail=%#x bus-error=%u\n",
+                position.name,r.complete,r.phase,r.error,r.failed_reg,r.detail,backend.bus_error);
+            log("NABU AMP PRELOAD: %s chip=%#x revision=%#x otp-id=%#x otp-device=%#x map=%u trim-writes=%u\n",
+                position.name,r.devid,r.revid,r.otp_id,r.devid_otp,r.otp_map,r.otp_writes);
+            log("NABU AMP PRELOAD: %s program=%u/%u coefficients=%u/%u identity=%u firmware=%#x version=%#x algorithms=%u CSPL-XM=%#x YM=%#x\n",
+                position.name,r.program_bytes,r.program_blocks,r.coefficient_bytes,r.coefficient_blocks,
+                r.identity_verified,r.firmware_id,r.firmware_version,r.algorithm_count,r.cspl_xm,r.cspl_ym);
+            log("NABU AMP PRELOAD: %s CAL_R=%u STATUS=%u CHECKSUM=%u CH_BAL=%#x quiet=%u PWR1=%#x PWR2=%#x CORE=%#x\n",
+                position.name,r.cal_r,r.cal_status,r.cal_checksum,r.ch_bal,r.quiet,r.pwr1,r.pwr2,r.core);
+            completed+=r.complete;publish();
+            if(!r.complete)break;
         }
         wr(reset+4,saved_output);wr(reset,saved_reset);
-        log("NABU AMP: pin state restored reset=%#x/%#x; no AFE clocks or audio route started\n",rd(reset),rd(reset+4));
+        log("NABU AMP PRELOAD: completed=%u/4 reset-restored=%#x/%#x; no AFE clocks or audio route started\n",completed,rd(reset),rd(reset+4));
         unmap(reset,0x1000);unmap(pins,0x2000);publish();
     }
 
@@ -565,7 +581,7 @@ static void worker(thread_call_param_t, thread_call_param_t) {
         result.prepared, result.aop_on, result.proxy, result.init, result.memory, result.copied, result.auth,
         result.ready, result.stop_ack, result.shutdown, result.off, result.retained);
     if (result.retained) log("NABU ADSP: PAS shutdown unconfirmed; AOP vote, metadata and mappings retained until reboot\n");
-    if (!result.retained) trial.probe_amplifiers();
+    if (!result.retained) trial.preload_amplifiers();
     publish();
 }
 } // namespace
