@@ -7,7 +7,8 @@
 #include <unistd.h>
 
 static BOOL audioBusy;
-static NSString *const audioReportPath = @"/NabuServices/audio-trial.json";
+static NSString *const audioReportPath = @"/private/var/mobile/Media/NabuServices/audio-trial.json";
+static NSString *const audioAFCPath = @"/NabuServices/audio-trial.json";
 
 @interface NabuAudioPlaybackObserver : NSObject <AVAudioPlayerDelegate>
 @property BOOL finished;
@@ -32,8 +33,10 @@ static void audioCheckpoint(NSMutableDictionary *report, NSString *stage) {
     report[@"stage"] = stage;
     report[@"updated_uptime"] = @(NSProcessInfo.processInfo.systemUptime);
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
-    [data writeToFile:audioReportPath options:NSDataWritingAtomic error:NULL];
-    NSLog(@"NABU AUDIO: stage=%@ action=%@", stage, report[@"action"]);
+    NSError *writeError = nil;
+    BOOL saved = [data writeToFile:audioReportPath options:NSDataWritingAtomic error:&writeError];
+    NSLog(@"NABU AUDIO: stage=%@ action=%@ report_saved=%d error=%@",
+          stage, report[@"action"], saved, writeError ?: @"");
 }
 
 static NSArray *audioPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
@@ -190,11 +193,11 @@ static void audioRun(NSString *action, NSString *identifier) {
 
 NSDictionary *nabuAudioRequest(NSString *action, NSString *identifier) {
     @synchronized (NabuAudioPlaybackObserver.class) {
-        if (audioBusy) return @{@"status": @"busy", @"report_path": audioReportPath};
+        if (audioBusy) return @{@"status": @"busy", @"report_path": audioAFCPath};
         audioBusy = YES;
     }
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         @autoreleasepool { audioRun(action, identifier); }
     });
-    return @{@"status": @"queued", @"request_id": identifier, @"report_path": audioReportPath};
+    return @{@"status": @"queued", @"request_id": identifier, @"report_path": audioAFCPath};
 }
