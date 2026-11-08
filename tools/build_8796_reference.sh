@@ -25,10 +25,12 @@ git -C "$THEOS/sdks-git" -c advice.detachedHead=false checkout -q --detach FETCH
 ln -s ../sdks-git/iPhoneOS16.5.sdk "$THEOS/sdks/iPhoneOS16.5.sdk"
 
 python3 - <<'PY'
-import hashlib,json,pathlib,urllib.request
+import hashlib,json,pathlib,sys,urllib.request
+sys.path.insert(0,'tools')
+from nabu_build_download import open_build_input
 cfg=json.load(open('configs/build-inputs.json'))
 p=pathlib.Path('build/downloads/MacOSX13.3.sdk.tar.xz')
-with urllib.request.urlopen(cfg['macos_sdk_url'],timeout=90) as r,p.open('wb') as f:
+with open_build_input(urllib.request.urlopen,cfg['macos_sdk_url'],timeout=90) as r,p.open('wb') as f:
     while b:=r.read(1024*1024):f.write(b)
 digest=hashlib.sha256(p.read_bytes()).hexdigest()
 if digest!=cfg['macos_sdk_sha256']:raise SystemExit('macOS SDK download hash differs from reviewed input')

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from nabu_build_download import open_build_input
 
 ROOT = Path(__file__).resolve().parents[1]
 NABU_REMAP = {f'lx_{name}': f'nabu_ath10k_driver_{name}'
@@ -78,7 +79,7 @@ def acquire(args, cfg):
             {'http': args.proxy, 'https': args.proxy} if args.proxy else {}))
         temporary = destination.with_suffix(destination.suffix + '.partial')
         digest = hashlib.sha256()
-        with opener.open(urllib.request.Request(source['url'], headers={
+        with open_build_input(opener.open, urllib.request.Request(source['url'], headers={
                 'User-Agent': 'nabu-ath10k-build'}), timeout=180) as stream, temporary.open('wb') as output:
             while data := stream.read(1024 * 1024):
                 output.write(data)
