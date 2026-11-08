@@ -14,6 +14,9 @@
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
 extern "C" void hakios_spmi_lock(void);
 extern "C" void hakios_spmi_unlock(void);
+#ifdef NABU_ATH10K_SERVICE
+extern "C" void nabu_wlan_service_publish(void);
+#endif
 
 static thread_call_t wireless_call;
 static thread_call_t bluetooth_call;
@@ -195,6 +198,9 @@ void nabu_wireless_queue_bluetooth(const char *reason)
 static void wireless_survey(thread_call_param_t, thread_call_param_t)
 {
     nabu_wireless_log("NABU WIRELESS: survey begin; SM8150 SNOC Wi-Fi + WCN3991-compatible UART Bluetooth\n");
+#ifdef NABU_ATH10K_SERVICE
+    nabu_wlan_service_publish();
+#endif
     smem_survey();
     cmd_db_survey();
     rpmh_survey();

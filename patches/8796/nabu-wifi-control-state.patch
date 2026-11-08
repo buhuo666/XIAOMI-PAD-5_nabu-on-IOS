@@ -1,0 +1,31 @@
+--- a/bsd/dev/hakios.apple80211.c
++++ b/bsd/dev/hakios.apple80211.c
+@@ -294,7 +294,7 @@
+ 	switch (request->req_type) {
+ 	case 43:
+ 	case 44: {                              /* the driver's and the hardware's name: the text alone, in 256 bytes */
+-		static const char name[256] = "hakios: ath11k for the WCN6750";
++		static const char name[256] = "Nabu: ath10k for the WCN399x";
+ 
+ 		return give(request, name, sizeof(name));
+ 	}
+@@ -309,15 +309,15 @@
+ 		uint8_t bits[13] = { 0 };
+ 		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
+ 
+-		for (unsigned i = 0; i < sizeof(has); i++) {
++		for (unsigned i = 0; hakios_sta_present() && i < sizeof(has); i++) {
+ 			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
+ 		}
+ 		return give(request, bits, sizeof(bits));
+ 	}
+-	case 19: {                              /* the radio's power: one radio. Until the driver is up it counts as on: it */
+-		struct {                        /* is being brought up, and Darwin asks this once, early */
++	case 19: {                              /* the control backend's completed power state, not device presence */
++		struct {
+ 			uint32_t version, radios, state[4];
+-		} answer = { .version = 1, .radios = 1, .state = { !hakios_sta_present() || hakios_sta_powered() } };
++		} answer = { .version = 1, .radios = 1, .state = { hakios_sta_powered() } };
+ 
+ 		return give(request, &answer, sizeof(answer));
+ 	}

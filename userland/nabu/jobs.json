@@ -46,7 +46,8 @@
   "scope": "20F66 local services plus Nabu native Bluetooth bring-up: original bluetoothd at boot, Bluetooth UI service and local user-daemon Mach triggers; controller operation requires separate runtime validation",
   "source_job_allow": [
     "com.apple.managedconfiguration.passcodenagd",
-    "com.apple.bluetoothuiservice"
+    "com.apple.bluetoothuiservice",
+    "com.apple.wifid"
   ],
   "restore_conditions": {
     "com.apple.chronod": {

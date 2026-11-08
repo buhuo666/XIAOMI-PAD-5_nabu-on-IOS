@@ -59,6 +59,7 @@ jobs:
           python3 tools/check_nabu_ath10k_runtime.py --output log/ci/nabu-ath10k-runtime
           python3 tools/check_nabu_bluetooth_boot_rx.py --output log/ci/nabu-bluetooth-boot-rx
           python3 tools/check_nabu_bluetooth_native.py --output log/ci/nabu-bluetooth-native
+          python3 tools/check_nabu_wifi_service.py --output log/ci/nabu-wifi-service
       - name: Retain wireless protocol results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

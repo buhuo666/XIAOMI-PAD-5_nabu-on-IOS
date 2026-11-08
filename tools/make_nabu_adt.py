@@ -77,7 +77,7 @@ def validate_userland_serial(value):
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
               userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None,
               rtc_offset=None, platform_uuid=None, bluetooth_firmware=None, modem_firmware=None,
-              bluetooth_transport=False):
+              bluetooth_transport=False, wlan_native_service=False):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -173,6 +173,13 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
             product.props['bluetooth-le'] = U32(1)
     if modem_firmware is not None:
         tree.children.append(Node('nabu-modem', {'compatible': STR('qcom,sm8150-mpss'), **modem_firmware}))
+    if wlan_native_service:
+        tree.children.append(Node('wlan', {
+            'compatible': STR('qcom,wcn3990-wifi'),
+            'device_type': STR('network'),
+            'reg': struct.pack('<2Q', 0x18800000, 0x800000),
+            'local-mac-address': validate_wifi_mac(wifi_mac),
+        }))
     return tree
 
 

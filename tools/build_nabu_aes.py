@@ -39,6 +39,8 @@ def main():
     include=[a.data_build/'include',ROOT/'src/NativeAES',ROOT/'patches/nabu-storage',
         headers/'EXTERNAL_HEADERS',headers/'sdk-kernel']
     include += [headers/'EXPORT_HDRS'/directory for directory in ('osfmk','bsd','libkern','pexpert','iokit','security')]
+    if a.ath10k:
+        include.append(ROOT/'src/hakios-8796/xnu/files/bsd')
     flags += ['-I'+host_path(p) for p in include]
     if a.power: flags += ['-DNABU_POWER_SERVICE=1']
     if a.usb or a.native_usb: flags += ['-DNABU_USB_SERVICE=1']
@@ -63,6 +65,8 @@ def main():
         runtime=('NabuAth10kRuntime','NabuAth10kQrtr') if a.ath10k else ('NabuWlanRuntime',)
         for name in ('NabuWlanDma','NabuWlanController',*runtime):
             sources.append((name,ROOT/'patches/nabu-wireless'/(name+'.cpp')))
+        if a.ath10k:
+            sources.append(('NabuWlanService',ROOT/'patches/nabu-wireless/NabuWlanService.cpp'))
         for name in ('ArmSmmu4K','ArmSmmu4KContext','ArmSmmu4KProgram','ArmSmmu4KStreams'):
             sources.append((name,ROOT/'src/ArmSmmu4K-nabu'/(name+'.c')))
     if a.return_trace:
