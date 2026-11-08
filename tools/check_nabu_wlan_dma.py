@@ -133,8 +133,8 @@ int main() {
         assert(audio.prepare(p.ops<NabuAudioDma>())&&audio.allocated==1&&audio.built.table_pages==3);
         assert(audio.attach(Peer::install,Peer::remove,&p));
         assert(audio.bank!=wlan_bank&&audio.routes[0].slot!=wlan_slot&&audio.routes[0].sid==0x1b21);
-        NabuAudioDma::Buffer buffer; assert(audio.buffer(16384,16384,buffer)&&buffer.iova==0x10000000);
-        for(unsigned page=0;page<4;++page)assert(walk(audio,buffer.iova+page*4096)==audio.blocks[0].physical+page*4096);
+        NabuAudioDma::Buffer buffer; assert(audio.buffer(32768,16384,buffer)&&buffer.iova==0x10000000);
+        for(unsigned page=0;page<8;++page)assert(walk(audio,buffer.iova+page*4096)==audio.blocks[0].physical+page*4096);
         assert(wlan.observe()&&audio.observe());
         assert(audio.release_after_stop()&&audio.state==NabuAudioDma::Empty&&p.memory.size()==2);
         assert(wlan.observe()&&wlan.ath10k_arena.cpu==wlan_memory&&wlan.bank==wlan_bank);
@@ -423,7 +423,7 @@ int main() {
     {Peer p;NabuWlanDma d;assert(d.prepare(p.ops()));NabuWlanDma::Buffer b;
         for(unsigned i=0;i<128;++i)assert(d.buffer(65536,16384,b)&&b.iova==0xa0000000+i*65536);
         assert(!d.buffer(1,1,b));assert(d.release_after_stop()&&p.memory.empty());}
-    puts("Simultaneous audio/WLAN leases, audio SID0x1b21 and four-page translation/cleanup isolation; WLAN DMA production allocation callbacks above 4GiB, original 2048 and ath10k 11264 4K translations, exact allocation/free sizes, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
+    puts("Simultaneous audio/WLAN leases, audio SID0x1b21 and eight-page translation/cleanup isolation; WLAN DMA production allocation callbacks above 4GiB, original 2048 and ath10k 11264 4K translations, exact allocation/free sizes, Qualcomm fault encoding, v124 CBAR retention reproduction, inactive configuration preservation, precise stop failure diagnostics, foreign USB/UFS isolation, foreign context/stream refusal, PFR retention and stop/TLB/ACTLR-gated release passed");
 }
 '''
 def main():

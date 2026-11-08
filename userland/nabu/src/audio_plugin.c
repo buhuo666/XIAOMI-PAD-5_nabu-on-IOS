@@ -25,7 +25,8 @@
  * The original 20F66 VirtualAudio binary recognizes Speaker and Hawking UIDs.
  * Keep the upstream route companion/telemetry-shaped silent inputs for native
  * route compatibility. They are not microphones or actual amplifier telemetry.
- * No Codec or Actuator is published. This plugin selects no D22/J171 effects;
+ * Codec exposes real mono microphone input; no Actuator is published.
+ * This plugin selects no D22/J171 effects;
  * native iPadOS routing owns its existing policy and kernel CS35L41 Protection
  * remains the actual speaker protection. Route acceptance still needs hardware
  * validation with this iPad's installed VirtualAudio and J171/J172 resources.
@@ -157,7 +158,7 @@ enum {
 	kAudioStreamPropertyVirtualFormat = 'sfmt', kAudioStreamPropertyAvailableVirtualFormats = 'sfma',
 	kAudioStreamPropertyPhysicalFormat = 'pft ', kAudioStreamPropertyAvailablePhysicalFormats = 'pfta',
 
-	kAudioStreamTerminalTypeSpeaker = 'spkr', kAudioStreamTerminalTypeUnknown = 0,
+	kAudioStreamTerminalTypeMicrophone = 'micr', kAudioStreamTerminalTypeSpeaker = 'spkr', kAudioStreamTerminalTypeUnknown = 0,
 
 	kAudioServerPlugInIOOperationReadInput = 'read', kAudioServerPlugInIOOperationWriteMix = 'rite',
 
@@ -179,8 +180,11 @@ enum {
 	OBJECT_SPEAKER, OBJECT_SPEAKER_OUTPUT, OBJECT_SPEAKER_INPUT,
 	OBJECT_HAWKING, OBJECT_HAWKING_INPUT,
 	OBJECT_SPEAKER_VOLUME,          /* the speaker output's volume control */
-	OBJECT_LAST = OBJECT_SPEAKER_VOLUME
+	OBJECT_CODEC, OBJECT_CODEC_INPUT, OBJECT_CODEC_SOURCE,
+	OBJECT_LAST = OBJECT_CODEC_SOURCE
 };
+
+#define MIC_SOURCE 'imic'
 
 #define VOLUME_RANGE_DB         48.0    /* from the loudest the kernel allows down to the quietest step above 0 */
 
@@ -198,6 +202,7 @@ struct device {
 static struct device devices[] = {
 	{ .object = OBJECT_SPEAKER, .uid = CFSTR("Speaker"), .output = OBJECT_SPEAKER_OUTPUT, .input = OBJECT_SPEAKER_INPUT,
 	  .output_channels = HAKIOS_AUDIO_CHANNELS, .input_channels = 2 },
+	{ .object = OBJECT_CODEC, .uid = CFSTR("Codec"), .input = OBJECT_CODEC_INPUT, .input_channels = 1 },
 	{ .object = OBJECT_HAWKING, .uid = CFSTR("Hawking"), .input = OBJECT_HAWKING_INPUT, .input_channels = 1 },
 };
 #define DEVICES                 (sizeof(devices) / sizeof(devices[0]))
@@ -420,6 +425,40 @@ property(AudioObjectID object, const AudioObjectPropertyAddress *address, UInt32
 		}
 		return v;
 	}
+	if (object == OBJECT_CODEC_SOURCE) {
+		switch (selector) {
+		case kAudioObjectPropertyBaseClass:
+			WORD(kAudioSelectorControlClassID);
+			break;
+		case kAudioObjectPropertyClass:
+			WORD(kAudioDataSourceControlClassID);
+			break;
+		case kAudioObjectPropertyOwner:
+			WORD(OBJECT_CODEC);
+			break;
+		case kAudioObjectPropertyOwnedObjects:
+			v.empty = true;
+			break;
+		case kAudioControlPropertyScope:
+			WORD(kAudioObjectPropertyScopeInput);
+			break;
+		case kAudioControlPropertyElement:
+			WORD(0);
+			break;
+		case kAudioSelectorControlPropertyCurrentItem:
+		case kAudioSelectorControlPropertyAvailableItems:
+			WORD(MIC_SOURCE);
+			break;
+		case kAudioSelectorControlPropertyItemName:
+			if (qualifier_size == sizeof(UInt32) && qualifier != NULL && *(const UInt32 *)qualifier == MIC_SOURCE) {
+				STRING(CFSTR("Bottom"));
+			} else {
+				STRING(CFSTR(""));
+			}
+			break;
+		}
+		return v;
+	}
 	if (object != OBJECT_PLUGIN && d == NULL) {
 		return v;
 	}
@@ -491,7 +530,7 @@ property(AudioObjectID object, const AudioObjectPropertyAddress *address, UInt32
 			break;
 		case kAudioDevicePropertyDeviceCanBeDefaultDevice:
 		case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
-			WORD(d->output != 0);
+			WORD(scope == kAudioObjectPropertyScopeInput ? d->object == OBJECT_CODEC : d->output != 0);
 			break;
 		case kAudioDevicePropertyDeviceIsRunning:
 			WORD(d->running != 0);
@@ -505,12 +544,18 @@ property(AudioObjectID object, const AudioObjectPropertyAddress *address, UInt32
 			if (scope != kAudioObjectPropertyScopeOutput && d->input != 0) {
 				LIST(d->input);
 			}
+			if (selector == kAudioObjectPropertyOwnedObjects && d->object == OBJECT_CODEC) {
+				LIST(OBJECT_CODEC_SOURCE);
+			}
 			if (selector == kAudioObjectPropertyOwnedObjects && d->object == OBJECT_SPEAKER) {
 				LIST(OBJECT_SPEAKER_VOLUME);
 			}
 			v.empty = v.size == 0;
 			break;
 		case kAudioObjectPropertyControlList:
+			if (d->object == OBJECT_CODEC) {
+				LIST(OBJECT_CODEC_SOURCE);
+			}
 			if (d->object == OBJECT_SPEAKER) {
 				LIST(OBJECT_SPEAKER_VOLUME);
 			}
@@ -542,7 +587,7 @@ property(AudioObjectID object, const AudioObjectPropertyAddress *address, UInt32
 			WORD(object == d->input);
 			break;
 		case kAudioStreamPropertyTerminalType:
-			WORD(object == d->input ? kAudioStreamTerminalTypeUnknown : kAudioStreamTerminalTypeSpeaker);
+			WORD(object == OBJECT_CODEC_INPUT ? kAudioStreamTerminalTypeMicrophone : object == d->input ? kAudioStreamTerminalTypeUnknown : kAudioStreamTerminalTypeSpeaker);
 			break;
 		case kAudioStreamPropertyStartingChannel:
 			WORD(1);
@@ -630,6 +675,8 @@ is_property_settable(AudioServerPlugInDriverRef driver, AudioObjectID object, pi
 	if (object == OBJECT_SPEAKER_VOLUME) {
 		*settable = address->mSelector == kAudioLevelControlPropertyScalarValue ||
 		    address->mSelector == kAudioLevelControlPropertyDecibelValue;
+	} else if (object == OBJECT_CODEC_SOURCE) {
+		*settable = address->mSelector == kAudioSelectorControlPropertyCurrentItem;
 	} else if (object == OBJECT_PLUGIN) {
 		*settable = false;
 	} else if (object == d->object) {
@@ -705,6 +752,9 @@ set_property_data(AudioServerPlugInDriverRef driver, AudioObjectID object, pid_t
 	if (!settable) {
 		return kAudioHardwareIllegalOperationError;
 	}
+	if (object == OBJECT_CODEC_SOURCE) {
+		return size == sizeof(UInt32) ? (*(const UInt32 *)data == MIC_SOURCE ? 0 : kAudioHardwareIllegalOperationError) : kAudioHardwareBadPropertySizeError;
+	}
 	if (object == OBJECT_SPEAKER_VOLUME) {
 		AudioObjectPropertyAddress changed[2] = {
 			{ kAudioLevelControlPropertyScalarValue, kAudioObjectPropertyScopeGlobal, 0 },
@@ -751,6 +801,54 @@ set_property_data(AudioServerPlugInDriverRef driver, AudioObjectID object, pid_t
 	}
 }
 
+static int mic = -1;
+static UInt64 mic_frames, mic_heard, mic_short;
+static int mic_peak;
+
+static void
+codec_open(void)
+{
+	mic = open("/dev/hakios-mic", O_RDONLY | O_NONBLOCK);
+	mic_frames = mic_heard = mic_short = 0;
+	mic_peak = 0;
+	say("NABU HAL: the microphone is listened to (/dev/hakios-mic: %s)\n", mic < 0 ? strerror(errno) : "open");
+}
+
+static void
+codec_close(void)
+{
+	say("NABU HAL: the microphone stops: %llu.%02llu s asked for, %llu.%02llu s of it from the kernel (peak %d of 32768), "
+	    "%llu reads short\n", mic_frames / HAKIOS_AUDIO_RATE, mic_frames % HAKIOS_AUDIO_RATE * 100 / HAKIOS_AUDIO_RATE,
+	    mic_heard / HAKIOS_AUDIO_RATE, mic_heard % HAKIOS_AUDIO_RATE * 100 / HAKIOS_AUDIO_RATE, mic_peak, mic_short);
+	if (mic >= 0) {
+		close(mic);
+	}
+	mic = -1;
+}
+
+static void
+codec_read(int16_t *samples, UInt32 frames)
+{
+	ssize_t got = mic >= 0 ? read(mic, samples, (size_t)frames * 2) : -1;
+	UInt32 have = got > 0 ? (UInt32)got / 2 : 0;
+
+	if (have > 0 && mic_heard == 0) {
+		say("NABU HAL: the microphone's first samples, %llu.%02llu s after the input started\n",
+		    mic_frames / HAKIOS_AUDIO_RATE, mic_frames % HAKIOS_AUDIO_RATE * 100 / HAKIOS_AUDIO_RATE);
+	}
+	for (UInt32 i = 0; i < have; i++) {
+		int v = samples[i] < 0 ? -samples[i] : samples[i];
+
+		mic_peak = v > mic_peak ? v : mic_peak;
+	}
+	if (have < frames) {
+		memset(samples + have, 0, (size_t)(frames - have) * 2);
+		mic_short += mic_heard > 0;
+	}
+	mic_frames += frames;
+	mic_heard += have;
+}
+
 static OSStatus
 start_io(__unused AudioServerPlugInDriverRef driver, AudioObjectID object, __unused UInt32 client)
 {
@@ -763,6 +861,7 @@ start_io(__unused AudioServerPlugInDriverRef driver, AudioObjectID object, __unu
 	if (d->running++ == 0) {
 		d->anchor = mach_absolute_time();
 		d->periods = 0;
+		if (d->object == OBJECT_CODEC) codec_open();
 		if (d->output != 0) {
 			written = refused = 0;
 			say("NABU HAL: playing\n");
@@ -782,6 +881,7 @@ stop_io(__unused AudioServerPlugInDriverRef driver, AudioObjectID object, __unus
 	}
 	pthread_mutex_lock(&lock);
 	if (d->running != 0 && --d->running == 0) {
+		if (d->object == OBJECT_CODEC) codec_close();
 		if (d->output != 0) {
 			say("NABU HAL: stopped after %llu.%02llu s (%llu frames not taken by %s)\n", written / HAKIOS_AUDIO_RATE,
 			    written % HAKIOS_AUDIO_RATE * 100 / HAKIOS_AUDIO_RATE, refused, HAKIOS_AUDIO_DEVICE);
@@ -845,7 +945,8 @@ do_io_operation(__unused AudioServerPlugInDriverRef driver, __unused AudioObject
 	}
 	if (operation == kAudioServerPlugInIOOperationReadInput) {
 		/* the speaker's and Hawking's inputs: silence */
-		memset(buffer, 0, (size_t)frames * 2 * d->input_channels);
+		if (stream == OBJECT_CODEC_INPUT) codec_read(buffer, frames);
+		else memset(buffer, 0, (size_t)frames * 2 * d->input_channels);
 	} else if (operation == kAudioServerPlugInIOOperationWriteMix && stream == d->output) {
 		/* Nonblocking kernel ring write; the HAL thread never waits for DSP. */
 		ssize_t bytes = sink < 0 ? -1 : write(sink, buffer, (size_t)frames * HAKIOS_AUDIO_FRAME);

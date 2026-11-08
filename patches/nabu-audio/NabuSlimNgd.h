@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 namespace NabuSlimNgd {
-enum Error { Ok, Hardware, BadMessage, Timeout, Busy, AddressMissing };
+enum Error { Ok, Hardware, BadMessage, Timeout, Busy, AddressMissing, Nack };
 struct Result {
     uint32_t version=0,bank=0,status=0,interrupt=0,tx=0,rx=0;
     uint32_t last_tx0=0,last_rx0=0,ie=0,ve=0;
@@ -41,6 +41,10 @@ template<class IO> class Bus {
             if(!nonzero) {fail(AddressMissing);return;}
             for(unsigned i=0;i<6;++i)if(p[4+i]!=ea[i]) {fail(BadMessage);return;}
             reply[0]=p[10];rx_done=true;
+        } else if(code==0x25&&type==6) {
+            if(bytes<5) {fail(BadMessage);return;}
+            if(!(p[4]&0x20)) {fail(Nack);return;}
+            reply[0]=p[4];rx_done=true;
         } else if(code==0x64&&type==0) {
             if(bytes<4+expected) {fail(BadMessage);return;}
             for(unsigned i=0;i<expected;++i)reply[i]=p[4+i];
@@ -99,6 +103,17 @@ public:
     bool write_element(uint8_t la,uint16_t offset,uint8_t value) {
         uint16_t ec=uint16_t((offset<<4)|8);
         uint8_t p[8]={6,0x68,la,uint8_t(ec),uint8_t(ec>>8),value};return send(p,6);
+    }
+    bool write_word(uint8_t la,uint16_t offset,uint32_t value) {
+        uint16_t ec=uint16_t((offset<<4)|0xb);
+        uint8_t p[12]={9,0x68,la,uint8_t(ec),uint8_t(ec>>8),
+            uint8_t(value),uint8_t(value>>8),uint8_t(value>>16),uint8_t(value>>24)};
+        return send(p,9);
+    }
+    bool user(uint8_t code,const uint8_t *body,unsigned bytes,unsigned transaction_at) {
+        uint8_t p[32]{};p[0]=uint8_t(0x40|unsigned(3+bytes));p[1]=code;p[2]=0xff;
+        for(unsigned i=0;i<bytes;++i)p[3+i]=body[i];
+        tid=next_tid++;p[3+transaction_at]=tid;return send(p,3+bytes,0x25,1);
     }
     bool idle() const {return !busy;}
     bool done() const {return completed;}

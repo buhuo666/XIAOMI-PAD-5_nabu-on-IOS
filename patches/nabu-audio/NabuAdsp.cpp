@@ -17,6 +17,9 @@
 #include "NabuCs35l41Run.h"
 #include "NabuSlimNgd.h"
 #include "NabuTavil.h"
+#include "NabuPcmGain.h"
+#include "NabuTavilCapture.h"
+#include "NabuNativeMic.h"
 #include "../nabu-wireless/NabuWlanController.h"
 
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t, vm_size_t, unsigned int);
@@ -200,11 +203,15 @@ struct Trial {
     } slim_io{};
     NabuSlimNgd::Bus<SlimRegisters> slim_bus{slim_io};
     NabuTavil::Codec<NabuSlimNgd::Bus<SlimRegisters>> codec{slim_bus};
+    NabuTavilCapture::Route<decltype(codec),decltype(slim_bus)> mic_route{codec,slim_bus};
     vm_offset_t codec_reset=0;
     uint32_t codec_reset_config=0,codec_reset_output=0;
     bool mic_attempted=false,mic_started=false,mic_finished=false,codec_begun=false;
+    bool mic_route_begun=false,mic_prepared=false,mic_published=false,mic_failed=false;
+    bool mic_recording=false,mic_stopping=false,mic_shutdown=false;
     bool native_attached=false;
-    uint32_t native_generation=0,native_gain=1u<<24,native_volume_below=0;
+    uint32_t native_generation=0,native_gain=NabuPcmGain::Maximum,native_volume_below=0;
+    uint64_t native_clipped=0;
     bool native_muted=false;
     unsigned stream_report_start=0;
     void microphone_report() {
@@ -213,8 +220,17 @@ struct Trial {
             s.opened,s.peer,s.server,s.node,s.port,s.selected,s.active,s.released,s.rx,s.tx,s.error,s.qmi_result,s.qmi_error);
         log("NABU MIC NGD: version=%#x bank=%#x status=%#x interrupt=%#x capability=%u reported=%u ready=%u tx=%u rx=%u last=%#x/%#x error=%u\n",
             n.version,n.bank,n.status,n.interrupt,n.capability,n.reported,n.ready,n.tx,n.rx,n.last_tx0,n.last_rx0,n.error);
-        log("NABU MIC TAVIL: PGD=%#x IFD=%#x phase=%u step=%u major=%#x minor=%#x identified=%u error=%u; physical capture not yet active\n",
-            c.pgd,c.ifd,c.phase,c.step,c.major,c.minor,c.identified,c.error);publish();
+        log("NABU MIC TAVIL: PGD=%#x IFD=%#x phase=%u step=%u major=%#x minor=%#x identified=%u error=%u\n",
+            c.pgd,c.ifd,c.phase,c.step,c.major,c.minor,c.identified,c.error);
+        const auto &m=mic_route.result();const auto &a=glink.capture_result();
+        log("NABU MIC ROUTE: phase=%u step=%u operations=%u reg=%#x value=%#x initialized=%u active=%u starts=%u stops=%u error=%#x; ADC1 DEC6 port6 channel134\n",
+            m.phase,m.index,m.operations,m.reg,m.value,m.initialized,m.active,m.starts,m.stops,m.error);
+        log("NABU MIC ASM: configured=%u phase=%u starts=%u stops=%u copp=%#x port=%u run=%u reads=%u completed=%u bytes=%u pending=%#x closed=%u/%u/%u failed=%u opcode=%#x status=%#x timeout=%u retained=%u\n",
+            a.configured,a.phase,a.starts,a.stops,a.copp,a.port_on,a.run,a.reads,a.completed,a.bytes,a.pending,
+            a.closed,a.copp_closed,a.port_stopped,a.failed,a.failed_opcode,a.status,a.timeout,a.mapping_retained);
+        log("NABU NATIVE MIC: published=%u requested=%u received=%llu read=%llu dropped=%llu nonzero=%llu peak=%u\n",
+            mic_published,NabuNativeMic::requested(),NabuNativeMic::received,NabuNativeMic::read_frames,
+            NabuNativeMic::dropped,NabuNativeMic::nonzero,NabuNativeMic::peak);publish();
     }
     bool codec_power() {
         vm_offset_t db_va=map("codec-command-db",0x85f20000,0x20000,VM_WIMG_IO);
@@ -259,6 +275,7 @@ struct Trial {
         slim_bus.begin(elapsed);mic_started=true;return true;
     }
     void stop_microphone() {
+        NabuNativeMic::offline();
         if(mic_started) {slim_bus.stop();mic_started=false;}
         if(slim_io.base) {unmap(slim_io.base,0x2c000);slim_io.base=0;}
         if(codec_reset) {
@@ -267,20 +284,54 @@ struct Trial {
         }
     }
     void slim_stop() {stop_microphone();}
+    void capture_data(unsigned period,uint32_t offset,uint32_t bytes) {
+        uintptr_t at=(uintptr_t)dma.blocks[0].cpu+NabuAsmCapture::Offset+period*NabuAsmCapture::PeriodBytes+offset;
+        for(uintptr_t p=at&~uintptr_t(63);p<at+bytes;p+=64)__asm__ volatile("dc ivac,%0"::"r"(p):"memory");
+        __asm__ volatile("dsb sy":::"memory");
+        NabuNativeMic::push((const int16_t *)at,bytes/2);
+    }
     void microphone_step(uint32_t elapsed) {
-        if(mic_finished)return;
-        if(glink.slim_result().error!=NabuAdspSlim::Ok) {mic_finished=true;microphone_report();stop_microphone();glink.finish_slim();return;}
+        if(glink.slim_result().error!=NabuAdspSlim::Ok)mic_failed=true;
         if(!mic_attempted&&glink.slim_ready()) {
             mic_attempted=true;
-            if(!prepare_microphone(elapsed)) {mic_finished=true;log("NABU MIC: codec power/reset preparation failed\n");microphone_report();stop_microphone();glink.finish_slim();}
+            if(!prepare_microphone(elapsed)) {mic_failed=true;log("NABU MIC: codec power/reset preparation failed\n");}
         }
-        if(!mic_started)return;
-        slim_bus.step(elapsed);
-        if(slim_bus.result().ready&&slim_bus.idle()&&!codec_begun) {codec.begin();codec_begun=true;}
-        if(codec_begun)codec.step(elapsed);
-        if(codec.done()||slim_bus.result().error) {
-            mic_finished=true;microphone_report();
-            if(!codec.result().identified) {stop_microphone();glink.finish_slim();}
+        if(mic_started) {
+            slim_bus.step(elapsed);
+            if(slim_bus.result().ready&&slim_bus.idle()&&!codec_begun) {codec.begin();codec_begun=true;}
+            if(codec_begun)codec.step(elapsed);
+            if(codec.result().identified&&!mic_route_begun) {mic_route.begin();mic_route_begun=true;}
+            if(mic_route_begun)mic_route.step(elapsed);
+            if(codec.result().error||slim_bus.result().error||mic_route.result().error)mic_failed=true;
+        }
+        if(glink.capture_result().failed)mic_failed=true;
+        if(!mic_finished&&(mic_failed||mic_route.ready())) {mic_finished=true;microphone_report();}
+        if(mic_failed||mic_shutdown) {
+            NabuNativeMic::offline();glink.finish_capture();
+            if(glink.capture_busy())return;
+            if(mic_route.result().active&&!codec.result().error&&!slim_bus.result().error&&!mic_route.result().error) {
+                mic_route.stop();mic_stopping=true;
+                return;
+            }
+            if(mic_started||codec_reset||slim_io.base) {microphone_report();stop_microphone();glink.finish_slim();}
+            return;
+        }
+        // Amp firmware loading blocks this worker; do not begin capture until it finishes.
+        if(native_attached&&mic_route.ready()&&!mic_prepared) {glink.prepare_capture();mic_prepared=true;}
+        if(mic_prepared&&glink.capture_ready()&&!mic_published) {
+            mic_published=NabuNativeMic::publish();mic_failed=!mic_published;microphone_report();
+        }
+        if(!mic_published)return;
+        if(!NabuNativeMic::requested()&&mic_recording)mic_stopping=true;
+        if(mic_stopping) {
+            glink.finish_capture();
+            if(!glink.capture_busy()) {
+                if(mic_route.result().active&&!mic_route.result().stopped)mic_route.stop();
+                if(mic_route.ready()) {mic_recording=false;mic_stopping=false;}
+            }
+        } else if(NabuNativeMic::requested()) {
+            if(!mic_recording&&mic_route.ready()) {mic_route.start();mic_recording=true;}
+            if(mic_route.result().active&&glink.capture_ready())glink.start_capture();
         }
     }
     void stream_report() {
@@ -289,8 +340,9 @@ struct Trial {
         log("NABU NATIVE AUDIO: attached=%u received=%llu fed=%llu silence=%llu dropped=%llu queued=%u peak=%u writes=%u done=%u underflows=%u failed=%u opcode=%#x status=%#x\n",
             native_attached,native_received,native_fed,native_silence,native_dropped,
             __atomic_load_n(&native_head,__ATOMIC_ACQUIRE)-native_tail,native_peak,p.writes,p.completions,p.underflows,p.failed,p.failed_opcode,p.status);
-        log("NABU NATIVE VOLUME: eighths-below=%u muted=%u generation=%u gain-q24=%u\n",
-            native_volume_below,native_muted,native_generation,native_gain);
+        log("NABU NATIVE VOLUME: boost-db=%u eighths-below=%u muted=%u generation=%u gain-q24=%u clipped-samples=%llu\n",
+            NabuPcmGain::BoostDb,native_volume_below,native_muted,native_generation,native_gain,native_clipped);
+        microphone_report();
         publish();
     }
 
@@ -486,17 +538,14 @@ struct Trial {
         // original volume ioctl stores the HAL setting for the physical sink.
         if(hakios_audio_volume(&below,&muted,&generation)&&generation!=native_generation) {
             native_generation=generation;native_volume_below=below;native_muted=muted;
-            uint64_t gain=1u<<24;
-            // 10^(-0.125/20) in Q24; calculate only when the user changes volume.
-            for(unsigned i=0;i<below;++i)gain=(gain*16537501+(1u<<23))>>24;
-            native_gain=muted?0:uint32_t(gain);
+            native_gain=NabuPcmGain::gain(below,muted);
         }
         uint32_t tail=native_tail,head=__atomic_load_n(&native_head,__ATOMIC_ACQUIRE);
         uint32_t available=head-tail,take=frames<available?frames:available;
         for(unsigned i=0;i<take;++i) {
             unsigned at=(tail+i)&(NativeRingFrames-1);
-            samples[i*2]=int16_t((int64_t(native_ring[at*2])*native_gain)/(1<<24));
-            samples[i*2+1]=int16_t((int64_t(native_ring[at*2+1])*native_gain)/(1<<24));
+            samples[i*2]=NabuPcmGain::sample(native_ring[at*2],native_gain,native_clipped);
+            samples[i*2+1]=NabuPcmGain::sample(native_ring[at*2+1],native_gain,native_clipped);
         }
         memset(samples+take*2,0,(frames-take)*4);
         __atomic_store_n(&native_tail,tail+take,__ATOMIC_RELEASE);
@@ -754,11 +803,10 @@ struct Trial {
                 continue;
             }
             if(glink.playback_done()) {
+                mic_shutdown=true;
                 if(native_attached) {hakios_audio_set_sink("none",nullptr);native_attached=false;}
-                if(stream_report_start)stream_report();
-                if(!finish_amplifiers()) {retain_for_amp=true;break;}
-                stop_microphone();
-                glink.finish_playback();continue;
+                if(!amps_finished&&!finish_amplifiers()) {retain_for_amp=true;break;}
+                if(!mic_started) {if(stream_report_start)stream_report();glink.finish_playback();continue;}
             }
             if(playing_since&&!amps_finished&&elapsed-last_stream_report>=2000) {stream_report();last_stream_report=elapsed;}
             const NabuAdspGlink::Result &r = glink.result();

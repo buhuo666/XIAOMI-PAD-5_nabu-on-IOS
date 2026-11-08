@@ -7,6 +7,7 @@
 #include "NabuAfeTdm.h"
 #include "NabuAsmPlayback.h"
 #include "NabuAdspSlim.h"
+#include "NabuAsmCapture.h"
 
 namespace NabuAdspGlink {
 enum Error : uint32_t { NoError, InvalidQueues, InvalidPointer, InvalidFrame,
@@ -58,6 +59,7 @@ template<class IO> class Link {
     NabuAsmPcm::Trial<Link> pcm{*this};
     NabuAfeTdm::Trial<Link> afe{*this};
     NabuAsmPlayback::Trial<Link> playback{*this};
+    NabuAsmCapture::Stream<Link> capture{*this};
     uint32_t needed_bytes() const { return phase == Afe ? 96 : phase == Playback ? 52 : phase == Pcm ? 56 : phase == Mapping ? 40 : phase == Unmapping ? 24 : QueryBytes; }
 
     static uint16_t get16(const uint8_t *p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
@@ -104,6 +106,7 @@ template<class IO> class Link {
     }
     void apr(const uint8_t *data, uint32_t bytes) {
         ++r.apr_packets;
+        if(capture.receive(data,bytes,now))return;
         if (phase == Pcm) { pcm.receive(data, bytes, now); return; }
         if (phase == Afe) { afe.receive(data, bytes, now); return; }
         if (phase == Playback) { playback.receive(data, bytes, now); return; }
@@ -328,6 +331,28 @@ public:
     bool slim_ready() const {return slim_enabled&&slim.ready();}
     void finish_slim() {if(slim_enabled)slim.finish();}
     const NabuAdspSlim::Result &slim_result() const {return slim.result();}
+    void capture_data(unsigned period,uint32_t offset,uint32_t bytes) {io.capture_data(period,offset,bytes);}
+    bool capture_send(uint8_t service,uint16_t port,uint32_t opcode,uint32_t token,const uint8_t *payload,uint32_t payload_bytes) {
+        uint32_t packet_bytes=20+payload_bytes;int chosen=-1;
+        for(unsigned i=0;i<64;++i)if(remote[i].present&&!remote[i].used&&remote[i].size>=packet_bytes&&
+            (chosen<0||remote[i].size<remote[chosen].size))chosen=int(i);
+        if(chosen<0) {
+            if(!requested_intent)requested_intent=send(7,uint16_t(r.lcid),packet_bytes);
+            return false;
+        }
+        uint8_t data[92]{};set32(data,packet_bytes);set16(data+8,0x250);set16(data+10,uint16_t(packet_bytes));
+        data[12]=data[16]=service;data[13]=5;data[17]=4;
+        set16(data+14,port);set16(data+18,port);set32(data+20,token);set32(data+24,opcode);
+        for(unsigned i=0;i<payload_bytes;++i)data[28+i]=payload[i];
+        if(!send(9,uint16_t(r.lcid),remote[chosen].id,data,packet_bytes+8))return false;
+        remote[chosen].used=true;return true;
+    }
+    void prepare_capture() {capture.prepare(map_address,r.map_handle,now);}
+    void start_capture() {capture.start();}
+    void finish_capture() {capture.finish();}
+    bool capture_ready()const{return capture.ready();}
+    bool capture_busy()const{return capture.busy();}
+    const NabuAsmCapture::Result &capture_result()const{return capture.result();}
     void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {io.playback_fill(period,first_frame,frames);}
     bool playback_send(uint8_t service,uint16_t port,uint32_t opcode,uint32_t token,const uint8_t *payload,uint32_t payload_bytes) {
         uint32_t packet_bytes=20+payload_bytes;int chosen=-1;
@@ -395,6 +420,7 @@ public:
         if (phase == Idle || phase == Finished) return;
         now = elapsed_ms; pump(); if (r.broken) return;
         if(slim_enabled)slim.step(now,r.negotiated);
+        capture.step(now);
         if (phase == Opening && now - phase_start >= 5000) { r.timeout = true; start_close(); }
         if (phase == Querying) {
             if (r.apr_ready) {
@@ -452,7 +478,8 @@ public:
         if(phase==Afe) {
             afe.step(now);
             if(afe.done()) {
-                if(playback_enabled&&!playback.result().mapping_retained) {phase=Unmapping;phase_start=now;waiting_query=false;}
+                if(capture.busy()) {capture.finish();return;}
+                if(playback_enabled&&!playback.result().mapping_retained&&!capture.result().mapping_retained) {phase=Unmapping;phase_start=now;waiting_query=false;}
                 else start_close();
             }
         }

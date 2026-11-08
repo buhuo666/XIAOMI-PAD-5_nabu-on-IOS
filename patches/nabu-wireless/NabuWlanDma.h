@@ -378,7 +378,7 @@ struct NabuSmmuDma {
 
 // WLAN's exact previous geometry; audio uses one 16KiB allocation and SID0x1b21.
 using NabuWlanDma=NabuSmmuDma<65536,128,65536,0xa0000000ULL,0x640,2>;
-using NabuAudioDma=NabuSmmuDma<16384,1,16384,0x10000000ULL,0x1b21,1>;
+using NabuAudioDma=NabuSmmuDma<32768,1,16384,0x10000000ULL,0x1b21,1>;
 
 // Native implementation allocates real physical memory and provides actual
 // SMMU MMIO/cache operations. Creation/preparation performs no SMMU writes.

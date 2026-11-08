@@ -50,6 +50,7 @@ jobs:
           python3 tools/check_nabu_adsp_glink.py --output log/ci/nabu-adsp-glink
           python3 tools/check_nabu_adsp_slim.py --output log/ci/nabu-adsp-slim
           python3 tools/check_nabu_tavil.py --output log/ci/nabu-tavil
+          python3 tools/check_nabu_audio_capture.py --output log/ci/nabu-audio-capture
           python3 tools/check_nabu_amp_i2c.py --output log/ci/nabu-amp-i2c
           python3 tools/check_nabu_cs35l41.py --output log/ci/nabu-cs35l41
           python3 tools/check_nabu_cs35l41_run.py --output log/ci/nabu-cs35l41-run

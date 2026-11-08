@@ -81,9 +81,12 @@ struct FakeIO {
     static constexpr uint32_t desc=0x100, tx=0x1000, rx=0x4000;
     std::array<uint8_t,65536> memory{};
     uint32_t size=4096, bells=0, writes=0;
-    unsigned playback_fills=0;
+    unsigned playback_fills=0,capture_frames=0;
     unsigned slim_stops=0;
     void slim_stop() {++slim_stops;}
+    void capture_data(unsigned period,uint32_t offset,uint32_t bytes) {
+        CHECK(period<4&&offset+bytes<=1920);capture_frames+=bytes/2;
+    }
     void playback_fill(unsigned period,uint32_t first_frame,uint32_t frames) {
         CHECK(period<4&&frames==1024&&first_frame%1024==0);++playback_fills;
     }
@@ -634,11 +637,49 @@ static void protected_playback_bridge() {
     CHECK(f.link.playback_ready()&&!f.link.result().unmap_sent);
     f.io.inject(intent_frame(f.peer,92));f.io.inject(intent_frame(f.peer,93));f.io.inject(intent_frame(f.peer,94));
     f.link.play();tx=f.step(now++);CHECK(tx.size()==4&&f.io.playback_fills==4);auto writes=tx;
+    // Capture shares APR while four real playback periods remain outstanding.
+    f.io.inject(intent_frame(f.peer,95));f.io.inject(intent_frame(f.peer,96));
+    f.io.inject(intent_frame(f.peer,97));f.io.inject(intent_frame(f.peer,98));
+    f.link.prepare_capture();tx=f.step(now++);q=tx.back();
+    for(unsigned i=0;i<21;++i) {
+        CHECK(q[20]==4&&(u32(q,28)&0xf0000000u)==0x60000000u);
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));
+        tx=f.step(now++);if(i<20)q=tx.back();
+    }
+    CHECK(f.link.capture_ready()&&f.link.playback_result().pending_mask==15);
+    f.link.start_capture();tx=f.step(now++);q=tx.back();
+    const unsigned capture_ops[]={0x10db4,0x10c10,0x10326,0x10325,0x100fa,0x100fa,0x100e5,0x10daa};
+    for(unsigned i=0;i<8;++i) {
+        CHECK(u32(q,32)==capture_ops[i]);auto response=playback_basic(q);
+        if(i==2) {put32(response,16,0x10329);put32(response,32,0);put16(response,36,0);put16(response,38,0);}
+        f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,response));
+        tx=f.step(now++);if(i<7)q=tx.back();
+    }
+    std::vector<Bytes> reads;for(const auto &v:tx)if(u16(v,0)==9)reads.push_back(v);
+    CHECK(reads.size()==4&&f.link.capture_result().pending==15&&!f.link.result().unmap_sent);
+    auto mic_done=pcm_read_done(reads[0],1920);put16(mic_done,6,0x201);put16(mic_done,10,0x201);
+    f.io.inject(frame(14,f.peer,u32(reads[0],4)));f.io.inject(data_frame(f.peer,1,mic_done));
+    f.io.inject(frame(14,f.peer,u32(writes[0],4)));f.io.inject(data_frame(f.peer,1,pcm_write_done(writes[0])));
+    tx=f.step(now++);CHECK(f.io.capture_frames==960&&f.link.playback_result().completions==1);
+    for(const auto &v:tx)if(u16(v,0)==9) {
+        if(u32(v,32)==0x10dac)reads[0]=v;else {CHECK(u32(v,32)==0x10dab);writes[0]=v;}
+    }
+    f.link.finish_capture();
+    for(const auto &v:reads) {
+        auto b=pcm_read_done(v,1920);put16(b,6,0x201);put16(b,10,0x201);
+        f.io.inject(frame(14,f.peer,u32(v,4)));f.io.inject(data_frame(f.peer,1,b));
+    }
+    tx=f.step(now++);q=tx.back();
+    for(unsigned op:{0x10bcdu,0x10327u,0x100e6u}) {
+        CHECK(u32(q,32)==op);f.io.inject(frame(14,f.peer,u32(q,4)));
+        f.io.inject(data_frame(f.peer,1,playback_basic(q)));tx=f.step(now++);if(op!=0x100e6)q=tx.back();
+    }
+    CHECK(f.link.capture_ready()&&f.io.capture_frames==960&&f.link.playback_result().pending_mask==15);
     f.link.abort_playback();
     for(const auto &w:writes) {
         f.io.inject(frame(14,f.peer,u32(w,4)));f.io.inject(data_frame(f.peer,1,pcm_write_done(w)));
     }
-    tx=f.step(now++);q=tx.back();CHECK(u32(q,32)==0x10bdb&&f.link.playback_result().completions==4);
+    tx=f.step(now++);q=tx.back();CHECK(u32(q,32)==0x10bdb&&f.link.playback_result().completions==5);
     f.io.inject(frame(14,f.peer,u32(q,4)));f.io.inject(data_frame(f.peer,1,playback_basic(q)));
     f.io.inject(data_frame(f.peer,2,pcm_response(0x10c1c,0,{})));f.step(now++);tx=f.step(now++);
     CHECK(tx.size()==1);q=tx[0];CHECK(u32(q,32)==0x10bcd);
