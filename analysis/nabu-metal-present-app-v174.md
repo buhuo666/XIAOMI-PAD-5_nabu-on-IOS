@@ -30,4 +30,20 @@ App Documents为`metal-present-result.json`、`metal-present-frames.bgra`、
 传感器全部由用户指定的“传感器3”处理。本轮不修改传感器，也不启动SLPI诊断。
 设备进入GPU实测前需确认没有其他窗口正在使用；不额外重启Android。
 
-本文件建立时源码已实现，尚未编译或部署；后续状态写入`log/host/gpu-v174/continuation.json`。
+## 构建和交接状态
+
+App源码834ef75a642822d7cc4d3d65e5aff3685bbc989d，原生CI42631914466成功。
+产物为`artifacts/ci/42631914466-attempt-1/nabu-metal-present-app-2/nabu-metal-present-app/NabuMetalPresent.ipa`，
+103,679字节；签名/依赖/rpath/容器检查通过，下载审查记录为
+`log/host/gpu-v174/app-download-review.json`。未重新审查第172轮前端。
+配套CI42631914559仍在编译8796参考内核，另两个作业已成功；不能提前称全套通过。
+
+主机检查器`tools/check_nabu_metal_present_frames.py`会检查双路实际像素、run_id、
+逐帧完成/保护区、表面复用计数和清除后的资源平衡。合成正确数据及旧帧、像素损坏、
+run_id错误、资源未释放、命令未完成、保护区损坏共7种检查结果符合预期；这只是主机
+检查器验证，不是真机GPU结果。记录为`log/host/gpu-v174/host-verifier-check.json`。
+
+用户明确选择：“等其他窗口测试结束，我再通知你”。当前未操作设备，未准备日志槽、
+部署、安装或启动第174轮。预备沿用display01已实测内核和第173轮mount-only启动包，
+配置不启用SLPI。收到用户通知后再建立绑定该内核的新日志清单，不能复用旧清单。
+后续状态写入`log/host/gpu-v174/continuation.json`。
