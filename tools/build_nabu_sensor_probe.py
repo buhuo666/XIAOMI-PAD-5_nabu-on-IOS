@@ -75,8 +75,8 @@ def main():
         run([*base,'-fobjc-arc',source,'-framework','Foundation','-framework','CoreMotion',
              '-framework','IOKit','-o',cli])
         macho_target(cli,2)
-        report['cli'] = {'file':cli.name,'bytes':cli.stat().st_size,
-            **sign(cli,'org.nabu.sensor-probe',entitlements),
+        report['cli'] = {'file':cli.name, **sign(cli,'org.nabu.sensor-probe',entitlements),
+            'bytes':cli.stat().st_size,
             'runtime_command':'/redwood/sbin/nabu-sensor-probe 30 /var/mobile/Media/NabuSensorProbe',
             'outputs':['sensor-events.jsonl','sensor-result.json']}
 
@@ -98,7 +98,7 @@ def main():
              '-framework','CoreMotion','-framework','IOKit','-framework','UIKit','-o',executable])
         macho_target(executable,2)
         report['app'] = {'directory':app.relative_to(output).as_posix(),
-            **sign(app,'org.nabu.SensorProbe',entitlements),'seconds':30,
+            **sign(app,'org.nabu.SensorProbe',entitlements),'executable_bytes':executable.stat().st_size,'seconds':30,
             'outputs':['Documents/sensor-events.jsonl','Documents/sensor-result.json']}
         ipa = output/'NabuSensorProbe.ipa'
         with zipfile.ZipFile(ipa,'w',zipfile.ZIP_DEFLATED) as archive:
@@ -110,8 +110,8 @@ def main():
              '-framework','CoreFoundation','-framework','IOKit',
              '-Wl,-install_name,/redwood/lib/libnabu.sensor-bridge.dylib','-o',bridge])
         macho_target(bridge,6)
-        report['bridge_compile'] = {'file':bridge.name,'bytes':bridge.stat().st_size,
-            **sign(bridge,'org.nabu.sensor-bridge'),'owner_required':True,'constructor_added':False}
+        report['bridge_compile'] = {'file':bridge.name, **sign(bridge,'org.nabu.sensor-bridge'),
+            'bytes':bridge.stat().st_size,'owner_required':True,'constructor_added':False}
         report['result'] = 'signed_not_run'
     except Exception as error:
         report.update(result='failed',error=str(error))
