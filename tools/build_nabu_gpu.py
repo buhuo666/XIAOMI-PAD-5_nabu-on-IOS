@@ -20,10 +20,12 @@ CPP = (
 )
 USERLAND_CPP = ('NativeAdrenoSubmit', 'NativeAdrenoTimer', 'NativeAdrenoUserClient',
                 'NativeAdrenoClient', 'NativeAdrenoPublish', 'NativeAdrenoScheduler')
+SYSTEM_METAL_CPP = ('NativeAdrenoAccelerator',)
 
 
-def defer_publication_initializer(path):
+def defer_class_initializer(path, source):
     """Keep the explicit late initializer, remove its automatic kmod entry."""
+    initializer = ('__GLOBAL__sub_I_' + source.name).encode()
     data=bytearray(path.read_bytes());at=32;sections=0;symbols=0
     for _ in range(struct.unpack_from('<I',data,16)[0]):
         command,size=struct.unpack_from('<II',data,at)
@@ -40,11 +42,12 @@ def defer_publication_initializer(path):
             for index in range(count):
                 symbol=symoff+index*16;nameoff=struct.unpack_from('<I',data,symbol)[0]+stroff
                 name=bytes(data[nameoff:data.index(0,nameoff)])
-                if name==b'__GLOBAL__sub_I_NativeAdrenoPublish.cpp':
+                if name==initializer:
                     data[symbol+4]|=1;symbols+=1
         at+=size
-    assert sections==symbols==1, 'Expected one publication initializer and function'
+    assert sections==symbols==1, 'Expected one class initializer and function for '+source.name
     path.write_bytes(data)
+    return initializer.decode()
 
 
 def main():
@@ -54,7 +57,10 @@ def main():
                         help='Flags emitted by build_nabu_aes.py against this kernel')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--userland', action='store_true', help='Publish the NativeAdreno IOService/BO transport without Metal or scanout')
+    parser.add_argument('--system-metal', action='store_true',
+                        help='Add the system Metal factory service; implies --userland, without scanout or cached imports')
     args = parser.parse_args()
+    if args.system_metal:args.userland=True
     args.output.mkdir(parents=True, exist_ok=True)
     staged = args.output/'source'
     staged.mkdir(exist_ok=True)
@@ -80,6 +86,7 @@ def main():
     (staged/'NabuGpuBuild.h').write_bytes(('#define NABU_GPU_SOURCE_ID "'+reference+'"\n').encode())
     flags = json.loads(args.compile_command.read_text())
     if args.userland:flags+=['-DNABU_GPU_USERLAND=1']
+    if args.system_metal:flags+=['-DNABU_GPU_SYSTEM_METAL=1']
     flags += ['-fno-common', '-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]
     cxx_only = {'-std=gnu++17', '-fapple-kext', '-fno-exceptions', '-fno-rtti',
                 '-fno-use-cxa-atexit', '-fno-c++-static-destructors', '-nostdinc++',
@@ -88,11 +95,13 @@ def main():
         flag for flag in flags[1:] if flag not in cxx_only]
     flags += ['-include', host_path(staged/'NabuGpuKernelCompat.h')]
     c_sources = sorted(p.name for p in (args.source/'gpu/upstream/ArmSmmu4K').glob('*.c'))
-    units = [name+'.cpp' for name in CPP + (USERLAND_CPP if args.userland else ())] + c_sources + ['AdrenoPM4.c']
+    units = [name+'.cpp' for name in CPP + (USERLAND_CPP if args.userland else ()) +
+             (SYSTEM_METAL_CPP if args.system_metal else ())] + c_sources + ['AdrenoPM4.c']
     report = {'reference_commit': reference, 'target': 'arm64-apple-ios16.5',
               'mode': 'A640 hardware execution; Metal publication not yet linked',
               'source_map': source_map, 'objects': [], 'commands': {}, 'compiled': False}
     if args.userland:report['mode']='A640 IOService userland transport; no Metal or scanout'
+    if args.system_metal:report['mode']='A640 system Metal factory service; no scanout or cached imports'
     for name in units:
         source = staged/name
         obj = args.output/('NabuGpu'+source.stem+'.o')
@@ -104,9 +113,11 @@ def main():
         (args.output/'build-report.json').write_text(json.dumps(report, indent=2)+'\n')
         if result.returncode:
             raise SystemExit(result.stderr.decode(errors='replace')[-8000:])
-        if args.userland and source.stem=='NativeAdrenoPublish':
-            defer_publication_initializer(obj)
-            report['deferred_initializer']=str(obj)
+        if (args.userland and source.stem=='NativeAdrenoPublish') or (
+                args.system_metal and source.stem=='NativeAdrenoAccelerator'):
+            symbol=defer_class_initializer(obj,source)
+            report.setdefault('deferred_initializers',{})[source.name]={'object':str(obj),'symbol':symbol}
+            if source.stem=='NativeAdrenoPublish':report['deferred_initializer']=str(obj)
         report['objects'].append(str(obj))
         print(name+' compiled', flush=True)
     report['compiled'] = True

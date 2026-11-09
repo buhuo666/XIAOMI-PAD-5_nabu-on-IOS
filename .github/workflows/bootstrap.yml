@@ -149,10 +149,10 @@ jobs:
           python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
           python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
             --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace --gpu
-      - name: Compile A640 userland GPU transport for 20F66
+      - name: Compile A640 system Metal factory transport for 20F66
         run: |
           python3 tools/check_nabu_gpu_clear.py --output log/ci/nabu-gpu-clear
-          python3 tools/build_nabu_gpu.py --userland --compile-command artifacts/nabu-wireless-objects/compile-command.json --output artifacts/nabu-gpu
+          python3 tools/build_nabu_gpu.py --system-metal --compile-command artifacts/nabu-wireless-objects/compile-command.json --output artifacts/nabu-gpu
       - name: Compile Nabu native speaker audio provider
         run: python3 tools/build_nabu_audio_plugin.py --output artifacts/nabu-audio-plugin
       - name: Verify linked kernel against the selected export contract

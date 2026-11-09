@@ -54,7 +54,12 @@ static NativeAdrenoIntegration integration = {};
 extern "C" kmod_info_t g_kernel_kmod_info;
 extern "C" void native_adreno_publish_static_init(void)
     __asm__("__GLOBAL__sub_I_NativeAdrenoPublish.cpp");
-#if !defined(NABU_GPU_USERLAND) || !NABU_GPU_USERLAND
+#if defined(NABU_GPU_SYSTEM_METAL) && NABU_GPU_SYSTEM_METAL
+extern "C" void native_adreno_accelerator_static_init(void)
+    __asm__("__GLOBAL__sub_I_NativeAdrenoAccelerator.cpp");
+#endif
+#if (defined(NABU_GPU_SYSTEM_METAL) && NABU_GPU_SYSTEM_METAL) || \
+    !defined(NABU_GPU_USERLAND) || !NABU_GPU_USERLAND
 extern "C" IOReturn native_adreno_accelerator_publish(IOService *,uint32_t);
 #endif
 
@@ -651,20 +656,23 @@ extern "C" IOReturn native_adreno_control_publish(void)
 extern "C" IOReturn native_adreno_initialize_classes(void)
 {
     static bool initialized=false;
+    static IOReturn initializationStatus=kIOReturnNotReady;
     if(initialized) {
-        return kIOReturnBusy;
+        return initializationStatus==kIOReturnSuccess?kIOReturnBusy:initializationStatus;
     }
     void *handle=OSMetaClass::preModLoad(g_kernel_kmod_info.name);
     if(!handle) {
         return kIOReturnNoResources;
     }
-    native_adreno_publish_static_init();
-    const OSReturn status=OSMetaClass::postModLoad(handle);
-    if(status!=kOSReturnSuccess) {
-        return status;
-    }
+    /* The GPU start worker is the sole caller. Once the constructors run,
+     * retain even a failed registration result rather than constructing twice. */
     initialized=true;
-    return kIOReturnSuccess;
+    native_adreno_publish_static_init();
+#if defined(NABU_GPU_SYSTEM_METAL) && NABU_GPU_SYSTEM_METAL
+    native_adreno_accelerator_static_init();
+#endif
+    initializationStatus=OSMetaClass::postModLoad(handle);
+    return initializationStatus;
 }
 
 void nativeAdrenoMailboxPoller(void *,wait_result_t)
@@ -1884,7 +1892,8 @@ extern "C" IOReturn native_adreno_publish(NativeAdrenoVm *vm,NativeAdrenoSubmit 
     service->setName("NativeAdrenoGpu");
     service->registerService();
 
-#if !defined(NABU_GPU_USERLAND) || !NABU_GPU_USERLAND
+#if (defined(NABU_GPU_SYSTEM_METAL) && NABU_GPU_SYSTEM_METAL) || \
+    !defined(NABU_GPU_USERLAND) || !NABU_GPU_USERLAND
     unsigned metal=1;
     PE_parse_boot_argn("native-adreno-metal",&metal,sizeof(metal));
     if(metal) {

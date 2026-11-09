@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Explicit Metal frontend construction over the qualified NativeAdreno Vulkan channel.
+// Explicit or standard-factory Metal construction over the qualified NativeAdreno channel.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <objc/runtime.h>
-#include "NativeBridgeMetalFrontend.h"
-#include "bridge/NativeMetalObjects.h"
+#include "NabuMetalFrontendApi.h"
 #include "NativeAdrenoABI.h"
 #include <atomic>
 #include <cstdio>
@@ -17,6 +16,8 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #ifndef NABU_EXPECTED_MTL_DEVICE_BYTES
@@ -37,6 +38,7 @@ static std::atomic<unsigned> lastMarker{0};
 static std::atomic<bool> done{false};
 static char missingSelector[160];
 static char directory[1024];
+static bool systemFactory = false;
 static const char *kService = "NativeAdrenoGpuPublished";
 static NSString *const kPixelFile = @"/var/mobile/Media/nabu-metal-readback.rgba";
 static NSString *const kPixelMetadata = @"/var/mobile/Media/nabu-metal-readback.json";
@@ -50,8 +52,11 @@ struct IOKit {
     kern_return_t (*open)(mach_port_t, mach_port_t, uint32_t, mach_port_t *) = nullptr;
     kern_return_t (*close)(mach_port_t) = nullptr;
     kern_return_t (*method)(mach_port_t, uint32_t, const void *, size_t, void *, size_t *) = nullptr;
+    CFTypeRef (*property)(mach_port_t, CFStringRef, CFAllocatorRef, uint32_t) = nullptr;
     mach_port_t service = MACH_PORT_NULL;
+    mach_port_t accelerator = MACH_PORT_NULL;
     uint64_t identity = 0;
+    uint64_t acceleratorIdentity = 0;
 
     bool load() {
         library = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW | RTLD_LOCAL);
@@ -61,10 +66,23 @@ struct IOKit {
         LOAD(release, "IOObjectRelease"); LOAD(registryID, "IORegistryEntryGetRegistryEntryID");
         LOAD(open, "IOServiceOpen"); LOAD(close, "IOServiceClose");
         LOAD(method, "IOConnectCallStructMethod");
+        LOAD(property, "IORegistryEntryCreateCFProperty");
 #undef LOAD
         auto match = matching(kService);
         service = match ? find(MACH_PORT_NULL, match) : MACH_PORT_NULL;
         return service && registryID(service, &identity) == KERN_SUCCESS;
+    }
+    bool acceleratorReady() {
+        auto match = matching("AGXAccelerator");
+        accelerator = match ? find(MACH_PORT_NULL, match) : MACH_PORT_NULL;
+        if (!accelerator || registryID(accelerator, &acceleratorIdentity) != KERN_SUCCESS || !acceleratorIdentity) return false;
+        CFTypeRef plugin = property(accelerator, CFSTR("MetalPluginName"), kCFAllocatorDefault, 0);
+        CFTypeRef cls = property(accelerator, CFSTR("MetalPluginClassName"), kCFAllocatorDefault, 0);
+        const bool ready = plugin && cls && CFEqual(plugin, CFSTR("NativeAdrenoMetal")) &&
+            CFEqual(cls, CFSTR("NativeAdrenoMetalDevice"));
+        if (plugin) CFRelease(plugin);
+        if (cls) CFRelease(cls);
+        return ready;
     }
     void marker(unsigned value) const {
         if (!service) return;
@@ -77,6 +95,7 @@ struct IOKit {
         for (unsigned i = 0; i < 63 && text[i]; ++i) marker(0x7000u | uint8_t(text[i]));
     }
     ~IOKit() {
+        if (accelerator) (void)release(accelerator);
         if (service) (void)release(service);
         if (library) dlclose(library);
     }
@@ -99,6 +118,37 @@ static void missing(const char *cls, const char *selector) {
     printf("NABU_METAL missing=%s\n", missingSelector);
 }
 static void problem(const char *text, void *) { printf("NABU_METAL frontend=%s\n", text); }
+
+static bool waitForMountedBundle() {
+    struct timeval boot{};
+    size_t bytes = sizeof(boot);
+    if (sysctlbyname("kern.boottime", &boot, &bytes, nullptr, 0) || bytes != sizeof(boot))
+        return fail("cannot identify the current boot for mount readiness");
+    NSString *path = @"/var/run/nabu-system-metal.ready";
+    printf("NABU_METAL waiting_for_mount=%s timeout_seconds=30\n", path.fileSystemRepresentation);
+    for (unsigned attempt = 0; attempt < 300; ++attempt) {
+        @autoreleasepool {
+            struct stat info{};
+            if (!stat(path.fileSystemRepresentation, &info) && S_ISREG(info.st_mode) && info.st_uid == 0 && !(info.st_mode & 0022)) {
+                NSData *data = [NSData dataWithContentsOfFile:path];
+                id value = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nullptr] : nil;
+                if ([value isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *ready = value;
+                    if ([ready[@"version"] unsignedIntValue] == 1 &&
+                        [ready[@"boot_sec"] longLongValue] == boot.tv_sec && [ready[@"boot_usec"] intValue] == boot.tv_usec &&
+                        [ready[@"source"] isEqual:@"/redwood/metal-addons"] &&
+                        [ready[@"original_bundle_preserved"] boolValue] && [ready[@"bundle_readback_equal"] boolValue] &&
+                        [ready[@"readonly_union"] boolValue]) {
+                        printf("NABU_METAL mount_ready=1 boot_sec=%lld boot_usec=%d\n", (long long)boot.tv_sec, (int)boot.tv_usec);
+                        return true;
+                    }
+                }
+            }
+        }
+        usleep(100000);
+    }
+    return fail("no verified readonly plugin mount for this boot within 30 seconds");
+}
 
 static bool finish(id<MTLCommandBuffer> command) {
     if (!command) return fail("command buffer unavailable");
@@ -227,6 +277,7 @@ static bool tests(id<MTLDevice> device, id<MTLLibrary> library) {
         NSDictionary *metadata = @{@"source": @"completed MTLBlit texture-to-buffer copy",
             @"pixel_file": kPixelFile, @"format": @"RGBA8Unorm", @"width": @(side), @"height": @(side),
             @"bytes_per_row": @(side * 4), @"bytes": @(written), @"source_bytes_per_row": @(row),
+            @"construction": systemFactory ? @"MTLCreateSystemDefaultDevice" : @"native_bridge_metal_open",
             @"matching_pixels": @(result.renderPixels), @"red_pixels": @(result.renderColored),
             @"other_pixels": @(result.renderOther), @"matching_padding_bytes": @(result.renderPadding)};
         NSData *metadataData = [NSJSONSerialization dataWithJSONObject:metadata options:NSJSONWritingPrettyPrinted error:&error];
@@ -264,6 +315,18 @@ static void *worker(void *) {
                 params.abi_version != NativeAdrenoAbiVersion || info.chip_id != 0x06040001) {
                 fail("GPU ABI preflight failed"); done = true; return nullptr;
             }
+            if (systemFactory) {
+                stage("plugin_mount_ready", 0x6b06);
+                if (!waitForMountedBundle()) { done = true; return nullptr; }
+                stage("accelerator_ready", 0x6b05);
+                if (!io.acceleratorReady()) { fail("AGXAccelerator or its Metal plugin properties not ready"); done = true; return nullptr; }
+                if (access("/System/Library/Extensions/NativeAdrenoMetal.bundle/Info.plist", R_OK) ||
+                    access("/System/Library/Extensions/NativeAdrenoMetal.bundle/NativeAdrenoMetal", R_OK)) {
+                    fail("standard-discovery bundle not mounted"); done = true; return nullptr;
+                }
+                printf("NABU_METAL factory_ready registry=%llu plugin=NativeAdrenoMetal class=NativeAdrenoMetalDevice\n",
+                       (unsigned long long)io.acceleratorIdentity);
+            }
             setenv("TU_DARWIN_SERVICE", kService, 1);
             setenv("TU_DARWIN_OPEN_TYPE", "0x4147", 1);
             setenv("TU_DEBUG", "nocb", 1);
@@ -276,15 +339,36 @@ static void *worker(void *) {
                 fail(error.localizedDescription.UTF8String); done = true; return nullptr;
             }
             native_bridge_metal_set_problem_observer(problem, nullptr);
-            stage("frontend_open", 0x6b03);
-            id<MTLDevice> device = native_bridge_metal_open(loader.fileSystemRepresentation, cache.fileSystemRepresentation, io.identity, missing);
-            if (!device) { fail(nmb_last_error()); done = true; return nullptr; }
+            stage(systemFactory ? "system_factory" : "frontend_open", 0x6b03);
+            id<MTLDevice> device = nil;
+            Class<NabuMetalFactoryDiagnostics> factory = Nil;
+            if (systemFactory) {
+                // First and only factory request, after the real service and bundle are ready.
+                device = MTLCreateSystemDefaultDevice();
+                factory = (Class<NabuMetalFactoryDiagnostics>)NSClassFromString(@"NativeAdrenoMetalDevice");
+                if (!device) {
+                    fail(factory && [(id)factory respondsToSelector:@selector(nabuLastError)] ?
+                         [factory nabuLastError] : "MTLCreateSystemDefaultDevice returned nil");
+                    done = true; return nullptr;
+                }
+                if (!factory || ![(id)factory respondsToSelector:@selector(nabuRegistryID)] ||
+                    [factory nabuRegistryID] != io.acceleratorIdentity || [factory nabuOpenCount] != 1 ||
+                    device.registryID != io.acceleratorIdentity || strcmp(object_getClassName(device), "NativeBridgeMetalDevice")) {
+                    fail("standard factory returned an unexpected device or registry identity"); done = true; return nullptr;
+                }
+            } else {
+                device = native_bridge_metal_open(loader.fileSystemRepresentation, cache.fileSystemRepresentation, io.identity, missing);
+                if (!device) { fail(nmb_last_error()); done = true; return nullptr; }
+            }
             printf("NABU_METAL device=%s class=%s registry=%llu\n", device.name.UTF8String, object_getClassName(device),
                    (unsigned long long)device.registryID);
             stage("metallib", 0x6b04);
             id<MTLLibrary> library = [device newLibraryWithFile:shader error:&error];
             if (!library) { fail(error.localizedDescription.UTF8String); done = true; return nullptr; }
-            result.ok = tests(device, library) && !missingSelector[0];
+            const bool passed = tests(device, library);
+            if (systemFactory && factory)
+                snprintf(missingSelector, sizeof(missingSelector), "%s", [factory nabuMissingSelector]);
+            result.ok = passed && !missingSelector[0];
             if (result.ok) stage("complete", 0x6bf0);
         } @catch (NSException *exception) {
             fail(exception.reason.UTF8String ?: exception.name.UTF8String);
@@ -302,10 +386,11 @@ static void watchdog(int) {
 } // namespace
 
 int main(int argc, char **argv) {
-    if (argc != 2 || strcmp(argv[1], "--run-metal")) {
-        fprintf(stderr, "Usage: nabu-gpu-metal-probe --run-metal\n");
+    if (argc != 2 || (strcmp(argv[1], "--run-metal") && strcmp(argv[1], "--run-system-metal"))) {
+        fprintf(stderr, "Usage: nabu-gpu-metal-probe --run-metal | --run-system-metal\n");
         return 2;
     }
+    systemFactory = !strcmp(argv[1], "--run-system-metal");
     setvbuf(stdout, nullptr, _IONBF, 0);
     uint32_t pathBytes = sizeof(directory);
     if (_NSGetExecutablePath(directory, &pathBytes)) return 2;
@@ -339,7 +424,9 @@ int main(int argc, char **argv) {
             @"fill_bytes": @(result.fillBytes), @"compute_words": @(result.computeWords), @"compute_guard_words": @(result.computeGuards),
             @"render_pixels": @(result.renderPixels), @"colored_pixels": @(result.renderColored), @"other_pixels": @(result.renderOther),
             @"render_padding_bytes": @(result.renderPadding), @"completed_command_buffers": @(result.completed),
-            @"error": @(result.error), @"missing_selector": @(missingSelector), @"construction": @"native_bridge_metal_open",
+            @"error": @(result.error), @"missing_selector": @(missingSelector),
+            @"construction": systemFactory ? @"MTLCreateSystemDefaultDevice" : @"native_bridge_metal_open",
+            @"accelerator_registry_id": @(io.acceleratorIdentity),
             @"pixel_file": kPixelFile, @"pixel_metadata": kPixelMetadata};
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:0 error:nullptr];
         if (json) { fwrite(json.bytes, 1, json.length, stdout); putchar('\n'); }

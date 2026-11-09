@@ -71,6 +71,12 @@ and 20F66 system:
   IOService userland and Metal builds. User-owned buffers use Normal-NC and
   bypass the cached pool; both client modes get the full VM object capacity.
   Diagnostic builds retain 16 objects. This does not enable cached imports.
+- `NativeAdrenoAccelerator.cpp` and `NabuGpuAcceleratorABI.h` add an optional
+  system factory service via `--system-metal`. The shim inherits the existing
+  source-kernel IOAcceleratorES by symbol, exposes the two Metal plugin
+  properties and forwards the qualified user-client protocol. Its constructor
+  shares the explicit late registration transaction. This mode does not load
+  original IOGPUFamily, enable cached imports or attach a display presenter.
 
 No vendor firmware, Apple binaries or generated GPU object files belong here.
 Hardware execution, rendering and 20F66 client compatibility require separate
