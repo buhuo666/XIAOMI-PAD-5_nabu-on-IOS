@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/gpu-metal-present-app.yml'
       - 'tools/build_nabu_metal_present_app.py'
+      - 'tools/check_nabu_metal_texture_pattern.py'
+      - 'tools/check_nabu_metal_present_frames.py'
       - 'userland/nabu/apps/MetalPresent/**'
   workflow_dispatch:
 permissions:
@@ -24,6 +26,10 @@ jobs:
         run: >-
           python3 tools/fetch_sources.py --only nabu
           --report artifacts/metal-present-app-source.json
+      - name: Cross-check texture pixels and recovered-data rejection cases
+        run: >-
+          python3 tools/check_nabu_metal_texture_pattern.py
+          --output artifacts/nabu-metal-present-host
       - name: Reuse the frontend and shaders qualified in run 172
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,4 +48,7 @@ jobs:
           path: |
             artifacts/nabu-metal-present-app/
             artifacts/metal-present-app-source.json
+            artifacts/nabu-metal-present-host/report.json
+            artifacts/nabu-metal-present-host/compile.log
+            artifacts/nabu-metal-present-host/run.log
           retention-days: 14

@@ -7,6 +7,7 @@
 #import <objc/runtime.h>
 #include "NabuMetalFrontendApi.h"
 #include "NabuMetalSurfaceStats.h"
+#include "TexturePattern.h"
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
@@ -17,10 +18,8 @@
 #include <unistd.h>
 
 namespace {
-constexpr NSUInteger Width = 32, Height = 32, RowBytes = 256;
-constexpr NSUInteger FrameCount = 64, FrameDelayMS = 125;
-constexpr NSUInteger Prefix = 256, Suffix = 256, ReadbackBytes = Prefix + RowBytes * Height + Suffix;
-constexpr uint8_t Guard = 0x6c;
+using namespace NabuTexturePattern;
+constexpr NSUInteger FrameDelayMS = 125, ReadbackBytes = StorageBytes;
 static const float Quad[6][2] = {{-1, 1}, {1, 1}, {-1, -1}, {1, 1}, {1, -1}, {-1, -1}};
 static NSMutableDictionary *record;
 static NSURL *documents;
@@ -162,20 +161,6 @@ static void snapshot(NSString *name) {
     update(@{name: read ? stats(value) : @{@"available": @NO}});
 }
 
-struct Pixel { uint8_t b, g, r, a; };
-static NSUInteger squareX(NSUInteger frame) {
-    const NSUInteger position = frame % 32;
-    return position <= 16 ? position : 32 - position;
-}
-
-static Pixel expected(NSUInteger x, NSUInteger y, NSUInteger frame) {
-    // Six cells encode all 64 frame numbers, so a stale repeated frame differs.
-    if (y < 2 && x < 24) return (frame >> (x / 4)) & 1 ? Pixel{0, 255, 0, 255} : Pixel{255, 0, 0, 255};
-    const NSUInteger left = squareX(frame);
-    if (x >= left && x < left + 16 && y >= 8 && y < 24) return {255, 0, 255, 255};
-    return {0, uint8_t(((y / 4) + frame / 4) & 1 ? 255 : 0), 255, 255};
-}
-
 static NSUInteger pixelErrors(const uint8_t *bytes, NSUInteger row, NSUInteger frame) {
     NSUInteger errors = 0;
     for (NSUInteger y = 0; y < Height; ++y) for (NSUInteger x = 0; x < Width; ++x) {
@@ -200,10 +185,10 @@ static id<MTLRenderPipelineState> makePipeline(id<MTLDevice> device) {
     if (!library) { fail(error.localizedDescription ?: @"Shader library creation failed"); return nil; }
     MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
     descriptor.vertexFunction = [library newFunctionWithName:@"nabu_surface_vertex"];
-    descriptor.fragmentFunction = [library newFunctionWithName:@"nabu_surface_color"];
+    descriptor.fragmentFunction = [library newFunctionWithName:@"nabu_surface_sample"];
     descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
     if (!descriptor.vertexFunction || !descriptor.fragmentFunction) {
-        fail(@"Qualified color shader functions are missing"); return nil;
+        fail(@"Qualified texture sampling shader functions are missing"); return nil;
     }
     id<MTLRenderPipelineState> pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
     if (!pipeline) fail(error.localizedDescription ?: @"Pipeline creation failed");
@@ -211,7 +196,8 @@ static id<MTLRenderPipelineState> makePipeline(id<MTLDevice> device) {
 }
 
 static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderPipelineState> pipeline,
-                   id<MTLCommandQueue> queue, id<MTLBuffer> readback) {
+                   id<MTLCommandQueue> queue, id<MTLBuffer> readback,
+                   id<MTLTexture> source, NSMutableData *upload) {
     id<MTLTexture> texture = drawable.texture;
     if (!texture || texture.width != Width || texture.height != Height ||
         texture.pixelFormat != MTLPixelFormatBGRA8Unorm || texture.framebufferOnly)
@@ -226,6 +212,17 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     updateFrame(frame, @{@"drawable_id": @(drawable.drawableID), @"texture_class": @(object_getClassName(texture)),
         @"surface_id": @(IOSurfaceGetID(surface)), @"surface_row_bytes": @(surfaceRow),
         @"surface_allocation_bytes": @(IOSurfaceGetAllocSize(surface)), @"texture_usage": @(texture.usage)});
+    auto *input = static_cast<uint8_t *>(upload.mutableBytes);
+    memset(input, Guard, ReadbackBytes);
+    for (NSUInteger y = 0; y < Height; ++y) for (NSUInteger x = 0; x < Width; ++x) {
+        const Pixel color = expected(x, y, frame);
+        memcpy(input + Prefix + y * RowBytes + x * 4, &color, sizeof(color));
+    }
+    // CPU writes only the source texture. The drawable is written by the render pass.
+    [source replaceRegion:MTLRegionMake2D(0, 0, Width, Height) mipmapLevel:0
+        withBytes:input + Prefix bytesPerRow:RowBytes];
+    updateFrame(frame, @{@"source_upload_epoch": @(frame), @"source_upload_bytes": @(Width * Height * 4),
+        @"source_upload_row_bytes": @(RowBytes), @"source_texture_class": @(object_getClassName(source))});
     memset(readback.contents, Guard, ReadbackBytes);
     id<MTLCommandBuffer> command = [queue commandBuffer];
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -237,23 +234,8 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     if (!encoder) return fail(@"Drawable render encoder creation failed");
     [encoder setRenderPipelineState:pipeline];
     [encoder setVertexBytes:Quad length:sizeof(Quad) atIndex:0];
-    for (NSUInteger stripe = 0; stripe < 8; ++stripe) {
-        const float color[4] = {1, ((stripe + frame / 4) & 1) ? 1.0f : 0.0f, 0, 1};
-        [encoder setScissorRect:(MTLScissorRect){0, stripe * 4, Width, 4}];
-        [encoder setFragmentBytes:color length:sizeof(color) atIndex:0];
-        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
-    }
-    const float center[4] = {1, 0, 1, 1};
-    [encoder setScissorRect:(MTLScissorRect){squareX(frame), 8, 16, 16}];
-    [encoder setFragmentBytes:center length:sizeof(center) atIndex:0];
+    [encoder setFragmentTexture:source atIndex:0];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
-    for (NSUInteger bit = 0; bit < 6; ++bit) {
-        const bool set = (frame >> bit) & 1;
-        const float color[4] = {0, set ? 1.0f : 0.0f, set ? 0.0f : 1.0f, 1};
-        [encoder setScissorRect:(MTLScissorRect){bit * 4, 0, 4, 2}];
-        [encoder setFragmentBytes:color length:sizeof(color) atIndex:0];
-        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
-    }
     [encoder endEncoding];
     id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
     if (!blit) return fail(@"Drawable readback encoder creation failed");
@@ -273,6 +255,9 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
 
     const auto *bytes = static_cast<const uint8_t *>(readback.contents);
     const NSUInteger gpuErrors = pixelErrors(bytes + Prefix, RowBytes, frame);
+    const NSUInteger inputErrors = pixelErrors(input + Prefix, RowBytes, frame);
+    NSUInteger inputGuards = guardErrors(input, Prefix) + guardErrors(input + Prefix + RowBytes * Height, Suffix);
+    for (NSUInteger y = 0; y < Height; ++y) inputGuards += guardErrors(input + Prefix + y * RowBytes + Width * 4, RowBytes - Width * 4);
     NSUInteger guards = guardErrors(bytes, Prefix) + guardErrors(bytes + Prefix + RowBytes * Height, Suffix);
     for (NSUInteger y = 0; y < Height; ++y) guards += guardErrors(bytes + Prefix + y * RowBytes + Width * 4, RowBytes - Width * 4);
     const kern_return_t locked = IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
@@ -284,13 +269,15 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     const kern_return_t unlocked = IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
     updateFrame(frame, @{@"gpu_pixels_checked": @(Width * Height), @"gpu_pixel_errors": @(gpuErrors),
         @"direct_surface_pixels_checked": @(Width * Height), @"direct_surface_pixel_errors": @(directErrors),
-        @"readback_guard_errors": @(guards), @"surface_unlock_status": @(unlocked)});
+        @"readback_guard_errors": @(guards), @"surface_unlock_status": @(unlocked),
+        @"source_input_pixel_errors": @(inputErrors), @"source_input_guard_errors": @(inputGuards)});
     NSMutableData *packed = [NSMutableData dataWithCapacity:Width * Height * 4];
     for (NSUInteger y = 0; y < Height; ++y) [packed appendBytes:bytes + Prefix + y * RowBytes length:Width * 4];
     [gpuFrames appendData:packed];
     [surfaceFrames appendData:direct];
     update(@{@"completed_command_buffers": @(frame + 1)});
-    if (gpuErrors || directErrors || guards || unlocked) return fail(@"Drawable GPU pixels, surface pixels or guards differ");
+    if (gpuErrors || directErrors || guards || unlocked || inputErrors || inputGuards)
+        return fail(@"Sampled GPU pixels, IOSurface pixels or input/readback guards differ");
     return true;
 }
 
@@ -324,6 +311,9 @@ static bool saveFrames() {
 @property(nonatomic, strong) id<MTLRenderPipelineState> pipeline;
 @property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
 @property(nonatomic, strong) id<MTLBuffer> readback;
+@property(nonatomic, strong) id<MTLTexture> sourceTexture;
+@property(nonatomic, weak) id<MTLTexture> sourceTextureWitness;
+@property(nonatomic, strong) NSMutableData *upload;
 @property(nonatomic) BOOL started;
 @property(nonatomic) BOOL rendering;
 @property(nonatomic) BOOL removalRequested;
@@ -342,7 +332,7 @@ static bool saveFrames() {
     stage(@"view_did_load");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     UILabel *title = [UILabel new];
-    title.text = @"GPU 连续呈现测试";
+    title.text = @"GPU 纹理呈现测试";
     title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
     title.textAlignment = NSTextAlignmentCenter;
     self.statusLabel = [UILabel new];
@@ -356,7 +346,7 @@ static bool saveFrames() {
     [self.clearButton addTarget:self action:@selector(removePattern) forControlEvents:UIControlEventTouchUpInside];
     self.clearButton.enabled = NO;
     UILabel *hint = [UILabel new];
-    hint.text = @"请观察紫色方块来回移动、红黄条纹变化。\n完成后点“清除图案”，再返回桌面。";
+    hint.text = @"请观察彩色纹理变化和紫色方块移动。\n完成后点“清除图案”，再返回桌面。";
     hint.numberOfLines = 0;
     hint.textAlignment = NSTextAlignmentCenter;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, self.statusLabel, self.displayView, self.clearButton, hint]];
@@ -445,16 +435,25 @@ static bool saveFrames() {
                     self.pipeline = makePipeline(self.metalDevice);
                     self.commandQueue = [self.metalDevice newCommandQueue];
                     self.readback = [self.metalDevice newBufferWithLength:ReadbackBytes options:MTLResourceStorageModeShared];
+                    MTLTextureDescriptor *source = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                        width:Width height:Height mipmapped:NO];
+                    source.storageMode = MTLStorageModeShared;
+                    source.usage = MTLTextureUsageShaderRead;
+                    self.sourceTexture = [self.metalDevice newTextureWithDescriptor:source];
+                    self.sourceTextureWitness = self.sourceTexture;
+                    self.upload = [NSMutableData dataWithLength:ReadbackBytes];
+                    update(@{@"source_texture_created": @(self.sourceTexture != nil)});
                 }
                 if (!self.pipeline) { /* makePipeline saved the actual failure. */ }
-                else if (!self.commandQueue || !self.readback || !self.readback.contents) fail(@"Command queue or readback allocation failed");
+                else if (!self.commandQueue || !self.readback || !self.readback.contents || !self.sourceTexture || !self.upload)
+                    fail(@"Command queue, texture input or readback allocation failed");
                 else {
                     const CFTimeInterval begin = CACurrentMediaTime();
                     drawable = [self.metalLayer nextDrawable];
                     const CFTimeInterval acquired = CACurrentMediaTime();
                     updateFrame(frame, @{@"next_drawable_ms": @((acquired - begin) * 1000), @"acquired_uptime": @(acquired)});
                     if (!drawable) fail(@"CAMetalLayer nextDrawable returned nil");
-                    else passed = render(drawable, frame, self.pipeline, self.commandQueue, self.readback);
+                    else passed = render(drawable, frame, self.pipeline, self.commandQueue, self.readback, self.sourceTexture, self.upload);
                 }
             } @catch (NSException *exception) { fail(exception.reason ?: exception.name); }
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -523,11 +522,13 @@ static bool saveFrames() {
     const bool balanced = after.surface_imports_made - beforeLayer.surface_imports_made ==
         after.surface_imports_released - beforeLayer.surface_imports_released &&
         after.surface_imports_held == beforeLayer.surface_imports_held;
+    const bool sourceReleased = self.sourceTextureWitness == nil;
     update(@{@"counters_after_layer_removal": stats(after), @"frontend_imports_returned_to_baseline": @(balanced),
+        @"source_texture_wrapper_released": @(sourceReleased),
         @"release_check_attempts": @(self.releaseAttempts)});
-    if (!balanced && self.releaseAttempts < 30)
+    if ((!balanced || !sourceReleased) && self.releaseAttempts < 30)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkReleasedImports]; });
-    else update(@{@"release_check_complete": @YES, @"resource_release_passed": @(balanced)});
+    else update(@{@"release_check_complete": @YES, @"resource_release_passed": @(balanced && sourceReleased)});
 }
 
 - (void)removePattern {
@@ -541,6 +542,8 @@ static bool saveFrames() {
     self.metalLayer.device = nil;
     self.metalLayer = nil;
     self.readback = nil;
+    self.sourceTexture = nil;
+    self.upload = nil;
     self.commandQueue = nil;
     self.pipeline = nil;
     self.metalDevice = nil;
@@ -581,7 +584,9 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         record = [@{@"run_id": @((uint64_t)([NSDate date].timeIntervalSince1970 * 1000000)),
-            @"test_revision": @175, @"mode": @"CAMetalLayer sequential frames", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"test_revision": @176, @"mode": @"CAMetalLayer sampled texture frames", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"width": @(Width), @"height": @(Height), @"pattern": @"coordinate-gradient-frame-v1",
+            @"fragment_shader": @"nabu_surface_sample", @"source_upload_row_bytes": @(RowBytes),
             @"process_id": @(getpid()), @"factory_call_count": @0,
             @"result": @"running", @"gpu_test_passed": @NO, @"present_requested": @NO,
             @"presentation_callbacks": @0, @"present_requests": @0, @"verified_frames": @0,
