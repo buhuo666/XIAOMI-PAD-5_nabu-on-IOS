@@ -1,0 +1,27 @@
+diff --git a/crates/metal2vulkan-runtime/src/copied.rs b/crates/metal2vulkan-runtime/src/copied.rs
+--- a/crates/metal2vulkan-runtime/src/copied.rs
++++ b/crates/metal2vulkan-runtime/src/copied.rs
+@@ -214,7 +214,7 @@
+ /// Read the caller's `into.len()` bytes at `pages` into `into` through the kernel, which answers a
+ /// page the process cannot read (unmapped, or mapped without read permission) with a failure, not a
+-/// fault: `false` then. On Linux `process_vm_readv` of the process's own pages; on macOS
++/// fault: `false` then. On Linux `process_vm_readv` of the process's own pages; on macOS and iOS
+ /// `mach_vm_read_overwrite` of its own task's; elsewhere nothing is read and the answer is `false`.
+ #[cfg(target_os = "linux")]
+ fn read_pages(pages: NonNull<u8>, into: &mut [u8]) -> bool {
+     let mut done = 0;
+@@ -241,5 +241,5 @@
+-/// [`read_pages`] on macOS.
+-#[cfg(target_os = "macos")]
++/// [`read_pages`] on macOS and iOS.
++#[cfg(any(target_os = "macos", target_os = "ios"))]
+ fn read_pages(pages: NonNull<u8>, into: &mut [u8]) -> bool {
+     unsafe extern "C" {
+         /// `<mach/mach_init.h>`: the port of this process's task.
+@@ -270,5 +270,5 @@
+ /// [`read_pages`] where the system is not asked: nothing is copied.
+-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
++#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+ fn read_pages(_pages: NonNull<u8>, _into: &mut [u8]) -> bool {
+     false
+ }

@@ -92,3 +92,16 @@ log/host/gpu-iosurface-default-probe/report.json：实际分类函数经Clang18�
 像素/guard判定和颜色绘图函数与170完全相同，未重复构建模拟GPU测试。
 另检查默认创建仅五项属性、无独立BO owner、无提前释放、工厂只调用一次和64CB条件。
 git diff --check通过。完整Objective-C++编译和设备执行由后续CI/父任务负责。
+
+## 第171轮失败后的Mach读取自检
+
+第171轮实机在surface_import失败，尚未执行GPU命令。后续测试在普通surface创建、
+整份allocSize写入既有0xc7保护字节之后，GPU导入之前，新增实际
+mach_vm_read_overwrite(mach_task_self(), ...)调用。目标是独立malloc CPU缓冲，
+预先清零；须KERN_SUCCESS、完整读取allocSize且memcmp完全相同才继续。
+不改变surface原始初始化、32个GPU epoch、64个command或路径分类。
+
+marker为0x6e12，stage=surface_mach_read。JSON新增mach_read_attempted、
+mach_read_status（未调用为-1）、mach_read_requested_bytes、mach_read_copied_bytes、
+mach_read_equal和mach_read_passed。该CPU诊断复制不计入runtime的copied-host-buffer
+统计，不代表GPU导入或副本后端已经成功。真实Mach调用的验收由后续iOS实机完成。

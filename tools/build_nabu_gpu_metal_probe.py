@@ -24,6 +24,7 @@ FRONTEND = 'libnabu-metal-frontend.dylib'
 MTL_DEVICE_BYTES_20F66 = 528
 QUALIFIED_FACTORY_RUN = '42603179764'
 SURFACE_STATS_PATCH = '0026-nabu-read-only-surface-counts.patch'
+SURFACE_COPY_READ_PATCH = '0027-nabu-ios-copied-host-read.patch'
 
 
 def load_module(name, path):
@@ -40,12 +41,15 @@ def replace_once(path, old, new):
     path.write_text(source.replace(old, new), encoding='utf-8')
 
 
-def stage_surface_statistics(root, metal):
-    """Append read-only exports to derived sources; leave runtime policies intact."""
+def stage_surface_statistics(root, metal, copy_read=False):
+    """Append surface diagnostics and the opt-in iOS reader; leave memory policies intact."""
     patch_dir = metal / 'bridge/patches'
     shutil.copyfile(root / 'patches/nabu-metal' / SURFACE_STATS_PATCH, patch_dir / SURFACE_STATS_PATCH)
     series = patch_dir / 'series'
     series.write_text(series.read_text(encoding='utf-8') + SURFACE_STATS_PATCH + '\n', encoding='utf-8')
+    if copy_read:
+        shutil.copyfile(root / 'patches/nabu-metal' / SURFACE_COPY_READ_PATCH, patch_dir / SURFACE_COPY_READ_PATCH)
+        series.write_text(series.read_text(encoding='utf-8') + SURFACE_COPY_READ_PATCH + '\n', encoding='utf-8')
     shutil.copyfile(root / 'userland/nabu/src/NabuMetalSurfaceStats.h', metal / 'NabuMetalSurfaceStats.h')
     shutil.copyfile(root / 'patches/nabu-metal/NativeMetalSurfaceStats.rs', metal / 'bridge/NabuMetalSurfaceStats.rs')
     objects = metal / 'bridge/NativeMetalObjects.rs'
@@ -88,7 +92,7 @@ def reuse_surface_factory(source, output):
                            'replace_previous_trial_job': True, 'standard_factory_required': True}}
 
 
-def stage(root, work, instance_bytes, run, iosurface=False):
+def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False):
     """Use nabu's relevant frontend patches and UniXNU's bridge build entry."""
     work.mkdir(parents=True, exist_ok=False)
     (work / '.cache').mkdir()
@@ -134,8 +138,8 @@ def stage(root, work, instance_bytes, run, iosurface=False):
     rust = tomllib.loads((translator / 'rust-toolchain.toml').read_text(encoding='utf-8'))['toolchain']['channel']
     msrv = tomllib.loads((translator / 'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['rust-version']
     assert rust == RUST and msrv == '1.98', 'Reassess the pinned bridge compiler and MSRV'
-    if iosurface:
-        stage_surface_statistics(root, metal)
+    if iosurface or iosurface_copy_read:
+        stage_surface_statistics(root, metal, copy_read=iosurface_copy_read)
     return {'frontend': metal, 'translator': translator, 'bridge_script': bridge,
             'patches': patches, 'rust_toolchain': rust, 'rust_msrv': msrv,
             'source_commits': {name: source_pins[name]['commit'] for name in
@@ -152,12 +156,23 @@ def main():
                         help='Reviewed class_getInstanceSize(_MTLDevice) for 20F66')
     parser.add_argument('--llvm-as', type=Path, required=True)
     parser.add_argument('--iosurface', action='store_true', help='Build the independent NC wrapped IOSurface test and read-only counters')
-    parser.add_argument('--system-metal-input', type=Path, help='CI42603179764 standard-factory artifact, required with --iosurface')
+    parser.add_argument('--system-metal-input', type=Path, help='CI42603179764 artifact, required for the NC --iosurface mode')
+    parser.add_argument('--iosurface-copy-read', action='store_true',
+                        help='Build the default IOSurface probe with the iOS Mach copied-host-pages reader; implies --iosurface')
+    parser.add_argument('--iosurface-input', type=Path, help='CI42607114009 artifact, required with --iosurface-copy-read')
     args = parser.parse_args()
-    if args.iosurface and (args.system_metal_input is None or args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66):
+    if args.iosurface_copy_read:
+        args.iosurface = True
+    if args.iosurface and args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66:
+        parser.error('IOSurface mode requires the qualified 528-byte Metal ABI')
+    if args.iosurface and not args.iosurface_copy_read and args.system_metal_input is None:
         parser.error('IOSurface mode requires --system-metal-input and the qualified 528-byte Metal ABI')
-    if args.system_metal_input is not None and not args.iosurface:
-        parser.error('--system-metal-input is only used with --iosurface')
+    if args.iosurface_copy_read and args.iosurface_input is None:
+        parser.error('--iosurface-copy-read requires --iosurface-input from CI42607114009')
+    if args.iosurface_input is not None and not args.iosurface_copy_read:
+        parser.error('--iosurface-input is only used with --iosurface-copy-read')
+    if args.system_metal_input is not None and (not args.iosurface or args.iosurface_copy_read):
+        parser.error('--system-metal-input is only used with the NC --iosurface mode')
     if sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('Apple frontend builds run in macOS GitHub Actions')
     work, output, turnip_input = args.work.resolve(), args.output.resolve(), args.turnip_input.resolve()
@@ -195,6 +210,33 @@ def main():
                                         'pixel_errors': 0, 'padding_errors': 0, 'tail_errors': 0,
                                         'surface_imports_balanced_after_release': True,
                                         'in_place_and_shadow_reported_separately': True})
+    if args.iosurface_copy_read:
+        report.update(runtime_command='./nabu-gpu-metal-probe --run-iosurface-default',
+                      allocation='IOSurfaceCreate default allocation; no IOSurfaceAddress wrapper',
+                      reused_iosurface_ci='42607114009', ios_copied_host_reader=True,
+                      rust_rebuilt=True, frontend_rebuilt=True, metallib_rebuilt=False,
+                      turnip_rebuilt=False, factory_bundle_rebuilt=False, mount_helper_rebuilt=False,
+                      runtime_outputs={'result': '/var/mobile/Media/nabu-iosurface-default-result.json',
+                                       'pixels': '/var/mobile/Media/nabu-iosurface-default-readback.bgra',
+                                       'pixel_metadata': '/var/mobile/Media/nabu-iosurface-default-readback.json'},
+                      success_criteria={
+                          'epochs': 32, 'completed_command_buffers': 64,
+                          'mach_read_passed': True, 'mach_read_equal': True, 'mach_read_status': 0,
+                          'pixel_errors': 0, 'padding_errors': 0, 'tail_errors': 0,
+                          'surface_imports_balanced_after_release': True, 'resources_released': True,
+                          'accepted_paths': {
+                              'zero_copy': {'shared_import': True, 'pointer_imports_delta': 1,
+                                            'pointer_import_bytes_equal_surface_alloc': True,
+                                            'copied_host_buffers_delta': 0, 'copied_refused_delta': 0,
+                                            'copied_degraded_delta': 0, 'copied_copy_in_bytes_delta': 0,
+                                            'copied_merge_back_bytes_delta': 0},
+                              'copied_compatibility': {'shared_import': False, 'direct_image_alias': False,
+                                                      'pointer_imports_delta': 0, 'pointer_import_bytes_delta': 0,
+                                                      'copied_host_buffers_delta': 1, 'copied_refused_delta': 0,
+                                                      'copied_degraded_delta': 1, 'copy_in_bytes_must_increase': True,
+                                                      'merge_back_bytes_must_increase': True},
+                          },
+                          'in_place_and_shadow_reported_separately': True})
 
     def run(command, **kwargs):
         command = list(map(str, command))
@@ -223,7 +265,8 @@ def main():
         report['turnip'] = {**prior['turnip'], 'source_ci': prior['ci'], 'copied_without_resigning': True}
         shutil.copyfile(library, output / library.name)
         shutil.copyfile(turnip_input / 'build-report.json', output / 'turnip-input-report.json')
-        staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface)
+        staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface,
+                       iosurface_copy_read=args.iosurface_copy_read)
         report.update(frontend_patches=staged['patches'], rust_toolchain=staged['rust_toolchain'], rust_msrv=staged['rust_msrv'],
                       source_commits=staged['source_commits'],
                       frontend_adaptations=['_MTLDevice instance size 536 -> reviewed 20F66 size 528',
@@ -232,11 +275,14 @@ def main():
             report['frontend_adaptations'].append('Append narrow AtomicU64 snapshot and frontend surface lifecycle exports; no deferred lowering')
             patches = [line.strip() for line in (staged['frontend'] / 'bridge/patches/series').read_text().splitlines()
                        if line.strip() and not line.lstrip().startswith('#')]
-            if len(patches) != 26 or patches[-1] != SURFACE_STATS_PATCH:
-                raise ValueError('IOSurface mode requires the 25 qualified runtime patches plus the read-only statistics patch')
+            additions = [SURFACE_STATS_PATCH] + ([SURFACE_COPY_READ_PATCH] if args.iosurface_copy_read else [])
+            if len(patches) != 25 + len(additions) or patches[25:] != additions:
+                raise ValueError('IOSurface mode requires the 25 qualified patches followed by its named additions')
             report['runtime_patches'] = patches
-            report['qualified_runtime_patches'] = patches[:-1]
+            report['qualified_runtime_patches'] = patches[:25]
             report['readonly_statistics_runtime_patch'] = SURFACE_STATS_PATCH
+            if args.iosurface_copy_read:
+                report['ios_copied_host_read_patch'] = SURFACE_COPY_READ_PATCH
             xcode = run(['xcodebuild', '-version']).stdout.strip()
             if not xcode.startswith('Xcode 16.4\n'):
                 raise ValueError('IOSurface mode requires the qualified Xcode 16.4 compiler')
@@ -280,16 +326,19 @@ def main():
             if not required.issubset(symbols):
                 raise ValueError('The built frontend lacks its IOSurface statistics/lifetime exports')
             report['frontend']['surface_statistics_exports'] = sorted(required)
-        shader_name = 'gpu_iosurface_smoke.metal' if args.iosurface else 'gpu_metal_smoke.metal'
-        library_name = 'nabu-iosurface-smoke' if args.iosurface else 'nabu-metal-smoke'
-        shader = ROOT / 'userland/nabu/src' / shader_name
-        air = work / (library_name + '.air')
-        metallib = output / (library_name + '.metallib')
-        run(['xcrun', '--sdk', 'iphoneos', 'metal', '-target', 'air64-apple-ios16.5', '-std=ios-metal2.4',
-             '-c', shader, '-o', air])
-        run(['xcrun', '--sdk', 'iphoneos', 'metallib', air, '-o', metallib])
+        if not args.iosurface_copy_read:
+            shader_name = 'gpu_iosurface_smoke.metal' if args.iosurface else 'gpu_metal_smoke.metal'
+            library_name = 'nabu-iosurface-smoke' if args.iosurface else 'nabu-metal-smoke'
+            shader = ROOT / 'userland/nabu/src' / shader_name
+            air = work / (library_name + '.air')
+            metallib = output / (library_name + '.metallib')
+            run(['xcrun', '--sdk', 'iphoneos', 'metal', '-target', 'air64-apple-ios16.5', '-std=ios-metal2.4',
+                 '-c', shader, '-o', air])
+            run(['xcrun', '--sdk', 'iphoneos', 'metallib', air, '-o', metallib])
         probe = output / 'nabu-gpu-metal-probe'
-        probe_source = ROOT / 'userland/nabu/src' / ('gpu_iosurface_probe.mm' if args.iosurface else 'gpu_metal_probe.mm')
+        probe_name = ('gpu_iosurface_default_probe.mm' if args.iosurface_copy_read else
+                      'gpu_iosurface_probe.mm' if args.iosurface else 'gpu_metal_probe.mm')
+        probe_source = ROOT / 'userland/nabu/src' / probe_name
         probe_frameworks = ['-framework', 'Foundation', '-framework', 'Metal']
         if args.iosurface:
             probe_frameworks += ['-framework', 'IOSurface']
@@ -302,11 +351,15 @@ def main():
         report['probe'] = sign(probe, 'org.nabu16.gpu-metal-probe', run, entitlements)
         macho_target(probe, 2)
         report['probe']['dependencies'] = run(['otool', '-L', probe]).stdout.strip()
-        report['metallib'] = {'file': metallib.name, 'bytes': metallib.stat().st_size,
-                              'source': str(shader.relative_to(ROOT)), 'target': 'air64-apple-ios16.5',
-                              'functions': ['nabu_surface_vertex', 'nabu_surface_sample', 'nabu_surface_color'] if args.iosurface
-                                           else ['nabu_compute', 'nabu_vertex', 'nabu_fragment']}
-        if args.iosurface:
+        if not args.iosurface_copy_read:
+            report['metallib'] = {'file': metallib.name, 'bytes': metallib.stat().st_size,
+                                  'source': str(shader.relative_to(ROOT)), 'target': 'air64-apple-ios16.5',
+                                  'functions': ['nabu_surface_vertex', 'nabu_surface_sample', 'nabu_surface_color'] if args.iosurface
+                                               else ['nabu_compute', 'nabu_vertex', 'nabu_fragment']}
+        if args.iosurface_copy_read:
+            from build_nabu_iosurface_default_probe import reuse_inputs
+            report.update(reuse_inputs(args.iosurface_input.resolve(), output, skip_payloads=('frontend', 'turnip')))
+        elif args.iosurface:
             report.update(reuse_surface_factory(args.system_metal_input.resolve(), output))
         report['result'] = 'signed_not_run'
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, SystemExit) as error:

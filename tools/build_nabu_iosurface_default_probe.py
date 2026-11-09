@@ -21,7 +21,7 @@ QUALIFIED_RUN = '42607114009'
 PROBE_LABEL = 'org.nabu.iosurface-default-probe'
 
 
-def reuse_inputs(source, output):
+def reuse_inputs(source, output, skip_payloads=()):
     """Copy qualified payloads and derive the two job plists; do not resign inputs."""
     prior = json.loads((source / 'build-report.json').read_text(encoding='utf-8'))
     if (prior['ci']['run_id'] != QUALIFIED_RUN or prior['result'] != 'signed_not_run'
@@ -29,6 +29,8 @@ def reuse_inputs(source, output):
         raise ValueError('Expected the exact IOSurface artifact qualified in run 170')
     copied = {}
     for key in ('frontend', 'turnip', 'metallib', 'mount_helper'):
+        if key in skip_payloads:
+            continue
         item = prior[key]
         shutil.copyfile(source / item['file'], output / item['file'])
         copied[key] = {**item, 'reused_from_ci': prior['ci'], 'copied_without_rebuilding': True}

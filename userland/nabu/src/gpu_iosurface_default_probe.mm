@@ -13,6 +13,7 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mach/mach.h>
+#include <mach/mach_vm.h>
 #include <mach-o/dyld.h>
 #include <pthread.h>
 #include <signal.h>
@@ -71,6 +72,9 @@ struct Result {
     uint64_t runID = 0, surfaceID = 0, surfaceAddress = 0, allocationBytes = 0, pageBytes = 0;
     uint64_t samplePixels = 0, directPixels = 0, paddingBytes = 0, tailBytes = 0, readbackGuards = 0;
     uint64_t sampleErrors = 0, directErrors = 0, paddingErrors = 0, tailErrors = 0, readbackErrors = 0;
+    uint64_t machReadRequested = 0, machReadBytes = 0;
+    int32_t machReadStatus = -1;
+    bool machReadAttempted = false, machReadEqual = false, machReadPassed = false;
     unsigned epochs = 0, completed = 0;
     uint32_t paramsFlags = 0, deviceFlags = 0, submitFlags = 0;
     bool sharedImport = false, copiedFallback = false, directImageAlias = false;
@@ -405,6 +409,31 @@ struct SurfaceReference {
     ~SurfaceReference() { if (value) CFRelease(value); }
 };
 
+static bool checkMachRead(const void *pixels) {
+    stage("surface_mach_read", 0x6e12);
+    const size_t bytes = size_t(result.allocationBytes);
+    void *copied = malloc(bytes);
+    if (!copied) return fail("Mach read destination allocation failed");
+    memset(copied, 0, bytes);
+    mach_vm_size_t copiedBytes = 0;
+    result.machReadRequested = bytes;
+    result.machReadAttempted = true;
+    result.machReadStatus = mach_vm_read_overwrite(mach_task_self(),
+        reinterpret_cast<mach_vm_address_t>(pixels), mach_vm_size_t(bytes),
+        reinterpret_cast<mach_vm_address_t>(copied), &copiedBytes);
+    result.machReadBytes = copiedBytes;
+    result.machReadEqual = result.machReadStatus == KERN_SUCCESS && copiedBytes == bytes &&
+        memcmp(pixels, copied, bytes) == 0;
+    result.machReadPassed = result.machReadEqual;
+    free(copied);
+    printf("NABU_IOSURFACE_DEFAULT mach_read status=%08x requested=%llu copied=%llu equal=%u pass=%u\n",
+           unsigned(result.machReadStatus), (unsigned long long)result.machReadRequested,
+           (unsigned long long)result.machReadBytes, unsigned(result.machReadEqual), unsigned(result.machReadPassed));
+    if (result.machReadStatus != KERN_SUCCESS) return statusFailure("mach_vm_read_overwrite", uint32_t(result.machReadStatus));
+    if (copiedBytes != bytes) return fail("Mach read returned an incomplete IOSurface allocation");
+    return result.machReadEqual ? true : fail("Mach read bytes differ from the held IOSurface");
+}
+
 static bool exerciseSurface(id<MTLDevice> device, id<MTLLibrary> library) {
     id<MTLCommandQueue> queue = [device newCommandQueue];
     id<MTLRenderPipelineState> sampleState = pipeline(device, library, @"nabu_surface_sample");
@@ -442,6 +471,7 @@ static bool exerciseSurface(id<MTLDevice> device, id<MTLLibrary> library) {
     if (!surfaceLock(surface.value, 0)) return false;
     memset(pixels, SurfaceGuard, size_t(result.allocationBytes));
     if (!surfaceUnlock(surface.value, 0)) return false;
+    if (!checkMachRead(pixels)) return false;
 
     if (!snapshot(@"before_import", result.before)) return false;
     stage("surface_import", 0x6e11);
@@ -649,6 +679,9 @@ int main(int argc, char **argv) {
             @"device_flags": @(result.deviceFlags), @"submit_flags": @(result.submitFlags),
             @"surface_id": @(result.surfaceID), @"surface_base": @(result.surfaceAddress), @"page_bytes": @(result.pageBytes),
             @"allocation_bytes": @(result.allocationBytes), @"width": @(Width), @"height": @(Height), @"source_bytes_per_row": @(RowBytes),
+            @"mach_read_attempted": @(result.machReadAttempted), @"mach_read_status": @(result.machReadStatus),
+            @"mach_read_requested_bytes": @(result.machReadRequested), @"mach_read_copied_bytes": @(result.machReadBytes),
+            @"mach_read_equal": @(result.machReadEqual), @"mach_read_passed": @(result.machReadPassed),
             @"shared_import": @(result.sharedImport), @"copied_fallback": @(result.copiedFallback), @"direct_image_alias": @(result.directImageAlias),
             @"path_classification": @(pathName(result.path)),
             @"pointer_imports_delta": @(result.after.host_pointer_imports_made - result.before.host_pointer_imports_made),
