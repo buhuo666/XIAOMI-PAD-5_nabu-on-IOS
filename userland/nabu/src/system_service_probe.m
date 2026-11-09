@@ -252,6 +252,10 @@ static NSDictionary *gpuSnapshot(void) {
         result[@"scratch"] = @(stats[10]);
         result[@"cp_stopped"] = @(stats[20]); result[@"gmu_stop_status"] = @(stats[21]);
         result[@"hardware_command_completed"] = @(stats[8] != 0 && stats[8] == stats[9] && stats[10] == 0x6401cafe);
+        result[@"offscreen_raster_verified"] = @(stats[23] == 1 && stats[19] == 512 && stats[14] != 0 && stats[14] == stats[15]);
+        result[@"render_pixels_matched"] = @(stats[19]);
+        result[@"render_issued_fence"] = @(stats[14]); result[@"render_completed_fence"] = @(stats[15]);
+        result[@"metal_verified"] = @NO;
     }
     if (chosen) release(chosen);
     dlclose(kit);

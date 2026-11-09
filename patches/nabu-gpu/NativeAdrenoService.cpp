@@ -19,6 +19,7 @@
 #include "NativeAdrenoSubmit.h"
 #include "NativeAdrenoTimer.h"
 #include "NabuGpuPort.h"
+#include "NabuA640Clear.h"
 #include <IOKit/IODeviceMemory.h>
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOLib.h>
@@ -391,6 +392,7 @@ class A640State final {
     IOReturn contexts();
     IOReturn reserveSmmuResources();
     IOReturn startCp();
+    IOReturn renderDiagnostic();
     IOReturn fail(IOReturn);
 public:
     IOReturn start();
@@ -1186,6 +1188,50 @@ IOReturn A640State::fail(IOReturn status)
     return status;
 }
 
+IOReturn A640State::renderDiagnostic()
+{
+    if(native_adreno_checkpoint("offscreen-clear"))return kIOReturnNotReady;
+    NativeAdrenoMemory &memory=gpuContext_.buffer(4);
+    auto *pixels=static_cast<volatile uint32_t *>(memory.mapping());
+    constexpr uint32_t sentinel=0x6badc0de;
+    // Keep the CP scratch word. The image occupies bytes 1024..3071; both
+    // surrounding guard regions must remain untouched by the rasterizer.
+    for(unsigned i=1;i<GpuPageBytes/4;++i)pixels[i]=sentinel;
+    IOReturn status=memory.publishForDevice(0,GpuPageBytes);
+    if(status)return status;
+    NabuA640ClearCommands commands;
+    commands.build(GpuScratchIova+1024,GpuMemptrsIova+32);
+    IOLog("NabuGPU: render_submit mode=2d-solid-raster size=32x16 pitch=128 offset=1024 words=%lu\n",commands.count);
+    uint32_t fence=0;
+    status=ring_.submit(commands.words,commands.count,&fence);
+    if(!status && ring_.wait(fence,&clock_,200000,nullptr)!=NativeAdrenoRingFenceComplete)
+        status=kIOReturnTimeout;
+    native_adreno_a6xx_stats[14]=fence;
+    native_adreno_a6xx_stats[15]=ring_.completedFence();
+    if(!status)status=memory.acquireDeviceWrites(0,GpuPageBytes);
+    unsigned matched=0,guards=0;
+    const uint32_t expected[4]={0xff0000ff,0xff00ff00,0xffff0000,0xffffffff};
+    for(unsigned y=0;y<16;++y) {
+        char row[290];unsigned at=0;
+        for(unsigned x=0;x<32;++x) {
+            uint32_t pixel=pixels[256+y*32+x];
+            if(pixel==expected[(y/8)*2+x/16])++matched;
+            at+=snprintf(row+at,sizeof(row)-at,"%08x",pixel);
+        }
+        IOLog("NabuGPU: render_row y=%u rgba_le=%s\n",y,row);
+    }
+    for(unsigned i=1;i<GpuPageBytes/4;++i)
+        if((i<256 || i>=768) && pixels[i]!=sentinel)++guards;
+    if(pixels[0]!=0x6401cafe)++guards;
+    if(!status && (matched!=512 || guards))status=kIOReturnIOError;
+    native_adreno_a6xx_stats[19]=matched;
+    native_adreno_a6xx_stats[23]=!status;
+    IOLog("NabuGPU: render_proof=%u mode=2d-solid-raster pixels=%u/512 guard_errors=%u fence=%u/%u status=%08x shader=0 metal=0\n",
+        !status,matched,guards,fence,ring_.completedFence(),status);
+    native_adreno_checkpoint("offscreen-clear-result");
+    return status;
+}
+
 IOReturn A640State::start()
 {
     native_adreno_a6xx_stats[0]=1;
@@ -1253,6 +1299,12 @@ IOReturn A640State::start()
     cpTrace_=false;
     if(status) {
         return fail(status);
+    }
+    unsigned render=0;
+    PE_parse_boot_argn("nabu-gpu-render",&render,sizeof(render));
+    if(render==1) {
+        status=renderDiagnostic();
+        if(status)return fail(status);
     }
     status=native_adreno_smmu_register_irq(resources_.gpuInterrupt,gpuInterrupt,this);
     if(!status) {

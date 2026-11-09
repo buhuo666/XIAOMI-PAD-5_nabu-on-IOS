@@ -118,8 +118,10 @@ def main():
     ap.add_argument('--bluetooth-transport', action='store_true', help='Keep the initialized Bluetooth UART running and publish its board capabilities')
     ap.add_argument('--adsp-trial', action='store_true', help='Run the bounded Nabu PAS1 ADSP boot/readiness/shutdown trial')
     ap.add_argument('--gpu-firmware', type=Path, help='Original local A640 GMU/SQE/ZAP inputs; enables the linked A640 backend')
+    ap.add_argument('--gpu-render-trial', action='store_true', help='Run the bounded 32x16 offscreen A640 raster/readback test')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
+    assert not a.gpu_render_trial or a.gpu_firmware, 'Offscreen rendering requires the A640 hardware backend'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
     assert not a.rmtfs_snapshot or a.modem_glink, 'RMTFS requires GLINK'
     assert not a.servreg or a.modem_glink, 'Service registry requires GLINK'
@@ -205,6 +207,7 @@ def main():
         assert kernel_report['data_block'].get('gpu_start'), 'GPU inputs require the linked A640 backend'
         old_args=entry['args']
         entry['args'] += ' nabu-gpu=1'
+        if a.gpu_render_trial:entry['args'] += ' nabu-gpu-render=1'
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:
