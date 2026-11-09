@@ -60,5 +60,9 @@ log/host/spotlight-v161/startup-live.log。
 
 实时捕获开始时Spotlight已进入隐藏键盘阶段，因此该段日志没有捕获Spotlight本次
 键盘显示高度，不能将其中Preferences的800x320尺寸当作Spotlight尺寸证据。
-桌面和Spotlight输入结论依据用户直接实测。设备保留在正常运行的iPadOS；第161轮
-完整持久日志槽尚未回收，下一次返回Android时按既有流程备份清空，不覆盖槽14。
+桌面和Spotlight输入结论依据用户直接实测。
+
+用户随后手动恢复Android，已回收第161轮3,763,180字节连续日志前缀和完整64MiB槽，
+备份后清空槽14并回读确认。APFS130→131、fullfsync=ok。回收日志明确记录setup、input、
+Lockdown超时和蓝牙兼容模块全部恢复加载，与换行根因和实机恢复结果一致。
+持久捕获没有提交结束记录；它与3,854,980字节的USB实时日志分别保留，不混为同一完整日志。
