@@ -88,6 +88,16 @@ sensors02 完整日志备份清空后，使用新的
 不同状态。槽1已 `cleared-and-readback-verified`，GPT及Android引导分区未变。
 设备已释放，Android运行且Wi-Fi/蓝牙关闭。下一步仅为上述开盖锁屏策略修改与后续验收。
 
+2026-11-10 开盖锁屏候选本地就绪：提交 `19074c2` 在现有 SpringBoard setup 库中
+仅阻止 SmartCover 来源3的自动解锁，保留系统原有开盖通知、唤醒及其他解锁来源。
+58项主机检查及CI42654906255的Xcode16.4编译、ad-hoc签名验证全部通过。
+新库69,104字节；启动包
+`artifacts/nabu-bootstrap-hall-lockscreen-20261110/bootstrap.apfs` 为68,034,560字节，
+APFS检查、新setup库与原Hall输入库读回及启动参数检查通过。复用r3内核。
+候选记录在 `log/host/hall-lockscreen-20261110/continuation.json`；没有准备新日志槽，
+没有部署或启动。用户已将设备交给其他对话，待交回后验证开盖锁屏、滑动解锁、
+三次开合及按键/触摸；源码与编译通过不代替这一验收。
+
 实机需要核对：桌面合盖背光完全熄灭、开盖显示唤醒，连续三次；原本锁屏时合盖
 保持熄屏；壳保持合上时不反复亮灭；音量键、电源键与触摸可用。记录内核
 `NABU HALL`、桥接 `NABU HALL HID`、原生 SmartCover 和背光电源请求。

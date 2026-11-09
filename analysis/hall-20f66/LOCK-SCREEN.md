@@ -69,3 +69,18 @@ screen, swiping still unlocks normally, three cover cycles work, and the
 power/volume buttons and touch remain usable. Special wake destinations such
 as an already presented camera or remote alert are outside the observed
 ordinary lock-screen path and have not been tested.
+
+## Candidate result
+
+Implementation commit `19074c2` passed all 58 host cases and native workflow
+`42654906255` (Xcode 16.4, arm64 iOS 16.5, ad-hoc signature verification).
+The 69,104-byte setup dylib and the unchanged input dylib were read back from
+the new APFS container. The 68,034,560-byte candidate is
+`artifacts/nabu-bootstrap-hall-lockscreen-20261110/bootstrap.apfs` and uses the
+Hall02-qualified r3 kernel. Production boot-policy checks passed.
+
+The original CI request `42653181611` never acquired a runner and was cancelled;
+the successful run used the identical implementation commit. No device access,
+log reservation, deployment or temporary boot was performed for this candidate.
+Detailed receipts are under `log/host/hall-lockscreen-20261110/`, especially
+`candidate-checks.json`, `download-review.json` and `continuation.json`.
