@@ -19,8 +19,15 @@ sensors01 已完成实机验证和日志回收：ready/handover、GLINK、动态
 `nabu-slpi=2`，复用 `artifacts/nabu-bootstrap-combined-sensors/bootstrap.apfs`。
 查找传感器、属性和订阅请求经过 Android 实际 QMI 抓包逐字节回放；修复 QRTR
 数据包4字节补齐及发现初始化的大栈临时对象，ASan/UBSan、arm64编译/链接、分支
-和正式加载器检查通过。**本候选未部署、未启动，不能把 Android 回放当作
-iPadOS 采样成功。** 用户最新选择“先保存候选，稍后再测”；没有准备或改写新日志槽。
+和正式加载器检查通过。用户随后明确要求开始真机测试；GPU175日志已回收并释放
+设备后，sensors02已准备新slot1并于23:40临时启动，原生USB正常，用户确认桌面及
+触摸正常。“传感器5”已接续完成回收：3,025,967字节有效前缀及完整64MiB槽1保存、
+清空并读回通过，APFS147→148，Android引导分区未变化，未额外重启Android。
+**SLPI/GLINK与正常退出通过；七个SSC查询全部成功应答，但七类SUID发现均Timeout，
+streams=0，iPadOS真实样本仍为0。** Timeout不能当作Absent。Android当次对照采样
+为加速度263、陀螺仪263、磁场500、前置光线3条，零解析/QMI错误；不替代iPadOS结果。
+下一步验证并实现FastRPC sensor_pd/registry依赖，尚未证明其是本轮唯一原因。
+本轮槽已清空，不能重复回收或复用旧清单；下一轮尚未准备或启动。
 具体结果和后续步骤见 [限时采样候选](../analysis/nabu-sensors-live-20261109.md)及
 `log/host/sensors-live-20261109/continuation.json`。
 
@@ -126,7 +133,8 @@ GLINK 打开最多 5 秒、服务发现 10 秒、关闭 1 秒；无设备不会�
 ADSP 续调卡住记录，首轮 SLPI 仍需通过边界日志定位这一风险。不能把“有超时”
 理解为所有硬件调用绝不会卡住。
 
-本候选到达 SSC 服务后也只记录发现并关闭。FastRPC `sensor_pd`、registry/校准
+历史的mode1候选只做服务发现；mode2已实测七类查询，但尚无SUID事件或样本。
+FastRPC `sensor_pd`、registry/校准
 文件反向服务和持续采样尚未实现。`userland/nabu/src/sensor_bridge.*` 是未接入
 运行后端的接口候选，没有随本启动包加载。真实 iPadOS 数据还需要当前启动的
 SSC→Mach 时钟映射、六面坐标/符号验证、HID/CoreMotion 接收验证；自动亮度还需

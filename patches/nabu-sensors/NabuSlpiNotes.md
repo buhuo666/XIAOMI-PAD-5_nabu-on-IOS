@@ -68,8 +68,14 @@ for disable acknowledgments and the normal GLINK/PAS shutdown. The transport has
 its own nine-second sampling limit. The client checks source/destination ports,
 QMI transactions/client IDs, sample count and timestamp monotonicity.
 
-The live candidate passed Android packet replay and host checks only. It has
-not been deployed or booted; the user selected saving it for a later test.
+The sensors02 device trial reached SSC and received successful QMI responses
+to all seven lookups, but all seven SUID discoveries timed out with zero
+candidates and streams. SLPI startup and shutdown completed without transport
+errors. The user confirmed desktop and touch. The full 64 MiB log extent and
+3,025,967-byte valid prefix were saved and the slot was cleared with readback.
+Android comparison after return produced four physical streams, but no iPadOS
+samples were observed. FastRPC sensor_pd and registry serving remain the next
+dependencies to verify; this trial does not prove them to be the sole cause.
 QRTR data includes four-byte padding while preserving the unpadded payload size.
 Discovery resets candidates individually to avoid a 16,336-byte kernel stack
 frame. The actual SLPI object now has a 1,056-byte probe frame and a largest

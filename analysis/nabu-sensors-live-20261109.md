@@ -1,9 +1,47 @@
-# SSC 限时采样候选
+# SSC 限时采样与 sensors02 实机结果
 
 2026-11-09，Asia/Shanghai。“传感器4”接续“传感器3”中断的采样开发。
 
-**用户最新选择：先保存候选，稍后再测。** 本轮没有部署、启动、清日志槽或操作
-平板；“霍尔开关2”的实机测试独立进行。iPadOS实时读数及原生传感器功能尚未验收。
+**sensors02已完成实机测试和日志回收，尚未取得iPadOS传感器样本。** 23:40使用
+绑定本内核的新slot1临时启动，原生USB正常，用户确认桌面、触摸正常。用户恢复
+Android后，“传感器5”接续完成中断的回收；未额外重启Android。
+运行目录：`log/device/nabu-boot-20261109-sensors02`。有效前缀3,025,967字节与
+完整67,108,864字节槽1均已保存，清槽读回通过，APFS147→148，Android引导分区
+读回未变化。下一轮尚未准备或启动。
+
+## sensors02 实际结果
+
+| 环节 | 实测结果 |
+| --- | --- |
+| SLPI启动 | prepared/AOP/proxy/init/mem/copied/auth/ready均为1；fatal=0 |
+| GLINK/QRTR | negotiated/open/SSC/close均为1；service400动态地址node9/port12；timeout=0、error=0 |
+| SSC查询 | tx=7、responses=7；invalid/foreign/qmi-failures/errors均为0 |
+| SUID与样本 | 七类均state=6（Timeout）、candidates=0；streams=0、真实样本0 |
+| SLPI退出 | stop/shutdown/off均为1，retained=0 |
+
+七类包括accel、gyro、mag、ambient_light、pressure、proximity、ambient_light_back。
+本轮没有收到可接受的SUID列表，**不能将Timeout当作Absent**，也不能把QMI成功
+应答当作发现完成或采样成功。原生传感器服务未发布。
+
+原主机回收在保存完整大小的`slot-01.bin`后中断，`collection.json`仍为reading。
+保留该回执为`collection.interrupted.json`；离线按本轮UUID/内核清单解析，再将
+完整设备槽与已保存文件核对一致后续完回收和清槽，没有覆盖原始槽文件。日志流
+`complete=false`、原因为`no committed record header`：有连续有效前缀，没有END
+记录，不能称整段运行日志完整。原始64MiB备份本身完整，SSC结束记录已在前缀内。
+
+同次Android恢复后另做10秒实际QRTR对照：加速度263条、陀螺仪263条、磁场500条、
+前置光线3条；各流时间戳单调，解析/QMI错误0。气压/距离返回空列表Absent，后置
+光线仍因缺PHYSICAL_SENSOR为Incomplete。Android的`sscrpcd sensorspd`实际在运行，
+init配置为`vendor.sensors`，内核记录已打开SLPI的FastRPC rpmsg通道。这是Android
+对照结果，不能代替iPadOS验收。
+
+首要待验证依赖是候选尚未实现的FastRPC sensor_pd attach与DSP/config/registry
+反向文件服务。当前证据尚不能认定其为唯一原因，也没有用延长发现时限来掩盖问题。
+后续先核对本机attach/listener协议，提供原机文件并验证registry SUID就绪，再重复
+限时发现和真实采样；原生HID/CoreMotion和亮度接入仍在后面。
+
+机器可读结果：`log/host/sensors-live-20261109/device-result.json`；关键行摘录：
+`ssc-runtime-evidence.txt`；Android对照：`android-after-sensors02/ssc-summary.json`。
 
 ## 已有实机基础
 
@@ -58,14 +96,14 @@ SSC→Mach时钟映射和原生HID/CoreMotion接入仍未完成。
 原机SLPI固件文件，不需再次打包。没有重新构建EFI。
 
 本地测试配方及状态保存在`log/host/sensors-live-20261109/`。其中配置固定
-`nabu-slpi=2`；所有命令都仅保存，尚未执行。新日志清单尚未创建，不能沿用
-sensors01或其他测试的清单。候选已保存，不安排自动启动。
+`nabu-slpi=2`；prepare/stage/boot与日志回收均已执行。
+新清单位于`log-preparation/preparation.json`，不得用sensors01或其他测试清单
+回收sensors02。`resume_collection.py`续完原回收，`record_result.py`从日志生成结果。
+槽已清空，不能再次执行本轮collect；下一轮必须新建日志清单。
 
-## 稍后实测
+## 下一轮实测条件
 
-1. 用户决定开始后，先确认当前设备测试结束且由相应对话回收、备份并清空其日志。
-2. Android连接USB后，按项目规则检查Wi-Fi/蓝牙状态；直接准备绑定本候选的新日志
-   清单、部署、切bootloader临时启动，不额外重启Android。
-3. 桌面后等待至少两分钟，确认桌面/触摸；恢复Android后回收新轮次sensors02日志。
-4. 分别核对SLPI生命周期、SSC查询/属性、四路配置与实际样本、缺失通道和退出结果。
-   服务发现不能代替采样，Android回放不能代替iPadOS实测。
+1. 补齐并验证本机FastRPC sensor_pd/registry初始化候选及相应本地检查。
+2. 核对设备归属，为最终新内核建立独立日志清单；不复用已清槽的sensors02回执。
+3. 保留SLPI生命周期、SSC应答、registry/SUID事件、属性、实际样本和正常退出的
+   分层证据。QMI应答或服务公告都不能代替真实采样。
