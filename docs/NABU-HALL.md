@@ -1,6 +1,10 @@
 # nabu 保护壳霍尔开关
 
-目标仅为：合上保护壳使 iPadOS 锁屏并关闭背光，打开保护壳唤醒显示。
+目标仅为：合上保护壳使 iPadOS 锁屏并关闭背光，打开保护壳只唤醒至锁屏界面，
+不自动返回桌面。后一项为用户在 hall02 实测后于 2026-11-10 明确选择的行为，
+hall02 启动包尚未实现：其开盖事件仍走原版 SmartCover 自动解锁路径。
+后续候选在 `libnabu.setup.dylib` 中调整原生自动解锁策略，复用已通过的 r3 内核；
+本地实现和证据见 [开盖锁屏策略](../analysis/hall-20f66/LOCK-SCREEN.md)，真机效果待验收。
 
 Android 已实测三次开合正常，原始事件为 `gpio-keys / SW_LID` 的 1/0。
 本机设备树对应 GPIO9、低电平有效、15ms 去抖。GPIO83 对应另一种开关，
@@ -60,12 +64,29 @@ r3 的主机ASan/UBSan、arm64编译链接、8955个直接分支和2705个远分
 范围及正式加载器布局检查通过，63个对象保持。原生桥接不引用GPIO物理地址，继续
 使用已编译签名的CI42630476319桥接及原Hall启动包。
 
-用户最新要求：只继续本地工作，下一轮必须等用户再次明确通知设备恢复才开始。
-r3 尚未部署或启动；自动重启是否由地址错误引起、iPadOS开合效果均待复测。
-hall02 的本地启动文件在 `artifacts/nabu-chain-hall-02`。槽1在用户要求等待前已准备，
-回执为 `log/host/hall-20261109/hall02/log-preparation-final/preparation.json`，不可视为
-空闲槽。接续时遵守用户等待要求并核对设备归属，使用该回执确认槽仍未被使用；若其他
-测试已占用，应先保全其日志再重新准备，不覆盖现有记录。仍不额外重启Android。
+hall02 于 2026-11-09 23:57 按“霍尔开关3”用户指令临时启动，使用 r3 内核及
+原 Hall 启动包，进入桌面且触摸正常。旧预备槽已由 GPU175 备份释放；本轮在
+sensors02 完整日志备份清空后，使用新的
+`log/host/hall-20261109/hall02/log-preparation-live-01/preparation.json`，
+不复用旧 `log-preparation-final` 回执。仍不额外重启 Android。
+
+用户确认三次合盖完全熄屏、开盖唤醒；先用电源键锁屏后合盖保持 15 秒一直熄屏，
+开盖后音量键、触摸正常，电源键唤醒可显示锁屏。实时日志记录 6 次合盖、6 次开盖，
+17 次背光请求均 `result=verified bus-error=0`。合盖有
+`lockUIFromSource:SmartCover` 和 `deviceIsLocked=YES`，开盖则有
+`unlockUIFromSource:SmartCover` 并回到未锁定状态。因此合盖锁定与显示开关已实测，
+用户要求的“开盖停在锁屏”仍须修改原版开盖策略并再次验收，不能称最终目标已完成。
+
+实时证据在 `log/host/hall-20261109/hall02/hall-live-evidence.txt`，用户反馈在
+同目录 `cover-user-feedback.json`。完整回收状态以该目录 `continuation.json`
+为准，设备日志目录为 `log/device/nabu-boot-20261109-hall02`。
+用户于 2026-11-10 要求回收后报告并把设备交给其他对话；本轮不启动新候选。
+
+2026-11-10 已完成回收：4,125,010 字节有效运行日志前缀、完整 67,108,864 字节
+槽1快照、12,596,768 字节实时日志及 EFI/pstore 记录已保存。日志流没有结束记录，
+解码标记为 `incomplete / no committed record header`；这与完整槽快照备份是两项
+不同状态。槽1已 `cleared-and-readback-verified`，GPT及Android引导分区未变。
+设备已释放，Android运行且Wi-Fi/蓝牙关闭。下一步仅为上述开盖锁屏策略修改与后续验收。
 
 实机需要核对：桌面合盖背光完全熄灭、开盖显示唤醒，连续三次；原本锁屏时合盖
 保持熄屏；壳保持合上时不反复亮灭；音量键、电源键与触摸可用。记录内核

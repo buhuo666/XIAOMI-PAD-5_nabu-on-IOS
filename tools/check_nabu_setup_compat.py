@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the actual setup wrappers preserve the original call and BOOL result."""
+"""Check actual SpringBoard setup and Hall auto-unlock policy wrappers."""
 import argparse
 import json
 from pathlib import Path
@@ -26,6 +26,7 @@ typedef const char *SEL;
 static BOOL result;
 static unsigned calls;
 static uint64_t received_reason;
+static int32_t received_source;
 static BOOL bricked(id object, SEL selector) {
     assert(object == (id)1 && selector == (SEL)2);
     calls++; return result;
@@ -34,9 +35,14 @@ static BOOL reason(id object, SEL selector, uint64_t value) {
     assert(object == (id)1 && selector == (SEL)2);
     calls++; received_reason = value; return result;
 }
+static BOOL auto_unlock(id object, SEL selector, int32_t source) {
+    assert(object == (id)1 && selector == (SEL)2);
+    calls++; received_source = source; return result;
+}
 int main(void) {
     original_bricked = bricked;
     original_reason = reason;
+    original_auto_unlock = auto_unlock;
     for (unsigned on = 0; on < 2; on++) {
         atomic_store(&enabled, on);
         for (unsigned value = 0; value < 2; value++) {
@@ -55,14 +61,31 @@ int main(void) {
         assert(nabu_bricked_device((id)1, (SEL)2) == value);
         assert(calls == 1);
     }
-    puts("10 wrapper behavior cases passed, including original local-activation state");
+    unsigned hall_cases = 0;
+    const int32_t sources[] = {INT32_MIN, -1, 0, 1, 2, 3, 4, 10, 14, 22, 31, INT32_MAX};
+    for (unsigned on = 0; on < 2; on++) {
+        atomic_store(&hall_lock_screen_enabled, on);
+        for (unsigned value = 0; value < 2; value++) {
+            for (unsigned i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+                int32_t source = sources[i];
+                bool deny = on && source == 3;
+                result = value; calls = 0; received_source = 99;
+                assert(nabu_should_auto_unlock((id)1, (SEL)2, source) == (deny ? false : value));
+                assert(calls == (deny ? 0 : 1));
+                assert(received_source == (deny ? 99 : source));
+                hall_cases++;
+            }
+        }
+    }
+    printf("10 setup cases and %u Hall policy cases passed\n", hall_cases);
 }
 ''', encoding='utf-8')
     subprocess.run(host_command(['clang', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
         '-fsanitize=address,undefined', host_path(harness), '-o', host_path(binary)]), check=True)
     result = subprocess.check_output(host_command([host_path(binary)]), text=True).strip()
-    report = {'passed': True, 'source_sha256_lf': sha256_lf(SOURCE), 'cases': 10,
-              'result': result, 'scope': 'Actual wrapper behavior with stub original methods; no device execution'}
+    report = {'passed': True, 'source_sha256_lf': sha256_lf(SOURCE), 'cases': 58,
+              'setup_cases': 10, 'hall_policy_cases': 48,
+              'result': result, 'scope': 'Actual wrappers with stub original methods: only enabled SmartCover source 3 denies auto-unlock; all other sources preserve arguments and BOOL result. Native screen wake still requires device validation.'}
     (a.output/'report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

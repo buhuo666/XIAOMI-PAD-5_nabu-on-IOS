@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/setup-compat.yml'
       - 'tools/check_nabu_setup_compat.py'
+      - 'tools/build_nabu_setup_compat.py'
       - 'userland/nabu/src/setup_compat.c'
   workflow_dispatch:
 permissions:

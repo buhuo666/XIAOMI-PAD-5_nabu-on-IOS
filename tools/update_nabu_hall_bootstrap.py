@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replace the input bridge in a qualified bootstrap with the native Hall build."""
+"""Update a qualified Hall bootstrap with native input and optional lock-screen policy builds."""
 import argparse
 import hashlib
 import json
@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from check_darwinboot_8796 import host_command, host_path
-from package_nabu_userland import bootstrap_permissions
+from package_nabu_userland import bootstrap_permissions, qualified_setup_compat
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src/hakios-8796/tools/apfs'))
@@ -21,6 +21,8 @@ def main():
     p.add_argument('--baseline', type=Path, required=True)
     p.add_argument('--baseline-tree', type=Path, required=True)
     p.add_argument('--input-bridge', type=Path, required=True)
+    p.add_argument('--setup-compat', type=Path,
+                   help='Qualified SpringBoard build with the Hall wake-to-lock-screen policy')
     p.add_argument('--work', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
@@ -31,6 +33,9 @@ def main():
     shutil.copytree(a.baseline_tree/'root', a.work/'root')
     library = a.input_bridge/'libnabu.input.dylib'
     shutil.copyfile(library, a.work/'root/lib/libnabu.input.dylib')
+    if a.setup_compat:
+        setup_library, setup_report = qualified_setup_compat(a.setup_compat)
+        shutil.copyfile(setup_library, a.work/'root/lib/libnabu.setup.dylib')
     nodes = read_tree(str(a.work/'root'))
     bootstrap_permissions(nodes)
     init = a.output/'NabuInit.apfs'
@@ -45,6 +50,10 @@ def main():
     readback = subprocess.run(host_command([host_path(ROOT/'build/nabu-audio-apfs-reader/apfs-tool'),
         'cat', host_path(init), '/lib/libnabu.input.dylib']), capture_output=True, check=True)
     if readback.stdout != library.read_bytes(): raise ValueError('Input bridge APFS readback differs')
+    if a.setup_compat:
+        setup_readback = subprocess.run(host_command([host_path(ROOT/'build/nabu-audio-apfs-reader/apfs-tool'),
+            'cat', host_path(init), '/lib/libnabu.setup.dylib']), capture_output=True, check=True)
+        if setup_readback.stdout != setup_library.read_bytes(): raise ValueError('Setup policy APFS readback differs')
     for name in ('Boot.apfs', 'App.apfs'): shutil.copyfile(a.baseline/name, a.output/name)
     combined = a.output/'bootstrap.apfs'
     with combined.open('wb') as out:
@@ -63,6 +72,12 @@ def main():
                          baseline=str(a.baseline.resolve()), baseline_tree=str(a.baseline_tree.resolve()),
                          native_readback_equal=True, library_bytes=len(readback.stdout),
                          filesystem_check='apfsck -c -u -w passed', device_tested=False)
+    if a.setup_compat:
+        report['setup_compat'] = setup_report
+        report['hall']['lock_screen_policy'] = dict(
+            build_report=setup_report['build_report']['hall_policy'],
+            source=str(a.setup_compat.resolve()), native_readback_equal=True,
+            library_bytes=len(setup_readback.stdout), device_tested=False)
     report['filesystem_check'] = 'New NabuInit checked with apfsck and native library readback; Boot/App copied from baseline'
     (a.output/'bootstrap-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(dict(bootstrap=str(combined.resolve()),bytes=combined.stat().st_size,

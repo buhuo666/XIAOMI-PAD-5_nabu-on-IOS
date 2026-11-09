@@ -73,6 +73,14 @@ def main() -> None:
         "otool_load_commands": capture(["xcrun", "otool", "-l", str(output)]),
         "undefined_symbols": capture(["xcrun", "nm", "-u", str(output)]),
         "signature": signature, "signature_verification": signature_verification,
+        "hall_policy": {
+            "required_bootarg": "nabu-hall=1",
+            "class": "SBLockScreenAutoUnlockAggregateRule",
+            "method": "shouldAutoUnlockForSource:",
+            "encoding_20f66": "B20@0:8i16", "smartcover_source": 3,
+            "behavior": "Deny SmartCover auto-unlock; preserve the original wake path and other sources",
+            "device_execution_validated": False,
+        },
         "scope": "Source-built local UI policy for 20F66 arm64; no Apple payload included; "
                  "native build verification does not establish device or desktop success.",
     }
