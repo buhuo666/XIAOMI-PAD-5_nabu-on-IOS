@@ -1,5 +1,10 @@
 # 项目工作规则
 
+2026-11-09第171轮默认IOSurface创建/标准工厂通过，BoMap Unsupported转OOM，
+指针与复制计数全0、无GPU命令。实际派生runtime的copied.rs只为macOS启用Mach
+read_pages，iOS走false分支；下一步补这一平台条件并实测Mach读回，cached imports
+保持关闭。用户桌面触摸正常，3,572,008字节及64MiB槽备份清空，APFS141。
+
 2026-11-09第170轮NC wrapped IOSurface实机通过：32轮/65命令，双向各32768像素，
 保护区及生命周期像素错误0；真实16KiB导入1次，copy0、in-place1、shadow0，释放1/1、
 held0及owner解除映射/释放通过。用户桌面触摸正常，3,364,841字节及64MiB槽备份

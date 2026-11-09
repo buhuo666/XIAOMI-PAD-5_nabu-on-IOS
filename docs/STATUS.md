@@ -2,6 +2,10 @@
 
 更新：2026-11-09，Asia/Shanghai。
 
+第171轮默认IOSurface停在导入：BoMap Unsupported转OOM，复制回退也因iOS未启用
+Mach读取实现而未建立，GPU命令0。桌面触摸正常；3,572,008字节及64MiB日志槽备份
+清空，APFS141。正在补iOS平台分支，见[第171轮](../analysis/nabu-gpu-v171.md)。
+
 第170轮NC IOSurface真实共享导入通过：32轮、65个GPU命令，双向像素/保护区/生命周期
 均正确；16KiB指针导入1次，CPU副本0、in-place1、shadow0，资源完全释放。
 桌面触摸正常，3,364,841字节及64MiB日志槽备份清空，APFS140。本轮未额外重启Android。
