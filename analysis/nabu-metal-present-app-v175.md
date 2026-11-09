@@ -36,3 +36,18 @@
 测试，但不能把该分支的UI显示当成GPU渲染通过。候选尚未实机验证。
 
 动态记录：`log/host/gpu-v175/continuation.json`。
+
+## 构建与交接
+
+源码2ab42aecff6fef8a3abd16e583c6ebe6a6a136c0，App原生CI42642911170通过编译、
+签名及4KiB签名页/权限检查。下载时完成Mach-O依赖和签名审查；IPA110425字节，
+路径为`artifacts/ci/42642911170-attempt-1/nabu-metal-present-app-3/nabu-metal-present-app/NabuMetalPresent.ipa`。
+审查记录在`log/host/gpu-v175/app-download-review.json`。已有前端未重新审查。
+主机原第174轮实际像素回归、7种启动证据场景和9种硬件状态均通过。
+
+配套CI42642911166的无线主机及后端两项成功，参考内核作业尚在等待执行器，不能称
+完整CI已通过。当前App及后续部署/安装脚本均已准备；install.py先运行硬件就绪等待，
+成功后才安装。未准备第175轮日志槽、未部署或启动。
+
+共享工作记录已将设备交给“霍尔开关2”的hall01独立实测。GPU须等该测试结束并交还
+设备；下一次启动前保全其日志，不能因第174轮已清槽就覆盖hall01证据。
