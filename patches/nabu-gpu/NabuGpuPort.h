@@ -4,6 +4,12 @@
 
 #include <stdint.h>
 
+#if (defined(NABU_GPU_USERLAND) && NABU_GPU_USERLAND) || (defined(NABU_GPU_METAL) && NABU_GPU_METAL)
+#define NABU_GPU_CLIENT 1
+#else
+#define NABU_GPU_CLIENT 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

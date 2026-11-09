@@ -1,0 +1,106 @@
+{
+  "firmware": "iPadOS16.5/20F66 iPad7,11",
+  "module": "com.apple.iokit.IOGPUFamily",
+  "module_version": "65.40.15",
+  "module_uuid": "bd8d9d28-d638-3e9a-8004-b159a8ab93b5",
+  "original_path": "OS/ipados/16.5-20F66-iPad7_11/extracted/kernelcache.arm64.macho",
+  "evidence_kind": "static-file-parsing-and-capstone-disassembly",
+  "rea_native_provider_available": false,
+  "metaclass": "0xfffffff007a973c8",
+  "classname_address": "0xfffffff0051a9cc6",
+  "instance_bytes": 136,
+  "vptr": "0xfffffff006dd2bf8",
+  "virtual_entries": 168,
+  "metadata_overrides": [
+    0,
+    1,
+    7
+  ],
+  "operational_overrides": [],
+  "protected_compatible_constructor_aliases": [
+    "0xfffffff005ccd164",
+    "0xfffffff005ccd184"
+  ],
+  "nondeleting_destructor_aliases": [
+    "0xfffffff005ccd1a4",
+    "0xfffffff005ccd1a8"
+  ],
+  "nondeleting_destructor": "0xfffffff005ccd1a8",
+  "get_meta_class": "0xfffffff005ccd1f0",
+  "resolved_kernel_edges": {
+    "constructor": {
+      "stub": "0xfffffff005cd8414",
+      "got_slot": "0xfffffff006dce788",
+      "target": "0xfffffff00778b1a4",
+      "kernel_names": [
+        "__ZN9IOServiceC2EPK11OSMetaClass"
+      ]
+    },
+    "destructor": {
+      "stub": "0xfffffff005cd8420",
+      "got_slot": "0xfffffff006dce790",
+      "target": "0xfffffff00778b1d4",
+      "kernel_names": [
+        "__ZN9IOServiceD2Ev"
+      ]
+    },
+    "metaclass_constructor": {
+      "stub": "0xfffffff005cd806c",
+      "got_slot": "0xfffffff006dce4c0",
+      "target": "0xfffffff007712b20",
+      "kernel_names": [
+        "__ZN11OSMetaClassC2EPKcPKS_j"
+      ]
+    }
+  },
+  "source_locations": {
+    "protected_constructor_compatible_alias_1": {
+      "address": "0xfffffff005ccd164",
+      "bytes": 32,
+      "file_offset": 23351652
+    },
+    "protected_constructor_compatible_alias_2": {
+      "address": "0xfffffff005ccd184",
+      "bytes": 32,
+      "file_offset": 23351684
+    },
+    "nondeleting_destructor_alias_1": {
+      "address": "0xfffffff005ccd1a4",
+      "bytes": 4,
+      "file_offset": 23351716
+    },
+    "nondeleting_destructor_vtable_alias": {
+      "address": "0xfffffff005ccd1a8",
+      "bytes": 4,
+      "file_offset": 23351720
+    },
+    "deleting_destructor": {
+      "address": "0xfffffff005ccd1ac",
+      "bytes": 48,
+      "file_offset": 23351724
+    },
+    "get_meta_class": {
+      "address": "0xfffffff005ccd1f0",
+      "bytes": 12,
+      "file_offset": 23351792
+    },
+    "metaclass_static_initializer": {
+      "address": "0xfffffff005cd0560",
+      "bytes": 100,
+      "file_offset": 23364960
+    }
+  },
+  "vtable_location": {
+    "address": "0xfffffff006dd2bf8",
+    "file_offset": 41200632,
+    "bytes": 1344
+  },
+  "reference_21H16_layout_match": true,
+  "reference_21H16_addresses_reusable": false,
+  "runtime_qualified": false,
+  "limitations": [
+    "Original kext symbols are stripped; constructor/destructor aliases are semantically compatible identifications, not recovered mangled names.",
+    "Only IOAcceleratorES base shape is compared; IOGPU subclasses, stock IOGPUUserClient and Metal private interfaces are not qualified.",
+    "The current source kernel already registers IOAcceleratorES; adding the original dependency closure would collide with existing class names."
+  ]
+}

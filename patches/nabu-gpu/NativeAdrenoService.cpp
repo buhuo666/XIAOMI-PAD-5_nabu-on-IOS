@@ -32,13 +32,10 @@
 
 extern "C" uint64_t (*native_adreno_vm_now_us)(void);
 extern "C" volatile uint32_t native_adreno_pool_mib;
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
 /* Publication path. The diagnostic archive links none of these objects, so
  * they must not be referenced there. */
 #include "NativeAdrenoIntegration.h"
-extern "C" IOReturn nabu_gpu_scanout_display_call(uint32_t,task_t,const void *,const void *,size_t,void *,size_t);
-extern "C" IOMemoryDescriptor *nabu_gpu_scanout_display_memory(task_t,const void *);
-extern "C" void nabu_gpu_scanout_display_close(const void *);
 extern "C" IOReturn native_adreno_initialize_classes(void);
 extern "C" IOReturn native_adreno_publish(NativeAdrenoVm *,NativeAdrenoSubmit *,NativeAdrenoRing *,
     const NativeAdrenoRingClock *,const NativeAdrenoTimer *,const NativeAdrenoAbiDeviceInfo *,uint32_t,uint32_t);
@@ -46,6 +43,11 @@ extern "C" void native_adreno_fault(void);
 extern "C" void native_adreno_dma_stopped(void);
 extern "C" void native_adreno_gpu_interrupt(bool failed);
 extern "C" int native_adreno_progress(uint32_t *,uint32_t *);
+#endif
+#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+extern "C" IOReturn nabu_gpu_scanout_display_call(uint32_t,task_t,const void *,const void *,size_t,void *,size_t);
+extern "C" IOMemoryDescriptor *nabu_gpu_scanout_display_memory(task_t,const void *);
+extern "C" void nabu_gpu_scanout_display_close(const void *);
 /* Fixed diagnostic layouts exported by the pinned NativeAdrenoPublish.cpp.
  * The observation regression checks the complete field layout at both sites. */
 extern "C" {
@@ -348,11 +350,13 @@ class A640State final {
     NativeAdrenoGmuContextReport gmuContextReport_{};
     NativeAdrenoGmuContextReport gpuContextReport_{};
     NativeAdrenoRing ring_;
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     NativeAdrenoSubmit submit_;
     NativeAdrenoTimer timer_;
     NativeAdrenoAbiDeviceInfo info_{};
+#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
     NabuMetalObservation observation_;
+#endif
     uint32_t watchedFence_=0;
     uint64_t watchedSince_=0;
 #endif
@@ -630,7 +634,7 @@ void A640State::gpuInterrupt(void *cookie)
         __atomic_store_n(&self->hardwareIrqFailed_,1,__ATOMIC_RELEASE);
         native_adreno_smmu_disable_irq(self->resources_.gpuInterrupt);
     }
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     if(failed || (result.flags&NativeAdrenoIrqFence)) {
         /* Fence completion and faults drive the published scheduler; this is
          * an explicit no-op before a publish. */
@@ -1093,7 +1097,7 @@ IOReturn A640State::startCp()
 
     IOLog("NabuGPU: proof=cp-scratch-fence chip=%08x scratch=%08x fence=%u/%u gmem=100000/100000\n",
         resources_.chipId,native_adreno_a6xx_stats[10],fence,ring_.completedFence());
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     /* Publish only after the live VM, ring, submit and timer are attached and
      * the core is closed. A failure must leave the service unpublished, so it
      * returns into the fail path instead of being logged and ignored. */
@@ -1123,9 +1127,13 @@ IOReturn A640State::startCp()
     info_.macrotile_mode=0;                   /* 4 channels; 8-channel mode starts at UBWC 3.1. */
     info_.ubwc_version=resources_.ubwcMode;   /* ADT qcom,ubwc-mode 3 */
     info_.flags=NativeAdrenoDeviceClientIova; /* import capabilities come from the VM */
+#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
     const NativeAdrenoIntegration callbacks={nabu_gpu_scanout_display_call,nabu_gpu_scanout_display_memory,
         nullptr,nabu_gpu_scanout_display_close};
     native_adreno_set_integration(&callbacks);
+#else
+    native_adreno_set_integration(nullptr);
+#endif
     const IOReturn published=native_adreno_publish(gpuContext_.vm(),&submit_,&ring_,&clock_,
         &timer_,&info_,32,gpuContextReport_.output_bits);
     if(published) {
@@ -1155,7 +1163,7 @@ IOReturn A640State::fail(IOReturn status)
     failedGmuReport_=gmu_.report();
     failureCaptured_=true;
     ring_.recordFault();
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     /* No-op before a publish; afterwards it marks the published core failed so
      * a mounted client cannot keep opening it. */
     native_adreno_fault();
@@ -1179,7 +1187,7 @@ IOReturn A640State::fail(IOReturn status)
     native_adreno_a6xx_stats[20]=stopped;
     native_adreno_a6xx_stats[21]=uint32_t(gmuStopped);
     if(stopped && !gmuStopped) {
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
         native_adreno_dma_stopped();
 #endif
         power_.stop(true);
@@ -1351,11 +1359,13 @@ void A640State::poll()
 
     const IOReturn status=__atomic_load_n(&hardwareIrqFailed_,__ATOMIC_ACQUIRE)?
         kIOReturnIOError:kIOReturnSuccess;
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     uint32_t submitted=0,completed=0;
     const int progress=native_adreno_progress(&submitted,&completed);
     const uint64_t current=now(nullptr);
+#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
     observation_.sample(current,submitted,completed,progress);
+#endif
     if(completed!=watchedFence_ || submitted==completed) {
         watchedFence_=completed;
         watchedSince_=current;
@@ -1487,7 +1497,7 @@ void hardwareWorker(void *,wait_result_t)
     if(state->start()!=kIOReturnSuccess) {
         return;
     }
-#if defined(NABU_GPU_METAL) && NABU_GPU_METAL
+#if NABU_GPU_CLIENT
     for(;;) {
         IOSleep(10);
         state->poll();

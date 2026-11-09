@@ -5,22 +5,40 @@ import json
 from pathlib import Path
 import struct
 
-from link_nabu_data_block import Object, backed_offset, link, macho, signed
+from link_nabu_data_block import Object, backed_offset, component_extents, link, macho, signed
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--command', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--reuse-executable-gaps', action='store_true',
+                        help='Also enable gap placement when it is absent from the saved command')
     args = parser.parse_args()
     command = json.loads(args.command.read_text())
     option = lambda key: Path(command[command.index(key) + 1])
     kernel = option('--kernel')
+    original = kernel.read_bytes()
+    prelink_report = json.loads((option('--prelink-report') if '--prelink-report' in command
+                                else kernel.with_name('prelink-report.json')).read_text())
     objects = [Object(command[i + 1]) for i, value in enumerate(command) if value == '--object']
-    output, detail = link(kernel.read_bytes(), json.loads(kernel.with_name('prelink-report.json').read_text()),
+    reuse_gaps = args.reuse_executable_gaps or '--reuse-executable-gaps' in command
+    rebuilt, detail = link(original, prelink_report,
                           Object(option('--reference-object')), objects,
-                          Object(option('--aes-reference-object')), Object(option('--usb-reference-object')))
+                          Object(option('--aes-reference-object')) if '--aes-reference-object' in command else None,
+                          Object(option('--usb-reference-object')) if '--usb-reference-object' in command else None,
+                          reuse_executable_gaps=reuse_gaps)
+    candidate = option('--output') / 'kernel.native-apfs.macho'
+    output = candidate.read_bytes()
+    assert rebuilt == output, 'Decoded rebuild differs from the saved candidate'
     image = macho(output)
+    original_image = macho(original)
+    extents = component_extents(original, original_image, prelink_report)
+    for start, end in extents:
+        old_at = backed_offset(original_image['segments'], start, end - start, len(original))
+        new_at = backed_offset(image['segments'], start, end - start, len(output))
+        assert original[old_at:old_at + end - start] == output[new_at:new_at + end - start], (
+            'Original component extent changed', hex(start), hex(end))
     def read(address, fmt):
         return struct.unpack_from(fmt, output, backed_offset(image['segments'], address, struct.calcsize(fmt), len(output)))
     direct = veneers = 0
@@ -53,9 +71,10 @@ def main():
                         veneers += 1
                 addend = 0
     assert direct and veneers, 'Candidate must exercise both near and far branches'
-    assert output == (option('--output') / 'kernel.native-apfs.macho').read_bytes(), 'Decoded rebuild differs from the saved candidate'
     report = {'passed': True, 'direct_branches': direct, 'far_branches': veneers,
               'reserved_veneers': detail['branch_veneers'], 'object_count': len(objects),
+              'candidate': str(candidate), 'original_component_extents_preserved': len(extents),
+              'executable_gap': detail.get('executable_gap'),
               'scope': 'Decoded actual ARM64 branches and ADRP/LDR/BR targets after linking; no device execution'}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

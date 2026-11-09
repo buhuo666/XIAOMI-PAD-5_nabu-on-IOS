@@ -24,11 +24,13 @@ and 20F66 system:
 
 - `NativeAdrenoService.cpp` exports `nabu_gpu_start()` for the existing kmod
   startup owner, preserves the `nabu-gpu=1` gate and logs CPU page geometry.
-  Without Metal publication it verifies the CP memory write and fence,
+  Without userland or Metal publication it verifies the CP memory write and fence,
   observes hardware for one second, then stops CP and resets GMU. Mappings,
   page tables and host votes remain owned for the boot; this is not a claim
   of full runtime power management. The existing publication branch remains
-  separate and is not enabled by the diagnostic build.
+  separate and is not enabled by the diagnostic build. `--userland` enables
+  the ordinary IOService transport and its live scheduler/fault polling;
+  this mode keeps the GPU worker running after the hardware proof.
   State transitions publish `nabu-gpu-state` and a 24-word software snapshot
   `nabu-gpu-stats` under `/chosen` for the existing read-only service probe.
 - `NativeAdrenoCpu.cpp` distinguishes 16 KiB VM allocation units from the
@@ -54,6 +56,17 @@ and 20F66 system:
   the matching public `IONew`/`IODelete` pair exported for 8796 kexts, retaining
   the original pointer-clear behavior at deletion. It is force-included in
   GPU C++ units only and leaves available native definitions in place.
+- `NativeAdrenoPublish.cpp` derives from the pinned Adreno6xx publication
+  source. `NABU_GPU_USERLAND` excludes the accelerator publication call while
+  retaining the NativeAdrenoABI BO, map, submit and fence implementation.
+  Hidden filter/entitlement declarations match the 8796 source headers; the
+  mailbox uses the existing nonvirtual IOUserClient dispatch entry by its
+  exact symbol. The compiler's publication initializer is made explicit and
+  removed from automatic kmod initializers so class registration runs once,
+  after the GPU context is ready.
+- `NabuGpuProblemLog.h` derives from the pinned a640 logger and sends bounded
+  problem records to the existing IOLog capture instead of the reference ESP
+  writer. It does not own a separate device log slot.
 
 No vendor firmware, Apple binaries or generated GPU object files belong here.
 Hardware execution, rendering and 20F66 client compatibility require separate

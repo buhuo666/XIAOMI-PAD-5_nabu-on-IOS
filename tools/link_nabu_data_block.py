@@ -26,6 +26,52 @@ def signed(value, bits):
     return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
 
+def component_extents(kernel, image, report):
+    """Include the embedded components even when their ranges are absent from the report."""
+    ranges = {(e['va'], e['va'] + e['size']) for e in report['extents'] if e['size']}
+    prelink = next(s for s in image['segments'] if s['name'] == '__PRELINK_TEXT')
+    index = next(s for s in prelink['sections'] if s['name'] == '__macho_list')
+    at = backed_offset(image['segments'], index['va'], index['size'], len(kernel))
+    headers = struct.unpack_from('<' + 'Q' * (index['size'] // 8), kernel, at)
+    for header in headers:
+        module = macho(kernel, backed_offset(image['segments'], header, 32, len(kernel)))
+        ranges.update((s['va'], s['va'] + s['size']) for s in module['segments'] if s['size'])
+    return sorted(ranges)
+
+
+def executable_gap(kernel, image, report, sections, veneer_bytes):
+    """Place code in a wholly zero, unoccupied, file-backed executable interval."""
+    parent = next(s for s in image['segments'] if s['name'] == '__PLK_TEXT_EXEC')
+    limit = parent['va'] + parent['filesize']
+    cursor = parent['va']
+    gaps = []
+    for start, end in component_extents(kernel, image, report):
+        if end <= parent['va'] or start >= limit:
+            continue
+        start, end = max(start, parent['va']), min(end, limit)
+        if cursor < start:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < limit:
+        gaps.append((cursor, limit))
+    # Prefer the largest available interval. Reserve an upper bound for veneers
+    # here; after symbol resolution only the actual far branches are emitted.
+    for start, end in sorted(gaps, key=lambda gap: gap[1] - align(gap[0]), reverse=True):
+        base = cursor = align(start)
+        for section in sections:
+            if section['group'] == '__TEXT_EXEC':
+                cursor = align(cursor, 1 << section['align']) + section['size']
+        reserved_size = align(cursor + veneer_bytes - base, 0x1000)
+        if base + reserved_size > end:
+            continue
+        at = backed_offset(image['segments'], start, end - start, len(kernel))
+        if kernel[at:at + end - start].count(0) != end - start:
+            continue
+        return {'start': start, 'end': end, 'va': base, 'reserved_size': reserved_size,
+                'max_veneer_bytes': veneer_bytes}
+    raise ValueError('Insufficient zero-filled executable gap for DataBlock code and branch veneers')
+
+
 class Object:
     def __init__(self, path):
         self.path = Path(path)
@@ -225,7 +271,8 @@ def relocate_object(obj, output, image, definitions, got, stubs):
     return pointers, counts
 
 
-def link(kernel, report, reference, objects, aes_reference=None, usb_reference=None):
+def link(kernel, report, reference, objects, aes_reference=None, usb_reference=None,
+         reuse_executable_gaps=False):
     output = bytearray(kernel)
     image = macho(output)
     by_segment = {s['name']: s for s in image['segments']}
@@ -274,6 +321,7 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
                                             'align': 2, 'size': 0, 'inputs': []}
     header_size = 32 + 4 * 72 + len(merged) * 80 + 16
     layouts = OrderedDict()
+    gap = None
     for group, parent_name in COALESCED.items():
         parent = by_segment[parent_name]
         occupied = [e['va'] + e['size'] for e in report['extents']
@@ -283,6 +331,9 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
                          for e in metadata['_PrelinkInfoDictionary'] if e.get('_PrelinkExecutableLoadAddr') and
                          parent['va'] <= e['_PrelinkExecutableLoadAddr'] < parent['va'] + parent['size']]
         base = align(max(occupied, default=parent['va']))
+        if group == '__TEXT_EXEC' and reuse_executable_gaps:
+            gap = executable_gap(kernel, image, report, merged.values(), 12 * len(branch_targets))
+            base = gap['va']
         cursor = base + align(header_size, 0x1000) if group == '__TEXT' else base
         for section in merged.values():
             if section['group'] != group:
@@ -294,6 +345,9 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
             cursor += section['size']
         size = align(cursor - base, 0x1000)
         limit = parent['va'] + parent['size']
+        if group == '__TEXT_EXEC':
+            executable_limit = gap['end'] if gap else limit
+            limit = executable_limit
         if group == '__TEXT':
             limit -= (len(report['sparse_index']['headers']) + 1) * 8
         if base + size > limit:
@@ -338,8 +392,7 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
             stub_section['size'] = 12 * len(branch_targets)
             layout = layouts['__TEXT_EXEC']
             layout['size'] = align(stub_section['va'] + stub_section['size'] - layout['va'], 0x1000)
-            parent = by_segment['__PLK_TEXT_EXEC']
-            if layout['va'] + layout['size'] > parent['va'] + parent['size']:
+            if layout['va'] + layout['size'] > executable_limit:
                 raise ValueError('Insufficient prelink space for DataBlock branch veneers')
         else:
             del merged[('__TEXT_EXEC', '__stubs')]
@@ -440,6 +493,8 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
               'imports': {s['name']: definitions[s['name']] for obj in objects for s in obj.symbols
                           if s['kind'] == 1}, 'runtime_tested': False}
+    if gap:
+        detail['executable_gap'] = gap
     return bytes(output), detail
 
 
@@ -451,6 +506,8 @@ def main():
     parser.add_argument('--aes-reference-object', type=Path)
     parser.add_argument('--usb-reference-object', type=Path)
     parser.add_argument('--object', type=Path, action='append', required=True)
+    parser.add_argument('--reuse-executable-gaps', action='store_true',
+                        help='Place code in an unoccupied zero-filled __PLK_TEXT_EXEC gap')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     report_path = args.prelink_report or args.kernel.with_name('prelink-report.json')
@@ -458,7 +515,8 @@ def main():
     result, report = link(args.kernel.read_bytes(), prelink_report,
                           Object(args.reference_object), [Object(p) for p in args.object],
                           Object(args.aes_reference_object) if args.aes_reference_object else None,
-                          Object(args.usb_reference_object) if args.usb_reference_object else None)
+                          Object(args.usb_reference_object) if args.usb_reference_object else None,
+                          reuse_executable_gaps=args.reuse_executable_gaps)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / 'kernel.native-apfs.macho').write_bytes(result)
     (args.output / 'data-block-link.json').write_text(json.dumps(report, indent=2) + '\n')
