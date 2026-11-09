@@ -229,7 +229,7 @@ def main():
         target = root/'lib/libnabu.experience.dylib'
         shutil.copy2(a.experience_compat, target)
         target.chmod(0o755)
-        injection += ('/redwood/lib/libnabu.experience.dylib SpringBoard Preferences MobileNotes '
+        injection += ('/redwood/lib/libnabu.experience.dylib SpringBoard Preferences Spotlight MobileNotes '
                       'Reminders MobileSafari PaperBoard PosterBoard LegacyPoster LocalTest '
                       '\n')
         assert len(injection.encode()) < 512, 'kern.exec_inject has a 512-byte buffer'
