@@ -1,9 +1,30 @@
 # nabu 传感器接续与测试交接
 
-2026-11-09，Asia/Shanghai。Android 实机枚举与限时采样已完成，iPadOS SLPI
-首轮底层诊断候选已具备统一测试条件。**iPadOS 传感器功能尚未完成或实测通过。**
-按用户在“30”对话中的安排，由该对话整合息屏、GPU 和传感器候选后统一测试；
-“传感器2”只完成本地构建和交接，本轮没有部署、准备日志槽或重启设备。
+2026-11-09，Asia/Shanghai。**iPadOS 传感器功能尚未完成。**
+
+第173轮已统一测试，SLPI PAS加载/认证成功，但ready超时。接续定位到SMP2P
+收发方向写反：本机 `qcom,smem=<481 430>` 是接收481、发送430。修复提交
+`1081ac7`，证据见 [SMP2P修复记录](../analysis/nabu-sensors-smp2p-20261109.md)。
+以Android原始DT生成的测试明确拒绝旧实现，修正后ASan/UBSan、内核编译/链接、
+分支和正式加载器检查通过。
+
+sensors01 已完成实机验证和日志回收：ready/handover、GLINK、动态 SSC service 400
+（该轮 node9/port12）、stop ack、PAS shutdown 全部成功，无 timeout/error；用户
+确认桌面、触摸正常。有效日志前缀8,819,050字节及完整64MiB槽均保留，槽1已清空
+并读回核对，APFS计数145。原回收由“30”先完成，随后重复回收的空槽错误已单独
+记录，没有覆盖有效备份。状态见 `log/host/sensors-smp2p-20261109/continuation.json`。
+
+“传感器4”已完成下一轮限时采样候选：
+`artifacts/nabu-sensors-live-20261109/kernel/kernel.native-apfs.macho`，启用参数
+`nabu-slpi=2`，复用 `artifacts/nabu-bootstrap-combined-sensors/bootstrap.apfs`。
+查找传感器、属性和订阅请求经过 Android 实际 QMI 抓包逐字节回放；修复 QRTR
+数据包4字节补齐及发现初始化的大栈临时对象，ASan/UBSan、arm64编译/链接、分支
+和正式加载器检查通过。**本候选未部署、未启动，不能把 Android 回放当作
+iPadOS 采样成功。** 用户最新选择“先保存候选，稍后再测”；没有准备或改写新日志槽。
+具体结果和后续步骤见 [限时采样候选](../analysis/nabu-sensors-live-20261109.md)及
+`log/host/sensors-live-20261109/continuation.json`。
+
+下方“传感器2”交接产物及其测试范围为第173轮之前的历史记录；当前状态以上文为准。
 
 ## 已确认的 Android 输入
 

@@ -13,6 +13,7 @@
 #include <pexpert/pexpert.h>
 #include "NabuSlpiProtocol.h"
 #include "NabuSlpiGlink.h"
+#include "NabuSscCensus.h"
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t,vm_size_t,unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t,vm_size_t);
 extern "C" const uint8_t *hakios_image_file(const char *,const char *,uint64_t *,int *);
@@ -20,6 +21,7 @@ extern "C" void loader_log_line(const char *);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock,hakios_rsc_lock,hakios_smem_alloc_lock;
 namespace {
 static thread_call_t slpi_call;
+static uint32_t slpi_mode;
 static char report[16384];
 static unsigned report_bytes;
 static void publish() {
@@ -120,6 +122,7 @@ struct Trial {
     IOPhysicalAddress metadata_pa=0;
     NabuSmem smem{};
     NabuSlpiGlink::Link<Trial> glink{*this};
+    NabuSsc::Census<Trial> census{*this};
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
     uint32_t read32(uint32_t offset) {
         uint32_t value = rd(smem_va + offset);
@@ -316,25 +319,72 @@ struct Trial {
     void server(uint32_t command,uint32_t service,uint32_t instance,uint32_t node,uint32_t port){
         log("NABU SLPI QRTR: command=%u service=%u instance=%#x node=%u port=%u\n",command,service,instance,node,port);
     }
+    bool send_ssc(uint32_t node,uint32_t port,uint32_t from,const uint8_t *data,uint32_t size){
+        return glink.send_data(node,port,from,data,size);
+    }
+    static void receive_ssc(void *context,uint32_t node,uint32_t port,uint32_t local_port,const uint8_t *data,uint32_t size){
+        static_cast<Trial *>(context)->census.receive(node,port,local_port,data,size);
+    }
+    void ssc_event(unsigned type,NabuSsc::Suid suid,uint32_t id,uint64_t ticks,NabuSsc::Span payload){
+        const char *name=NabuSsc::Census<Trial>::type(type);
+        log("NABU SSC EVENT: type=%s id=%u suid=%016llx%016llx ticks=%llu bytes=%u\n",
+            name,id,suid.high,suid.low,ticks,unsigned(payload.size));
+        for(unsigned at=0;at<payload.size;at+=96){
+            char hex[193];unsigned n=unsigned(payload.size)-at;if(n>96)n=96;
+            const char digits[]="0123456789abcdef";
+            for(unsigned i=0;i<n;++i){uint8_t b=payload.data[at+i];hex[i*2]=digits[b>>4];hex[i*2+1]=digits[b&15];}
+            hex[n*2]=0;
+            log("NABU SSC DATA: type=%s id=%u ticks=%llu offset=%u hex=%s\n",name,id,ticks,at,hex);
+        }
+    }
+    void ssc_summary(){
+        const auto &r=census.result;
+        log("NABU SSC: started=%u done=%u tx=%u responses=%u invalid=%u foreign=%u qmi-failures=%u errors=%u streams=%u\n",
+            r.started,r.done,r.sent,r.responses,r.invalid,r.foreign,r.qmi_failures,r.errors,census.stream_count);
+        for(unsigned i=0;i<NabuSsc::Census<Trial>::TypeCount;++i){
+            const auto &d=census.discovery[i];
+            log("NABU SSC: type=%s state=%u candidates=%u\n",NabuSsc::Census<Trial>::type(i),unsigned(d.state),d.count);
+            for(unsigned c=0;c<d.count;++c){
+                const auto &a=d.candidates[c].attributes;
+                log("NABU SSC: type=%s name=%s available=%u physical-present=%u physical=%u state=%u\n",
+                    d.data_type,a.name,a.available,a.has(21),a.physical,unsigned(d.candidates[c].state));
+            }
+        }
+        for(unsigned i=0;i<census.stream_count;++i){
+            const auto &s=census.streams[i];
+            log("NABU SSC: stream=%s configured=%u disabled=%u samples=%u nonmonotonic=%u first=%llu last=%llu accuracy=%u\n",
+                NabuSsc::Census<Trial>::type(s.type),s.configured,s.disabled,s.samples,s.nonmonotonic,s.first,s.last,s.latest.status);
+        }
+        publish();
+    }
     void probe(){
         NabuSmemItem desc,tx,rx;bool found=false;
         for(unsigned i=0;i<100;++i){if(NabuSlpi::find(smem,480,rx)){found=true;break;}if(state().state&1)break;IOSleep(10);}
         if(!found||!NabuSlpi::find(smem,478,desc)||desc.size!=32||!NabuSlpi::find(smem,479,tx)){
             log("NABU SLPI: GLINK queues unavailable; census ended\n");return;
         }
-        if(!glink.begin(desc.offset,tx.offset,tx.size,rx.offset,rx.size))return;
+        if(!glink.begin(desc.offset,tx.offset,tx.size,rx.offset,rx.size,slpi_mode==2,receive_ssc,this))return;
         uint64_t started;clock_get_uptime(&started);
         while(!glink.done()){
             uint64_t current,nanos;clock_get_uptime(&current);absolutetime_to_nanoseconds(current-started,&nanos);
             unsigned elapsed=unsigned(nanos/1000000);
-            if(elapsed>18000){glink.abort();break;}
+            if(elapsed>30000){glink.abort();break;}
             NabuSlpi::Peer p=state();if(!p.valid||(p.state&3)!=2){glink.abort();break;}
-            glink.step(elapsed);if(!glink.done())IOSleep(10);
+            glink.step(elapsed);
+            if(slpi_mode==2&&!glink.done()){
+                const auto &r=glink.result();
+                if(r.ssc_found&&!census.result.started)census.start(r.ssc_node,r.ssc_port,elapsed);
+                if(census.result.started&&!r.ssc_found){glink.abort();break;}
+                census.tick(elapsed);
+                if(census.result.done)glink.finish();
+            }
+            if(!glink.done())IOSleep(10);
         }
         const auto &r=glink.result();
         log("NABU SLPI: GLINK negotiated=%u open=%u tx=%u rx=%u QRTR=%u servers=%u SSC=%u node=%u port=%u instance=%#x close=%u timeout=%u error=%u\n",
             r.negotiated,r.opened,r.tx,r.rx,r.qrtr_packets,r.servers,r.ssc_found,r.ssc_node,r.ssc_port,r.ssc_instance,r.close_ack,r.timeout,r.error);
-        log("NABU SLPI: sensor_pd/FastRPC/registry not implemented by this root-PD census; no iPadOS sensor published\n");publish();
+        if(slpi_mode==2)ssc_summary();
+        log("NABU SLPI: live-census=%u sensor_pd/FastRPC/registry file service not implemented; no native iPadOS sensor published\n",slpi_mode==2);publish();
     }
     bool request_stop(){
         put(our_item+36,1);wr(ipc,1u<<NabuSlpi::Smp2pDoorbell);bool ack=false;
@@ -359,8 +409,8 @@ static void worker(thread_call_param_t,thread_call_param_t){
 }
 }
 extern "C" void nabu_slpi_start(){
-    uint32_t enable=0;if(slpi_call||!PE_parse_boot_argn("nabu-slpi",&enable,sizeof(enable))||enable!=1)return;
+    if(slpi_call||!PE_parse_boot_argn("nabu-slpi",&slpi_mode,sizeof(slpi_mode))||(slpi_mode!=1&&slpi_mode!=2))return;
     slpi_call=thread_call_allocate(worker,nullptr);if(!slpi_call)return;
-    log("NABU SLPI: nabu-slpi=1 scheduled after 60 seconds\n");publish();
+    log("NABU SLPI: nabu-slpi=%u scheduled after 60 seconds\n",slpi_mode);publish();
     uint64_t deadline;clock_interval_to_deadline(60,NSEC_PER_SEC,&deadline);thread_call_enter_delayed(slpi_call,deadline);
 }

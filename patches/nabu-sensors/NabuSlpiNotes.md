@@ -46,8 +46,9 @@ publication. It requests force-stop and PAS shutdown; failed PAS shutdown keeps
 metadata/mappings alive rather than freeing memory still owned by the DSP.
 
 The firmware, AOP and secure-monitor sequencing follows the project's existing
-ADSP implementation, with independently resolved SLPI resources. This is **host
-verified, not device verified**. APPS loops are finite, but a secure-world SMC
+ADSP implementation, with independently resolved SLPI resources. The sensors01
+device run verified ready, GLINK, SSC discovery, stop and shutdown after the SMP2P
+fix; it did not sample sensors. APPS loops are finite, but a secure-world SMC
 that does not return cannot be forcibly timed out from this worker. The known
 ADSP SMC continuation stall therefore remains a first-boot limitation here too.
 
@@ -56,6 +57,23 @@ implement FastRPC `INIT_ATTACH_SNS` or reverse file requests for DSP libraries,
 sensor config, and per-device registry/calibration. Root-PD ready, or even a QRTR
 announcement, cannot be reported as working sensor data. Those are explicit
 remaining dependencies for the runtime provider.
+
+`nabu-slpi=1` preserves the discovery-only run. `nabu-slpi=2` keeps GLINK open
+and starts the finite SSC census after a service announcement: seven independent
+type lookups, a three-second discovery deadline, attributes for each announced
+SUID, and subscriptions only for available physical endpoints with the required
+metadata. Empty lists are Absent; missing physical flags remain Incomplete.
+Sampling ends eight seconds after discovery starts, followed by at most 500 ms
+for disable acknowledgments and the normal GLINK/PAS shutdown. The transport has
+its own nine-second sampling limit. The client checks source/destination ports,
+QMI transactions/client IDs, sample count and timestamp monotonicity.
+
+The live candidate passed Android packet replay and host checks only. It has
+not been deployed or booted; the user selected saving it for a later test.
+QRTR data includes four-byte padding while preserving the unpadded payload size.
+Discovery resets candidates individually to avoid a 16,336-byte kernel stack
+frame. The actual SLPI object now has a 1,056-byte probe frame and a largest
+frame of 2,224 bytes; compilation rejects individual frames above 4,096 bytes.
 
 ## Build and checks
 

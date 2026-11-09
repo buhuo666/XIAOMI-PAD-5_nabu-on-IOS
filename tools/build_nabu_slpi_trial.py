@@ -24,6 +24,8 @@ def main():
     ap.add_argument('--baseline-link-command', type=Path, required=True)
     ap.add_argument('--compile-report', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
+    ap.add_argument('--slpi-mode',type=int,choices=(1,2),default=1,
+                    help='Boot argument recorded for service discovery (1) or live SSC census (2)')
     a = ap.parse_args()
     a.output = a.output.resolve()
     a.output.mkdir(parents=True, exist_ok=False)
@@ -62,7 +64,8 @@ def main():
     run(trace, a.output/'return-trace.log')
     snapshot = a.output/'sources'
     for relative in ['patches/nabu-storage/NabuDataKmod.cpp', 'tools/link_nabu_data_block.py',
-                     'tools/build_nabu_slpi_trial.py',
+                     'tools/build_nabu_slpi_trial.py', 'tools/prepare_nabu_slpi_object.py',
+                     'tools/prepare_nabu_slpi_checks.py', 'tools/check_nabu_ssc_census.py',
                      *[str(p.relative_to(ROOT)) for p in (ROOT/'patches/nabu-sensors').glob('*') if p.is_file()]]:
         target = snapshot/relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -71,9 +74,11 @@ def main():
               'commands': commands, 'link_command': link, 'link_command_file': str(link_command_path),
               'branch_check': str(branch_report), 'source_snapshot': str(snapshot),
               'kernel': str(a.output/'kernel/kernel.native-apfs.macho'),
-              'boot_argument': 'nabu-slpi=1', 'hardware_start_delay_seconds': 60,
+              'boot_argument': f'nabu-slpi={a.slpi_mode}', 'hardware_start_delay_seconds': 60,
               'device_tested': False, 'native_sensors_published': False,
-              'scope': 'SLPI root firmware, SMP2P and GLINK/QRTR endpoint discovery only; sensor_pd and native sampling remain separate.'}
+              'scope': ('SLPI root firmware, SMP2P and GLINK/QRTR endpoint discovery; '
+                        + ('bounded SSC SUID/attribute/configuration/sample census; ' if a.slpi_mode==2 else '')
+                        + 'sensor_pd, registry file service and native sensor publication remain separate.')}
     (a.output/'build-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

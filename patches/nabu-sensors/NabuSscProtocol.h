@@ -345,8 +345,11 @@ struct Discovery {
     char data_type[64]{}; Candidate candidates[16]{}; unsigned count = 0;
     State state = State::Idle; uint64_t deadline_ms = 0;
     bool start(const char *type, uint64_t now_ms, uint32_t timeout_ms) {
-        if (strlen(type) >= sizeof data_type || !timeout_ms) return false;
-        *this = Discovery{}; strcpy(data_type, type); deadline_ms = now_ms + timeout_ms;
+        size_t length = strlen(type);
+        if (length >= sizeof data_type || !timeout_ms) return false;
+        // Candidates are reset when populated. A whole-Discovery temporary
+        // consumes almost the entire XNU kernel stack after inlining.
+        count = 0; memcpy(data_type, type, length + 1); deadline_ms = now_ms + timeout_ms;
         state = State::Lookup; return true;
     }
     void summarize() {
@@ -362,7 +365,10 @@ struct Discovery {
     bool accept_suids(const SuidList &list) {
         if (state != State::Lookup || strcmp(data_type, list.data_type)) return false;
         count = list.count;
-        for (unsigned i = 0; i < count; ++i) { candidates[i].suid = list.ids[i]; candidates[i].state = State::Attributes; }
+        for (unsigned i = 0; i < count; ++i) {
+            candidates[i] = Candidate{};
+            candidates[i].suid = list.ids[i]; candidates[i].state = State::Attributes;
+        }
         state = count ? State::Attributes : State::Absent; return true;
     }
     bool accept_attributes(Suid suid, const Attributes &a) {

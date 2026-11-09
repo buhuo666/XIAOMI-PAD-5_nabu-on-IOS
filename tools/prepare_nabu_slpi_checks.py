@@ -19,6 +19,7 @@ HARNESS=r'''
 #include <vector>
 #include "NabuSlpiProtocol.h"
 #include "NabuSlpiGlink.h"
+#include "NabuSscProtocol.h"
 using Bytes=std::vector<uint8_t>;
 // Values are extracted from the captured Android DT, not the driver constants.
 // qcom,smp2p consumes qcom,smem cells in inbound, outbound order.
@@ -83,6 +84,8 @@ static void lifecycle_test(){
 struct Wire {
     Bytes b=Bytes(0xa000);
     unsigned rings=0,announcements=0;
+    Bytes received;
+    unsigned received_count=0;
     uint32_t read32(uint32_t at){return u32(b,at);}
     void write32(uint32_t at,uint32_t x){p32(b,at,x);}
     uint8_t read8(uint32_t at){return b.at(at);}void write8(uint32_t at,uint8_t x){b.at(at)=x;}
@@ -101,8 +104,42 @@ struct Wire {
         memcpy(a.data()+8,p.data(),a.size()-8);rx(9,6,1,a);
         if(fragmented){Bytes c(8+p.size()-20);p32(c,0,p.size()-20);memcpy(c.data()+8,p.data()+20,p.size()-20);rx(12,6,1,c);}
     }
-    void opened(NabuSlpiGlink::Link<Wire> &link){
-        assert(link.begin(0,0x1000,0x4000,0x5000,0x4000));
+    static void receive(void *context,uint32_t node,uint32_t port,uint32_t local,const uint8_t *p,uint32_t n){
+        auto &w=*static_cast<Wire *>(context);assert(node==9&&port==12&&local==0x100);
+        w.received.assign(p,p+n);++w.received_count;
+    }
+    std::vector<Bytes> drain(){
+        std::vector<Bytes> packets;
+        uint32_t tail=read32(0),head=read32(4);
+        while(tail!=head){
+            uint8_t h[16];for(unsigned i=0;i<16;++i)h[i]=read8(0x1000+(tail+i)%0x4000);
+            unsigned cmd=NabuSlpi::le16(h),n=8;
+            if(cmd==2)n+=NabuSlpi::le32(h+4)&0xffff;
+            if(cmd==5)n+=8*NabuSlpi::le32(h+4);
+            if(cmd==9){
+                assert(NabuSlpi::le32(h+12)==0);
+                uint32_t size=NabuSlpi::le32(h+8);Bytes packet(size);
+                for(unsigned i=0;i<size;++i)packet[i]=read8(0x1000+(tail+16+i)%0x4000);
+                // Linux qrtr_endpoint_post requires header + ALIGN(payload, 4).
+                assert(size==32+((u32(packet,20)+3)&~3u));
+                packets.push_back(packet);n+=8+size;rx(14,6,NabuSlpi::le32(h+4));
+            }
+            tail=(tail+((n+7)&~7u))%0x4000;
+        }
+        write32(0,head);return packets;
+    }
+    void data(const Bytes &payload,bool fragmented){
+        Bytes packet(32+((payload.size()+3)&~size_t(3)));
+        p32(packet,0,1);p32(packet,4,1);p32(packet,8,9);p32(packet,12,12);
+        p32(packet,20,payload.size());p32(packet,24,1);p32(packet,28,0x100);
+        memcpy(packet.data()+32,payload.data(),payload.size());
+        size_t first=fragmented?23:packet.size();Bytes a(8+first);
+        p32(a,0,first);p32(a,4,packet.size()-first);memcpy(a.data()+8,packet.data(),first);rx(9,6,1,a);
+        if(fragmented){Bytes c(8+packet.size()-first);p32(c,0,packet.size()-first);
+            memcpy(c.data()+8,packet.data()+first,packet.size()-first);rx(12,6,1,c);}
+    }
+    void opened(NabuSlpiGlink::Link<Wire> &link,bool samples=false){
+        assert(link.begin(0,0x1000,0x4000,0x5000,0x4000,samples,receive,this));
         rx(1,1,1);rx(2,6,7,Bytes{'I','P','C','R','T','R',0});rx(4,1,0);
         Bytes pair(8);p32(pair,0,8192);p32(pair,4,0);rx(5,6,1,pair);link.step(0);
         assert(link.result().opened&&!link.result().broken);
@@ -120,6 +157,27 @@ static void glink_test(){
     Wire silent;NabuSlpiGlink::Link<Wire> none(silent);assert(none.begin(0,0x1000,0x4000,0x5000,0x4000));none.step(5000);assert(none.done()&&none.result().timeout);
     Wire invalid;NabuSlpiGlink::Link<Wire> broken(invalid);invalid.opened(broken);invalid.rx(9,6,11,Bytes(8));broken.step(20);assert(broken.done()&&broken.result().broken);
 }
+static void glink_sampling_test(){
+    static Wire w;static NabuSlpiGlink::Link<Wire> l(w);w.opened(l,true);
+    w.qrtr(4,400,9,12,true);l.step(20);assert(l.result().ssc_found&&!l.result().close_sent);
+    w.drain();l.step(30);w.drain();l.step(40);w.drain();l.step(50);
+    uint8_t request[512];size_t count=NabuSsc::encode_lookup(request,sizeof request,1,"accel");
+    for(size_t n:{count,size_t(1),size_t(2),size_t(3),size_t(4),size_t(512)}){
+        Bytes payload(n,0x5a);if(n==count)memcpy(payload.data(),request,n);
+        assert(l.send_data(9,12,0x100,payload.data(),payload.size()));l.step(60);
+        auto sent=w.drain();assert(sent.size()==1);const auto &packet=sent[0];
+        assert(u32(packet,4)==1&&u32(packet,8)==1&&u32(packet,12)==0x100);
+        assert(u32(packet,20)==n&&u32(packet,24)==9&&u32(packet,28)==12);
+        assert(!memcmp(packet.data()+32,payload.data(),n));
+        for(size_t i=32+n;i<packet.size();++i)assert(!packet[i]);
+        w.data(payload,true);l.step(70);assert(w.received==payload);w.drain();l.step(80);
+    }
+    assert(w.received_count==6&&!l.result().broken);
+    l.finish();w.rx(11,1,0);l.step(90);assert(l.done()&&l.result().close_ack&&!l.result().timeout);
+    static Wire timeout;static NabuSlpiGlink::Link<Wire> stalled(timeout);timeout.opened(stalled,true);
+    timeout.qrtr(4,400,9,12);stalled.step(20);stalled.step(9020);
+    assert(stalled.result().timeout&&stalled.result().close_sent);stalled.step(10020);assert(stalled.done());
+}
 int main(int argc,char **argv){
     assert(argc==2);std::ifstream f(argv[1],std::ios::binary);Bytes b((std::istreambuf_iterator<char>(f)),{});
     NabuSlpi::Image image;assert(NabuSlpi::parse_image(b.data(),b.size(),image));
@@ -127,8 +185,8 @@ int main(int argc,char **argv){
     assert(image.segments[0].original==0x97300000&&image.segments[0].physical==0x97b00000);
     auto last=image.segments[image.count-1];assert(last.physical+last.memory_bytes==NabuSlpi::MemoryEnd);
     b.resize(100);assert(!NabuSlpi::parse_image(b.data(),b.size(),image));
-    memory_test();lifecycle_test();glink_test();
-    puts("PASS: Android DT SMP2P direction/ownership, real slpi_nb MDT relocation, host3 isolation, start/unwind failures, GLINK fragmented SSC discovery and absent-service deadlines");
+    memory_test();lifecycle_test();glink_test();glink_sampling_test();
+    puts("PASS: Android DT SMP2P direction/ownership, real slpi_nb MDT relocation, host3 isolation, start/unwind failures, GLINK fragmented SSC discovery, QRTR data padding/routing, intent reuse and bounded sampling/close");
 }
 '''
 

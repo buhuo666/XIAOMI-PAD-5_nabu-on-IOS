@@ -13,7 +13,7 @@ struct Result {
 };
 
 template<class IO> class Link {
-    enum Phase {Idle,Opening,Discovering,Closing,Finished};
+    enum Phase {Idle,Opening,Discovering,Sampling,Closing,Finished};
     struct Remote {uint32_t id,size;bool present,used;};
     struct Local {uint32_t offset,size,fill,left;};
     IO &io;
@@ -24,8 +24,12 @@ template<class IO> class Link {
     uint8_t receive_storage[69632]{}; // Original DT: 5*2048 + 3*8192 + 2*17408.
     uint32_t descriptor=0,tx=0,rx=0,tx_bytes=0,rx_bytes=0,now=0,phase_start=0;
     bool requested=false,offered=false,hello_sent=false,hello_reply=false,lookup_sent=false,intent_requested=false;
+    bool sample_mode=false;
+    using Receiver=void (*)(void *,uint32_t,uint32_t,uint32_t,const uint8_t *,uint32_t);
+    Receiver receiver=nullptr;
+    void *receiver_context=nullptr;
     uint32_t peer_node=0;
-    struct Pending {uint32_t command,node,port,words[4],from_port;};
+    struct Pending {uint32_t command,node,port,from_port,bytes;uint8_t payload[512];};
     Pending pending[16]{};
     unsigned pending_head=0,pending_count=0;
     static uint32_t aligned(uint32_t n){return (n+7)&~7u;}
@@ -65,19 +69,22 @@ template<class IO> class Link {
         if(pending_count==16){fail(Frame);return;}
         Pending &p=pending[(pending_head+pending_count)%16];
         p.command=cmd;p.node=node;p.port=port;p.from_port=from;
-        for(unsigned i=0;i<4;++i)p.words[i]=words?words[i]:0;
+        p.bytes=20;p32(p.payload,cmd);
+        for(unsigned i=0;i<4;++i)p32(p.payload+4+i*4,words?words[i]:0);
         ++pending_count;
     }
     void flush(){
         while(pending_count&&!r.broken){
+            const Pending &p=pending[pending_head];
+            uint32_t packet_bytes=32+((p.bytes+3)&~3u);
             int slot=-1;
-            for(unsigned i=0;i<64;++i)if(remote[i].present&&!remote[i].used&&remote[i].size>=52){slot=int(i);break;}
-            if(slot<0){if(!intent_requested)intent_requested=send(7,uint16_t(r.lcid),52);return;}
-            const Pending &p=pending[pending_head];uint8_t out[60]{};
-            p32(out,52);p32(out+8,1);p32(out+12,p.command);p32(out+16,1);p32(out+20,p.from_port);
-            p32(out+28,20);p32(out+32,p.node);p32(out+36,p.port);p32(out+40,p.command);
-            for(unsigned i=0;i<4;++i)p32(out+44+i*4,p.words[i]);
-            if(!send(9,uint16_t(r.lcid),remote[slot].id,out,sizeof out))return;
+            for(unsigned i=0;i<64;++i)if(remote[i].present&&!remote[i].used&&remote[i].size>=packet_bytes){slot=int(i);break;}
+            if(slot<0){if(!intent_requested)intent_requested=send(7,uint16_t(r.lcid),packet_bytes);return;}
+            uint8_t out[552]{};
+            p32(out,packet_bytes);p32(out+8,1);p32(out+12,p.command);p32(out+16,1);p32(out+20,p.from_port);
+            p32(out+28,p.bytes);p32(out+32,p.node);p32(out+36,p.port);
+            for(unsigned i=0;i<p.bytes;++i)out[40+i]=p.payload[i];
+            if(!send(9,uint16_t(r.lcid),remote[slot].id,out,8+packet_bytes))return;
             remote[slot].used=true;pending_head=(pending_head+1)%16;--pending_count;
         }
     }
@@ -95,6 +102,8 @@ template<class IO> class Link {
         ++r.qrtr_packets;
         if(confirm){uint32_t words[4]={to_node,to_port,0,0};queue(7,from_node,from_port,words,to_port);}
         if(type==3){fail(PeerGone);return;}
+        if(type==1&&receiver&&to_node==1&&to_port!=0xfffffffeu)
+            receiver(receiver_context,from_node,from_port,to_port,p+at,size);
         if(size<4||to_port!=0xfffffffeu)return;
         uint32_t cmd=u32(p+at);
         if(cmd==2){
@@ -170,24 +179,37 @@ template<class IO> class Link {
                 offered=offer_all();if(!offered)return;r.opened=true;phase=Discovering;phase_start=now;
                 if(!hello_sent){queue(2,0xffffffffu,0xfffffffeu);hello_sent=true;}
             }
-            if(phase==Discovering)flush();
+            if(phase==Discovering||phase==Sampling)flush();
         }
     }
 public:
     constexpr explicit Link(IO &provider):io(provider){}
-    bool begin(uint32_t desc,uint32_t tx_at,uint32_t tx_size,uint32_t rx_at,uint32_t rx_size){
+    bool begin(uint32_t desc,uint32_t tx_at,uint32_t tx_size,uint32_t rx_at,uint32_t rx_size,
+               bool samples=false,Receiver receive=nullptr,void *context=nullptr){
         if(phase!=Idle||tx_size<256||rx_size<256||((tx_size|rx_size)&7)){fail(Queues);return false;}
         descriptor=desc;tx=tx_at;tx_bytes=tx_size;rx=rx_at;rx_bytes=rx_size;r.features=1;r.lcid=1;phase=Opening;
+        sample_mode=samples;receiver=receive;receiver_context=context;
         return send(0,1,1);
     }
     void step(uint32_t elapsed_ms){
         if(phase==Idle||phase==Finished)return;now=elapsed_ms;pump();if(r.broken)return;
-        if(phase==Discovering)flush();
-        if((phase==Opening&&now-phase_start>=5000)||(phase==Discovering&&now-phase_start>=10000)){r.timeout=true;close();}
-        if(phase==Discovering&&r.ssc_found)close();
+        if(phase==Discovering||phase==Sampling)flush();
+        if((phase==Opening&&now-phase_start>=5000)||(phase==Discovering&&now-phase_start>=10000)||
+           (phase==Sampling&&now-phase_start>=9000)){r.timeout=true;close();}
+        if(phase==Discovering&&r.ssc_found){
+            if(sample_mode){phase=Sampling;phase_start=now;}else close();
+        }
         if(phase==Closing&&(r.close_ack||now-phase_start>=1000)){if(!r.close_ack)r.timeout=true;phase=Finished;}
     }
     void abort(){fail(PeerGone);}
+    bool send_data(uint32_t node,uint32_t port,uint32_t from_port,const uint8_t *data,uint32_t bytes){
+        if(phase!=Sampling||r.broken||pending_count==16||bytes>512)return false;
+        Pending &p=pending[(pending_head+pending_count)%16];
+        p.command=1;p.node=node;p.port=port;p.from_port=from_port;p.bytes=bytes;
+        for(unsigned i=0;i<bytes;++i)p.payload[i]=data[i];
+        ++pending_count;return true;
+    }
+    void finish(){close();}
     bool done()const{return phase==Finished;}
     const Result &result()const{return r;}
 };
