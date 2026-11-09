@@ -175,6 +175,7 @@ struct Trial {
         uint32_t base, line;
         if (!NabuSlpi::partition(smem, base, line)) { log("NABU SLPI: no host3/common SMEM partition\n"); return false; }
         log("NABU SLPI: SMEM selected hosts=%u:%u base=%#x size=%#x line=%u\n", smem.u16(base + 4), smem.u16(base + 6), base, smem.u32(base + 8), line);
+        log("NABU SLPI: SMP2P inbound=%u SLPI->APPS outbound=%u APPS->SLPI\n", NabuSlpi::Incoming, NabuSlpi::Outgoing);
         NabuSmemItem existing;
         if (NabuSlpi::find(smem, NabuSlpi::Incoming, existing) || NabuSlpi::find(smem, NabuSlpi::Outgoing, existing)) {
             log("NABU SLPI: preexisting SMP2P edge; cold-boot trial stops before PAS/AOP\n"); return false;
@@ -293,6 +294,16 @@ struct Trial {
     }
     void observe() {
         NabuSmemItem item;
+        const unsigned smp2p_ids[] = {NabuSlpi::Incoming, NabuSlpi::Outgoing};
+        for (unsigned id : smp2p_ids) {
+            bool found = NabuSlpi::find(smem, uint16_t(id), item);
+            log("NABU SLPI: SMP2P item=%u found=%u bytes=%u\n", id, found, found ? item.size : 0);
+            if (found && item.size >= 20) {
+                log("NABU SLPI: SMP2P item=%u magic=%#x version/features=%#x pid=%#x entries=%#x flags=%#x\n",
+                    id, smem.u32(item.offset), smem.u32(item.offset+4), smem.u32(item.offset+8),
+                    smem.u32(item.offset+12), smem.u32(item.offset+16));
+            }
+        }
         for(unsigned id=478;id<=480;++id){bool found=NabuSlpi::find(smem,uint16_t(id),item);log("NABU SLPI: host3 item=%u found=%u bytes=%u\n",id,found,found?item.size:0);}
         uint32_t base,line;
         if(smem.partition(0xfffe,&base,&line)&&smem.item_in(base,line,424,&item)){

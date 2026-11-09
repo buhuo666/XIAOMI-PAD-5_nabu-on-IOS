@@ -3,7 +3,9 @@
 import argparse
 import json
 from pathlib import Path
+import struct
 import subprocess
+import tarfile
 from check_darwinboot_8796 import host_command, host_path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -18,6 +20,9 @@ HARNESS=r'''
 #include "NabuSlpiProtocol.h"
 #include "NabuSlpiGlink.h"
 using Bytes=std::vector<uint8_t>;
+// Values are extracted from the captured Android DT, not the driver constants.
+// qcom,smp2p consumes qcom,smem cells in inbound, outbound order.
+constexpr uint32_t AndroidIncoming=@@INCOMING@@, AndroidOutgoing=@@OUTGOING@@;
 static void p16(Bytes &b,size_t at,uint16_t x){b.at(at)=x;b.at(at+1)=x>>8;}
 static void p32(Bytes &b,size_t at,uint32_t x){p16(b,at,x);p16(b,at+2,x>>16);}
 static uint32_t u32(const Bytes &b,size_t at){return NabuSlpi::le32(b.data()+at);}
@@ -37,15 +42,22 @@ struct Memory {
     }
 };
 static void memory_test(){
-    Memory m;m.layout();uint32_t at;assert(NabuSlpi::allocate(m.view(),m,481,340,at));
+    assert(NabuSlpi::Incoming==AndroidIncoming&&NabuSlpi::Outgoing==AndroidOutgoing);
+    Memory m;m.layout();uint32_t at;assert(NabuSlpi::allocate(m.view(),m,NabuSlpi::Outgoing,340,at));
     assert(at>=0x31000&&at<0x41000);for(auto x:m.writes)assert(x>=0x31000&&x<0x41000);
     NabuSlpi::publish_smp2p(m,at);assert(u32(m.b,at+8)==0x30000);assert(u32(m.b,at+4)==0x101);
     assert(!memcmp(m.b.data()+at+20,"master-kernel",14));
-    NabuSmemItem item;assert(!NabuSlpi::find(m.view(),430,item));
-    uint32_t incoming;assert(NabuSlpi::allocate(m.view(),m,430,340,incoming));
+    NabuSmemItem item;assert(!NabuSlpi::find(m.view(),AndroidIncoming,item));
+    assert(NabuSlpi::find(m.view(),AndroidOutgoing,item)&&item.offset==at);
+    uint32_t incoming;assert(NabuSlpi::allocate(m.view(),m,AndroidIncoming,340,incoming));
     m.put(incoming,0x504d5324);m.put(incoming+4,0x101);m.put(incoming+8,3);m.put(incoming+12,0x10010);
     memcpy(m.b.data()+incoming+20,"slave-kernel",13);m.put(incoming+36,2);
+    Bytes before=m.b;m.writes.clear();
     assert(NabuSlpi::peer(m.view()).valid&&NabuSlpi::peer(m.view()).state==2);
+    assert(m.b==before&&m.writes.empty()); // DSP-owned item is read-only to APPS.
+    for(uint32_t state:{1u,6u,8u,128u}){
+        m.put(incoming+36,state);assert(NabuSlpi::peer(m.view()).state==state);
+    }
     m.put(incoming+8,2);assert(!NabuSlpi::peer(m.view()).valid);
 }
 struct Operations {
@@ -116,7 +128,7 @@ int main(int argc,char **argv){
     auto last=image.segments[image.count-1];assert(last.physical+last.memory_bytes==NabuSlpi::MemoryEnd);
     b.resize(100);assert(!NabuSlpi::parse_image(b.data(),b.size(),image));
     memory_test();lifecycle_test();glink_test();
-    puts("PASS: real slpi_nb MDT relocation, host3 isolation, start/unwind failures, GLINK fragmented SSC discovery and absent-service deadlines");
+    puts("PASS: Android DT SMP2P direction/ownership, real slpi_nb MDT relocation, host3 isolation, start/unwind failures, GLINK fragmented SSC discovery and absent-service deadlines");
 }
 '''
 
@@ -124,18 +136,29 @@ int main(int argc,char **argv){
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--firmware',type=Path,required=True)
+    p.add_argument('--device-tree',type=Path,required=True,
+                   help='Captured Android device-tree.tar; qcom,smem is inbound then outbound')
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     source=a.output/'slpi-host.cpp';binary=a.output/'slpi-host'
-    source.write_text(HARNESS,encoding='utf-8')
+    dt_path='base/soc/qcom,smp2p-dsps@1799000c/qcom,smem'
+    with tarfile.open(a.device_tree) as tree:
+        incoming,outgoing=struct.unpack('>II',tree.extractfile(dt_path).read())
+    source.write_text(HARNESS.replace('@@INCOMING@@',str(incoming)).replace('@@OUTGOING@@',str(outgoing)),encoding='utf-8')
     command=host_command(['g++','-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation',
+                         '-fsanitize=address,undefined','-fno-omit-frame-pointer','-g',
                          '-I'+host_path(ROOT/'patches/nabu-sensors'),host_path(source),'-o',host_path(binary)])
-    subprocess.run(command,check=True)
+    compiled=subprocess.run(command,capture_output=True)
+    (a.output/'compile.log').write_bytes(compiled.stdout+compiled.stderr)
+    if compiled.returncode:raise SystemExit(compiled.stderr.decode(errors='replace'))
     result=subprocess.run(host_command([host_path(binary),host_path(a.firmware/'slpi_nb.mdt')]),
-                          capture_output=True,text=True,encoding='utf-8',errors='replace',check=True,timeout=15)
-    report=dict(command=command,result=result.stdout,device_execution=False,
+                          capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=15)
+    report=dict(command=command,result=result.stdout,stderr=result.stderr,passed=result.returncode==0,
+                android_device_tree=str(a.device_tree),dt_property=dt_path,
+                smp2p_incoming=incoming,smp2p_outgoing=outgoing,device_execution=False,
                 limitation='Host substitutes MMIO and time; no secure firmware, DSP, sensor_pd or iPadOS sensor API executed.')
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');print(result.stdout)
+    if result.returncode:raise SystemExit(result.stderr)
 
 
 if __name__=='__main__':main()

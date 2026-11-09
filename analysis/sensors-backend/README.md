@@ -16,7 +16,7 @@
 | 基础 PIL 节点 | `/soc/qcom,ssc@5c00000`；PAS ID 12 |
 | reserved memory | `[0x97b00000,0x98f00000)`，20 MiB |
 | 基础固件名 | PIL 节点 `slpi`；`qcom,msm-ssc-sensors` 节点覆盖为 `slpi_nb` |
-| SMP2P | local PID 0，remote PID 3，SMEM outgoing 481 / incoming 430 |
+| SMP2P | local PID 0，remote PID 3，SMEM incoming 481 / outgoing 430；DT 两个 cell 按接收、发送顺序 |
 | SMP2P 通知 | APCS `0x17c0000c` bit 26；RX SPI 172（GIC INTID 204） |
 | GLINK | remote PID 3，`dsps` / label `slpi`，transport `smem` |
 | GLINK 通知 | APCS mailbox bit 24；RX SPI 170（GIC INTID 202） |

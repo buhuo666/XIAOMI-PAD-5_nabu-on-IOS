@@ -10,7 +10,8 @@ namespace NabuSlpi {
 enum : uint32_t {
     MemoryBase=0x97b00000, MemorySize=0x01400000, MemoryEnd=0x98f00000,
     MetadataLimit=16384, MaxSegments=32, SmemSize=0x200000, Host=3, PasId=12,
-    Incoming=430, Outgoing=481, Smp2pBytes=340, Smp2pDoorbell=26,
+    // Android qcom,smem=<481 430>: inbound first, outbound second.
+    Incoming=481, Outgoing=430, Smp2pBytes=340, Smp2pDoorbell=26,
     GlinkDoorbell=24, GlinkDescriptor=478, GlinkTx=479, GlinkRx=480,
     GlinkFifoBytes=16384, SscService=400,
 };

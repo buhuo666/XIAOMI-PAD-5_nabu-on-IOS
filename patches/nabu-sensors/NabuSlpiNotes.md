@@ -13,7 +13,9 @@ The 2026-11-09 Android capture is stored locally at
 
 - `soc/qcom,msm-ssc-sensors/qcom,firmware-name` overrides `slpi` with `slpi_nb`.
 - PAS id 12, reserved memory `0x97b00000..0x98f00000`, SMEM remote host 3.
-- SMP2P ids 481 outbound / 430 inbound; APCS `0x17c0000c`, doorbell bit 26.
+- SMP2P ids 481 inbound / 430 outbound; APCS `0x17c0000c`, doorbell bit 26.
+  The Android `qcom,smem` cells are inbound then outbound. Run173 used these
+  backwards and timed out before observing ready; that direction is corrected.
 - GLINK descriptor/TX/RX ids 478/479/480 within host 3, doorbell bit 24.
 - The original `IPCRTR` receive pool is 5×2048 + 3×8192 + 2×17408 bytes.
 - `vdd_cx-supply` phandle `0x6c` resolves to
@@ -58,7 +60,7 @@ remaining dependencies for the runtime provider.
 ## Build and checks
 
 ```
-python tools/prepare_nabu_slpi_checks.py --firmware log/host/sensors-20261109/android/slpi-firmware --output log/host/sensors-20261109/slpi-host
+python tools/prepare_nabu_slpi_checks.py --firmware log/host/sensors-20261109/android/slpi-firmware --device-tree log/host/sensors-20261109/android/device-tree.tar --output log/host/sensors-smp2p-20261109/slpi-host
 python tools/prepare_nabu_slpi_firmware.py --firmware log/host/sensors-20261109/android/slpi-firmware --output artifacts/nabu-slpi-firmware-census-20261109
 python tools/prepare_nabu_slpi_object.py --compile-command build/nabu-aes-v32/compile-command.json --output artifacts/nabu-slpi-object-census-20261109
 ```
