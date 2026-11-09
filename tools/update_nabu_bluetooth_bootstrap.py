@@ -55,7 +55,7 @@ def main():
         injection = config.read_text() + '/redwood/lib/libnabu.bluetooth.compat.dylib bluetoothd\n'
         if len(injection.encode()) >= 512:
             raise ValueError('Bluetooth injection exceeds the existing kern.exec_inject 512-byte buffer')
-        config.write_text(injection)
+        config.write_bytes(injection.encode('utf-8'))
         changed.extend(['lib/libnabu.bluetooth.compat.dylib', 'etc/inject.conf'])
     if args.lifecycle:
         shutil.copy2(args.lifecycle, args.work / 'root/sbin/nabu-bluetooth-lifecycle')

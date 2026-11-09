@@ -233,7 +233,7 @@ def main():
                       'Reminders MobileSafari PaperBoard PosterBoard LegacyPoster LocalTest '
                       '\n')
         assert len(injection.encode()) < 512, 'kern.exec_inject has a 512-byte buffer'
-    (root/'etc/inject.conf').write_text(injection)
+    (root/'etc/inject.conf').write_bytes(injection.encode('utf-8'))
     (root/'etc/rc').write_text('exec /sbin/launchd.darwin\n')
     (root/'etc/motd').write_text('Darwin 20F66 on nabu; nabu-data=1 selects persistent APFS Data\n')
     images=[]

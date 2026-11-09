@@ -8,6 +8,12 @@
 音频+16dB已由用户确认音量合适、声音正常，麦克风录制已验收，作为本轮保留基线。
 见[Spotlight修复](../analysis/nabu-spotlight-keyboard-v159.md)。
 
+第159/160轮连续黑屏已定位到Windows打包换行回归：inject.conf的CRLF使每行末尾
+进程名携带CR，setup/input/Lockdown/蓝牙兼容模块未加载。第160轮8,776,991字节
+连续日志前缀及64MiB槽已备份清空，APFS129→130。第161轮改为字节写入保留LF，
+继续包含Spotlight；APFS结构检查与原生配置读回通过，桌面恢复和搜索键盘待实测。
+见[黑屏修复](../analysis/nabu-spotlight-black-screen-v161.md)。
+
 第156轮用户复测+12dB仍稍小，明确要求+16dB；第157轮仅调整软件PCM最大增益至
 +16dB，保留已通过的麦克风。第155轮日志确认22.20秒真实录音、启停正常，日志已
 备份清空、APFS125。第156轮在线播放无丢包/欠载/削波，新音量待验收。
