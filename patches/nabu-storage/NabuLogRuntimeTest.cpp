@@ -227,15 +227,16 @@ static void testGpuCheckpoint()
   reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
   assert(nabu_gpu_log_status(&committed,&error)==0 && committed==0 && !error);
   assert(!appends && !sealCalls && !ends);
+  const uint64_t expected=published; // Includes the runtime's start message.
   nabuLogPump(nullptr,nullptr);
-  assert(nabu_gpu_log_status(&committed,&error)==0 && committed==100 && !error);
+  assert(nabu_gpu_log_status(&committed,&error)==0 && committed==expected && !error);
   auto oldAppends=appends,oldSchedules=schedules;
   assert(nabu_gpu_log_status(&committed,&error)==0);
   assert(appends==oldAppends && schedules==oldSchedules && !sealCalls && !ends && !lockDepth);
   gNabuLogRuntimeError=EIO;
-  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==100 && error==EIO);
+  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==expected && error==EIO);
   gNabuLogRuntimeError=0;gNabuLogFinishing=true;
-  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==100 && !error);
+  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==expected && !error);
   gNabuReadLock=nullptr;
   assert(nabu_gpu_log_status(&committed,&error)!=0 && !committed && !error);
   puts("PASS GPU checkpoint observes only committed bytes; no writes, sealing or scheduling; unavailable on failed/finishing capture");
