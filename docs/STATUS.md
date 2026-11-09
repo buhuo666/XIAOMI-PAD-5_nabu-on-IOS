@@ -1,6 +1,13 @@
 # 项目进展
 
-更新：2026-11-09，Asia/Shanghai。
+更新：2026-11-10，Asia/Shanghai。
+
+第177轮系统接入已到原版消费者：backboardd、mediaserverd实际取得GPU前端，零延迟
+硬件启动与桌面进程就绪等待生效。但系统片段着色器使用的uchar3被前端拒绝，媒体服务
+缺少pipelineLibrary函数重载，导致服务反复退出、桌面未完成。3,356,432字节前缀、
+64MiB槽1和9,779,081字节syslog已备份清槽，APFS150，设备已恢复Android。
+第178轮正在编译两项直接修复，见[实测](../analysis/nabu-system-gpu-v177.md)和
+[修复证据](../analysis/nabu-system-shaders-v178.md)；系统加速尚未验收。
 
 第177轮转入系统GPU接入：系统工厂支持普通进程，缓存使用各进程目录；原版
 backboardd/SpringBoard等GPU就绪后再启动，取消90秒诊断延迟。普通名App不再直接链接

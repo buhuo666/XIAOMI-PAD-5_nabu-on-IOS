@@ -1,0 +1,153 @@
+{
+  "image": {
+    "path": "/System/Library/Frameworks/Metal.framework/Metal",
+    "address": "0x181a0a000",
+    "cache_file": "dyld_shared_cache_arm64.01",
+    "file_offset": 26943488,
+    "cpu_subtype": 0,
+    "file_type": 6
+  },
+  "scope": "Original 20F66 metadata; method list selectors use the existing decoded libobjc selector base",
+  "methods": [
+    {
+      "name": "-[MTLNamedConstantValue data]",
+      "address": "0x181a8db60",
+      "encoding": "^v16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLNamedConstantValue dataType]",
+      "address": "0x181a8db58",
+      "encoding": "Q16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLIndexedConstantValue data]",
+      "address": "0x181a8de0c",
+      "encoding": "^v16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLIndexedConstantValue dataType]",
+      "address": "0x181a8de04",
+      "encoding": "Q16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValues setConstantValues:type:withRange:]",
+      "address": "0x181a8de20",
+      "encoding": "v48@0:8r^v16Q24{_NSRange=QQ}32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValues setConstantValue:type:atIndex:]",
+      "address": "0x181a8de1c",
+      "encoding": "v40@0:8r^v16Q24Q32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValues setConstantValue:type:withName:]",
+      "address": "0x181a8de24",
+      "encoding": "v40@0:8r^v16Q24@32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal newIndexedConstantArray]",
+      "address": "0x181a912d4",
+      "encoding": "@16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal setConstantValues:type:withRange:]",
+      "address": "0x181a36f3c",
+      "encoding": "v48@0:8r^v16Q24{_NSRange=QQ}32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal setConstantValue:type:atIndex:]",
+      "address": "0x181a20108",
+      "encoding": "v40@0:8r^v16Q24Q32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal setConstantValue:type:withName:]",
+      "address": "0x181a20f7c",
+      "encoding": "v40@0:8r^v16Q24@32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal newNamedConstantArray]",
+      "address": "0x181a912c4",
+      "encoding": "@16@0:8",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:]",
+      "address": "0x181a2039c",
+      "encoding": "@24@0:8@16",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:functionCache:specializedName:error:]",
+      "address": "0x181a201f8",
+      "encoding": "@56@0:8@16@24@32@40^@48",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:pipelineLibrary:completionHandler:]",
+      "address": "0x181ae40dc",
+      "encoding": "v48@0:8@16@24@32@?40",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:completionHandler:]",
+      "address": "0x181ae40cc",
+      "encoding": "v40@0:8@16@24@?32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:pipelineLibrary:error:]",
+      "address": "0x181a3df8c",
+      "encoding": "@48@0:8@16@24@32^@40",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:functionCache:specializedName:completionHandler:]",
+      "address": "0x181ae4030",
+      "encoding": "v56@0:8@16@24@32@40@?48",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:error:]",
+      "address": "0x181a3af20",
+      "encoding": "@40@0:8@16@24^@32",
+      "section": 1,
+      "type": 14
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:functionCache:error:]",
+      "address": "0x181a2100c",
+      "encoding": "@48@0:8@16@24@32^@40",
+      "section": 1,
+      "type": 14
+    }
+  ]
+}

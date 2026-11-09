@@ -1,0 +1,248 @@
+{
+  "functions": [
+    {
+      "name": "-[MTLFunctionConstantValues setConstantValues:type:withRange:]",
+      "address": "0x181a8de20",
+      "next_local_symbol": "0x181a8de24",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27483680,
+      "bytes": 4,
+      "assembly": "181a8de20.asm",
+      "calls": []
+    },
+    {
+      "name": "-[MTLFunctionConstantValues setConstantValue:type:atIndex:]",
+      "address": "0x181a8de1c",
+      "next_local_symbol": "0x181a8de20",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27483676,
+      "bytes": 4,
+      "assembly": "181a8de1c.asm",
+      "calls": []
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal setConstantValues:type:withRange:]",
+      "address": "0x181a36f3c",
+      "next_local_symbol": "0x181a37090",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27127612,
+      "bytes": 340,
+      "assembly": "181a36f3c.asm",
+      "calls": [
+        {
+          "address": "0x181a36f80",
+          "target": "0x181a37d58",
+          "resolved_target": "0x181a37d58",
+          "target_name": "_MTLDataTypeGetComponentCount",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36f90",
+          "target": "0x181a32394",
+          "resolved_target": "0x181a32394",
+          "target_name": "_MTLDataTypeGetComponentType",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36f94",
+          "target": "0x181a33650",
+          "resolved_target": "0x181a33650",
+          "target_name": "__MTLConstantDataSize",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36fa4",
+          "target": "0x181a33650",
+          "resolved_target": "0x181a33650",
+          "target_name": "__MTLConstantDataSize",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36fc4",
+          "target": "0x181a33650",
+          "resolved_target": "0x181a33650",
+          "target_name": "__MTLConstantDataSize",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36fcc",
+          "target": "0x181b281e4",
+          "resolved_target": "0x1d02fba48",
+          "target_name": "__Znam",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a36fdc",
+          "target": "0x181b28724",
+          "resolved_target": "0x1d031cdc0",
+          "target_name": "__platform_memmove",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a37004",
+          "target": "0x181a33c78",
+          "resolved_target": "0x181a33c78",
+          "target_name": "__ZNSt3__16__treeINS_12__value_typeItN18MTLConstantStorage12ConstantDataEEENS_19__map_value_compareItS4_NS_4lessItEELb1EEENS_9allocatorIS4_EEE25__emplace_unique_key_argsItJRKNS_21piecewise_construct_tENS_5tupleIJOtEEENSG_IJEEEEEENS_4pairINS_15__tree_iteratorIS4_PNS_11__tree_nodeIS4_PvEElEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x2": {
+              "value": "0x181b489a0",
+              "label": "__ZNSt3__1L19piecewise_constructE"
+            }
+          }
+        },
+        {
+          "address": "0x181a37014",
+          "target": "0x181b281cc",
+          "resolved_target": "0x1d02fba80",
+          "target_name": "__ZdaPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a37074",
+          "target": "0x181b07a40",
+          "resolved_target": "0x181b07a40",
+          "target_name": "_MTLReportFailure",
+          "literal_registers": {
+            "x1": {
+              "value": "0x181b5d04a",
+              "label": "-[MTLFunctionConstantValuesInternal setConstantValues:type:withRange:]"
+            },
+            "x3": {
+              "value": "0x1d5687050",
+              "label": null
+            },
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x2e9",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x181a37084",
+          "target": "0x181b281cc",
+          "resolved_target": "0x1d02fba80",
+          "target_name": "__ZdaPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a3708c",
+          "target": "0x186cfe048",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[MTLFunctionConstantValuesInternal setConstantValue:type:atIndex:]",
+      "address": "0x181a20108",
+      "next_local_symbol": "0x181a201f8",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27033864,
+      "bytes": 240,
+      "assembly": "181a20108.asm",
+      "calls": [
+        {
+          "address": "0x181a20148",
+          "target": "0x181a33650",
+          "resolved_target": "0x181a33650",
+          "target_name": "__MTLConstantDataSize",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a20150",
+          "target": "0x181b281e4",
+          "resolved_target": "0x1d02fba48",
+          "target_name": "__Znam",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a20160",
+          "target": "0x181b28724",
+          "resolved_target": "0x1d031cdc0",
+          "target_name": "__platform_memmove",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a20188",
+          "target": "0x181a33c78",
+          "resolved_target": "0x181a33c78",
+          "target_name": "__ZNSt3__16__treeINS_12__value_typeItN18MTLConstantStorage12ConstantDataEEENS_19__map_value_compareItS4_NS_4lessItEELb1EEENS_9allocatorIS4_EEE25__emplace_unique_key_argsItJRKNS_21piecewise_construct_tENS_5tupleIJOtEEENSG_IJEEEEEENS_4pairINS_15__tree_iteratorIS4_PNS_11__tree_nodeIS4_PvEElEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x2": {
+              "value": "0x181b489a0",
+              "label": "__ZNSt3__1L19piecewise_constructE"
+            }
+          }
+        },
+        {
+          "address": "0x181a20198",
+          "target": "0x181b281cc",
+          "resolved_target": "0x1d02fba80",
+          "target_name": "__ZdaPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a201dc",
+          "target": "0x181b07a40",
+          "resolved_target": "0x181b07a40",
+          "target_name": "_MTLReportFailure",
+          "literal_registers": {
+            "x1": {
+              "value": "0x181b5cfd9",
+              "label": "-[MTLFunctionConstantValuesInternal setConstantValue:type:atIndex:]"
+            },
+            "x3": {
+              "value": "0x1d5687030",
+              "label": null
+            },
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x2e0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x181a201ec",
+          "target": "0x181b281cc",
+          "resolved_target": "0x1d02fba80",
+          "target_name": "__ZdaPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x181a201f4",
+          "target": "0x186cfe048",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[_MTLLibrary newFunctionWithName:constantValues:pipelineLibrary:error:]",
+      "address": "0x181a3df8c",
+      "next_local_symbol": "0x181a3dfd8",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27156364,
+      "bytes": 76,
+      "assembly": "181a3df8c.asm",
+      "calls": [
+        {
+          "address": "0x181a3dfb0",
+          "target": "0x181bbd0a0",
+          "resolved_target": "0x181bbd0a0",
+          "target_name": "_objc_msgSend$functionCache",
+          "literal_registers": {}
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "image_uuid": "88922408-fd68-3396-8465-3775ce66ff60",
+  "function": "_MTLConstantDataSize",
+  "function_address": "0x181a33650",
+  "data_type": 51,
+  "packed_bytes": 3,
+  "table_entry": "0x181b558d8",
+  "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+  "file_offset": 28301528,
+  "scope": "Original table read and setter/getter assembly; not a runtime call"
+}
