@@ -1,5 +1,11 @@
 name: nabu16 - system GPU integration
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-system-integration.yml'
+      - 'tools/build_nabu_system_gpu.py'
+      - 'userland/nabu/src/gpu_metal_wait_exec.c'
   workflow_dispatch:
     inputs:
       runner:
