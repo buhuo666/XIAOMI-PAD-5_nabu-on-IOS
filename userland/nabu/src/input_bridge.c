@@ -37,7 +37,14 @@
 #include <string.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
+#include <mach/mach_time.h>
+#include <objc/runtime.h>
 #include "hakios.input.h"
+#include "NabuHall.h"
+
+typedef uint32_t io_registry_entry_t;
+extern io_registry_entry_t IORegistryEntryFromPath(uint32_t, const char *);
+extern CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t, CFStringRef, CFAllocatorRef, uint32_t);
 
 static void say(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void say(const char *format, ...)
@@ -80,6 +87,7 @@ extern IOHIDEventRef IOHIDEventCreateKeyboardEvent(CFAllocatorRef allocator, uin
     Boolean down, uint32_t options);
 extern void IOHIDEventAppendEvent(IOHIDEventRef parent, IOHIDEventRef child, uint32_t options);
 extern void IOHIDEventSetIntegerValue(IOHIDEventRef event, uint32_t field, CFIndex value);
+extern CFIndex IOHIDEventGetIntegerValue(IOHIDEventRef event, uint32_t field);
 
 #define HID_CLIENT_SIMPLE               4       /* a client that only sends */
 #define HID_CLIENT_RATE_CONTROLLED      3       /* what IOHIDEventSystemClientCreate() makes */
@@ -98,8 +106,91 @@ extern void IOHIDEventSetIntegerValue(IOHIDEventRef event, uint32_t field, CFInd
 #define DIGITIZER_FROM_EDGE_TIP         0x800   /* not a change: this finger came in over an edge of the screen */
 #define FIELD_IS_BUILT_IN               0x4
 #define FIELD_DIGITIZER_DISPLAY_INTEGRATED 0xb0019
+#define FIELD_KEYBOARD_PAGE              0x30000
+#define FIELD_KEYBOARD_USAGE             0x30001
 
 #define MAX_FINGERS     10
+
+static bool hall_enabled;
+static io_registry_entry_t hall_entry;
+static id (*hall_original_init)(id, SEL, uint64_t, uint64_t, bool, bool);
+
+static bool
+read_hall(bool *closed)
+{
+    if (!hall_entry) hall_entry = IORegistryEntryFromPath(0, "IODeviceTree:/chosen");
+    if (!hall_entry) return false;
+    CFTypeRef value = IORegistryEntryCreateCFProperty(hall_entry, CFSTR(NABU_HALL_PROPERTY), NULL, 0);
+    if (!value) return false;
+    bool valid = CFGetTypeID(value) == CFBooleanGetTypeID();
+    if (valid) *closed = CFBooleanGetValue(value);
+    CFRelease(value);
+    return valid;
+}
+
+/* 20F66 queries HES services once, before the virtual input services exist.
+ * Tell this processor about the one physical nabu switch at initialization.
+ * The original processor still handles state changes, dispatch and observers.
+ */
+static bool hall_supported(__unused id self, __unused SEL command) { return true; }
+static id
+hall_init(id self, SEL command, __unused uint64_t supported, __unused uint64_t disengaged,
+          __unused bool attached, __unused bool unknown)
+{
+    bool closed = false;
+    bool sampled = read_hall(&closed);
+    say("NABU HALL HID: initializing one HES, closed=%u sampled=%u\n", closed, sampled);
+    return hall_original_init(self, command, 1, closed ? 0 : 1, false, false);
+}
+
+static bool
+enable_hall_processor(void)
+{
+    Class cls = objc_getClass("BKSmartCoverHIDEventProcessor");
+    Method init = class_getInstanceMethod(cls, sel_registerName("initWithSupportedHES:disengagedHES:attached:unknownState:"));
+    Method supported = class_getClassMethod(cls, sel_registerName("isSmartCoverSupported"));
+    if (!init || !supported) {
+        say("NABU HALL HID: 20F66 SmartCover processor unavailable\n");
+        return false;
+    }
+    hall_original_init = (void *)method_setImplementation(init, (IMP)hall_init);
+    method_setImplementation(supported, (IMP)hall_supported);
+    say("NABU HALL HID: enabled GPIO9 single-HES adapter\n");
+    return true;
+}
+
+static IOHIDEventRef
+hall_event(bool closed)
+{
+    IOHIDEventRef event = IOHIDEventCreateKeyboardEvent(NULL, mach_absolute_time(),
+        NABU_HALL_HID_PAGE, NABU_HALL_HID_USAGE, closed, 0);
+    if (event) IOHIDEventSetIntegerValue(event, FIELD_IS_BUILT_IN, 1);
+    return event;
+}
+
+static void *
+hall_thread(void *argument)
+{
+    IOHIDServiceClientRef service = argument;
+    pthread_setname_np("nabu hall");
+    bool sent = false, previous = false;
+    unsigned failures = 0;
+    for (;;) {
+        bool closed;
+        if (read_hall(&closed) && (!sent || closed != previous)) {
+            IOHIDEventRef event = hall_event(closed);
+            bool ok = event && IOHIDVirtualServiceClientDispatchEvent(service, event);
+            if (event) CFRelease(event);
+            if (ok) {
+                sent = true;
+                previous = closed;
+                say("NABU HALL HID: state=%s page=ff09 usage=1 dispatched=1\n", closed ? "closed" : "open");
+            } else if (++failures <= 3) say("NABU HALL HID: dispatch failed=%u\n", failures);
+        }
+        usleep(32000);
+    }
+    return NULL;
+}
 
 /*
  * A finger that lands this close to an edge of the screen (a fraction of the width or the height)
@@ -128,7 +219,19 @@ number(int value)
 struct service {
 	CFMutableDictionaryRef properties;
 	atomic_bool opened;
+	bool hall;
 };
+
+static IOHIDEventRef
+service_copy_event(__unused void *target, void *refcon, __unused IOHIDServiceClientRef service,
+    uint32_t type, IOHIDEventRef matching, __unused uint32_t options)
+{
+    if (!((struct service *)refcon)->hall || type != 3) return NULL;
+    if (matching && (IOHIDEventGetIntegerValue(matching, FIELD_KEYBOARD_PAGE) != NABU_HALL_HID_PAGE ||
+        IOHIDEventGetIntegerValue(matching, FIELD_KEYBOARD_USAGE) != NABU_HALL_HID_USAGE)) return NULL;
+    bool closed;
+    return read_hall(&closed) ? hall_event(closed) : NULL;
+}
 
 /* The properties of a service of ours; the event server asks for them one at a time. */
 static CFTypeRef
@@ -175,6 +278,7 @@ service_notification(__unused void *target, __unused void *refcon, __unused IOHI
 static const struct virtual_service_callbacks service_callbacks = {
 	.version = 2, .notification = service_notification, .setProperty = service_set_property,
 	.copyProperty = service_copy_property,
+	.copyEvent = service_copy_event,
 };
 
 /*
@@ -192,6 +296,7 @@ static IOHIDServiceClientRef
 make_service(IOHIDEventSystemClientRef client, const char *product, int page, int usage, bool display)
 {
 	struct service *made = calloc(1, sizeof(*made));
+	made->hall = page == NABU_HALL_HID_PAGE;
 	IOHIDServiceClientRef service = NULL;
 	CFMutableDictionaryRef properties = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks,
 	    &kCFTypeDictionaryValueCallBacks);
@@ -210,7 +315,7 @@ make_service(IOHIDEventSystemClientRef client, const char *product, int page, in
 	CFDictionarySetValue(properties, CFSTR("DeviceUsage"), usage_number);
 	CFDictionarySetValue(properties, CFSTR("DeviceUsagePairs"), pairs);
 	CFDictionarySetValue(properties, CFSTR("Built-In"), kCFBooleanTrue);
-	CFDictionarySetValue(properties, CFSTR("Transport"), display ? CFSTR("SPI") : CFSTR("SPMI"));
+	CFDictionarySetValue(properties, CFSTR("Transport"), display ? CFSTR("SPI") : made->hall ? CFSTR("GPIO") : CFSTR("SPMI"));
 	CFDictionarySetValue(properties, CFSTR("Manufacturer"), CFSTR("nabu"));
 	CFDictionarySetValue(properties, CFSTR("Product"), name);
 	CFDictionarySetValue(properties, CFSTR("VendorID"), zero);
@@ -339,6 +444,13 @@ input_thread(__unused void *arg)
 		close(device);
 		return NULL;
 	}
+	if (hall_enabled) {
+		IOHIDServiceClientRef hall = make_service(client, "Nabu Hall switch", NABU_HALL_HID_PAGE, NABU_HALL_HID_USAGE, false);
+		pthread_t worker;
+		int error = hall ? pthread_create(&worker, NULL, hall_thread, hall) : ENODEV;
+		if (!error) pthread_detach(worker);
+		else say("NABU HALL HID: service/worker unavailable: %s\n", strerror(error));
+	}
 
 	for (;;) {
         ssize_t bytes = read(device, &t, sizeof(t));
@@ -383,12 +495,19 @@ __attribute__((constructor)) static void nabu_input_constructor(void)
     char arguments[2048] = {0};
     size_t length = sizeof(arguments) - 1;
     if (sysctlbyname("kern.bootargs", arguments, &length, NULL, 0) != 0) return;
-    bool requested = false;
+    bool requested = false, hall_requested = false;
     char *state;
     for (char *arg = strtok_r(arguments, " \t\r\n", &state); arg;
-            arg = strtok_r(NULL, " \t\r\n", &state))
+            arg = strtok_r(NULL, " \t\r\n", &state)) {
         if (strcmp(arg, "nabu-input=1") == 0) requested = true;
+        if (strcmp(arg, "nabu-hall=1") == 0) hall_requested = true;
+    }
     if (!requested) return;
+    if (hall_requested) {
+        bool closed;
+        if (read_hall(&closed)) hall_enabled = enable_hall_processor();
+        else say("NABU HALL HID: no GPIO9 sample; Hall adapter disabled\n");
+    }
     pthread_t thread;
     int error = pthread_create(&thread, NULL, input_thread, NULL);
     if (error) {

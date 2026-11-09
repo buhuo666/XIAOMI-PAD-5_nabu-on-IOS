@@ -33,8 +33,8 @@ def main() -> None:
     command = [clang, "-target", "arm64-apple-ios16.5", "-isysroot", sdk_path,
                "-std=c11", "-dynamiclib", "-Os", "-fvisibility=hidden", "-Wall", "-Wextra",
                "-Werror", "-Wl,-install_name," + INSTALL_NAME, "-Wl,-fatal_warnings",
-               "-I" + str(HEADER.parent), str(SOURCE), "-framework", "CoreFoundation",
-               "-framework", "IOKit", "-o", str(output)]
+               "-I" + str(HEADER.parent), "-I" + str(ROOT / "patches/nabu-input"), str(SOURCE), "-framework", "CoreFoundation",
+               "-framework", "IOKit", "-lobjc", "-o", str(output)]
     compiler_output = capture(command)
     capture(["/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", str(output)])
     report = {
@@ -44,6 +44,8 @@ def main() -> None:
         "source_sha256_lf": sha256_lf(SOURCE),
         "input_header": HEADER.relative_to(ROOT).as_posix(),
         "input_header_sha256_lf": sha256_lf(HEADER),
+        "hall_header": "patches/nabu-input/NabuHall.h",
+        "hall_header_sha256_lf": sha256_lf(ROOT / "patches/nabu-input/NabuHall.h"),
         "binary": verify(output),
         "compiler": capture([clang, "--version"])["stdout"].strip(),
         "xcode": xcode,

@@ -1,0 +1,38 @@
+name: nabu16 - Hall cover input
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/hall-input.yml'
+      - 'patches/nabu-input/NabuHall.*'
+      - 'userland/nabu/src/input_bridge.c'
+      - 'tools/build_nabu_input_bridge.py'
+      - 'tools/check_nabu_hall.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hall-input:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch the pinned input record header
+        run: python3 tools/fetch_sources.py --only hakios-8796-reference --report artifacts/hall-input-source.json
+      - name: Test the Hall level and HID state transitions
+        run: python3 tools/check_nabu_hall.py --output artifacts/nabu-hall-checks
+      - name: Compile and sign the 20F66 input bridge
+        run: python3 tools/build_nabu_input_bridge.py --output artifacts/nabu-input-bridge
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-hall-input-${{ github.run_number }}
+          path: |
+            artifacts/nabu-input-bridge/
+            artifacts/nabu-hall-checks/
+            artifacts/hall-input-source.json
+          retention-days: 14

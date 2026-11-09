@@ -20,10 +20,16 @@ void nabu_gpu_start(void);
 #ifdef NABU_SLPI_TRIAL
 void nabu_slpi_start(void);
 #endif
+#ifdef NABU_HALL_SERVICE
+void nabu_hall_start(void);
+#endif
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
     if (nabu_aes_start()) return KERN_FAILURE;
     if (nabu_data_block_start()) return KERN_FAILURE;
+#ifdef NABU_HALL_SERVICE
+    nabu_hall_start();
+#endif
 #ifdef NABU_POWER_SERVICE
     nabu_power_start();
 #endif
