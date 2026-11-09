@@ -2,6 +2,12 @@
 
 更新：2026-11-09，Asia/Shanghai。
 
+第172轮默认IOSurface复制兼容通过：Mach完整16KiB读取、32轮/64个GPU命令、
+双向各32768像素及保护区均正确，资源1/1释放。pointer0、copied1/degraded1，
+copy-in65920和merge-back13568字节，shadow1/in-place0；不属于零复制或桌面加速。
+桌面触摸正常，3,309,688字节和64MiB日志槽备份清空，APFS142，未额外重启Android。
+下一步核对并接入小型CAMetalLayer应用呈现，见[第172轮](../analysis/nabu-gpu-v172.md)。
+
 第171轮默认IOSurface停在导入：BoMap Unsupported转OOM，复制回退也因iOS未启用
 Mach读取实现而未建立，GPU命令0。桌面触摸正常；3,572,008字节及64MiB日志槽备份
 清空，APFS141。正在补iOS平台分支，见[第171轮](../analysis/nabu-gpu-v171.md)。

@@ -1,5 +1,12 @@
 # 项目工作规则
 
+2026-11-09第172轮默认IOSurface复制兼容实机通过：Mach完整读回16KiB，32轮/64命令，
+双向各32768像素及保护区0错，资源1/1释放、held0。pointer0、copied1、degraded1、
+shadow1/in-place0，copy-in65920、merge-back13568字节；不等同零复制或桌面加速。
+桌面触摸正常，3,309,688字节及64MiB槽备份清空，APFS142，未额外重启Android。
+继续本机20F66 CAMetalLayer小型应用的drawable与呈现路径；保持v168内核和已合格
+第172前端，先核对真实私有调用，不泛开cached imports。见analysis/nabu-gpu-v172.md。
+
 2026-11-09第171轮默认IOSurface创建/标准工厂通过，BoMap Unsupported转OOM，
 指针与复制计数全0、无GPU命令。实际派生runtime的copied.rs只为macOS启用Mach
 read_pages，iOS走false分支；下一步补这一平台条件并实测Mach读回，cached imports
