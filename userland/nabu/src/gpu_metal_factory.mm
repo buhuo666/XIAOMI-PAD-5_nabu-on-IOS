@@ -30,11 +30,11 @@ static NSString *cachePath;
 
 static void missing(const char *cls, const char *selector) {
     snprintf(lastMissing, sizeof(lastMissing), "%s %s", cls, selector);
-    fprintf(stderr, "NABU_METAL_FACTORY missing=%s\n", lastMissing);
+    fprintf(stderr, "NABU_METAL_FACTORY missing=%s process=%s pid=%d\n", lastMissing, getprogname(), getpid());
 }
 static id refused(const char *why) {
     snprintf(lastError, sizeof(lastError), "%s", why ? why : "unknown");
-    fprintf(stderr, "NABU_METAL_FACTORY error=%s\n", lastError);
+    fprintf(stderr, "NABU_METAL_FACTORY error=%s process=%s pid=%d\n", lastError, getprogname(), getpid());
     return nil;
 }
 } // namespace
@@ -97,8 +97,9 @@ static id refused(const char *why) {
     @try {
         id device = openDevice("/redwood/sbin/libvulkan_freedreno.dylib", cache.fileSystemRepresentation, registry, missing);
         if (!device) return refused(bridgeError());
-        fprintf(stderr, "NABU_METAL_FACTORY returned=%s registry=%llu\n", object_getClassName(device),
-                (unsigned long long)registry);
+        fprintf(stderr, "NABU_METAL_FACTORY returned=%s registry=%llu process=%s pid=%d cache=%s\n",
+                object_getClassName(device), (unsigned long long)registry, process ?: "unknown", getpid(),
+                cache.fileSystemRepresentation);
         return device;
     } @catch (NSException *exception) {
         return refused(exception.reason.UTF8String ?: exception.name.UTF8String);

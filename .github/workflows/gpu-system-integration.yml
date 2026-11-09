@@ -6,6 +6,7 @@ on:
       - '.github/workflows/gpu-system-integration.yml'
       - 'tools/build_nabu_system_gpu.py'
       - 'userland/nabu/src/gpu_metal_wait_exec.c'
+      - 'userland/nabu/src/gpu_metal_factory.mm'
   workflow_dispatch:
     inputs:
       runner:
