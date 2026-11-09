@@ -5,6 +5,11 @@ on:
     paths: ['.github/workflows/sensors-rpc-analysis.yml']
   workflow_dispatch:
     inputs:
+      input_set:
+        description: Original inputs to analyze
+        type: choice
+        options: [device, rom-listeners]
+        default: rom-listeners
       source_release_id:
         description: Temporary draft release containing sensors-rpc-inputs.tar
         required: true
@@ -30,8 +35,9 @@ jobs:
       - name: Read the selected original ELF inputs
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_SET: ${{ inputs.input_set || 'rom-listeners' }}
           SOURCE_RELEASE_ID: ${{ inputs.source_release_id || '439343931' }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 || '309b6646d12eb4fa533898af0ba837f0588d40f86cd699a972c8fa34445b2c10' }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 || '651e709c024eddba1972febd3bf90b38094c90738f9519c02daca686f006185c' }}
         run: |
           mkdir -p build log/ci/sensors-rpc
           python3 - <<'PY'
@@ -40,14 +46,15 @@ jobs:
           release_id=int(os.environ['SOURCE_RELEASE_ID'])
           repo=os.environ['GITHUB_REPOSITORY']
           release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{release_id}']))
-          asset=next(a for a in release['assets'] if a['name']=='sensors-rpc-inputs.tar')
+          asset_name='sensors-rpc-listeners.tar' if os.environ['INPUT_SET']=='rom-listeners' else 'sensors-rpc-inputs.tar'
+          asset=next(a for a in release['assets'] if a['name']==asset_name)
           data=subprocess.check_output(['gh','api','-H','Accept: application/octet-stream',f'repos/{repo}/releases/assets/{asset["id"]}'])
           if hashlib.sha256(data).hexdigest()!=os.environ['SOURCE_SHA256']:
               raise RuntimeError('Input archive differs from selected acquisition')
           archive=pathlib.Path('build/sensors-rpc-inputs.tar');archive.write_bytes(data)
           rows=[]
           with tarfile.open(archive) as tar:
-              for name in ('sscrpcd','libadsprpc.so','libssc.so'):
+              for name in (('libssc_default_listener.so','libadsp_default_listener.so','libsdsprpc.so') if os.environ['INPUT_SET']=='rom-listeners' else ('sscrpcd','libadsprpc.so','libssc.so')):
                   blob=tar.extractfile(name).read()
                   if blob[:4]!=b'\x7fELF':raise RuntimeError(name+' is not ELF')
                   (root/name).write_bytes(blob)
@@ -70,10 +77,17 @@ jobs:
           subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
           PY
       - name: Recover sensorspd attachment and reverse listener initialization
+        env:
+          INPUT_SET: ${{ inputs.input_set || 'rom-listeners' }}
         run: |
           export JAVA_HOME="$JAVA_HOME_21_X64"
           mkdir -p build/ghidra-sensors-rpc
-          for name in sscrpcd libadsprpc.so libssc.so; do
+          if [ "$INPUT_SET" = "rom-listeners" ]; then
+            names="libssc_default_listener.so libadsp_default_listener.so libsdsprpc.so"
+          else
+            names="sscrpcd libadsprpc.so libssc.so"
+          fi
+          for name in $names; do
             build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-sensors-rpc "$name" -import "log/ci/sensors-rpc/$name" -analysisTimeoutPerFile 300 -scriptPath analysis/image4 -postScript ExportImage4.java log/ci/sensors-rpc "$name" -log "log/ci/sensors-rpc/$name-ghidra.log"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
