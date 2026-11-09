@@ -271,7 +271,7 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
                                            'align': 3, 'size': 8 * len(got_targets), 'inputs': []}
     if branch_targets:
         merged[('__TEXT_EXEC', '__stubs')] = {'group': '__TEXT_EXEC', 'name': '__stubs', 'flags': 0x80000400,
-                                            'align': 2, 'size': 12 * len(branch_targets), 'inputs': []}
+                                            'align': 2, 'size': 0, 'inputs': []}
     header_size = 32 + 4 * 72 + len(merged) * 80 + 16
     layouts = OrderedDict()
     for group, parent_name in COALESCED.items():
@@ -308,6 +308,41 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
             if symbol['kind'] & 0xe == 0xe and not obj.sections[symbol['section'] - 1]['keep']:
                 continue
             definitions[symbol['name']] = obj.symbol_address(symbol, definitions)
+    # The A640 backend exhausts the existing executable padding when every BL
+    # reserves a veneer. Resolve the actual sites first: a direct ARM64 branch
+    # needs a veneer only outside its signed 26-bit, four-byte displacement.
+    # Veneers are last in TEXT_EXEC, so adding them changes no input address.
+    far_branches = set()
+    for oi, obj in enumerate(objects):
+        for section in obj.sections:
+            if not section['keep']:
+                continue
+            addend = 0
+            for address, word in section['relocations']:
+                kind = word >> 28
+                if kind == 10:
+                    addend = signed(word & 0xffffff, 24)
+                    continue
+                if kind == 2 and word >> 27 & 1:
+                    si = word & 0xffffff
+                    target = obj.symbol_address(obj.symbols[si], definitions) + addend
+                    instruction = struct.unpack_from('<I', obj.data, section['fileoff'] + address)[0]
+                    delta = target + signed(instruction & 0x3ffffff, 26) * 4 - section['new_va'] - address
+                    if not -(1 << 27) <= delta < (1 << 27):
+                        far_branches.add((oi, si))
+                addend = 0
+    branch_targets = far_branches
+    stub_section = merged.get(('__TEXT_EXEC', '__stubs'))
+    if stub_section:
+        if branch_targets:
+            stub_section['size'] = 12 * len(branch_targets)
+            layout = layouts['__TEXT_EXEC']
+            layout['size'] = align(stub_section['va'] + stub_section['size'] - layout['va'], 0x1000)
+            parent = by_segment['__PLK_TEXT_EXEC']
+            if layout['va'] + layout['size'] > parent['va'] + parent['size']:
+                raise ValueError('Insufficient prelink space for DataBlock branch veneers')
+        else:
+            del merged[('__TEXT_EXEC', '__stubs')]
     for section in merged.values():
         for obj, part in section['inputs']:
             at = backed_offset(image['segments'], part['new_va'], part['size'], len(output))
@@ -396,6 +431,7 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
               'modem_trial': definitions.get('_nabu_modem_start_trial'),
               'adsp_trial': definitions.get('_nabu_adsp_start'), 'relocations': relocation_counts,
               'gpu_start': definitions.get('_nabu_gpu_start'),
+              'branch_veneers': len(branch_targets),
               'return_trace_symbols': {name: definitions[name] for name in (
                   '_nabu_return_trace_entry', '_nabu_return_trace_entry_end',
                   '_nabu_return_trace_terminal', '_nabu_return_trace_terminal_end',

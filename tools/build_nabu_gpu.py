@@ -50,7 +50,7 @@ def main():
         raise ValueError('A640 reference checkout differs from sources.lock.json')
     (staged/'NabuGpuBuild.h').write_bytes(('#define NABU_GPU_SOURCE_ID "'+reference+'"\n').encode())
     flags = json.loads(args.compile_command.read_text())
-    flags += ['-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]
+    flags += ['-fno-common', '-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]
     cxx_only = {'-std=gnu++17', '-fapple-kext', '-fno-exceptions', '-fno-rtti',
                 '-fno-use-cxa-atexit', '-fno-c++-static-destructors', '-nostdinc++',
                 '-Wno-inconsistent-missing-override'}

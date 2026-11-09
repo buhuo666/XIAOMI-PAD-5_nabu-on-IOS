@@ -34,6 +34,8 @@ and 20F66 system:
 - `NativeAdrenoCpu.cpp` distinguishes 16 KiB VM allocation units from the
   4 KiB kernel and SMMU translation granules. Physical-page cache queries use
   XNU's `atop()` contract rather than an assumed shift.
+  Private preemption/kernel-map queries retain their exact 8796 declarations
+  when the exported kext headers hide them.
 - `NativeAdrenoA6xxPower.cpp` uses the current AOP mailbox and RPMh mutexes
   for complete transactions, sharing those transports with WLAN and ADSP.
   A TCS must be available and have no enabled commands before selection.
