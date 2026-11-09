@@ -84,5 +84,7 @@ python3 tools/build_nabu_gpu_metal_probe.py --work build/gpu-metal --output arti
 移除检查、25项Rust补丁应用和反向还原校验及工作流YAML解析。
 Windows的Git默认CRLF转换已在staging clone中显式关闭；校验记录位于
 `log/host/metal-20f66/metal-build-host-check.json`。
-Metal SDK编译、Rust编译与签名均待macOS CI；设备的
-实例初始化、MTL调用及GPU结果仍待验证。
+2026-11-09后续：源码2e14b2c、CI42590211952全部编译和签名成功，完整内核CI42590211825
+也通过。第167轮独立Metal各项实测通过，运行时尺寸528匹配；实际RGBA已回收。
+详见[第167轮](nabu-gpu-v167.md)。六个设备能力查询暂无bridge答案，未被本次测试使用，
+后续工厂和应用兼容仍需逐项验证。

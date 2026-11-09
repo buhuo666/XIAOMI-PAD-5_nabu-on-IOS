@@ -1,5 +1,12 @@
 # 项目工作规则
 
+2026-11-09第167轮独立Metal实机通过：fill4096字节、compute1024字、128保护字，
+render1024像素（红256、其他颜色0）、4096行间保护字节，3个命令缓冲全部Completed。
+_MTLDevice运行时尺寸528吻合原版；实际RGBA和PNG已回收，用户桌面触摸正常并恢复
+Android，4,356,279字节日志及64MiB槽备份清空，APFS137。继续新进程经标准
+MTLCreateSystemDefaultDevice工厂的实测，再推进IOSurface和呈现；独立Metal不能
+视为系统工厂、桌面或应用硬件加速已完成。
+
 2026-11-09第166轮A640 Vulkan实机通过：fill1024/1024、compute1024/1024、
 32x32三角形目标像素512且其他颜色0；用户桌面触摸正常并恢复Android，日志槽已备份
 清空，APFS136。使用3bbeff9内核与CI42576001993的Vulkan程序。继续独立16.5 Metal
