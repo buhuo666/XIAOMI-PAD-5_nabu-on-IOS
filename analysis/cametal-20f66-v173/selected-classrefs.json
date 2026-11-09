@@ -1,0 +1,20 @@
+[
+  {
+    "classref": "0x1dcc1e420",
+    "class": "0x1dd4cd2d0",
+    "ro": "0x1d7c009c0",
+    "name": "IOSurfaceSharedEvent"
+  },
+  {
+    "classref": "0x1dcc1e428",
+    "class": "0x1e1b82148",
+    "ro": "0x1d7c00a08",
+    "name": "IOSurfaceSharedEventListener"
+  },
+  {
+    "classref": "0x1dcc1e3a8",
+    "class": "0x1e1b2fa20",
+    "ro": "0x1d5698818",
+    "name": "MTLTextureDescriptor"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "call": "0x1882625a8",
+    "caller": "__ZN2CA12WindowServer10EAGLServer8rendererEv",
+    "entry": "0x188262548"
+  },
+  {
+    "call": "0x18827a5f0",
+    "caller": "__ZN2CA3OGL22AsynchronousDispatcher8rendererEv",
+    "entry": "0x18827a5c8"
+  },
+  {
+    "call": "0x188338ab0",
+    "caller": "____Z29create_cgimage_from_iosurfaceP11__IOSurface_block_invoke",
+    "entry": "0x188338aa4"
+  },
+  {
+    "call": "0x188346024",
+    "caller": "__ZN2CA12WindowServer13VirtualServer8rendererEv",
+    "entry": "0x188345fe0"
+  },
+  {
+    "call": "0x18847ea28",
+    "caller": "__ZN2CA2CG13AccelRenderer7acquireERNS0_13AccelDrawableEPPS1_yjbPK10__CFString",
+    "entry": "0x18847e798"
+  },
+  {
+    "call": "0x1884b30c0",
+    "caller": "____ZN2CA12WindowServer12IOMFBDisplay7get_ctxEv_block_invoke",
+    "entry": "0x1884b30a8"
+  }
+]

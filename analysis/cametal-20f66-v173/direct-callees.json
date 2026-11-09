@@ -1,0 +1,330 @@
+[
+  {
+    "name": "__ZL19get_unused_drawableP20_CAMetalLayerPrivate20CAMetalLayerRotationbb",
+    "address": "0x1882fcff8",
+    "next_local_symbol": "0x1882fd2f4",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 23039992,
+    "bytes": 764,
+    "assembly": "1882fcff8.asm",
+    "calls": [
+      {
+        "address": "0x1882fd034",
+        "target": "0x188296ae8",
+        "resolved_target": "0x188296ae8",
+        "target_name": "_x_list_remove_head",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd0e0",
+        "target": "0x18843375c",
+        "resolved_target": "0x18843375c",
+        "target_name": "__ZL16release_drawableP20_CAMetalLayerPrivateP23_CAMetalDrawablePrivate",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd104",
+        "target": "0x1882e880c",
+        "resolved_target": "0x1882e880c",
+        "target_name": "__ZL32layer_private_check_pixel_formatP20_CAMetalLayerPrivatej",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd17c",
+        "target": "0x1882bcfa8",
+        "resolved_target": "0x1882bcfa8",
+        "target_name": "__ZN2CA6Render34create_iosurface_with_pixel_formatEjjjjyPK10__CFString",
+        "literal_registers": {
+          "x5": {
+            "value": "0x1d5812d98",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882fd19c",
+        "target": "0x1884c9398",
+        "resolved_target": "0x1884c9398",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1",
+            "label": null
+          },
+          "x1": {
+            "value": "0x70",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882fd1e4",
+        "target": "0x18830d848",
+        "resolved_target": "0x18830d848",
+        "target_name": "__ZL23drawable_set_colorspaceP23_CAMetalDrawablePrivateP12CGColorSpace",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd1f0",
+        "target": "0x188433f50",
+        "resolved_target": "0x188433f50",
+        "target_name": "__ZL25drawable_set_edr_metadataP23_CAMetalDrawablePrivateP13CAEDRMetadata",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd220",
+        "target": "0x188433470",
+        "resolved_target": "0x188433470",
+        "target_name": "__ZL25allocate_drawable_texturePU19objcproto9MTLDevice11objc_objectP11__IOSurfacejj14MTLPixelFormaty20CAMetalLayerRotationbP8NSStringm",
+        "literal_registers": {
+          "x5": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882fd230",
+        "target": "0x18830692c",
+        "resolved_target": "0x18830692c",
+        "target_name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd27c",
+        "target": "0x18db36528",
+        "resolved_target": "0x186d5e444",
+        "target_name": "_CFEqual",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd298",
+        "target": "0x18830d848",
+        "resolved_target": "0x18830d848",
+        "target_name": "__ZL23drawable_set_colorspaceP23_CAMetalDrawablePrivateP12CGColorSpace",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd2bc",
+        "target": "0x188541fc0",
+        "resolved_target": "0x188541fc0",
+        "target_name": "_objc_msgSend$isEqual:",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd2d8",
+        "target": "0x188433f50",
+        "resolved_target": "0x188433f50",
+        "target_name": "__ZL25drawable_set_edr_metadataP23_CAMetalDrawablePrivateP13CAEDRMetadata",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882fd2ec",
+        "target": "0x18830692c",
+        "resolved_target": "0x18830692c",
+        "target_name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "__ZL25layer_private_flush_asyncP20_CAMetalLayerPrivate",
+    "address": "0x1882e58e8",
+    "next_local_symbol": "0x1882e599c",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 22943976,
+    "bytes": 180,
+    "assembly": "1882e58e8.asm",
+    "calls": [
+      {
+        "address": "0x1882e5908",
+        "target": "0x18db39750",
+        "resolved_target": "0x1d03b61a4",
+        "target_name": "_pthread_setspecific",
+        "literal_registers": {
+          "x0": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882e5918",
+        "target": "0x18826ee4c",
+        "resolved_target": "0x18826ee4c",
+        "target_name": "_CAImageQueueCollect_",
+        "literal_registers": {
+          "x1": {
+            "value": "0x1",
+            "label": null
+          },
+          "x2": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882e5924",
+        "target": "0x18db39750",
+        "resolved_target": "0x1d03b61a4",
+        "target_name": "_pthread_setspecific",
+        "literal_registers": {
+          "x0": {
+            "value": "0x0",
+            "label": null
+          },
+          "x1": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1882e5940",
+        "target": "0x18843375c",
+        "resolved_target": "0x18843375c",
+        "target_name": "__ZL16release_drawableP20_CAMetalLayerPrivateP23_CAMetalDrawablePrivate",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e5954",
+        "target": "0x1884c96e0",
+        "resolved_target": "0x1884c96e0",
+        "target_name": null,
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e5968",
+        "target": "0x18db3954c",
+        "resolved_target": "0x1d032461c",
+        "target_name": "_os_unfair_lock_unlock",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e5970",
+        "target": "0x188214650",
+        "resolved_target": "0x188214650",
+        "target_name": "__ZL31layer_private_cleanup_callbacksP20_CAMetalLayerPrivate",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e5990",
+        "target": "0x18db39534",
+        "resolved_target": "0x1d03245ec",
+        "target_name": "_os_unfair_lock_lock",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e5998",
+        "target": "0x18db388e0",
+        "resolved_target": "0x1d0308348",
+        "target_name": "__Unwind_Resume",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "-[CAMetalDrawable initWithDrawablePrivate:layer:]",
+    "address": "0x18821e53c",
+    "next_local_symbol": "0x18821e6d0",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 22127932,
+    "bytes": 404,
+    "assembly": "18821e53c.asm",
+    "calls": [
+      {
+        "address": "0x18821e580",
+        "target": "0x18db39330",
+        "resolved_target": "0x1800b1a40",
+        "target_name": "_objc_msgSendSuper2",
+        "literal_registers": {
+          "x1": {
+            "value": "0x1826ba66a",
+            "label": "init"
+          }
+        }
+      },
+      {
+        "address": "0x18821e594",
+        "target": "0x18db394bc",
+        "resolved_target": "0x1800b9eec",
+        "target_name": "_objc_storeWeak",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x18821e59c",
+        "target": "0x18db393fc",
+        "resolved_target": "0x1800b3348",
+        "target_name": "_objc_release_x8",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x18821e5bc",
+        "target": "0x18db39474",
+        "resolved_target": "0x1800b2a3c",
+        "target_name": "_objc_retain_x8",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x18821e650",
+        "target": "0x18db39258",
+        "resolved_target": "0x1800b8780",
+        "target_name": "_objc_alloc_init",
+        "literal_registers": {
+          "x0": {
+            "value": "0x201dd4cd2d0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x18821e664",
+        "target": "0x18db39258",
+        "resolved_target": "0x1800b8780",
+        "target_name": "_objc_alloc_init",
+        "literal_registers": {
+          "x0": {
+            "value": "0x201e1aed3d0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x18821e678",
+        "target": "0x18db39258",
+        "resolved_target": "0x1800b8780",
+        "target_name": "_objc_alloc_init",
+        "literal_registers": {
+          "x0": {
+            "value": "0x201e1aed3d0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x18821e6c0",
+        "target": "0x1884c950c",
+        "resolved_target": "0x1884c950c",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1e1b9ba30",
+            "label": "__ZZL25present_on_finish_enabledP13_CAImageQueueE4once"
+          },
+          "x1": {
+            "value": "0x1d57fcd38",
+            "label": "___block_literal_global.372"
+          }
+        }
+      },
+      {
+        "address": "0x18821e6cc",
+        "target": "0x18db38a60",
+        "resolved_target": "0x18dc05300",
+        "target_name": "___stack_chk_fail",
+        "literal_registers": {}
+      }
+    ]
+  }
+]

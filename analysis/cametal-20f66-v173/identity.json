@@ -1,0 +1,10 @@
+{
+  "build": "20F66",
+  "device": "iPad7,11",
+  "image": "/System/Library/Frameworks/QuartzCore.framework/QuartzCore",
+  "base": "0x1881fb000",
+  "uuid": "dc2dd4c1-7866-3443-8050-fc915a0204c1",
+  "prior_input_evidence": "log/host/display-v16/input-files.json",
+  "no_input_hashes_recomputed": true,
+  "decoded_function_count": 21
+}

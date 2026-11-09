@@ -1,0 +1,55 @@
+{
+  "open": false,
+  "analysis_provider_binding": null,
+  "analysis_provider_candidates": [
+    {
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": null
+      },
+      "availability": {
+        "status": "unavailable",
+        "code": "executable_missing",
+        "reason": "Point GHIDRA_INSTALL_DIR at the root of an extracted official Ghidra release."
+      }
+    },
+    {
+      "provider": {
+        "id": "hopper",
+        "name": "Hopper Disassembler",
+        "version": null
+      },
+      "availability": {
+        "status": "unavailable",
+        "code": "unsupported_host",
+        "reason": "Hopper integration is not supported on win32."
+      }
+    },
+    {
+      "provider": {
+        "id": "ida",
+        "name": "IDA MCP adapter",
+        "version": "1"
+      },
+      "availability": {
+        "status": "unavailable",
+        "code": "not_configured",
+        "reason": "Set REA_IDA_MCP_CONFIG to an upstream IDA MCP JSON registration; see docs/ida-provider.md."
+      }
+    },
+    {
+      "provider": {
+        "id": "kuna",
+        "name": "Kuna",
+        "version": null
+      },
+      "availability": {
+        "status": "unavailable",
+        "code": "not_configured",
+        "reason": "Set REA_KUNA_COMMAND to the absolute path of a caller-supplied kuna executable (verified with 1.833). REA does not download, install or update Kuna."
+      }
+    }
+  ],
+  "scope": "REA binary_session availability only. No native target opened and no REA native dossier obtained."
+}

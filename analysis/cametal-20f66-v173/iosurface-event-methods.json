@@ -1,0 +1,116 @@
+[
+  {
+    "class": "IOSurfaceSharedEvent",
+    "list_flags": "0xc000000f",
+    "method_entry_bytes": 12,
+    "limitation": "Shared-cache optimized selector offsets are not decoded here; do not treat them as entry-relative names. Class identity comes from class_ro name.",
+    "methods": [
+      {
+        "entry": "0x1a38afbf8",
+        "raw_selector_offset": 419097,
+        "selector": null,
+        "types": "Q16@0:8",
+        "imp": "0x1a38a76b4"
+      },
+      {
+        "entry": "0x1a38afc04",
+        "raw_selector_offset": 4501888,
+        "selector": null,
+        "types": "@16@0:8",
+        "imp": "0x1a38a7124"
+      },
+      {
+        "entry": "0x1a38afc10",
+        "raw_selector_offset": 7139968,
+        "selector": null,
+        "types": "v16@0:8",
+        "imp": "0x1a38a741c"
+      },
+      {
+        "entry": "0x1a38afc1c",
+        "raw_selector_offset": 10518016,
+        "selector": null,
+        "types": "@24@0:8@16",
+        "imp": "0x1a38a7380"
+      },
+      {
+        "entry": "0x1a38afc28",
+        "raw_selector_offset": 16381952,
+        "selector": null,
+        "types": "v24@0:8@16",
+        "imp": "0x1a38a7300"
+      },
+      {
+        "entry": "0x1a38afc34",
+        "raw_selector_offset": 16803146,
+        "selector": null,
+        "types": "I16@0:8",
+        "imp": "0x1a38a76ac"
+      },
+      {
+        "entry": "0x1a38afc40",
+        "raw_selector_offset": 16811315,
+        "selector": null,
+        "types": "@20@0:8I16",
+        "imp": "0x1a38a7234"
+      },
+      {
+        "entry": "0x1a38afc4c",
+        "raw_selector_offset": 16815717,
+        "selector": null,
+        "types": "v40@0:8@16Q24@?32",
+        "imp": "0x1a38a75bc"
+      },
+      {
+        "entry": "0x1a38afc58",
+        "raw_selector_offset": 16828421,
+        "selector": null,
+        "types": "v24@0:8Q16",
+        "imp": "0x1a38a74a4"
+      },
+      {
+        "entry": "0x1a38afc64",
+        "raw_selector_offset": 17036341,
+        "selector": null,
+        "types": "Q16@0:8",
+        "imp": "0x1a38a7518"
+      },
+      {
+        "entry": "0x1a38afc70",
+        "raw_selector_offset": 17039200,
+        "selector": null,
+        "types": "B32@0:8Q16Q24",
+        "imp": "0x1a38a7524"
+      }
+    ]
+  },
+  {
+    "class": "IOSurfaceSharedEventListener",
+    "list_flags": "0xc000000f",
+    "method_entry_bytes": 12,
+    "limitation": "Shared-cache optimized selector offsets are not decoded here; do not treat them as entry-relative names. Class identity comes from class_ro name.",
+    "methods": [
+      {
+        "entry": "0x1a38afc88",
+        "raw_selector_offset": 4501888,
+        "selector": null,
+        "types": "@16@0:8",
+        "imp": "0x1a38a76bc"
+      },
+      {
+        "entry": "0x1a38afc94",
+        "raw_selector_offset": 7139968,
+        "selector": null,
+        "types": "v16@0:8",
+        "imp": "0x1a38a3a90"
+      },
+      {
+        "entry": "0x1a38afca0",
+        "raw_selector_offset": 14238023,
+        "selector": null,
+        "types": "@24@0:8@16",
+        "imp": "0x1a38a1e9c"
+      }
+    ]
+  }
+]

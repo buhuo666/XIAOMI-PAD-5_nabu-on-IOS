@@ -1,0 +1,281 @@
+[
+  {
+    "name": "__ZL25allocate_drawable_texturePU19objcproto9MTLDevice11objc_objectP11__IOSurfacejj14MTLPixelFormaty20CAMetalLayerRotationbP8NSStringm",
+    "address": "0x188433470",
+    "next_local_symbol": "0x1884335dc",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 24310896,
+    "bytes": 364,
+    "assembly": "188433470.asm",
+    "calls": [
+      {
+        "address": "0x1884334bc",
+        "target": "0x1885474a0",
+        "resolved_target": "0x1885474a0",
+        "target_name": "_objc_msgSend$texture2DDescriptorWithPixelFormat:width:height:mipmapped:",
+        "literal_registers": {
+          "x0": {
+            "value": "0x201e1b2fa20",
+            "label": null
+          },
+          "x5": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1884334c8",
+        "target": "0x18db38640",
+        "resolved_target": "0x1a38a0044",
+        "target_name": "_IOSurfaceGetPixelFormat",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1884334d8",
+        "target": "0x188251684",
+        "resolved_target": "0x188251684",
+        "target_name": "__ZN2CA6Render25fourcc_compressed_of_typeEj24IOSurfaceCompressionType29IOSurfaceCompressionFootprint",
+        "literal_registers": {
+          "x1": {
+            "value": "0x0",
+            "label": null
+          },
+          "x2": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x188433534",
+        "target": "0x188545fc0",
+        "resolved_target": "0x188545fc0",
+        "target_name": "_objc_msgSend$setRotation:",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188433540",
+        "target": "0x1885455e0",
+        "resolved_target": "0x1885455e0",
+        "target_name": "_objc_msgSend$setIsDrawable:",
+        "literal_registers": {
+          "x2": {
+            "value": "0x1",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x188433550",
+        "target": "0x188545240",
+        "resolved_target": "0x188545240",
+        "target_name": "_objc_msgSend$setFramebufferOnly:",
+        "literal_registers": {
+          "x2": {
+            "value": "0x1",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x188433564",
+        "target": "0x1885466a0",
+        "resolved_target": "0x1885466a0",
+        "target_name": "_objc_msgSend$setUsage:",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188433574",
+        "target": "0x188545180",
+        "resolved_target": "0x188545180",
+        "target_name": "_objc_msgSend$setForceResourceIndex:",
+        "literal_registers": {
+          "x2": {
+            "value": "0x1",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x188433580",
+        "target": "0x188545f80",
+        "resolved_target": "0x188545f80",
+        "target_name": "_objc_msgSend$setResourceIndex:",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188433594",
+        "target": "0x188543060",
+        "resolved_target": "0x188543060",
+        "target_name": "_objc_msgSend$newTextureWithDescriptor:iosurface:plane:",
+        "literal_registers": {
+          "x4": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1884335a0",
+        "target": "0x188545660",
+        "resolved_target": "0x188545660",
+        "target_name": "_objc_msgSend$setLabel:",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1884335d0",
+        "target": "0x1884c950c",
+        "resolved_target": "0x1884c950c",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1e1b9bbe0",
+            "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+          },
+          "x1": {
+            "value": "0x1d57fd068",
+            "label": "___block_literal_global.28"
+          }
+        }
+      },
+      {
+        "address": "0x1884335d8",
+        "target": "0x18db38ab4",
+        "resolved_target": "0x18dbc443c",
+        "target_name": "_abort",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "__ZL32layer_private_check_pixel_formatP20_CAMetalLayerPrivatej",
+    "address": "0x1882e880c",
+    "next_local_symbol": "0x1882e8870",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 22956044,
+    "bytes": 100,
+    "assembly": "1882e880c.asm",
+    "calls": [
+      {
+        "address": "0x1882e8820",
+        "target": "0x188231e5c",
+        "resolved_target": "0x188231e5c",
+        "target_name": "__ZN2CA6Render16fourcc_to_formatEj",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882e8838",
+        "target": "0x188547220",
+        "resolved_target": "0x188547220",
+        "target_name": "_objc_msgSend$supportsExtendedXR10Formats",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "__ZN2CA6Render34create_iosurface_with_pixel_formatEjjjjyPK10__CFString",
+    "address": "0x1882bcfa8",
+    "next_local_symbol": "0x1882bd1a0",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 22777768,
+    "bytes": 504,
+    "assembly": "1882bcfa8.asm",
+    "calls": [
+      {
+        "address": "0x1882bd098",
+        "target": "0x1884c950c",
+        "resolved_target": "0x1884c950c",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1e1b9c1e0",
+            "label": "__ZZ22CADeviceUseCompressionE4once"
+          },
+          "x1": {
+            "value": "0x1d57fcfe8",
+            "label": "___block_literal_global.16"
+          }
+        }
+      },
+      {
+        "address": "0x1882bd0ec",
+        "target": "0x188251684",
+        "resolved_target": "0x188251684",
+        "target_name": "__ZN2CA6Render25fourcc_compressed_of_typeEj24IOSurfaceCompressionType29IOSurfaceCompressionFootprint",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882bd130",
+        "target": "0x188297cd4",
+        "resolved_target": "0x188297cd4",
+        "target_name": "__ZN2CA11SurfaceUtil17CAIOSurfaceCreateEjjjjjjyNS0_16SurfaceAlignmentEPK10__CFString",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1882bd17c",
+        "target": "0x1884c950c",
+        "resolved_target": "0x1884c950c",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1e1b9bbe0",
+            "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+          },
+          "x1": {
+            "value": "0x1d57fd068",
+            "label": "___block_literal_global.28"
+          }
+        }
+      },
+      {
+        "address": "0x1882bd194",
+        "target": "0x1884c950c",
+        "resolved_target": "0x1884c950c",
+        "target_name": null,
+        "literal_registers": {
+          "x0": {
+            "value": "0x1e1b9b9d0",
+            "label": "__ZZ41CADeviceSupportsLossyUniversalCompressionE4once"
+          },
+          "x1": {
+            "value": "0x1d57fd0a8",
+            "label": "___block_literal_global.34.9370"
+          }
+        }
+      },
+      {
+        "address": "0x1882bd19c",
+        "target": "0x18db38a60",
+        "resolved_target": "0x18dc05300",
+        "target_name": "___stack_chk_fail",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+    "address": "0x18830692c",
+    "next_local_symbol": "0x1883069a4",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 23079212,
+    "bytes": 120,
+    "assembly": "18830692c.asm",
+    "calls": [
+      {
+        "address": "0x188306958",
+        "target": "0x1882eb954",
+        "resolved_target": "0x1882eb954",
+        "target_name": "_CAImageQueueUnregisterBuffer",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188306980",
+        "target": "0x1882bc9dc",
+        "resolved_target": "0x1882bc9dc",
+        "target_name": "_CAImageQueueRegisterIOSurfaceBuffer",
+        "literal_registers": {}
+      }
+    ]
+  }
+]

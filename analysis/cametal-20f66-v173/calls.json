@@ -1,0 +1,2916 @@
+{
+  "build": "20F66 iPad7,11",
+  "provider": "Capstone 5.0.7",
+  "scope": "Original cache bytes and v2 pointers. Function upper bounds are next distinct local symbols, not decompiler body claims. Literal annotations are conservative straight-line hints; confirm parameter data flow in assembly.",
+  "functions": [
+    {
+      "name": "-[CAMetalLayer setDevice:]",
+      "address": "0x188317e40",
+      "next_local_symbol": "0x188317eb8",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 23150144,
+      "bytes": 120,
+      "assembly": "188317e40.asm",
+      "calls": [
+        {
+          "address": "0x188317e68",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188317e78",
+          "target": "0x18db39420",
+          "resolved_target": "0x1800b2c58",
+          "target_name": "_objc_retain_x20",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188317e80",
+          "target": "0x18db393fc",
+          "resolved_target": "0x1800b3348",
+          "target_name": "_objc_release_x8",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188317e8c",
+          "target": "0x1882e58e8",
+          "resolved_target": "0x1882e58e8",
+          "target_name": "__ZL25layer_private_flush_asyncP20_CAMetalLayerPrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188317eac",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188317eb4",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalLayer nextDrawable]",
+      "address": "0x18821de60",
+      "next_local_symbol": "0x18821e53c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22126176,
+      "bytes": 1756,
+      "assembly": "18821de60.asm",
+      "calls": [
+        {
+          "address": "0x18821dec0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821dedc",
+          "target": "0x188546b40",
+          "resolved_target": "0x188546b40",
+          "target_name": "_objc_msgSend$size",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821deec",
+          "target": "0x18853f6a0",
+          "resolved_target": "0x18853f6a0",
+          "target_name": "_objc_msgSend$contentsScale",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821df1c",
+          "target": "0x1882ed100",
+          "resolved_target": "0x1882ed100",
+          "target_name": "_CAImageQueueSetSize",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821dfb8",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812c18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821dff4",
+          "target": "0x1882f2160",
+          "resolved_target": "0x1882f2160",
+          "target_name": "_CAImageQueueConsumeUnconsumed_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e060",
+          "target": "0x18822afc0",
+          "resolved_target": "0x18822afc0",
+          "target_name": "_CAHostTimeWithTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e068",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e0a4",
+          "target": "0x1882e6788",
+          "resolved_target": "0x1882e6788",
+          "target_name": "_CAImageQueueSetFlags",
+          "literal_registers": {
+            "x1": {
+              "value": "0x40000000",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e0d4",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e0e4",
+          "target": "0x18826ee4c",
+          "resolved_target": "0x18826ee4c",
+          "target_name": "_CAImageQueueCollect_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e0f4",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e12c",
+          "target": "0x1882fcff8",
+          "resolved_target": "0x1882fcff8",
+          "target_name": "__ZL19get_unused_drawableP20_CAMetalLayerPrivate20CAMetalLayerRotationbb",
+          "literal_registers": {
+            "x3": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e13c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e140",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e144",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e170",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e1c0",
+          "target": "0x1884c9608",
+          "resolved_target": "0x1884c9608",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e1cc",
+          "target": "0x1884c9584",
+          "resolved_target": "0x1884c9584",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e240",
+          "target": "0x18db38e74",
+          "resolved_target": "0x1a6b9c7e4",
+          "target_name": "_dyld_program_sdk_at_least",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e264",
+          "target": "0x18db3927c",
+          "resolved_target": "0x1800b22e0",
+          "target_name": "_objc_autoreleasePoolPush",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e274",
+          "target": "0x188540c20",
+          "resolved_target": "0x188540c20",
+          "target_name": "_objc_msgSend$flush",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9b048",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e27c",
+          "target": "0x1884c9a4c",
+          "resolved_target": "0x1884c9a4c",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e298",
+          "target": "0x1884c9584",
+          "resolved_target": "0x1884c9584",
+          "target_name": null,
+          "literal_registers": {
+            "x1": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e2b8",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e2c0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e2e0",
+          "target": "0x18db39288",
+          "resolved_target": "0x1800c36f8",
+          "target_name": "_objc_begin_catch",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e2f0",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d58064f8",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e2f4",
+          "target": "0x18db392ac",
+          "resolved_target": "0x1800be6b0",
+          "target_name": "_objc_end_catch",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e310",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e314",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e320",
+          "target": "0x18db38634",
+          "resolved_target": "0x1a389f658",
+          "target_name": "_IOSurfaceGetID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e340",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e34c",
+          "target": "0x18db3924c",
+          "resolved_target": "0x1800b5acc",
+          "target_name": "_objc_alloc",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9a738",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e358",
+          "target": "0x188541780",
+          "resolved_target": "0x188541780",
+          "target_name": "_objc_msgSend$initWithDrawablePrivate:layer:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e35c",
+          "target": "0x18db39264",
+          "resolved_target": "0x1800b5a60",
+          "target_name": "_objc_autorelease",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e36c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e374",
+          "target": "0x188214650",
+          "resolved_target": "0x188214650",
+          "target_name": "__ZL31layer_private_cleanup_callbacksP20_CAMetalLayerPrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e37c",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e390",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e3a0",
+          "target": "0x18826ee4c",
+          "resolved_target": "0x18826ee4c",
+          "target_name": "_CAImageQueueCollect_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e3b0",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e3c4",
+          "target": "0x1882fcff8",
+          "resolved_target": "0x1882fcff8",
+          "target_name": "__ZL19get_unused_drawableP20_CAMetalLayerPrivate20CAMetalLayerRotationbb",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e3f4",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e3f8",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e404",
+          "target": "0x18db38634",
+          "resolved_target": "0x1a389f658",
+          "target_name": "_IOSurfaceGetID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e420",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e42c",
+          "target": "0x18db3924c",
+          "resolved_target": "0x1800b5acc",
+          "target_name": "_objc_alloc",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9a738",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e438",
+          "target": "0x188541780",
+          "resolved_target": "0x188541780",
+          "target_name": "_objc_msgSend$initWithDrawablePrivate:layer:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e43c",
+          "target": "0x18db39264",
+          "resolved_target": "0x1800b5a60",
+          "target_name": "_objc_autorelease",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e450",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812c18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e460",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812c38",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e46c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e4a8",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812c58",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e4b0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e4c8",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9c1e0",
+              "label": "__ZZ22CADeviceUseCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fcfe8",
+              "label": "___block_literal_global.16"
+            }
+          }
+        },
+        {
+          "address": "0x18821e4e0",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9bbe0",
+              "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd068",
+              "label": "___block_literal_global.28"
+            }
+          }
+        },
+        {
+          "address": "0x18821e4ec",
+          "target": "0x18db392ac",
+          "resolved_target": "0x1800be6b0",
+          "target_name": "_objc_end_catch",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e520",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e530",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e538",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalLayer newDrawable]",
+      "address": "0x188433af8",
+      "next_local_symbol": "0x188433b44",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24312568,
+      "bytes": 76,
+      "assembly": "188433af8.asm",
+      "calls": [
+        {
+          "address": "0x188433b1c",
+          "target": "0x1885430a0",
+          "resolved_target": "0x1885430a0",
+          "target_name": "_objc_msgSend$nextDrawable",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188433b3c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc23be0",
+              "label": "__ZZ27-[CAMetalLayer newDrawable]E9warn_once"
+            },
+            "x1": {
+              "value": "0x1d57fcc90",
+              "label": "___block_literal_global.240"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "___27-[CAMetalLayer newDrawable]_block_invoke",
+      "address": "0x188433f34",
+      "next_local_symbol": "0x188433f50",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24313652,
+      "bytes": 28,
+      "assembly": "188433f34.asm",
+      "calls": [
+        {
+          "address": "0x188433f44",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812c78",
+              "label": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalDrawable texture]",
+      "address": "0x18829cbf4",
+      "next_local_symbol": "0x18829cc44",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22645748,
+      "bytes": 80,
+      "assembly": "18829cbf4.asm",
+      "calls": [
+        {
+          "address": "0x18829cc3c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc23bd0",
+              "label": "__ZZ26-[CAMetalDrawable texture]E9warn_once"
+            },
+            "x1": {
+              "value": "0x1d57fcc60",
+              "label": "___block_literal_global.8426"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "___26-[CAMetalDrawable texture]_block_invoke",
+      "address": "0x18843384c",
+      "next_local_symbol": "0x188433868",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24311884,
+      "bytes": 28,
+      "assembly": "18843384c.asm",
+      "calls": [
+        {
+          "address": "0x18843385c",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812998",
+              "label": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalDrawable present]",
+      "address": "0x1882a0708",
+      "next_local_symbol": "0x1882a0b1c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22660872,
+      "bytes": 1044,
+      "assembly": "1882a0708.asm",
+      "calls": [
+        {
+          "address": "0x1882a0774",
+          "target": "0x18db38634",
+          "resolved_target": "0x1a389f658",
+          "target_name": "_IOSurfaceGetID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a0790",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a07c0",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a07c4",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a07e4",
+          "target": "0x18db38fd0",
+          "resolved_target": "0x1c0fe71ac",
+          "target_name": "_mach_get_times",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a07f0",
+          "target": "0x18822afc0",
+          "resolved_target": "0x18822afc0",
+          "target_name": "_CAHostTimeWithTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a0898",
+          "target": "0x18db3951c",
+          "resolved_target": "0x19c901318",
+          "target_name": "_os_signpost_enabled",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a08a4",
+          "target": "0x18db38634",
+          "resolved_target": "0x1a389f658",
+          "target_name": "_IOSurfaceGetID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a08e8",
+          "target": "0x18db3951c",
+          "resolved_target": "0x19c901318",
+          "target_name": "_os_signpost_enabled",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a08f4",
+          "target": "0x18db38634",
+          "resolved_target": "0x1a389f658",
+          "target_name": "_IOSurfaceGetID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a093c",
+          "target": "0x18db38a9c",
+          "resolved_target": "0x19c90b264",
+          "target_name": "__os_signpost_emit_with_name_impl",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a09a4",
+          "target": "0x18821567c",
+          "resolved_target": "0x18821567c",
+          "target_name": "__ZL21layer_private_presentP20_CAMetalLayerPrivateP15CAMetalDrawabledj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a09f8",
+          "target": "0x18829f23c",
+          "resolved_target": "0x18829f23c",
+          "target_name": "_CADeviceDisableMinimumFrameDuration",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a0a00",
+          "target": "0x1884431a0",
+          "resolved_target": "0x1884431a0",
+          "target_name": "_CADevicePrefers60HzAPT",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a0a4c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9c5a0",
+              "label": "__ZZ19CADeviceSupportsAPTE4once"
+            },
+            "x1": {
+              "value": "0x1d57eb8d8",
+              "label": "___block_literal_global.38"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0a64",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b718",
+              "label": "__ZZL15CAMetalLayerLogvE9onceToken"
+            },
+            "x1": {
+              "value": "0x1d57fccd0",
+              "label": "___block_literal_global.363"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0a7c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b6f0",
+              "label": "__ZZ21CADeviceIsAppleBundleE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd8c8",
+              "label": "___block_literal_global.195"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0ae0",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b6a8",
+              "label": "__ZZL20CAMetalLayerStallLogvE9onceToken"
+            },
+            "x1": {
+              "value": "0x1d57fccf0",
+              "label": "___block_literal_global.366"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0af8",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9c5a0",
+              "label": "__ZZ19CADeviceSupportsAPTE4once"
+            },
+            "x1": {
+              "value": "0x1d57eb8d8",
+              "label": "___block_literal_global.38"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0b10",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc23e20",
+              "label": "__ZZ42CADeviceDisableMinimumFrameDurationOnPhoneE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd4e8",
+              "label": "___block_literal_global.118"
+            }
+          }
+        },
+        {
+          "address": "0x1882a0b18",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL21layer_private_presentP20_CAMetalLayerPrivateP15CAMetalDrawabledj",
+      "address": "0x18821567c",
+      "next_local_symbol": "0x18821584c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22091388,
+      "bytes": 464,
+      "assembly": "18821567c.asm",
+      "calls": [
+        {
+          "address": "0x1882156bc",
+          "target": "0x188543b00",
+          "resolved_target": "0x188543b00",
+          "target_name": "_objc_msgSend$priv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882156dc",
+          "target": "0x188546a40",
+          "resolved_target": "0x188546a40",
+          "target_name": "_objc_msgSend$sharedEvent",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821570c",
+          "target": "0x188540340",
+          "resolved_target": "0x188540340",
+          "target_name": "_objc_msgSend$drawableID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215724",
+          "target": "0x18db38748",
+          "resolved_target": "0x1a38a7a30",
+          "target_name": "_IOSurfaceSignalEvent",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215774",
+          "target": "0x188543160",
+          "resolved_target": "0x188543160",
+          "target_name": "_objc_msgSend$notifyListener:atValue:block:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215848",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL26layer_private_present_implP20_CAMetalLayerPrivateP15CAMetalDrawabledj",
+      "address": "0x188214cbc",
+      "next_local_symbol": "0x188215394",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22088892,
+      "bytes": 1752,
+      "assembly": "188214cbc.asm",
+      "calls": [
+        {
+          "address": "0x188214d0c",
+          "target": "0x188543b00",
+          "resolved_target": "0x188543b00",
+          "target_name": "_objc_msgSend$priv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214d1c",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214d5c",
+          "target": "0x18db38808",
+          "resolved_target": "0x18120231c",
+          "target_name": "_NSLog",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1d5812d38",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188214de4",
+          "target": "0x1882cce70",
+          "resolved_target": "0x1882cce70",
+          "target_name": "__ZN2CA6Render16fourcc_has_alphaEj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214ea0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214eac",
+          "target": "0x18853f4c0",
+          "resolved_target": "0x18853f4c0",
+          "target_name": "_objc_msgSend$containsObject:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214ebc",
+          "target": "0x18853e420",
+          "resolved_target": "0x18853e420",
+          "target_name": "_objc_msgSend$addObject:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214ec4",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214ed0",
+          "target": "0x188542840",
+          "resolved_target": "0x188542840",
+          "target_name": "_objc_msgSend$mainDisplay",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9b0e8",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188214ed4",
+          "target": "0x188541080",
+          "resolved_target": "0x188541080",
+          "target_name": "_objc_msgSend$hasNativeFrameRateRequest",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214f28",
+          "target": "0x1885400e0",
+          "resolved_target": "0x1885400e0",
+          "target_name": "_objc_msgSend$dirtyRect",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214f4c",
+          "target": "0x18db37b9c",
+          "resolved_target": "0x188705710",
+          "target_name": "_CGRectEqualToRect",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214fa4",
+          "target": "0x18825c9f0",
+          "resolved_target": "0x18825c9f0",
+          "target_name": "__ZN2CA6Bounds12set_exteriorERKNS_4RectE",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188214fe0",
+          "target": "0x188270a30",
+          "resolved_target": "0x188270a30",
+          "target_name": "_CAImageQueueInsertImage_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x3",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215000",
+          "target": "0x1885454a0",
+          "resolved_target": "0x1885454a0",
+          "target_name": "_objc_msgSend$setInsertSeed:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821500c",
+          "target": "0x188546300",
+          "resolved_target": "0x188546300",
+          "target_name": "_objc_msgSend$setStatus:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215010",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215020",
+          "target": "0x18822afc0",
+          "resolved_target": "0x18822afc0",
+          "target_name": "_CAHostTimeWithTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215030",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215060",
+          "target": "0x18853fa20",
+          "resolved_target": "0x18853fa20",
+          "target_name": "_objc_msgSend$countByEnumeratingWithState:objects:count:",
+          "literal_registers": {
+            "x4": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821508c",
+          "target": "0x18db392b8",
+          "resolved_target": "0x1800d70c0",
+          "target_name": "_objc_enumerationMutation",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882150a0",
+          "target": "0x188546300",
+          "resolved_target": "0x188546300",
+          "target_name": "_objc_msgSend$setStatus:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x3",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882150ac",
+          "target": "0x1885400a0",
+          "resolved_target": "0x1885400a0",
+          "target_name": "_objc_msgSend$didPresentAtTime:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882150cc",
+          "target": "0x18853fa20",
+          "resolved_target": "0x18853fa20",
+          "target_name": "_objc_msgSend$countByEnumeratingWithState:objects:count:",
+          "literal_registers": {
+            "x4": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882150dc",
+          "target": "0x18853f8a0",
+          "resolved_target": "0x18853f8a0",
+          "target_name": "_objc_msgSend$copy",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882150e8",
+          "target": "0x188543e80",
+          "resolved_target": "0x188543e80",
+          "target_name": "_objc_msgSend$removeAllObjects",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882150f0",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882150f4",
+          "target": "0x18db393e4",
+          "resolved_target": "0x1800b3cc8",
+          "target_name": "_objc_release_x27",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215110",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215118",
+          "target": "0x1885400c0",
+          "resolved_target": "0x1885400c0",
+          "target_name": "_objc_msgSend$didScheduledPresent",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215124",
+          "target": "0x188545d80",
+          "resolved_target": "0x188545d80",
+          "target_name": "_objc_msgSend$setPresentScheduledInsertSeedValid:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821512c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821513c",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821514c",
+          "target": "0x1884335f0",
+          "resolved_target": "0x1884335f0",
+          "target_name": "__ZL14release_samplejyPv.8416",
+          "literal_registers": {
+            "x0": {
+              "value": "0x3",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215158",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215168",
+          "target": "0x18853e420",
+          "resolved_target": "0x18853e420",
+          "target_name": "_objc_msgSend$addObject:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215170",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882151b8",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882151c4",
+          "target": "0x188545d60",
+          "resolved_target": "0x188545d60",
+          "target_name": "_objc_msgSend$setPresentScheduledInsertSeed:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882151d0",
+          "target": "0x188545d80",
+          "resolved_target": "0x188545d80",
+          "target_name": "_objc_msgSend$setPresentScheduledInsertSeedValid:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882151e8",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882151f0",
+          "target": "0x1885400c0",
+          "resolved_target": "0x1885400c0",
+          "target_name": "_objc_msgSend$didScheduledPresent",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882151fc",
+          "target": "0x188545d80",
+          "resolved_target": "0x188545d80",
+          "target_name": "_objc_msgSend$setPresentScheduledInsertSeedValid:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215204",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215228",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215234",
+          "target": "0x1885426e0",
+          "resolved_target": "0x1885426e0",
+          "target_name": "_objc_msgSend$lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9b048",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215248",
+          "target": "0x188545860",
+          "resolved_target": "0x188545860",
+          "target_name": "_objc_msgSend$setLowLatency:",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b9b048",
+              "label": null
+            },
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821525c",
+          "target": "0x188545480",
+          "resolved_target": "0x188545480",
+          "target_name": "_objc_msgSend$setInputTime:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215274",
+          "target": "0x1882d30fc",
+          "resolved_target": "0x1882d30fc",
+          "target_name": "__ZN2CA11Transaction6createEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215284",
+          "target": "0x18828ba94",
+          "resolved_target": "0x18828ba94",
+          "target_name": "__ZN2CA5Layer17set_commit_neededEPNS_11TransactionEj",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821528c",
+          "target": "0x188547880",
+          "resolved_target": "0x188547880",
+          "target_name": "_objc_msgSend$unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882152ac",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882152bc",
+          "target": "0x188543e20",
+          "resolved_target": "0x188543e20",
+          "target_name": "_objc_msgSend$releasePrivateReferences:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215314",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9bbe0",
+              "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd068",
+              "label": "___block_literal_global.28"
+            }
+          }
+        },
+        {
+          "address": "0x18821532c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9bbe0",
+              "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd068",
+              "label": "___block_literal_global.28"
+            }
+          }
+        },
+        {
+          "address": "0x188215334",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215380",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215388",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215390",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalDrawable releasePrivateReferences:]",
+      "address": "0x188215394",
+      "next_local_symbol": "0x188215454",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22090644,
+      "bytes": 192,
+      "assembly": "188215394.asm",
+      "calls": [
+        {
+          "address": "0x1882153bc",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882153c4",
+          "target": "0x188546e40",
+          "resolved_target": "0x188546e40",
+          "target_name": "_objc_msgSend$status",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882153d0",
+          "target": "0x18853fa00",
+          "resolved_target": "0x18853fa00",
+          "target_name": "_objc_msgSend$count",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882153e0",
+          "target": "0x188546300",
+          "resolved_target": "0x188546300",
+          "target_name": "_objc_msgSend$setStatus:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x3",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882153ec",
+          "target": "0x1885400a0",
+          "resolved_target": "0x1885400a0",
+          "target_name": "_objc_msgSend$didPresentAtTime:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882153f4",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821543c",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850ddf6",
+              "label": "-[CAMetalDrawable releasePrivateReferences:]"
+            },
+            "x1": {
+              "value": "0x18850de23",
+              "label": "CAMetalLayer.mm"
+            },
+            "x3": {
+              "value": "0x18850de33",
+              "label": "priv"
+            },
+            "x2": {
+              "value": "0x87e",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188215448",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188215450",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL19get_unused_drawableP20_CAMetalLayerPrivate20CAMetalLayerRotationbb",
+      "address": "0x1882fcff8",
+      "next_local_symbol": "0x1882fd2f4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 23039992,
+      "bytes": 764,
+      "assembly": "1882fcff8.asm",
+      "calls": [
+        {
+          "address": "0x1882fd034",
+          "target": "0x188296ae8",
+          "resolved_target": "0x188296ae8",
+          "target_name": "_x_list_remove_head",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd0e0",
+          "target": "0x18843375c",
+          "resolved_target": "0x18843375c",
+          "target_name": "__ZL16release_drawableP20_CAMetalLayerPrivateP23_CAMetalDrawablePrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd104",
+          "target": "0x1882e880c",
+          "resolved_target": "0x1882e880c",
+          "target_name": "__ZL32layer_private_check_pixel_formatP20_CAMetalLayerPrivatej",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd17c",
+          "target": "0x1882bcfa8",
+          "resolved_target": "0x1882bcfa8",
+          "target_name": "__ZN2CA6Render34create_iosurface_with_pixel_formatEjjjjyPK10__CFString",
+          "literal_registers": {
+            "x5": {
+              "value": "0x1d5812d98",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882fd19c",
+          "target": "0x1884c9398",
+          "resolved_target": "0x1884c9398",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1",
+              "label": null
+            },
+            "x1": {
+              "value": "0x70",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882fd1e4",
+          "target": "0x18830d848",
+          "resolved_target": "0x18830d848",
+          "target_name": "__ZL23drawable_set_colorspaceP23_CAMetalDrawablePrivateP12CGColorSpace",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd1f0",
+          "target": "0x188433f50",
+          "resolved_target": "0x188433f50",
+          "target_name": "__ZL25drawable_set_edr_metadataP23_CAMetalDrawablePrivateP13CAEDRMetadata",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd220",
+          "target": "0x188433470",
+          "resolved_target": "0x188433470",
+          "target_name": "__ZL25allocate_drawable_texturePU19objcproto9MTLDevice11objc_objectP11__IOSurfacejj14MTLPixelFormaty20CAMetalLayerRotationbP8NSStringm",
+          "literal_registers": {
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882fd230",
+          "target": "0x18830692c",
+          "resolved_target": "0x18830692c",
+          "target_name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd27c",
+          "target": "0x18db36528",
+          "resolved_target": "0x186d5e444",
+          "target_name": "_CFEqual",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd298",
+          "target": "0x18830d848",
+          "resolved_target": "0x18830d848",
+          "target_name": "__ZL23drawable_set_colorspaceP23_CAMetalDrawablePrivateP12CGColorSpace",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd2bc",
+          "target": "0x188541fc0",
+          "resolved_target": "0x188541fc0",
+          "target_name": "_objc_msgSend$isEqual:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd2d8",
+          "target": "0x188433f50",
+          "resolved_target": "0x188433f50",
+          "target_name": "__ZL25drawable_set_edr_metadataP23_CAMetalDrawablePrivateP13CAEDRMetadata",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fd2ec",
+          "target": "0x18830692c",
+          "resolved_target": "0x18830692c",
+          "target_name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL25layer_private_flush_asyncP20_CAMetalLayerPrivate",
+      "address": "0x1882e58e8",
+      "next_local_symbol": "0x1882e599c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22943976,
+      "bytes": 180,
+      "assembly": "1882e58e8.asm",
+      "calls": [
+        {
+          "address": "0x1882e5908",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882e5918",
+          "target": "0x18826ee4c",
+          "resolved_target": "0x18826ee4c",
+          "target_name": "_CAImageQueueCollect_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882e5924",
+          "target": "0x18db39750",
+          "resolved_target": "0x1d03b61a4",
+          "target_name": "_pthread_setspecific",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882e5940",
+          "target": "0x18843375c",
+          "resolved_target": "0x18843375c",
+          "target_name": "__ZL16release_drawableP20_CAMetalLayerPrivateP23_CAMetalDrawablePrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e5954",
+          "target": "0x1884c96e0",
+          "resolved_target": "0x1884c96e0",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e5968",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e5970",
+          "target": "0x188214650",
+          "resolved_target": "0x188214650",
+          "target_name": "__ZL31layer_private_cleanup_callbacksP20_CAMetalLayerPrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e5990",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e5998",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalDrawable initWithDrawablePrivate:layer:]",
+      "address": "0x18821e53c",
+      "next_local_symbol": "0x18821e6d0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22127932,
+      "bytes": 404,
+      "assembly": "18821e53c.asm",
+      "calls": [
+        {
+          "address": "0x18821e580",
+          "target": "0x18db39330",
+          "resolved_target": "0x1800b1a40",
+          "target_name": "_objc_msgSendSuper2",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1826ba66a",
+              "label": "init"
+            }
+          }
+        },
+        {
+          "address": "0x18821e594",
+          "target": "0x18db394bc",
+          "resolved_target": "0x1800b9eec",
+          "target_name": "_objc_storeWeak",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e59c",
+          "target": "0x18db393fc",
+          "resolved_target": "0x1800b3348",
+          "target_name": "_objc_release_x8",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e5bc",
+          "target": "0x18db39474",
+          "resolved_target": "0x1800b2a3c",
+          "target_name": "_objc_retain_x8",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18821e650",
+          "target": "0x18db39258",
+          "resolved_target": "0x1800b8780",
+          "target_name": "_objc_alloc_init",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201dd4cd2d0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e664",
+          "target": "0x18db39258",
+          "resolved_target": "0x1800b8780",
+          "target_name": "_objc_alloc_init",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1aed3d0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e678",
+          "target": "0x18db39258",
+          "resolved_target": "0x1800b8780",
+          "target_name": "_objc_alloc_init",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1aed3d0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18821e6c0",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9ba30",
+              "label": "__ZZL25present_on_finish_enabledP13_CAImageQueueE4once"
+            },
+            "x1": {
+              "value": "0x1d57fcd38",
+              "label": "___block_literal_global.372"
+            }
+          }
+        },
+        {
+          "address": "0x18821e6cc",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL25allocate_drawable_texturePU19objcproto9MTLDevice11objc_objectP11__IOSurfacejj14MTLPixelFormaty20CAMetalLayerRotationbP8NSStringm",
+      "address": "0x188433470",
+      "next_local_symbol": "0x1884335dc",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24310896,
+      "bytes": 364,
+      "assembly": "188433470.asm",
+      "calls": [
+        {
+          "address": "0x1884334bc",
+          "target": "0x1885474a0",
+          "resolved_target": "0x1885474a0",
+          "target_name": "_objc_msgSend$texture2DDescriptorWithPixelFormat:width:height:mipmapped:",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b2fa20",
+              "label": null
+            },
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884334c8",
+          "target": "0x18db38640",
+          "resolved_target": "0x1a38a0044",
+          "target_name": "_IOSurfaceGetPixelFormat",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884334d8",
+          "target": "0x188251684",
+          "resolved_target": "0x188251684",
+          "target_name": "__ZN2CA6Render25fourcc_compressed_of_typeEj24IOSurfaceCompressionType29IOSurfaceCompressionFootprint",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188433534",
+          "target": "0x188545fc0",
+          "resolved_target": "0x188545fc0",
+          "target_name": "_objc_msgSend$setRotation:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188433540",
+          "target": "0x1885455e0",
+          "resolved_target": "0x1885455e0",
+          "target_name": "_objc_msgSend$setIsDrawable:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188433550",
+          "target": "0x188545240",
+          "resolved_target": "0x188545240",
+          "target_name": "_objc_msgSend$setFramebufferOnly:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188433564",
+          "target": "0x1885466a0",
+          "resolved_target": "0x1885466a0",
+          "target_name": "_objc_msgSend$setUsage:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188433574",
+          "target": "0x188545180",
+          "resolved_target": "0x188545180",
+          "target_name": "_objc_msgSend$setForceResourceIndex:",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188433580",
+          "target": "0x188545f80",
+          "resolved_target": "0x188545f80",
+          "target_name": "_objc_msgSend$setResourceIndex:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188433594",
+          "target": "0x188543060",
+          "resolved_target": "0x188543060",
+          "target_name": "_objc_msgSend$newTextureWithDescriptor:iosurface:plane:",
+          "literal_registers": {
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884335a0",
+          "target": "0x188545660",
+          "resolved_target": "0x188545660",
+          "target_name": "_objc_msgSend$setLabel:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884335d0",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9bbe0",
+              "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd068",
+              "label": "___block_literal_global.28"
+            }
+          }
+        },
+        {
+          "address": "0x1884335d8",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL32layer_private_check_pixel_formatP20_CAMetalLayerPrivatej",
+      "address": "0x1882e880c",
+      "next_local_symbol": "0x1882e8870",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22956044,
+      "bytes": 100,
+      "assembly": "1882e880c.asm",
+      "calls": [
+        {
+          "address": "0x1882e8820",
+          "target": "0x188231e5c",
+          "resolved_target": "0x188231e5c",
+          "target_name": "__ZN2CA6Render16fourcc_to_formatEj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882e8838",
+          "target": "0x188547220",
+          "resolved_target": "0x188547220",
+          "target_name": "_objc_msgSend$supportsExtendedXR10Formats",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render34create_iosurface_with_pixel_formatEjjjjyPK10__CFString",
+      "address": "0x1882bcfa8",
+      "next_local_symbol": "0x1882bd1a0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22777768,
+      "bytes": 504,
+      "assembly": "1882bcfa8.asm",
+      "calls": [
+        {
+          "address": "0x1882bd098",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9c1e0",
+              "label": "__ZZ22CADeviceUseCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fcfe8",
+              "label": "___block_literal_global.16"
+            }
+          }
+        },
+        {
+          "address": "0x1882bd0ec",
+          "target": "0x188251684",
+          "resolved_target": "0x188251684",
+          "target_name": "__ZN2CA6Render25fourcc_compressed_of_typeEj24IOSurfaceCompressionType29IOSurfaceCompressionFootprint",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882bd130",
+          "target": "0x188297cd4",
+          "resolved_target": "0x188297cd4",
+          "target_name": "__ZN2CA11SurfaceUtil17CAIOSurfaceCreateEjjjjjjyNS0_16SurfaceAlignmentEPK10__CFString",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882bd17c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9bbe0",
+              "label": "__ZZ36CADeviceSupportsUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd068",
+              "label": "___block_literal_global.28"
+            }
+          }
+        },
+        {
+          "address": "0x1882bd194",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b9d0",
+              "label": "__ZZ41CADeviceSupportsLossyUniversalCompressionE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd0a8",
+              "label": "___block_literal_global.34.9370"
+            }
+          }
+        },
+        {
+          "address": "0x1882bd19c",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZL17register_drawableP23_CAMetalDrawablePrivateP13_CAImageQueue",
+      "address": "0x18830692c",
+      "next_local_symbol": "0x1883069a4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 23079212,
+      "bytes": 120,
+      "assembly": "18830692c.asm",
+      "calls": [
+        {
+          "address": "0x188306958",
+          "target": "0x1882eb954",
+          "resolved_target": "0x1882eb954",
+          "target_name": "_CAImageQueueUnregisterBuffer",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188306980",
+          "target": "0x1882bc9dc",
+          "resolved_target": "0x1882bc9dc",
+          "target_name": "_CAImageQueueRegisterIOSurfaceBuffer",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalLayer init]",
+      "address": "0x188223544",
+      "next_local_symbol": "0x188223a60",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22148420,
+      "bytes": 1308,
+      "assembly": "188223544.asm",
+      "calls": [
+        {
+          "address": "0x188223588",
+          "target": "0x18db39330",
+          "resolved_target": "0x1800b1a40",
+          "target_name": "_objc_msgSendSuper2",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1826ba66a",
+              "label": "init"
+            }
+          }
+        },
+        {
+          "address": "0x1882235ac",
+          "target": "0x18db396a8",
+          "resolved_target": "0x1d03b73d4",
+          "target_name": "_pthread_key_create",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882235c4",
+          "target": "0x1884c9398",
+          "resolved_target": "0x1884c9398",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1",
+              "label": null
+            },
+            "x1": {
+              "value": "0x110",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882235d8",
+          "target": "0x1882ce16c",
+          "resolved_target": "0x1882ce16c",
+          "target_name": "_CAImageQueueCreate_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x3",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188223604",
+          "target": "0x1884c956c",
+          "resolved_target": "0x1884c956c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188223618",
+          "target": "0x18db39258",
+          "resolved_target": "0x1800b8780",
+          "target_name": "_objc_alloc_init",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1aed3d0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188223624",
+          "target": "0x18db39258",
+          "resolved_target": "0x1800b8780",
+          "target_name": "_objc_alloc_init",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1aed3d0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18822364c",
+          "target": "0x1882397b8",
+          "resolved_target": "0x1882397b8",
+          "target_name": "__ZN2CA6Render12add_observerENS0_16NotificationNameEPNS0_6ObjectEPFvS3_PvS4_ES4_b",
+          "literal_registers": {
+            "x2": {
+              "value": "0x188433868",
+              "label": "__ZL28layer_private_memory_warningPN2CA6Render6ObjectEPvS3_"
+            },
+            "x0": {
+              "value": "0x2c",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18822367c",
+          "target": "0x1882e6788",
+          "resolved_target": "0x1882e6788",
+          "target_name": "_CAImageQueueSetFlags",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223694",
+          "target": "0x1882f26fc",
+          "resolved_target": "0x1882f26fc",
+          "target_name": "_CAImageQueueSetCollectableCallback",
+          "literal_registers": {
+            "x2": {
+              "value": "0x188433fb0",
+              "label": "__ZL24layer_collectable_signalP13_CAImageQueuePv.8519"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882236ac",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1884c9ec0",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b440",
+              "label": "__ZL16composited_mutex"
+            }
+          }
+        },
+        {
+          "address": "0x1882236f0",
+          "target": "0x1884c9e54",
+          "resolved_target": "0x1884c9e54",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822370c",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223714",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18822373c",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1884c9ed8",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b440",
+              "label": "__ZL16composited_mutex"
+            }
+          }
+        },
+        {
+          "address": "0x188223754",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1884c9ec0",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b250",
+              "label": "__ZL15presented_mutex"
+            }
+          }
+        },
+        {
+          "address": "0x188223798",
+          "target": "0x1884c9e54",
+          "resolved_target": "0x1884c9e54",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882237b4",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882237bc",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882237e4",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1884c9ed8",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b250",
+              "label": "__ZL15presented_mutex"
+            }
+          }
+        },
+        {
+          "address": "0x188223808",
+          "target": "0x18db39330",
+          "resolved_target": "0x1800b1a40",
+          "target_name": "_objc_msgSendSuper2",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1828f486a",
+              "label": "setContents:"
+            }
+          }
+        },
+        {
+          "address": "0x188223810",
+          "target": "0x188542160",
+          "resolved_target": "0x188542160",
+          "target_name": "_objc_msgSend$isOpaque",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223834",
+          "target": "0x188543a80",
+          "resolved_target": "0x188543a80",
+          "target_name": "_objc_msgSend$presentsWithTransaction",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223858",
+          "target": "0x18853e780",
+          "resolved_target": "0x18853e780",
+          "target_name": "_objc_msgSend$allowsNextDrawableTimeout",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822387c",
+          "target": "0x188540a40",
+          "resolved_target": "0x188540a40",
+          "target_name": "_objc_msgSend$fenceEnabled",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882238a0",
+          "target": "0x188540a40",
+          "resolved_target": "0x188540a40",
+          "target_name": "_objc_msgSend$fenceEnabled",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882238c4",
+          "target": "0x188544620",
+          "resolved_target": "0x188544620",
+          "target_name": "_objc_msgSend$serverSyncEnabled",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882238e8",
+          "target": "0x1885427a0",
+          "resolved_target": "0x1885427a0",
+          "target_name": "_objc_msgSend$lowLatency",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223900",
+          "target": "0x18853e6a0",
+          "resolved_target": "0x18853e6a0",
+          "target_name": "_objc_msgSend$allowsDisplayCompositingWithCopy",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822393c",
+          "target": "0x18db387c0",
+          "resolved_target": "0x181a2cb3c",
+          "target_name": "_MTLCreateSystemDefaultDevice",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223944",
+          "target": "0x18db39408",
+          "resolved_target": "0x1800b285c",
+          "target_name": "_objc_retain_x0",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822394c",
+          "target": "0x188543de0",
+          "resolved_target": "0x188543de0",
+          "target_name": "_objc_msgSend$registryID",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223998",
+          "target": "0x1884c9524",
+          "resolved_target": "0x1884c9524",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x19",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882239a8",
+          "target": "0x1884c9530",
+          "resolved_target": "0x1884c9530",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850dfef",
+              "label": "com.apple.coreanimation.CAMetalLayerEventListenerQueue"
+            }
+          }
+        },
+        {
+          "address": "0x1882239b8",
+          "target": "0x18db3924c",
+          "resolved_target": "0x1800b5acc",
+          "target_name": "_objc_alloc",
+          "literal_registers": {
+            "x0": {
+              "value": "0x201e1b82148",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882239c0",
+          "target": "0x188541720",
+          "resolved_target": "0x188541720",
+          "target_name": "_objc_msgSend$initWithDispatchQueue:",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882239c8",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882239d4",
+          "target": "0x18822afc0",
+          "resolved_target": "0x18822afc0",
+          "target_name": "_CAHostTimeWithTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882239ec",
+          "target": "0x1884c9524",
+          "resolved_target": "0x1884c9524",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x9",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882239fc",
+          "target": "0x1884c9530",
+          "resolved_target": "0x1884c9530",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850e026",
+              "label": "com.apple.coreanimation.CAMetalLayerTimeoutQueue"
+            }
+          }
+        },
+        {
+          "address": "0x188223a18",
+          "target": "0x1884c96e0",
+          "resolved_target": "0x1884c96e0",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223a1c",
+          "target": "0x18db39384",
+          "resolved_target": "0x1800b3808",
+          "target_name": "_objc_release_x19",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188223a5c",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAMetalLayer setFramebufferOnly:]",
+      "address": "0x1883084b8",
+      "next_local_symbol": "0x188308540",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 23086264,
+      "bytes": 136,
+      "assembly": "1883084b8.asm",
+      "calls": [
+        {
+          "address": "0x1883084e0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188308514",
+          "target": "0x1882e58e8",
+          "resolved_target": "0x1882e58e8",
+          "target_name": "__ZL25layer_private_flush_asyncP20_CAMetalLayerPrivate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188308534",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18830853c",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "_CAMetalContextCreate",
+      "address": "0x1882fb718",
+      "next_local_symbol": "0x1882fb788",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 23033624,
+      "bytes": 112,
+      "assembly": "1882fb718.asm",
+      "calls": [
+        {
+          "address": "0x1882fb724",
+          "target": "0x18db3927c",
+          "resolved_target": "0x1800b22e0",
+          "target_name": "_objc_autoreleasePoolPush",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fb73c",
+          "target": "0x18db387c0",
+          "resolved_target": "0x181a2cb3c",
+          "target_name": "_MTLCreateSystemDefaultDevice",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fb748",
+          "target": "0x1884c9a4c",
+          "resolved_target": "0x1884c9a4c",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fb76c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x1884c950c",
+          "target_name": null,
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc220b0",
+              "label": "__ZZ20CAMetalContextCreateE4once"
+            },
+            "x1": {
+              "value": "0x1d58005c8",
+              "label": "___block_literal_global.16993"
+            }
+          }
+        },
+        {
+          "address": "0x1882fb77c",
+          "target": "0x1884c9a4c",
+          "resolved_target": "0x1884c9a4c",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882fb784",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "___CAMetalContextCreate_block_invoke",
+      "address": "0x1884b56b8",
+      "next_local_symbol": "0x1884b579c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24843960,
+      "bytes": 228,
+      "assembly": "1884b56b8.asm",
+      "calls": [
+        {
+          "address": "0x1884b56f0",
+          "target": "0x18db381b4",
+          "resolved_target": "0x18e4cecb0",
+          "target_name": "_IOMainPort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5738",
+          "target": "0x18db384f0",
+          "resolved_target": "0x18e4b9d48",
+          "target_name": "_IOServiceMatching",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5748",
+          "target": "0x18db384e4",
+          "resolved_target": "0x18e4bedf4",
+          "target_name": "_IOServiceGetMatchingServices",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5758",
+          "target": "0x18db38160",
+          "resolved_target": "0x18e4c1fd0",
+          "target_name": "_IOIteratorNext",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5760",
+          "target": "0x18db3849c",
+          "resolved_target": "0x18e4bd378",
+          "target_name": "_IOObjectRelease",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5770",
+          "target": "0x18db3849c",
+          "resolved_target": "0x18e4bd378",
+          "target_name": "_IOObjectRelease",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5790",
+          "target": "0x18db39900",
+          "resolved_target": "0x18dbae050",
+          "target_name": "_usleep",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884b5798",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    }
+  ]
+}
