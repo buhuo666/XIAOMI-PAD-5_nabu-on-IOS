@@ -9,6 +9,12 @@
 #include "NabuMetalSurfaceStats.h"
 #include <cstdio>
 #include <cstring>
+#include <dlfcn.h>
+#include <mach/mach.h>
+#include <sys/stat.h>
+#include <sys/sysctl.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 namespace {
 constexpr NSUInteger Width = 32, Height = 32, RowBytes = 256;
@@ -20,6 +26,65 @@ static NSMutableDictionary *record;
 static NSURL *documents;
 static NabuMetalSurfaceStats beforeLayer{};
 static NSMutableData *gpuFrames, *surfaceFrames;
+
+// Check before UIApplicationMain: UIKit/QuartzCore can call the process-wide
+// default factory before this controller creates its own CAMetalLayer.
+static NSDictionary *startupReadiness() {
+    NSMutableDictionary *result = [@{@"ready": @NO,
+        @"checked_uptime": @(NSProcessInfo.processInfo.systemUptime)} mutableCopy];
+    struct timeval boot{};
+    size_t size = sizeof(boot);
+    if (sysctlbyname("kern.boottime", &boot, &size, nullptr, 0) || size != sizeof(boot)) {
+        result[@"reason"] = @"Cannot read current boot identity"; return result;
+    }
+    result[@"boot_sec"] = @(boot.tv_sec);
+    result[@"boot_usec"] = @(boot.tv_usec);
+    NSString *path = @"/var/run/nabu-system-metal.ready";
+    struct stat info{};
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    id value = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nullptr] : nil;
+    NSDictionary *mount = [value isKindOfClass:NSDictionary.class] ? value : nil;
+    const bool mounted = !stat(path.fileSystemRepresentation, &info) && S_ISREG(info.st_mode) &&
+        info.st_uid == 0 && !(info.st_mode & 0022) && [mount[@"version"] unsignedIntValue] == 1 &&
+        [mount[@"boot_sec"] longLongValue] == boot.tv_sec && [mount[@"boot_usec"] intValue] == boot.tv_usec &&
+        [mount[@"source"] isEqual:@"/redwood/metal-addons"] && [mount[@"original_bundle_preserved"] boolValue] &&
+        [mount[@"bundle_readback_equal"] boolValue] && [mount[@"readonly_union"] boolValue] &&
+        !access("/System/Library/Extensions/NativeAdrenoMetal.bundle/Info.plist", R_OK) &&
+        !access("/System/Library/Extensions/NativeAdrenoMetal.bundle/NativeAdrenoMetal", R_OK);
+    result[@"mount_current_boot"] = @(mounted);
+    if (!mounted) { result[@"reason"] = @"Metal plugin mount is not ready for this boot"; return result; }
+
+    void *library = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW | RTLD_LOCAL);
+    if (!library) { result[@"reason"] = @"IOKit readiness query unavailable"; return result; }
+    auto matching = reinterpret_cast<CFMutableDictionaryRef (*)(const char *)>(dlsym(library, "IOServiceMatching"));
+    auto find = reinterpret_cast<mach_port_t (*)(mach_port_t, CFDictionaryRef)>(dlsym(library, "IOServiceGetMatchingService"));
+    auto release = reinterpret_cast<kern_return_t (*)(mach_port_t)>(dlsym(library, "IOObjectRelease"));
+    auto entryID = reinterpret_cast<kern_return_t (*)(mach_port_t, uint64_t *)>(dlsym(library, "IORegistryEntryGetRegistryEntryID"));
+    auto property = reinterpret_cast<CFTypeRef (*)(mach_port_t, CFStringRef, CFAllocatorRef, uint32_t)>(
+        dlsym(library, "IORegistryEntryCreateCFProperty"));
+    uint64_t identity = 0;
+    bool acceleratorReady = false;
+    if (matching && find && release && entryID && property) {
+        auto match = matching("AGXAccelerator");
+        const mach_port_t service = match ? find(MACH_PORT_NULL, match) : MACH_PORT_NULL;
+        if (service) {
+            CFTypeRef plugin = property(service, CFSTR("MetalPluginName"), kCFAllocatorDefault, 0);
+            CFTypeRef cls = property(service, CFSTR("MetalPluginClassName"), kCFAllocatorDefault, 0);
+            acceleratorReady = plugin && cls && CFEqual(plugin, CFSTR("NativeAdrenoMetal")) &&
+                CFEqual(cls, CFSTR("NativeAdrenoMetalDevice")) &&
+                entryID(service, &identity) == KERN_SUCCESS && identity;
+            if (plugin) CFRelease(plugin);
+            if (cls) CFRelease(cls);
+            release(service);
+        }
+    }
+    dlclose(library);
+    result[@"accelerator_ready"] = @(acceleratorReady);
+    result[@"accelerator_registry_id"] = @(identity);
+    result[@"ready"] = @(acceleratorReady);
+    if (!acceleratorReady) result[@"reason"] = @"Qualified AGXAccelerator has not been published";
+    return result;
+}
 
 static void onMain(dispatch_block_t action) {
     if (NSThread.isMainThread) action();
@@ -324,9 +389,16 @@ static bool saveFrames() {
 
 - (void)startTest {
     @try {
+        if (![record[@"startup_preflight"][@"ready"] boolValue]) {
+            stage(@"startup_not_ready");
+            update(@{@"restart_required": @YES});
+            fail(record[@"startup_preflight"][@"reason"]);
+            [self showFailure]; return;
+        }
         stage(@"system_factory");
         Class base = objc_getClass("_MTLDevice");
         if (!base || class_getInstanceSize(base) != 528) { fail(@"20F66 Metal base ABI differs"); [self showFailure]; return; }
+        update(@{@"factory_call_uptime": @(NSProcessInfo.processInfo.systemUptime), @"factory_call_count": @1});
         self.metalDevice = MTLCreateSystemDefaultDevice();
         if (!self.metalDevice || strcmp(object_getClassName(self.metalDevice), "NativeBridgeMetalDevice")) {
             Class<NabuMetalFactoryDiagnostics> factory = (Class<NabuMetalFactoryDiagnostics>)NSClassFromString(@"NativeAdrenoMetalDevice");
@@ -334,6 +406,9 @@ static bool saveFrames() {
             fail(@(error ?: "No qualified device")); [self showFailure]; return;
         }
         update(@{@"device_class": @(object_getClassName(self.metalDevice)), @"registry_id": @(self.metalDevice.registryID)});
+        if (self.metalDevice.registryID != [record[@"startup_preflight"][@"accelerator_registry_id"] unsignedLongLongValue]) {
+            fail(@"Factory device differs from the startup accelerator"); [self showFailure]; return;
+        }
         if (!native_bridge_metal_surface_stats(&beforeLayer)) { fail(@"Surface counters unavailable"); [self showFailure]; return; }
         update(@{@"counters_before_layer": stats(beforeLayer)});
         stage(@"layer_create");
@@ -434,7 +509,9 @@ static bool saveFrames() {
 }
 
 - (void)showFailure {
-    self.statusLabel.text = @"测试未完成，诊断已保存。可以返回桌面。";
+    self.statusLabel.text = [record[@"restart_required"] boolValue] ?
+        @"GPU 尚未就绪。请等待后从多任务界面彻底关闭本应用，再重新打开。" :
+        @"测试未完成，诊断已保存。可以返回桌面。";
     self.clearButton.enabled = self.metalLayer != nil;
 }
 
@@ -504,7 +581,8 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         record = [@{@"run_id": @((uint64_t)([NSDate date].timeIntervalSince1970 * 1000000)),
-            @"test_revision": @174, @"mode": @"CAMetalLayer sequential frames", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"test_revision": @175, @"mode": @"CAMetalLayer sequential frames", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"process_id": @(getpid()), @"factory_call_count": @0,
             @"result": @"running", @"gpu_test_passed": @NO, @"present_requested": @NO,
             @"presentation_callbacks": @0, @"present_requests": @0, @"verified_frames": @0,
             @"frames_requested": @(FrameCount), @"frame_delay_ms": @(FrameDelayMS), @"maximum_drawable_count": @2,
@@ -514,8 +592,10 @@ int main(int argc, char *argv[]) {
         gpuFrames = [NSMutableData data];
         surfaceFrames = [NSMutableData data];
         stage(@"main");
+        update(@{@"startup_preflight": startupReadiness()});
         native_bridge_metal_set_problem_observer(problem, nullptr);
         @try {
+            update(@{@"ui_application_main_uptime": @(NSProcessInfo.processInfo.systemUptime)});
             stage(@"ui_application_main");
             return UIApplicationMain(argc, argv, nil, NSStringFromClass([MetalPresentDelegate class]));
         } @catch (NSException *exception) {

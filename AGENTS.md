@@ -1,5 +1,13 @@
 # 项目工作规则
 
+2026-11-09第174轮64帧CAMetalLayer实测通过：GPU/IOSurface各65536像素0错，
+两个表面各复用32次、64个呈现回调、导入2/2释放held0；用户确认动画、清除、桌面触摸。
+17,211,006字节日志前缀及完整64MiB槽1备份清空，APFS146，设备已恢复Android。
+首次App于22:24:55早于GPU约22:25:02就绪，发现失败且GPU命令0；新进程实测通过。
+继续第175轮启动就绪检查：GPUInventory确认后再安装/打开App，进入UIKit前检查当前
+boot插件挂载和AGX属性。不能把页面内等待当作清除原版Metal进程缓存。仍复用display01
+内核、第173轮启动包，不启用SLPI。见analysis/nabu-metal-present-app-v175.md及各轮continuation.json。
+
 2026-11-09“霍尔开关”对话用户已选择单独测试；传感器3先完成了sensors01启动。
 用户随后说明仍在iPadOS、稍后恢复Android；霍尔候选等待恢复后先保全sensors01日志
 再启动，尚未部署或改写任何日志槽。内核nabu-hall-20261109-r2、启动包

@@ -2,6 +2,13 @@
 
 更新：2026-11-09，Asia/Shanghai。
 
+第174轮64帧CAMetalLayer连续呈现实测通过：GPU与IOSurface各65536像素0错，
+两个表面各使用32次、64个呈现回调，清除后导入2/2释放、held0。用户确认动画、清除和
+桌面触摸正常；17,211,006字节日志前缀及64MiB槽1已备份清空，APFS145→146。
+首次App早于GPU就绪而发现失败，后续新进程通过；第175轮增加启动前就绪证据及主机等待。
+当前仍为小型App的复制兼容路径，未验证硬件vsync或全系统加速。
+见[第174轮实测](../analysis/nabu-metal-present-app-v174.md)和[第175轮候选](../analysis/nabu-metal-present-app-v175.md)。
+
 第173轮真实CAMetalLayer单帧应用实测通过：用户确认红黄条纹和紫色方块显示、清除，
 返回桌面及两次息屏唤醒/触摸正常。GPU与实际IOSurface各1024像素0错，命令Completed，
 清除后导入1/1释放、held0。实际像素已回收；presented回调已观察，但time/id均0，

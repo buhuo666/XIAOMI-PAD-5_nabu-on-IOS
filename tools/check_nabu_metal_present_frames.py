@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify recovered run 174 GPU and IOSurface pixels, frame history and release evidence."""
+"""Verify recovered run 174/175 GPU pixels, startup readiness and release evidence."""
 import argparse
 from collections import Counter
 import json
@@ -36,7 +36,20 @@ def verify(folder):
         if not condition:
             issues.append(message)
 
-    require(result['test_revision'] == 174, 'App test revision differs')
+    require(result['test_revision'] in (174, 175), 'App test revision differs')
+    if result['test_revision'] == 175:
+        startup = result.get('startup_preflight', {})
+        require(startup.get('ready') is True and startup.get('mount_current_boot') is True and
+                startup.get('accelerator_ready') is True, 'GPU or plugin was not ready before UIKit')
+        require(startup.get('accelerator_registry_id', 0) != 0 and
+                startup.get('accelerator_registry_id') == result.get('registry_id'), 'Startup and factory registry IDs differ')
+        require(result.get('factory_call_count') == 1 and not result.get('restart_required'),
+                'App factory was retried or startup required a fresh process')
+        ready_time = startup.get('checked_uptime')
+        ui_time = result.get('ui_application_main_uptime')
+        factory_time = result.get('factory_call_uptime')
+        require(all(isinstance(t, (int, float)) for t in (ready_time, ui_time, factory_time)) and
+                ready_time <= ui_time <= factory_time, 'Startup readiness was not checked before UIKit and the factory')
     require(result['run_id'] == metadata['run_id'], 'Result and pixel metadata run_id differ')
     require(metadata['format'] == 'BGRA8Unorm' and metadata['width'] == WIDTH and metadata['height'] == HEIGHT,
             'Pixel format or dimensions differ')
@@ -93,6 +106,7 @@ def verify(folder):
 
     return {
         'result': 'fail' if issues else 'gpu_pixels_pass', 'run_id': result['run_id'], 'issues': issues,
+        'test_revision': result['test_revision'], 'startup_preflight': result.get('startup_preflight'),
         'frames_verified': len(pixel_rows), 'pixels_per_stream': len(pixel_rows) * WIDTH * HEIGHT,
         'pixel_checks': pixel_rows, 'surface_use_counts': dict(uses), 'surface_reuse_count': reused,
         'surface_reuse_observed': reused > 0, 'presentation_callbacks': callbacks,

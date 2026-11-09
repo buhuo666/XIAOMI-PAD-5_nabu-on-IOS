@@ -1,0 +1,26 @@
+{
+  "build": "20F66 iPad7,11",
+  "image_uuid": "88922408-fd68-3396-8465-3775ce66ff60",
+  "functions": [
+    {
+      "address": "0x181a2cb3c",
+      "bytes": 204,
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27085628
+    },
+    {
+      "address": "0x181a2c42c",
+      "bytes": 124,
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27083820
+    },
+    {
+      "address": "0x181a2942c",
+      "bytes": 1040,
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27071532
+    }
+  ],
+  "scope": "Bounded original cache instruction ranges; not decompilation or runtime call attribution",
+  "prior_evidence": "analysis/nabu-metal-base-20f66.json"
+}
