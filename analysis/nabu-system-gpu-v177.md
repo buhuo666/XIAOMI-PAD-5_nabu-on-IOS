@@ -51,3 +51,26 @@ GPU提交/完成和桌面操作。之后安装普通App，复用双路各4,194,3
 视频解码和所有第三方App兼容性标为完成。
 
 动态状态及全部产物路径：log/host/gpu-v177/continuation.json。
+
+## 2026-11-10真机结果
+
+用户明确释放设备并授权开始，复用已合格的display01内核和v177-r2启动包。
+正式加载器部署读回及fastboot临时启动成功。屏幕保留引导器菜单/交接文字，用户照片
+已保存；USB/Lockdown与syslog正常，不能将残留画面误判为内核根本没有运行。
+
+GPU硬件自检ready，启动参数记录为零延迟。原版SpringBoard和backboardd启动等待器
+分别等待3.621秒、3.575秒，随后以真实registry ID 4294967634 exec原程序。内核日志
+时间戳与用户态CLOCK_MONOTONIC各有基准，不直接混算为总启动耗时。
+
+backboardd、mediaserverd实际通过系统工厂取得NativeBridgeMetalDevice，缓存位于各自
+/var/mobile/Library/Caches/NativeAdrenoMetal子目录。随后出现两个确切兼容错误：
+
+1. QuartzCore固定片段函数fixed_frag_lph_cph（spec A2Xhf）传入type51，前端报
+   “constant type 51 is not qualified”。实际为uchar3，错误在Rust特化之前发生。
+2. mediaserverd调用NBLibrary的newFunctionWithName:constantValues:pipelineLibrary:error:
+   时触发缺失selector异常。backboardd和媒体服务因此反复退出，桌面未完成。
+
+新版测试App未安装、未运行。本轮确认了系统消费者实际接入，未验证桌面成功合成。
+用户恢复Android后，3,356,432字节连续有效前缀、完整64MiB槽1和9,779,081字节syslog
+已备份；槽已清空并读回，APFS149→150 fullfsync=ok，Android引导分区未改变。
+继续第178轮，仅修复这两项实机错误。证据在runtime-evidence.json和live-system-failure.json。
