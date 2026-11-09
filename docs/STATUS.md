@@ -2,6 +2,14 @@
 
 更新：2026-11-09，Asia/Shanghai。
 
+第173轮真实CAMetalLayer单帧应用实测通过：用户确认红黄条纹和紫色方块显示、清除，
+返回桌面及两次息屏唤醒/触摸正常。GPU与实际IOSurface各1024像素0错，命令Completed，
+清除后导入1/1释放、held0。实际像素已回收；presented回调已观察，但time/id均0，
+尚未证明硬件同步或全系统应用加速。组合源码e595e0e完整CI42627788010成功；
+4,556,035字节日志前缀及完整64MiB槽1已备份清空，APFS144，未额外重启Android。
+继续多帧呈现和drawable复用；传感器交给用户指定的“传感器3”。
+见[第173轮实测](../analysis/nabu-gpu-v173.md)。
+
 第172轮默认IOSurface复制兼容通过：Mach完整16KiB读取、32轮/64个GPU命令、
 双向各32768像素及保护区均正确，资源1/1释放。pointer0、copied1/degraded1，
 copy-in65920和merge-back13568字节，shadow1/in-place0；不属于零复制或桌面加速。

@@ -1,5 +1,14 @@
 # 项目工作规则
 
+用户最新澄清：传感器全部交给新对话“传感器3”；本对话继续GPU，不接手传感器修复。
+第173轮统一实测已完成：正常UIKit App经CAMetalLayer显示红黄条纹和紫色方块，
+用户确认图案、清除及两次息屏唤醒/触摸正常。GPU和实际IOSurface各1024像素0错，
+命令Completed，清除后导入1/1释放、held0。presented回调已观察，但time/id均0，
+不能当作硬件同步或全系统应用加速完成。组合源码e595e0e完整CI42627788010成功。
+4,556,035字节日志前缀及完整64MiB槽1已备份清空，APFS144，用户已恢复Android。
+下一项为多帧CAMetalLayer呈现、drawable复用及资源释放，保留第172前端和息屏基线。
+见analysis/nabu-gpu-v173.md；以下候选状态为历史记录，以上述实际结果为准。
+
 第173轮已按用户要求整合息屏、传感器诊断和GPU App：组合内核为
 artifacts/nabu-display-sensors-integrated/kernel/kernel.native-apfs.macho，采用已实测
 息屏基底，保留61个对象、替换入口并加SLPI，共63个（GPU37个）。实际分支、原组件
@@ -26,7 +35,7 @@ artifacts/nabu-display-power-ready/kernel.native-apfs.macho（保留v168的62个
 背光，未验证120Hz硬件同步或整机深睡。见docs/NABU-DISPLAY-POWER.md。
 
 第173轮App源码19b5b728eaa61ffe3b909fb3d946e6d10d9fe7e2使用真实CAMetalLayer，
-完成后双路像素核对再present。安装包已通过编译、签名和下载时审查，尚待应用实测。
+完成后双路像素核对再present。编译、签名、下载审查与单帧应用实测均已通过。
 
 2026-11-09第172轮默认IOSurface复制兼容实机通过：Mach完整读回16KiB，32轮/64命令，
 双向各32768像素及保护区0错，资源1/1释放、held0。pointer0、copied1、degraded1、

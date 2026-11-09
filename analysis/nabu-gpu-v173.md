@@ -1,7 +1,8 @@
 # 第173轮：息屏、SLPI诊断与CAMetalLayer统一测试
 
 2026-11-09。用户安排由“30”等“息屏1”“传感器2”报告齐全后统一整合并测试。
-两份报告现已完成；本轮不额外重启Android，仅部署后切bootloader临时启动。
+本轮统一实測已完成。未额外重启Android，仅部署后切bootloader临时启动。
+用户后续指定传感器全部交由“传感器3”，本对话继续GPU多帧呈现。
 
 ## 组合产物与来源
 
@@ -25,7 +26,8 @@ PIL_REGION 0x8b700000..0x9ab00000内，不属于正常分配的RAM区。
 
 App的配套CI42621723810未完成内核/ath10k两个作业：GitHub报告macOS hosted runner
 容量不足，未取得执行器后取消；无线主机检查通过。它没有给出源码编译错误，仍不能
-将该任务写成全部通过。组合候选使用上表已通过的基底和本地实际编译/链接检查。
+将该任务写成全部通过。后续组合源码e595e0e3df695ab93bfdf0fdcc3166c0b639d3c7的
+完整CI42627788010已完成，三个作业全部成功；本轮实际部署的是上述本地组合产物。
 
 ## 本轮操作与验收
 
@@ -42,5 +44,34 @@ v168，保留其记录，不复用到组合内核；新清单绑定本轮最终�
 自动旋转和自动亮度未完成。安全世界SMC若不返回，APPS线程超时无法取消它，
 应保留enter/return边界日志；不得将有限轮询等同所有硬件调用都保证返回。
 
-动态状态和各检查证据见`log/host/gpu-v173/continuation.json`与
-`log/host/gpu-v173/integration-provenance.json`。本文件建立时尚未部署/启动组合内核。
+## 第173轮实际结果
+
+用户确认：“图案显示、清除和息屏唤醒均正常”，之后手动恢复Android并连接USB。
+App结果见`log/host/gpu-v173/app-verification.json`，原始Documents见`app-runtime/`。
+
+- run_id 1794232074136014，标准工厂返回NativeBridgeMetalDevice，registry4294967771。
+- CAMetalDrawable为32×32 BGRA，surface13、row256、allocation16384。
+  GPU读回和直接IOSurface读回各1024像素全部正确，读回保护区0错；1个命令Completed。
+- 实际4096字节BGRA、同run_id元数据和PNG已回收到`artifacts/nabu-metal-present-v173/`。
+- 普通IOSurface使用复制兼容：pointer0、copied1/degraded1、shadow1/in-place0，
+  copy-in0、merge-back2688字节。本应用仅由GPU写表面，不扩大为零复制。
+- 清除后前端导入made/released1/1、held0，首次释放检查通过，layer_removed及
+  entered_background均为true。
+- 呈现回调确已观察，用户实际看到图案；但presented_time和drawable_id均0，
+  未证明硬件vsync/page-flip计时。原始App JSON保留awaiting_visual_confirmation，
+  主机app-verification.json另存真实用户确认，不改写原始输出。
+
+这是一个正常容器UIKit App的单帧CAMetalLayer呈现通过，不等于全桌面/所有应用GPU
+加速完成。六项非致命设备能力查询仍记录为no device answer，未进行推测性补丁。
+
+息屏回归7次背光请求均正确，bus-error0，包含启动过程和用户两次锁屏/唤醒。
+传感器诊断本轮停在SLPI ready超时，原始结果已保存为`log/host/gpu-v173/slpi-result.json`；
+后续由“传感器3”修复，本记录不将PAS返回成功表述为传感器可用。
+
+日志槽1的4,556,035字节连续前缀及完整67,108,864字节均已备份，之后清空并读回确认。
+没有END记录，因此是已捕获前缀，不是封口的整个运行期日志。原生syslog回收5,356,788
+字节。APFS143→144、fullfsync=ok，设备由用户恢复Android。
+
+下一步沿用已合格前端，验证连续多帧更新、drawable复用、实际像素和清除后的资源平衡。
+动态状态和检查证据见`log/host/gpu-v173/continuation.json`、`integration-provenance.json`
+和`integrated-runtime-evidence.json`。完整设备回收位于`log/device/nabu-boot-20261109-173/`。
