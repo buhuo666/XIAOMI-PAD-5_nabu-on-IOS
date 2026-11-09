@@ -74,10 +74,42 @@ def validate_userland_serial(value):
     return value
 
 
+def gpu_node(firmware):
+    """SM8150/A640 resources consumed by the pinned Nabu backend."""
+    windows = (
+        ('gpu', 0x02c00000, 0x40000), ('gmu', 0x02c6a000, 0x30000),
+        ('rscc', 0x02c8d000, 0x2000), ('smmu', 0x02ca0000, 0x10000),
+        ('smmu-tcu', 0x02cc2000, 0x20), ('smmu-tbu-0', 0x02cc5000, 0x1000),
+        ('smmu-tbu-1', 0x02cc9000, 0x1000), ('smmu-tbu-status-0', 0x02cc2200, 8),
+        ('smmu-tbu-status-1', 0x02cc2208, 8), ('gpucc', 0x02c90000, 0x9000),
+        ('gcc', 0x00100000, 0x1f0000), ('pdc', 0x0b290000, 0x10000),
+        ('pdc-seq', 0x0b490000, 0x10000), ('command-db', 0x85f20000, 0x20000),
+        ('rpmh', 0x18220000, 0x10000), ('aop', 0x0c300000, 0x400),
+        ('aop-doorbell', 0x17c00000, 0x1000), ('zap', 0x98f15000, 0x2000),
+    )
+    scalars = {
+        'chip-id': 0x06040001, 'gmem-bytes': 0x100000, 'frequency-hz': 257000000,
+        'highest-bank-bit': 15, 'min-access-length': 32, 'ubwc-mode': 3,
+        'gpu-bank': 0, 'gpu-asid': 1, 'gpu-slot': 0, 'gpu-sid': 0, 'gpu-sid-mask': 0x401,
+        'gmu-bank': 1, 'gmu-asid': 2, 'gmu-slot': 4, 'gmu-sid': 5, 'gmu-sid-mask': 0x400,
+        'aop-doorbell-offset': 0xc, 'aop-doorbell-value': 1, 'zap-pas-id': 13,
+    }
+    interrupts = [('gpu', 332), ('smmu-global', 706)] + [
+        ('smmu-context-'+str(i), 713+i) for i in range(8)]
+    return Node('nabu-adreno', {
+        'AAPL,ignore': U32(1), 'compatible': STR('qcom,adreno-640'),
+        'nabu-reg-names': b''.join(STR(name) for name, _, _ in windows),
+        'nabu-reg': b''.join(struct.pack('<2Q', pa, size) for _, pa, size in windows),
+        'nabu-interrupt-names': b''.join(STR(name) for name, _ in interrupts),
+        'nabu-interrupts': b''.join(U32(number) for _, number in interrupts),
+        **{key: U32(value) for key, value in scalars.items()}, **firmware,
+    })
+
+
 def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=None,
               userland_model=None, userland_serial=None, touch_firmware=None, image4_nonce_key=None,
               rtc_offset=None, platform_uuid=None, bluetooth_firmware=None, modem_firmware=None,
-              bluetooth_transport=False, wlan_native_service=False):
+              bluetooth_transport=False, wlan_native_service=False, gpu_firmware=None):
     if checkpoint not in CHECKPOINTS:
         raise ValueError('Unsupported checkpoint in pinned XNU kernel')
     if userland_model not in (None, 'iPad7,11'):
@@ -176,6 +208,8 @@ def make_tree(seed, checkpoint=DEFAULT_CHECKPOINT, bootstrap=False, wifi_mac=Non
             product.props['bluetooth-le'] = U32(1)
     if modem_firmware is not None:
         tree.children.append(Node('nabu-modem', {'compatible': STR('qcom,sm8150-mpss'), **modem_firmware}))
+    if gpu_firmware is not None:
+        tree.children.append(gpu_node(gpu_firmware))
     if wlan_native_service:
         tree.children.append(Node('wlan', {
             'compatible': STR('qcom,wcn3990-wifi'),

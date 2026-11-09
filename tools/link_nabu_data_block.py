@@ -395,6 +395,7 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
               'bluetooth_firmware': definitions.get('_nabu_bluetooth_load_firmware'),
               'modem_trial': definitions.get('_nabu_modem_start_trial'),
               'adsp_trial': definitions.get('_nabu_adsp_start'), 'relocations': relocation_counts,
+              'gpu_start': definitions.get('_nabu_gpu_start'),
               'return_trace_symbols': {name: definitions[name] for name in (
                   '_nabu_return_trace_entry', '_nabu_return_trace_entry_end',
                   '_nabu_return_trace_terminal', '_nabu_return_trace_terminal_end',

@@ -14,6 +14,9 @@ void nabu_usb_cdc_log_start(void);
 void nabu_wireless_start(void);
 void nabu_adsp_start(void);
 #endif
+#ifdef NABU_GPU_SERVICE
+void nabu_gpu_start(void);
+#endif
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
     if (nabu_aes_start()) return KERN_FAILURE;
@@ -27,6 +30,9 @@ static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 #ifdef NABU_WIRELESS_SERVICE
     nabu_wireless_start();
     nabu_adsp_start();
+#endif
+#ifdef NABU_GPU_SERVICE
+    nabu_gpu_start();
 #endif
     return KERN_SUCCESS;
 }

@@ -1,0 +1,31 @@
+# 第162轮 A640 硬件执行接入
+
+2026-11-09，Asia/Shanghai。用户要求 GPU 真正工作，并提供同型号研究资料供参考。
+本轮以当前 iPadOS 16.5/20F66、APFS 及第161轮桌面/输入基线为准。
+
+## 实现
+
+- `tools/build_nabu_gpu.py` 将锁定的 nabu A640 后端与 `patches/nabu-gpu`
+  适配层编译为当前 8796 的 ARM64 对象。来源及许可证见该目录 `PROVENANCE.md`。
+- 修复参考实现与当前导出头文件的差异：数据数组分配、内核私有函数声明、
+  16 KiB VM 页与 4 KiB GPU 页的区分，物理页号使用 `atop()`。
+- GPU SMMU 符号独立命名；AOP/RPMh 使用现有全局互斥锁，保留音频/无线 CX 电压票。
+- 通过本机固件及独立 ADT 节点提供 SM8150/A640 资源；`nabu-gpu=1` 才启动，
+  IOBSD 就绪后延迟90秒，逐阶段等待日志前缀真正写入现有日志槽。
+- 首轮验证 GMU/HFI、SMMU、SQE/ZAP 和命令处理器：CPU 先确认 scratch/fence 为零，
+  GPU 执行 CP_MEM_WRITE 写出 `0x6401cafe`，完成 fence 后读回。随后观察1秒并停止
+  CP/GMU；映射和电源票保留至重启。完整资源回收、持续渲染和 Metal 接入未完成。
+- `/chosen` 状态可由配对 USB 的 `GPUInventory` 查询；只将真实 scratch/fence
+  匹配记为命令执行通过，渲染验证保持 false。
+
+## 当前验证
+
+- 本地 ARM64 编译30个 GPU 对象通过（`log/host/gpu-v162/gpu-compile3.log`）。
+- 链接预检发现日志状态函数属于源码内核，因此必须重新构建内核；第157轮内核
+  不能直接用于本轮。GPU 静态数据还需要扩大预链接 DATA 预留区。
+- CI 已接入 GPU 对象编译及保留，日志读取接口纳入现有运行时回归测试。
+- 构建、部署和实机执行证据以 `log/host/gpu-v162/continuation.json` 为准；
+  当前尚无本机 GPU 命令执行通过的证据。
+
+提供的同型号资料指出 CX 先上电、再开时钟的重要性，并明确其 GMU/GPU 加速仍未
+完成；本轮保留这一顺序检查，不将资料包中的占位加速器当成可用驱动。

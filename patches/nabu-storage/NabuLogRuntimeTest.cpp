@@ -220,8 +220,28 @@ static void testCapacityAndLateQueue()
   nabuLogPump(nullptr,nullptr);assert(appends==oldAppends && ends==oldEnds && schedules==1);
   puts("PASS capacity failure still commits incomplete END; late requeue after finalization performs no I/O");
 }
+static void testGpuCheckpoint()
+{
+  uint64_t committed=99;uint32_t error=99;
+  reset("");assert(nabu_gpu_log_status(&committed,&error)!=0 && !committed && !error);
+  reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
+  assert(nabu_gpu_log_status(&committed,&error)==0 && committed==0 && !error);
+  assert(!appends && !sealCalls && !ends);
+  nabuLogPump(nullptr,nullptr);
+  assert(nabu_gpu_log_status(&committed,&error)==0 && committed==100 && !error);
+  auto oldAppends=appends,oldSchedules=schedules;
+  assert(nabu_gpu_log_status(&committed,&error)==0);
+  assert(appends==oldAppends && schedules==oldSchedules && !sealCalls && !ends && !lockDepth);
+  gNabuLogRuntimeError=EIO;
+  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==100 && error==EIO);
+  gNabuLogRuntimeError=0;gNabuLogFinishing=true;
+  assert(nabu_gpu_log_status(&committed,&error)!=0 && committed==100 && !error);
+  gNabuReadLock=nullptr;
+  assert(nabu_gpu_log_status(&committed,&error)!=0 && !committed && !error);
+  puts("PASS GPU checkpoint observes only committed bytes; no writes, sealing or scheduling; unavailable on failed/finishing capture");
+}
 int main()
 {
-  testArguments();testPumps();testFinish();testCapacityAndLateQueue();
+  testArguments();testPumps();testFinish();testCapacityAndLateQueue();testGpuCheckpoint();
   puts("PASS actual NabuLogRuntime scheduling and termination control flow");
 }

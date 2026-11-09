@@ -117,6 +117,7 @@ def main():
     ap.add_argument('--wlan-native-service',action='store_true',help='Publish the real wlan device and native en0 for service discovery; station control is separate')
     ap.add_argument('--bluetooth-transport', action='store_true', help='Keep the initialized Bluetooth UART running and publish its board capabilities')
     ap.add_argument('--adsp-trial', action='store_true', help='Run the bounded Nabu PAS1 ADSP boot/readiness/shutdown trial')
+    ap.add_argument('--gpu-firmware', type=Path, help='Original local A640 GMU/SQE/ZAP inputs; enables the linked A640 backend')
     a = ap.parse_args()
     assert not a.modem_glink or a.modem_firmware, 'GLINK trial requires the signed modem firmware'
     assert not a.wlan_firmware or a.modem_glink, 'WLAN firmware transfer requires GLINK'
@@ -133,6 +134,11 @@ def main():
         bluetooth_firmware = {'rampatch': (a.bluetooth_firmware/meta['rampatch']).read_bytes(),
                               'nvm': (a.bluetooth_firmware/meta['nvm']).read_bytes(),
                               'address-hci': (a.bluetooth_firmware/meta['address_hci']).read_bytes()}
+    gpu_firmware = None
+    if a.gpu_firmware:
+        gpu_firmware = {key: (a.gpu_firmware/name).read_bytes() for key, name in (
+            ('gmu-firmware', 'a640_gmu.bin'), ('sqe-firmware', 'a630_sqe.fw'),
+            ('zap-metadata', 'a640_zap.mdt'), ('zap-shader', 'a640_zap.b02'))}
     modem_firmware = None
     if a.modem_firmware:
         assert a.bluetooth_firmware, 'The modem trial retains the qualified Bluetooth initialization'
@@ -192,6 +198,13 @@ def main():
         assert a.bootstrap and json.loads(a.bootstrap.with_name('bootstrap-report.json').read_text()).get('adsp_firmware'), 'ADSP trial requires original firmware in Boot APFS'
         old_args=entry['args']
         entry['args'] += ' nabu-adsp=1'
+        assert config_bytes.count(old_args.encode())==1
+        config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
+    if a.gpu_firmware:
+        kernel_report=json.loads(a.kernel.with_name('prelink-report.json').read_text())
+        assert kernel_report['data_block'].get('gpu_start'), 'GPU inputs require the linked A640 backend'
+        old_args=entry['args']
+        entry['args'] += ' nabu-gpu=1'
         assert config_bytes.count(old_args.encode())==1
         config_bytes=config_bytes.replace(old_args.encode(),entry['args'].encode(),1)
     if a.native_usb:
@@ -259,11 +272,11 @@ def main():
         props, nodes = parse(blob)
         chosen = next(p for p, _ in nodes if p['name'] == b'chosen\0')
         assert blob == make_tree(chosen['random-seed'], a.checkpoint, bootstrap_mode, wifi_mac,
-                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport, a.wlan_native_service).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
+                                 a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport, a.wlan_native_service, gpu_firmware).encode(), 'Existing ADT differs from current builder/checkpoint; use a new output directory'
     else:
         import secrets
         blob = make_tree(secrets.token_bytes(64), a.checkpoint, bootstrap_mode, wifi_mac,
-                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport, a.wlan_native_service).encode()
+                         a.userland_model, userland_serial, touch_firmware, image4_nonce_key, rtc_offset, platform_uuid, bluetooth_firmware, modem_firmware, a.bluetooth_transport, a.wlan_native_service, gpu_firmware).encode()
     files['EFI/Nabu16/Payloads/kernel.macho.adt'] = blob
     assert len(blob) <= 16*1024*1024, 'ADT exceeds the current DarwinBoot ReadFile limit (16 MiB)'
     manifest = []
@@ -282,6 +295,7 @@ def main():
     receipt['setup_compat_enabled'] = setup_compat_enabled
     receipt['input_bridge_enabled'] = bootstrap_mode and bool(boot_report.get('input_bridge'))
     receipt['touch_firmware_in_adt'] = touch_firmware is not None
+    receipt['gpu_firmware_in_adt'] = gpu_firmware is not None
     receipt['image4_software_nonce_key_supplied'] = image4_nonce_key is not None
     receipt['rtc_calibration'] = rtc_calibration
     receipt['platform_uuid_from_soc'] = platform_identity is not None

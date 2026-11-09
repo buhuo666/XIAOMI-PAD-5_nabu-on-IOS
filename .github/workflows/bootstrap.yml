@@ -13,6 +13,7 @@ on:
       - 'patches/nabu-input/**'
       - 'patches/nabu-wireless/**'
       - 'patches/nabu-audio/**'
+      - 'patches/nabu-gpu/**'
       - 'patches/nabu-ath10k/**'
       - 'patches/nabu-apfs/**'
       - 'patches/nabu-userland/**'
@@ -147,7 +148,9 @@ jobs:
         run: |
           python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
           python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
-            --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace
+            --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace --gpu
+      - name: Compile A640 hardware execution backend for 20F66
+        run: python3 tools/build_nabu_gpu.py --compile-command artifacts/nabu-wireless-objects/compile-command.json --output artifacts/nabu-gpu
       - name: Compile Nabu native speaker audio provider
         run: python3 tools/build_nabu_audio_plugin.py --output artifacts/nabu-audio-plugin
       - name: Verify linked kernel against the selected export contract
@@ -181,6 +184,7 @@ jobs:
             artifacts/nabu-input-bridge/
             artifacts/nabu-data-block/
             artifacts/nabu-wireless-objects/
+            artifacts/nabu-gpu/
             artifacts/nabu-audio-plugin/
             src/hakios-8796/xnu-deps/*build.log
             src/hakios-8796/xnu-deps/exporthdrs.log

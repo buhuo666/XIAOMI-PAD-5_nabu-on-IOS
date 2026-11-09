@@ -232,6 +232,32 @@ static NSDictionary *wirelessSnapshot(void) {
              @"interpretation": @"Job files, matching services and BSD interfaces are presence observations; they do not prove radio readiness, association or packet delivery."};
 }
 
+static NSDictionary *gpuSnapshot(void) {
+    void *kit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    uint32_t (*fromPath)(uint32_t, const char *) = dlsym(kit, "IORegistryEntryFromPath");
+    CFTypeRef (*property)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = dlsym(kit, "IORegistryEntryCreateCFProperty");
+    int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
+    uint32_t chosen = fromPath(0, "IODeviceTree:/chosen");
+    id state = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-gpu-state"), NULL, 0)) : nil;
+    id data = chosen ? CFBridgingRelease(property(chosen, CFSTR("nabu-gpu-stats"), NULL, 0)) : nil;
+    NSMutableDictionary *result = [@{@"read_only": @YES, @"state": state ?: NSNull.null,
+        @"hardware_command_completed": @NO, @"graphics_rendering_verified": @NO} mutableCopy];
+    if ([data isKindOfClass:NSData.class] && [data length] == 24 * sizeof(uint32_t)) {
+        uint32_t stats[24]; memcpy(stats, [data bytes], sizeof(stats));
+        NSMutableArray *values = [NSMutableArray array];
+        for (unsigned i = 0; i < 24; ++i) [values addObject:@(stats[i])];
+        result[@"stats"] = values;
+        result[@"phase"] = @(stats[0]); result[@"error"] = @(stats[1]);
+        result[@"issued_fence"] = @(stats[8]); result[@"completed_fence"] = @(stats[9]);
+        result[@"scratch"] = @(stats[10]);
+        result[@"cp_stopped"] = @(stats[20]); result[@"gmu_stop_status"] = @(stats[21]);
+        result[@"hardware_command_completed"] = @(stats[8] != 0 && stats[8] == stats[9] && stats[10] == 0x6401cafe);
+    }
+    if (chosen) release(chosen);
+    dlclose(kit);
+    return result;
+}
+
 static NSDictionary *bulkDirectory(void) {
     struct attrlist attributes = {0};
     attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
@@ -577,6 +603,10 @@ int main(void) {
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
+                        else if ([action isEqual:@"GPUInventory"]) {
+                            result[@"read_only"] = @YES;
+                            result[@"gpu"] = gpuSnapshot();
+                        }
                         else if ([action isEqual:@"WirelessInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"wireless"] = wirelessSnapshot();

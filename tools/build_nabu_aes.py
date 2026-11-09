@@ -22,6 +22,7 @@ def main():
     ap.add_argument('--native-usb',action='store_true',help='Include the stock USB family adapter and DWC3 bidirectional transport')
     ap.add_argument('--wireless',action='store_true',help='Include the Nabu SM8150 wireless foundation')
     ap.add_argument('--ath10k',action='store_true',help='Use the cold-boot ath10k platform bridge; link its separately built object too')
+    ap.add_argument('--gpu',action='store_true',help='Start the separately built A640 backend when nabu-gpu=1 is selected')
     ap.add_argument('--return-trace',action='store_true',help='Include first-loader-return diagnostic objects for the separate offline patch step')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     assert not a.native_usb or a.power, 'Native USB reconnect uses the PMIC power sampler'
@@ -47,6 +48,7 @@ def main():
     if a.native_usb: flags += ['-DNABU_USB_NATIVE_SERVICE=1']
     if a.wireless: flags += ['-DNABU_WIRELESS_SERVICE=1']
     if a.ath10k: flags += ['-DNABU_ATH10K_SERVICE=1']
+    if a.gpu: flags += ['-DNABU_GPU_SERVICE=1']
     sources = [('NabuAES',ROOT/'patches/nabu-apfs/NabuAES.cpp'),
                         ('NabuDataBlock',ROOT/'patches/nabu-storage/NabuDataBlock.cpp'),
                         ('AESReference',ROOT/'patches/nabu-apfs/AESReference.cpp'),

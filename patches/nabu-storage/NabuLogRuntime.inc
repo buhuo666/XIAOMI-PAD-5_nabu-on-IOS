@@ -104,6 +104,21 @@ int nabuLogBeginConfigured(void)
 }
 }
 
+// The GPU worker checkpoints each hardware phase against the same committed
+// prefix as recovery. It only observes this writer and never seals the log.
+extern "C" int nabu_gpu_log_status(uint64_t *committed,uint32_t *error)
+{
+  *committed=0; *error=0;
+  if (!gNabuReadLock) return 1;
+  IOLockLock(gNabuReadLock);
+  *committed=gNabuLogFlushed;
+  *error=gNabuLogRuntimeError;
+  int unavailable=!gNabuLogSelected || gNabuLogFinishing ||
+      gNabuLogRuntimeError || !nabuLogIsOpen();
+  IOLockUnlock(gNabuReadLock);
+  return unavailable;
+}
+
 extern "C" void nabu_log_append_report(void)
 {
   if (!gNabuLogSelected) return;
