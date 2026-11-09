@@ -28,12 +28,12 @@ APP_ENTITLEMENTS = {
 }
 
 
-def app_info():
+def app_info(system_integration=False):
     return {
         'CFBundleIdentifier': BUNDLE_ID, 'CFBundleName': APP_NAME,
-        'CFBundleDisplayName': 'GPU呈现测试', 'CFBundleExecutable': EXECUTABLE,
+        'CFBundleDisplayName': 'GPU呈现测试', 'CFBundleExecutable': APP_NAME if system_integration else EXECUTABLE,
         'CFBundlePackageType': 'APPL', 'CFBundleInfoDictionaryVersion': '6.0',
-        'CFBundleVersion': '4', 'CFBundleShortVersionString': '1.3',
+        'CFBundleVersion': '5' if system_integration else '4', 'CFBundleShortVersionString': '1.4' if system_integration else '1.3',
         'CFBundleDevelopmentRegion': 'zh-Hans', 'CFBundleLocalizations': ['zh-Hans'],
         'CFBundleSupportedPlatforms': ['iPhoneOS'], 'MinimumOSVersion': '16.5',
         'LSRequiresIPhoneOS': True, 'UIDeviceFamily': [2], 'UIRequiresFullScreen': True,
@@ -47,24 +47,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True, help='CI42615860281 nabu-gpu-iosurface-copy-read artifact directory')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--system-integration', action='store_true', help='Ordinary process name, Apple-only linkage and system factory loading')
     args = parser.parse_args()
     if sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('Apple App builds run in macOS GitHub Actions')
     source, output = args.input.resolve(), args.output.resolve()
+    executable_name = APP_NAME if args.system_integration else EXECUTABLE
+    app_entitlements = ({'com.apple.security.ts.opengl-or-metal': True}
+                        if args.system_integration else APP_ENTITLEMENTS)
     app = output / 'Payload' / (APP_NAME + '.app')
     app.mkdir(parents=True, exist_ok=False)
     report = {
         'result': 'building', 'target': TARGET, 'bundle_identifier': BUNDLE_ID,
-        'bundle_directory': APP_NAME + '.app', 'display_name': 'GPU呈现测试', 'executable': EXECUTABLE,
+        'bundle_directory': APP_NAME + '.app', 'display_name': 'GPU呈现测试', 'executable': executable_name,
         'reused_ci_run': QUALIFIED_RUN, 'reused_device_qualification': 172,
         'mtl_device_instance_bytes': 528, 'construction': 'MTLCreateSystemDefaultDevice',
         'frontend_rebuilt': False, 'turnip_rebuilt': False, 'rust_rebuilt': False,
         'metallib_rebuilt': False, 'factory_bundle_rebuilt': False,
-        'container_preserved': True, 'entitlements': APP_ENTITLEMENTS,
+        'container_preserved': True, 'entitlements': app_entitlements,
         'no_container_entitlement_added': False, 'network_features_added': False,
         'installed_verified': False, 'launch_verified': False,
         'gpu_exercised': False, 'presentation_verified': False,
-        'test_revision': 176, 'frames_requested': 64, 'frame_delay_ms': 125,
+        'test_revision': 177 if args.system_integration else 176, 'frames_requested': 64, 'frame_delay_ms': 125,
+        'system_integration_app': args.system_integration, 'app_links_frontend': not args.system_integration,
         'width': 256, 'height': 256, 'source_upload_row_bytes': 1280,
         'fragment_shader': 'nabu_surface_sample', 'pattern': 'coordinate-gradient-frame-v1',
         'startup_readiness_before_uikit': True,
@@ -72,7 +77,7 @@ def main():
                       'metal-present-surfaces.bgra', 'metal-present-frames.json'],
         'runtime_paths': {'frontend': '/redwood/sbin/libnabu-metal-frontend.dylib',
                           'turnip': '/redwood/sbin/libvulkan_freedreno.dylib',
-                          'factory_cache': '/var/mobile/Media/NabuMetalCache',
+                          'factory_cache': 'NSCachesDirectory/NativeAdrenoMetal/MetalPresent' if args.system_integration else '/var/mobile/Media/NabuMetalCache',
                           'mount_ready': '/var/run/nabu-system-metal.ready'},
         'ci': {'run_id': os.environ.get('GITHUB_RUN_ID'), 'head_sha': os.environ.get('GITHUB_SHA')},
         'commands': [],
@@ -107,12 +112,14 @@ def main():
         report['xcode'] = xcode
         sdk = run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path']).stdout.strip()
         app_source = ROOT / 'userland/nabu/apps/MetalPresent/main.mm'
-        executable = app / EXECUTABLE
+        executable = app / executable_name
+        driver_flags = (['-DNABU_METAL_SYSTEM_APP=1'] if args.system_integration else
+                        ['-L', source, '-lnabu-metal-frontend', '-Wl,-rpath,/redwood/sbin'])
         run(['xcrun', '--sdk', 'iphoneos', 'clang++', '-target', TARGET, '-isysroot', sdk,
              '-std=c++17', '-O2', '-g', '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
              '-Wno-deprecated-declarations', '-fstack-protector-strong', '-DNABU_EXPECTED_MTL_DEVICE_BYTES=528',
              '-I', ROOT / 'userland/nabu/src', '-I', ROOT / 'src/nabu/gpu/upstream/Adreno6xx', app_source,
-             '-L', source, '-lnabu-metal-frontend', '-Wl,-rpath,/redwood/sbin',
+             *driver_flags,
              '-framework', 'UIKit', '-framework', 'Foundation', '-framework', 'Metal',
              '-framework', 'QuartzCore', '-framework', 'IOSurface', '-o', executable])
         executable.chmod(0o755)
@@ -120,9 +127,9 @@ def main():
         run(['xcrun', 'ibtool', '--compile', app / 'LaunchScreen.storyboardc',
              '--sdk', sdk, '--minimum-deployment-target', '16.5', '--target-device', 'ipad',
              ROOT / 'userland/nabu/apps/LocalTest/LaunchScreen.storyboard'])
-        (app / 'Info.plist').write_bytes(plistlib.dumps(app_info(), fmt=plistlib.FMT_BINARY))
+        (app / 'Info.plist').write_bytes(plistlib.dumps(app_info(args.system_integration), fmt=plistlib.FMT_BINARY))
         entitlements = output / 'app-entitlements.plist'
-        entitlements.write_bytes(plistlib.dumps(APP_ENTITLEMENTS))
+        entitlements.write_bytes(plistlib.dumps(app_entitlements))
         run(['codesign', '--force', '--sign', '-', '--timestamp=none', '--pagesize', '4096',
              '--identifier', BUNDLE_ID, '--entitlements', entitlements, app])
         run(['codesign', '--verify', '--strict', app])
@@ -130,12 +137,17 @@ def main():
         if not re.search(r'^Page size=4096$', detail, re.M):
             raise ValueError('App code signature must use 4 KiB pages')
         signed = plistlib.loads(run(['codesign', '--display', '--xml', '--entitlements', '-', app]).stdout.encode())
-        if signed != APP_ENTITLEMENTS or signed['com.apple.security.ts.opengl-or-metal'] is not True:
-            raise ValueError('App signature differs from the two GPU entitlements')
+        if signed != app_entitlements:
+            raise ValueError('App signature differs from the requested GPU entitlements')
         dependencies = run(['otool', '-L', executable]).stdout
         load_commands = run(['otool', '-l', executable]).stdout
         rpaths = re.findall(r'cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset \d+\)', load_commands)
-        if '@rpath/libnabu-metal-frontend.dylib' not in dependencies or rpaths != ['/redwood/sbin']:
+        if args.system_integration:
+            undefined = run(['nm', '-u', executable]).stdout
+            if 'libnabu' in dependencies or 'libvulkan' in dependencies or rpaths or 'native_bridge_' in undefined:
+                raise ValueError('System integration App must only link system frameworks, with no bridge imports')
+            report['undefined_symbols'] = undefined
+        elif '@rpath/libnabu-metal-frontend.dylib' not in dependencies or rpaths != ['/redwood/sbin']:
             raise ValueError('App must load the factory frontend through the single /redwood/sbin rpath')
         report['binary'] = {'bytes': executable.stat().st_size, 'dependencies': dependencies.strip(),
                             'rpaths': rpaths, 'signature_page_bytes': 4096,

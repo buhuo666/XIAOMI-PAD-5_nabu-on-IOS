@@ -16,6 +16,20 @@
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <mach-o/dyld.h>
+
+#ifndef NABU_METAL_SYSTEM_APP
+#define NABU_METAL_SYSTEM_APP 0
+#endif
+
+#if NABU_METAL_SYSTEM_APP
+// Resolve diagnostics from the driver already loaded by Apple's Metal factory.
+// There is no driver load command or driver-opening API in this App.
+static decltype(&native_bridge_metal_surface_stats) systemSurfaceStats;
+static decltype(&native_bridge_metal_trim_surface_imports) systemTrimImports;
+#define native_bridge_metal_surface_stats systemSurfaceStats
+#define native_bridge_metal_trim_surface_imports systemTrimImports
+#endif
 
 namespace {
 using namespace NabuTexturePattern;
@@ -25,6 +39,16 @@ static NSMutableDictionary *record;
 static NSURL *documents;
 static NabuMetalSurfaceStats beforeLayer{};
 static NSMutableData *gpuFrames, *surfaceFrames;
+
+#if NABU_METAL_SYSTEM_APP
+static bool frontendLoaded() {
+    for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && strstr(name, "libnabu-metal-frontend.dylib")) return true;
+    }
+    return false;
+}
+#endif
 
 // Check before UIApplicationMain: UIKit/QuartzCore can call the process-wide
 // default factory before this controller creates its own CAMetalLayer.
@@ -157,7 +181,11 @@ static NSDictionary *stats(const NabuMetalSurfaceStats &s) {
 
 static void snapshot(NSString *name) {
     NabuMetalSurfaceStats value{};
+#if NABU_METAL_SYSTEM_APP
+    const bool read = systemSurfaceStats && systemSurfaceStats(&value);
+#else
     const bool read = native_bridge_metal_surface_stats(&value);
+#endif
     update(@{name: read ? stats(value) : @{@"available": @NO}});
 }
 
@@ -396,6 +424,22 @@ static bool saveFrames() {
             fail(@(error ?: "No qualified device")); [self showFailure]; return;
         }
         update(@{@"device_class": @(object_getClassName(self.metalDevice)), @"registry_id": @(self.metalDevice.registryID)});
+#if NABU_METAL_SYSTEM_APP
+        void *loaded = dlopen("/redwood/sbin/libnabu-metal-frontend.dylib", RTLD_NOW | RTLD_NOLOAD | RTLD_LOCAL);
+        if (!loaded) { fail(@"System factory did not load the frontend"); [self showFailure]; return; }
+        systemSurfaceStats = reinterpret_cast<decltype(systemSurfaceStats)>(dlsym(loaded, "native_bridge_metal_surface_stats"));
+        systemTrimImports = reinterpret_cast<decltype(systemTrimImports)>(dlsym(loaded, "native_bridge_metal_trim_surface_imports"));
+        auto observer = reinterpret_cast<decltype(&native_bridge_metal_set_problem_observer)>(dlsym(loaded, "native_bridge_metal_set_problem_observer"));
+        Class<NabuMetalFactoryDiagnostics> factory = (Class<NabuMetalFactoryDiagnostics>)NSClassFromString(@"NativeAdrenoMetalDevice");
+        if (!systemSurfaceStats || !systemTrimImports || !observer ||
+            ![(id)factory respondsToSelector:@selector(nabuSystemClientsEnabled)] || ![factory nabuSystemClientsEnabled]) {
+            dlclose(loaded); fail(@"System factory diagnostics unavailable"); [self showFailure]; return;
+        }
+        observer(problem, nullptr);
+        update(@{@"frontend_loaded_after_factory": @(frontendLoaded()), @"diagnostics_resolved_after_factory": @YES,
+            @"factory_system_clients": @([factory nabuSystemClientsEnabled]), @"factory_cache": [factory nabuCachePath] ?: @""});
+        dlclose(loaded);
+#endif
         if (self.metalDevice.registryID != [record[@"startup_preflight"][@"accelerator_registry_id"] unsignedLongLongValue]) {
             fail(@"Factory device differs from the startup accelerator"); [self showFailure]; return;
         }
@@ -515,6 +559,9 @@ static bool saveFrames() {
 }
 
 - (void)checkReleasedImports {
+#if NABU_METAL_SYSTEM_APP
+    if (!systemTrimImports) return;
+#endif
     native_bridge_metal_trim_surface_imports();
     NabuMetalSurfaceStats after{};
     if (!native_bridge_metal_surface_stats(&after)) return;
@@ -584,7 +631,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         record = [@{@"run_id": @((uint64_t)([NSDate date].timeIntervalSince1970 * 1000000)),
-            @"test_revision": @176, @"mode": @"CAMetalLayer sampled texture frames", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"test_revision": @(NABU_METAL_SYSTEM_APP ? 177 : 176), @"mode": @"CAMetalLayer sampled texture frames", @"construction": @"MTLCreateSystemDefaultDevice",
             @"width": @(Width), @"height": @(Height), @"pattern": @"coordinate-gradient-frame-v1",
             @"fragment_shader": @"nabu_surface_sample", @"source_upload_row_bytes": @(RowBytes),
             @"process_id": @(getpid()), @"factory_call_count": @0,
@@ -597,8 +644,14 @@ int main(int argc, char *argv[]) {
         gpuFrames = [NSMutableData data];
         surfaceFrames = [NSMutableData data];
         stage(@"main");
+#if NABU_METAL_SYSTEM_APP
+        update(@{@"process_basename": @(getprogname()), @"frontend_loaded_at_main": @(frontendLoaded()),
+            @"app_links_frontend": @NO, @"system_integration_app": @YES});
+#endif
         update(@{@"startup_preflight": startupReadiness()});
+#if !NABU_METAL_SYSTEM_APP
         native_bridge_metal_set_problem_observer(problem, nullptr);
+#endif
         @try {
             update(@{@"ui_application_main_uptime": @(NSProcessInfo.processInfo.systemUptime)});
             stage(@"ui_application_main");

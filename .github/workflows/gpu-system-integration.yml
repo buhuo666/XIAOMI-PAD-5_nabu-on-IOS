@@ -1,0 +1,46 @@
+name: nabu16 - system GPU integration
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: macOS pool for the small system integration build
+        type: choice
+        default: macos-15-intel
+        options: [macos-15-intel, macos-15]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  system-gpu:
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Reuse the frontend and shaders qualified in run172
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42615860281 --name nabu-gpu-iosurface-copy-read-2
+          --dir inputs/qualified-runtime
+      - name: Build system discovery and graphics startup gate
+        run: >-
+          python3 tools/build_nabu_system_gpu.py
+          --input inputs/qualified-runtime/nabu-gpu-iosurface-copy-read
+          --output artifacts/nabu-system-gpu
+      - name: Build normal-name App with only system framework linkage
+        run: >-
+          python3 tools/build_nabu_metal_present_app.py --system-integration
+          --input inputs/qualified-runtime/nabu-gpu-iosurface-copy-read
+          --output artifacts/nabu-system-gpu-app
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-system-gpu-${{ github.run_number }}
+          path: |
+            artifacts/nabu-system-gpu/
+            artifacts/nabu-system-gpu-app/
+          retention-days: 14

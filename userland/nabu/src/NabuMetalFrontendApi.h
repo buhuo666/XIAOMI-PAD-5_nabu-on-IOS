@@ -18,4 +18,7 @@ const char *nmb_last_error(void);
 + (const char *)nabuLastError;
 + (uint64_t)nabuRegistryID;
 + (NSUInteger)nabuOpenCount;
+@optional
++ (BOOL)nabuSystemClientsEnabled;
++ (NSString *)nabuCachePath;
 @end

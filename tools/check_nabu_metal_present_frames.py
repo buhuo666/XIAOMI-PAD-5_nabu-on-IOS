@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify recovered run 174-176 GPU pixels, startup readiness and release evidence."""
+"""Verify recovered run 174-177 GPU pixels, factory integration and release evidence."""
 import argparse
 from collections import Counter
 import json
@@ -13,13 +13,13 @@ FRAME_BYTES = WIDTH * HEIGHT * 4
 def expected_frame(frame, revision=174):
     """BGRA reference for the visible stripes, moving square and six-bit frame marker."""
     pixels = bytearray()
-    width, height = (256, 256) if revision == 176 else (WIDTH, HEIGHT)
-    scale = 8 if revision == 176 else 1
+    width, height = (256, 256) if revision >= 176 else (WIDTH, HEIGHT)
+    scale = 8 if revision >= 176 else 1
     left = scale * (16 - abs(16 - frame % 32))
     for y in range(height):
         for x in range(width):
             color = (0, 255 if (y // 4 + frame // 4) % 2 else 0, 255, 255)
-            if revision == 176:
+            if revision >= 176:
                 color = ((x + 3 * frame) % 256, (y + 5 * frame) % 256, ((x ^ y) + 7 * frame) % 256, 255)
             if left <= x < left + 16 * scale and 8 * scale <= y < 24 * scale:
                 color = (255, 0, 255, 255)
@@ -35,7 +35,7 @@ def verify(folder):
     gpu = (folder / 'metal-present-frames.bgra').read_bytes()
     surface = (folder / 'metal-present-surfaces.bgra').read_bytes()
     revision = result['test_revision']
-    width, height = (256, 256) if revision == 176 else (WIDTH, HEIGHT)
+    width, height = (256, 256) if revision >= 176 else (WIDTH, HEIGHT)
     frame_bytes = width * height * 4
     issues = []
 
@@ -43,7 +43,17 @@ def verify(folder):
         if not condition:
             issues.append(message)
 
-    require(revision in (174, 175, 176), 'App test revision differs')
+    require(revision in (174, 175, 176, 177), 'App test revision differs')
+    if revision == 177:
+        require(result.get('process_basename') == 'MetalPresent' and result.get('app_links_frontend') is False,
+                'App still requires the diagnostic process identity or direct driver linkage')
+        require(result.get('frontend_loaded_at_main') is False and result.get('frontend_loaded_after_factory') is True and
+                result.get('diagnostics_resolved_after_factory') is True and result.get('factory_system_clients') is True,
+                'System factory did not independently load the application driver')
+        cache = result.get('factory_cache', '')
+        documents = result.get('documents', '')
+        require(documents.endswith('/Documents') and cache == documents[:-len('/Documents')] +
+                '/Library/Caches/NativeAdrenoMetal/MetalPresent', 'Factory cache is outside the App container')
     if revision >= 175:
         startup = result.get('startup_preflight', {})
         require(startup.get('ready') is True and startup.get('mount_current_boot') is True and
@@ -58,7 +68,7 @@ def verify(folder):
         require(all(isinstance(t, (int, float)) for t in (ready_time, ui_time, factory_time)) and
                 ready_time <= ui_time <= factory_time, 'Startup readiness was not checked before UIKit and the factory')
     require(result['run_id'] == metadata['run_id'], 'Result and pixel metadata run_id differ')
-    if revision == 176:
+    if revision >= 176:
         require(result.get('pattern') == 'coordinate-gradient-frame-v1' and
                 result.get('fragment_shader') == 'nabu_surface_sample', 'Texture sampling pattern/shader differs')
         require(result.get('width') == width and result.get('height') == height, 'App texture dimensions differ')
@@ -87,7 +97,7 @@ def verify(folder):
             require(frame.get(name) == 0, f'Frame {index}: {name} is not zero')
         for name in ('gpu_pixels_checked', 'direct_surface_pixels_checked'):
             require(frame.get(name) == width * height, f'Frame {index}: {name} differs')
-        if revision == 176:
+        if revision >= 176:
             require(frame.get('source_upload_epoch') == index and frame.get('source_upload_bytes') == frame_bytes and
                     frame.get('source_upload_row_bytes') == 1280, f'Frame {index}: source texture upload differs')
             for name in ('source_input_pixel_errors', 'source_input_guard_errors'):
@@ -111,7 +121,7 @@ def verify(folder):
     require(dict(uses) == result.get('surface_use_counts'), 'Surface use summary differs from frame history')
     require(result.get('unique_surface_count') == len(uses), 'Unique surface count differs')
     reused = sum(count - 1 for count in uses.values())
-    if revision == 176:
+    if revision >= 176:
         require(reused > 0, 'No drawable surface reuse was observed')
     require(result.get('surface_reuse_count') == reused, 'Surface reuse count differs')
     callbacks = sum(frame.get('presentation_callback_observed') is True for frame in frames)
