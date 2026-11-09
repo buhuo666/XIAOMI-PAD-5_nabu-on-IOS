@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// One real CAMetalLayer drawable, GPU readback, then ordinary CoreAnimation present.
+// Sequential CAMetalLayer frames with GPU/IOSurface readback before each present.
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
@@ -12,12 +12,14 @@
 
 namespace {
 constexpr NSUInteger Width = 32, Height = 32, RowBytes = 256;
+constexpr NSUInteger FrameCount = 64, FrameDelayMS = 125;
 constexpr NSUInteger Prefix = 256, Suffix = 256, ReadbackBytes = Prefix + RowBytes * Height + Suffix;
 constexpr uint8_t Guard = 0x6c;
 static const float Quad[6][2] = {{-1, 1}, {1, 1}, {-1, -1}, {1, 1}, {1, -1}, {-1, -1}};
 static NSMutableDictionary *record;
 static NSURL *documents;
 static NabuMetalSurfaceStats beforeLayer{};
+static NSMutableData *gpuFrames, *surfaceFrames;
 
 static void onMain(dispatch_block_t action) {
     if (NSThread.isMainThread) action();
@@ -45,6 +47,13 @@ static void update(NSDictionary *values) {
 static void stage(NSString *name) {
     fprintf(stderr, "NABU_METAL_APP stage=%s\n", name.UTF8String);
     update(@{@"stage": name});
+}
+
+static void updateFrame(NSUInteger frame, NSDictionary *values) {
+    onMain(^{
+        [record[@"frames"][frame] addEntriesFromDictionary:values];
+        update(@{});
+    });
 }
 
 static void problem(const char *text, void *) {
@@ -89,15 +98,23 @@ static void snapshot(NSString *name) {
 }
 
 struct Pixel { uint8_t b, g, r, a; };
-static Pixel expected(NSUInteger x, NSUInteger y) {
-    if (x >= 8 && x < 24 && y >= 8 && y < 24) return {255, 0, 255, 255};
-    return {0, uint8_t((y / 4) & 1 ? 255 : 0), 255, 255};
+static NSUInteger squareX(NSUInteger frame) {
+    const NSUInteger position = frame % 32;
+    return position <= 16 ? position : 32 - position;
 }
 
-static NSUInteger pixelErrors(const uint8_t *bytes, NSUInteger row) {
+static Pixel expected(NSUInteger x, NSUInteger y, NSUInteger frame) {
+    // Six cells encode all 64 frame numbers, so a stale repeated frame differs.
+    if (y < 2 && x < 24) return (frame >> (x / 4)) & 1 ? Pixel{0, 255, 0, 255} : Pixel{255, 0, 0, 255};
+    const NSUInteger left = squareX(frame);
+    if (x >= left && x < left + 16 && y >= 8 && y < 24) return {255, 0, 255, 255};
+    return {0, uint8_t(((y / 4) + frame / 4) & 1 ? 255 : 0), 255, 255};
+}
+
+static NSUInteger pixelErrors(const uint8_t *bytes, NSUInteger row, NSUInteger frame) {
     NSUInteger errors = 0;
     for (NSUInteger y = 0; y < Height; ++y) for (NSUInteger x = 0; x < Width; ++x) {
-        const Pixel color = expected(x, y);
+        const Pixel color = expected(x, y, frame);
         errors += memcmp(bytes + y * row + x * 4, &color, sizeof(color)) != 0;
     }
     return errors;
@@ -109,8 +126,27 @@ static NSUInteger guardErrors(const uint8_t *bytes, NSUInteger length) {
     return errors;
 }
 
-static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
-    stage(@"drawable_texture");
+static id<MTLRenderPipelineState> makePipeline(id<MTLDevice> device) {
+    stage(@"render_pipeline");
+    NSError *error = nil;
+    NSString *libraryPath = [NSBundle.mainBundle pathForResource:@"nabu-iosurface-smoke" ofType:@"metallib"];
+    if (!libraryPath) { fail(@"Qualified surface shader library is missing"); return nil; }
+    id<MTLLibrary> library = [device newLibraryWithFile:libraryPath error:&error];
+    if (!library) { fail(error.localizedDescription ?: @"Shader library creation failed"); return nil; }
+    MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
+    descriptor.vertexFunction = [library newFunctionWithName:@"nabu_surface_vertex"];
+    descriptor.fragmentFunction = [library newFunctionWithName:@"nabu_surface_color"];
+    descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    if (!descriptor.vertexFunction || !descriptor.fragmentFunction) {
+        fail(@"Qualified color shader functions are missing"); return nil;
+    }
+    id<MTLRenderPipelineState> pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    if (!pipeline) fail(error.localizedDescription ?: @"Pipeline creation failed");
+    return pipeline;
+}
+
+static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderPipelineState> pipeline,
+                   id<MTLCommandQueue> queue, id<MTLBuffer> readback) {
     id<MTLTexture> texture = drawable.texture;
     if (!texture || texture.width != Width || texture.height != Height ||
         texture.pixelFormat != MTLPixelFormatBGRA8Unorm || texture.framebufferOnly)
@@ -122,27 +158,9 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
     const NSUInteger surfaceRow = IOSurfaceGetBytesPerRow(surface);
     if (surfaceRow < Width * 4 || IOSurfaceGetAllocSize(surface) < surfaceRow * Height)
         return fail(@"Drawable IOSurface row layout differs");
-    update(@{@"drawable_id": @(drawable.drawableID), @"texture_class": @(object_getClassName(texture)),
+    updateFrame(frame, @{@"drawable_id": @(drawable.drawableID), @"texture_class": @(object_getClassName(texture)),
         @"surface_id": @(IOSurfaceGetID(surface)), @"surface_row_bytes": @(surfaceRow),
         @"surface_allocation_bytes": @(IOSurfaceGetAllocSize(surface)), @"texture_usage": @(texture.usage)});
-    snapshot(@"counters_after_drawable");
-
-    stage(@"render_pipeline");
-    NSError *error = nil;
-    NSString *libraryPath = [NSBundle.mainBundle pathForResource:@"nabu-iosurface-smoke" ofType:@"metallib"];
-    if (!libraryPath) return fail(@"Qualified surface shader library is missing");
-    id<MTLLibrary> library = [device newLibraryWithFile:libraryPath error:&error];
-    if (!library) return fail(error.localizedDescription ?: @"Shader library creation failed");
-    MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
-    descriptor.vertexFunction = [library newFunctionWithName:@"nabu_surface_vertex"];
-    descriptor.fragmentFunction = [library newFunctionWithName:@"nabu_surface_color"];
-    descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-    if (!descriptor.vertexFunction || !descriptor.fragmentFunction) return fail(@"Qualified color shader functions are missing");
-    id<MTLRenderPipelineState> pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
-    if (!pipeline) return fail(error.localizedDescription ?: @"Pipeline creation failed");
-    id<MTLCommandQueue> queue = [device newCommandQueue];
-    id<MTLBuffer> readback = [device newBufferWithLength:ReadbackBytes options:MTLResourceStorageModeShared];
-    if (!queue || !readback || !readback.contents) return fail(@"Command queue or readback allocation failed");
     memset(readback.contents, Guard, ReadbackBytes);
     id<MTLCommandBuffer> command = [queue commandBuffer];
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -155,15 +173,22 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
     [encoder setRenderPipelineState:pipeline];
     [encoder setVertexBytes:Quad length:sizeof(Quad) atIndex:0];
     for (NSUInteger stripe = 0; stripe < 8; ++stripe) {
-        const float color[4] = {1, (stripe & 1) ? 1.0f : 0.0f, 0, 1};
+        const float color[4] = {1, ((stripe + frame / 4) & 1) ? 1.0f : 0.0f, 0, 1};
         [encoder setScissorRect:(MTLScissorRect){0, stripe * 4, Width, 4}];
         [encoder setFragmentBytes:color length:sizeof(color) atIndex:0];
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
     }
     const float center[4] = {1, 0, 1, 1};
-    [encoder setScissorRect:(MTLScissorRect){8, 8, 16, 16}];
+    [encoder setScissorRect:(MTLScissorRect){squareX(frame), 8, 16, 16}];
     [encoder setFragmentBytes:center length:sizeof(center) atIndex:0];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+    for (NSUInteger bit = 0; bit < 6; ++bit) {
+        const bool set = (frame >> bit) & 1;
+        const float color[4] = {0, set ? 1.0f : 0.0f, set ? 0.0f : 1.0f, 1};
+        [encoder setScissorRect:(MTLScissorRect){bit * 4, 0, 4, 2}];
+        [encoder setFragmentBytes:color length:sizeof(color) atIndex:0];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+    }
     [encoder endEncoding];
     id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
     if (!blit) return fail(@"Drawable readback encoder creation failed");
@@ -171,39 +196,56 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
         sourceSize:MTLSizeMake(Width, Height, 1) toBuffer:readback destinationOffset:Prefix
         destinationBytesPerRow:RowBytes destinationBytesPerImage:RowBytes * Height];
     [blit endEncoding];
-    stage(@"gpu_submit");
+    update(@{@"stage": @"gpu_submit", @"current_frame": @(frame)});
+    const CFTimeInterval submitTime = CACurrentMediaTime();
     [command commit];
     [command waitUntilCompleted];
-    update(@{@"command_status": @(command.status), @"command_error": command.error.localizedDescription ?: @""});
+    const CFTimeInterval completedTime = CACurrentMediaTime();
+    updateFrame(frame, @{@"command_status": @(command.status), @"command_error": command.error.localizedDescription ?: @"",
+        @"submit_uptime": @(submitTime), @"completed_uptime": @(completedTime),
+        @"submit_wait_ms": @((completedTime - submitTime) * 1000)});
     if (command.status != MTLCommandBufferStatusCompleted) return fail(@"Drawable GPU command did not complete");
 
-    stage(@"gpu_pixel_readback");
     const auto *bytes = static_cast<const uint8_t *>(readback.contents);
-    const NSUInteger gpuErrors = pixelErrors(bytes + Prefix, RowBytes);
+    const NSUInteger gpuErrors = pixelErrors(bytes + Prefix, RowBytes, frame);
     NSUInteger guards = guardErrors(bytes, Prefix) + guardErrors(bytes + Prefix + RowBytes * Height, Suffix);
     for (NSUInteger y = 0; y < Height; ++y) guards += guardErrors(bytes + Prefix + y * RowBytes + Width * 4, RowBytes - Width * 4);
     const kern_return_t locked = IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
     if (locked) return fail([NSString stringWithFormat:@"Drawable IOSurfaceLock failed: %x", unsigned(locked)]);
     const auto *pixels = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(surface));
-    const NSUInteger directErrors = pixels ? pixelErrors(pixels, surfaceRow) : Width * Height;
+    const NSUInteger directErrors = pixels ? pixelErrors(pixels, surfaceRow, frame) : Width * Height;
+    NSMutableData *direct = [NSMutableData dataWithCapacity:Width * Height * 4];
+    if (pixels) for (NSUInteger y = 0; y < Height; ++y) [direct appendBytes:pixels + y * surfaceRow length:Width * 4];
     const kern_return_t unlocked = IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
-    update(@{@"gpu_pixels_checked": @(Width * Height), @"gpu_pixel_errors": @(gpuErrors),
+    updateFrame(frame, @{@"gpu_pixels_checked": @(Width * Height), @"gpu_pixel_errors": @(gpuErrors),
         @"direct_surface_pixels_checked": @(Width * Height), @"direct_surface_pixel_errors": @(directErrors),
         @"readback_guard_errors": @(guards), @"surface_unlock_status": @(unlocked)});
-    if (gpuErrors || directErrors || guards || unlocked) return fail(@"Drawable GPU pixels, surface pixels or guards differ");
     NSMutableData *packed = [NSMutableData dataWithCapacity:Width * Height * 4];
     for (NSUInteger y = 0; y < Height; ++y) [packed appendBytes:bytes + Prefix + y * RowBytes length:Width * 4];
-    if (![packed writeToURL:[documents URLByAppendingPathComponent:@"metal-present-readback.bgra"] options:NSDataWritingAtomic error:&error])
-        return fail(error.localizedDescription ?: @"Actual pixel file write failed");
+    [gpuFrames appendData:packed];
+    [surfaceFrames appendData:direct];
+    update(@{@"completed_command_buffers": @(frame + 1)});
+    if (gpuErrors || directErrors || guards || unlocked) return fail(@"Drawable GPU pixels, surface pixels or guards differ");
+    return true;
+}
+
+static bool saveFrames() {
+    NSError *error = nil;
+    if (![gpuFrames writeToURL:[documents URLByAppendingPathComponent:@"metal-present-frames.bgra"] options:NSDataWritingAtomic error:&error] ||
+        ![surfaceFrames writeToURL:[documents URLByAppendingPathComponent:@"metal-present-surfaces.bgra"] options:NSDataWritingAtomic error:&error])
+        return fail(error.localizedDescription ?: @"Actual frame files write failed");
     __block NSNumber *runID;
     onMain(^{ runID = record[@"run_id"]; });
-    if (!saveJSON(@"metal-present-readback.json", @{@"run_id": runID, @"width": @(Width), @"height": @(Height),
-        @"format": @"BGRA8Unorm", @"bytes_per_row": @(Width * 4), @"bytes": @(packed.length),
-        @"source": @"CAMetalDrawable texture after Completed GPU command", @"surface_id": @(IOSurfaceGetID(surface)),
-        @"gpu_pixel_errors": @(gpuErrors), @"direct_surface_pixel_errors": @(directErrors)}))
-        return fail(@"Pixel metadata write failed");
-    snapshot(@"counters_after_gpu");
-    update(@{@"gpu_test_passed": @YES, @"pixels_saved": @YES, @"completed_command_buffers": @1});
+    const NSUInteger frameBytes = Width * Height * 4;
+    if (!saveJSON(@"metal-present-frames.json", @{@"run_id": runID, @"width": @(Width), @"height": @(Height),
+        @"format": @"BGRA8Unorm", @"bytes_per_row": @(Width * 4), @"bytes_per_frame": @(frameBytes),
+        @"gpu_frames": @(gpuFrames.length / frameBytes), @"surface_frames": @(surfaceFrames.length / frameBytes),
+        @"gpu_bytes": @(gpuFrames.length), @"surface_bytes": @(surfaceFrames.length),
+        @"order": @"frame index ascending, including any failed pixel check", @"frame_index_base": @0,
+        @"gpu_source": @"CAMetalDrawable texture after Completed GPU command",
+        @"surface_source": @"IOSurfaceGetBaseAddress while locked read-only, after the same GPU command"}))
+        return fail(@"Frame metadata write failed");
+    update(@{@"pixels_saved": @YES});
     return true;
 }
 } // namespace
@@ -214,12 +256,16 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
 @property(nonatomic, strong) UIView *displayView;
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
 @property(nonatomic, strong) id<MTLDevice> metalDevice;
-@property(nonatomic, strong) id<CAMetalDrawable> heldDrawable;
+@property(nonatomic, strong) id<MTLRenderPipelineState> pipeline;
+@property(nonatomic, strong) id<MTLCommandQueue> commandQueue;
+@property(nonatomic, strong) id<MTLBuffer> readback;
 @property(nonatomic) BOOL started;
 @property(nonatomic) BOOL rendering;
 @property(nonatomic) BOOL removalRequested;
 @property(nonatomic) NSUInteger releaseAttempts;
+@property(nonatomic) NSUInteger completedFrames;
 - (void)startTest;
+- (void)nextFrame;
 - (void)showFailure;
 - (void)checkReleasedImports;
 - (void)removePattern;
@@ -231,7 +277,7 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
     stage(@"view_did_load");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     UILabel *title = [UILabel new];
-    title.text = @"GPU 呈现测试";
+    title.text = @"GPU 连续呈现测试";
     title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
     title.textAlignment = NSTextAlignmentCenter;
     self.statusLabel = [UILabel new];
@@ -245,7 +291,7 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
     [self.clearButton addTarget:self action:@selector(removePattern) forControlEvents:UIControlEventTouchUpInside];
     self.clearButton.enabled = NO;
     UILabel *hint = [UILabel new];
-    hint.text = @"请确认红黄条纹和中央紫色方块。\n确认后点“清除图案”，再返回桌面。";
+    hint.text = @"请观察紫色方块来回移动、红黄条纹变化。\n完成后点“清除图案”，再返回桌面。";
     hint.numberOfLines = 0;
     hint.textAlignment = NSTextAlignmentCenter;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, self.statusLabel, self.displayView, self.clearButton, hint]];
@@ -303,44 +349,88 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
         self.metalLayer.device = self.metalDevice;
         stage(@"layer_add_to_view");
         [self.displayView.layer addSublayer:self.metalLayer];
-        self.rendering = YES;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            @autoreleasepool {
-                id<CAMetalDrawable> drawable = nil;
-                bool passed = false;
-                @try {
-                    stage(@"next_drawable");
+        self.clearButton.enabled = YES;
+        [self nextFrame];
+    } @catch (NSException *exception) { fail(exception.reason ?: exception.name); [self showFailure]; [self removePattern]; }
+}
+
+- (void)nextFrame {
+    if (self.removalRequested || self.completedFrames == FrameCount) return;
+    const NSUInteger frame = self.completedFrames;
+    [record[@"frames"] addObject:[@{@"index": @(frame), @"presentation_callback_observed": @NO} mutableCopy]];
+    update(@{@"stage": @"next_drawable", @"current_frame": @(frame)});
+    self.statusLabel.text = [NSString stringWithFormat:@"正在绘制第 %lu / %lu 帧…", (unsigned long)(frame + 1), (unsigned long)FrameCount];
+    self.rendering = YES;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        @autoreleasepool {
+            id<CAMetalDrawable> drawable = nil;
+            bool passed = false;
+            @try {
+                if (frame == 0) {
+                    self.pipeline = makePipeline(self.metalDevice);
+                    self.commandQueue = [self.metalDevice newCommandQueue];
+                    self.readback = [self.metalDevice newBufferWithLength:ReadbackBytes options:MTLResourceStorageModeShared];
+                }
+                if (!self.pipeline) { /* makePipeline saved the actual failure. */ }
+                else if (!self.commandQueue || !self.readback || !self.readback.contents) fail(@"Command queue or readback allocation failed");
+                else {
+                    const CFTimeInterval begin = CACurrentMediaTime();
                     drawable = [self.metalLayer nextDrawable];
-                    stage(@"next_drawable_returned");
+                    const CFTimeInterval acquired = CACurrentMediaTime();
+                    updateFrame(frame, @{@"next_drawable_ms": @((acquired - begin) * 1000), @"acquired_uptime": @(acquired)});
                     if (!drawable) fail(@"CAMetalLayer nextDrawable returned nil");
-                    else passed = render(self.metalDevice, drawable);
-                } @catch (NSException *exception) { fail(exception.reason ?: exception.name); }
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.rendering = NO;
-                    if (!passed) { [self showFailure]; [self removePattern]; return; }
-                    self.heldDrawable = drawable;
-                    if (self.removalRequested) { [self removePattern]; return; }
-                    @try {
-                        stage(@"present_request");
-                        __weak MetalPresentController *weakSelf = self;
-                        [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
-                            const CFTimeInterval time = shown.presentedTime;
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                update(@{@"presentation_callback_observed": @YES, @"presented_time": @(time)});
-                                if (weakSelf.metalLayer) weakSelf.statusLabel.text = @"图案已提交，请核对屏幕。";
-                            });
-                        }];
-                        // Pixels and the command's completion have already been verified.
-                        [drawable present];
-                        update(@{@"present_requested": @YES, @"result": @"awaiting_visual_confirmation"});
-                        self.statusLabel.text = @"图案已提交，请核对屏幕。";
-                        self.clearButton.enabled = YES;
-                        stage(@"awaiting_user");
-                    } @catch (NSException *exception) { fail(exception.reason ?: exception.name); [self showFailure]; [self removePattern]; }
-                });
-            }
-        });
-    } @catch (NSException *exception) { fail(exception.reason ?: exception.name); [self showFailure]; }
+                    else passed = render(drawable, frame, self.pipeline, self.commandQueue, self.readback);
+                }
+            } @catch (NSException *exception) { fail(exception.reason ?: exception.name); }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self.rendering = NO;
+                if (!passed) { [self showFailure]; [self removePattern]; return; }
+                if (self.removalRequested) { [self removePattern]; return; }
+                @try {
+                    [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
+                        const CFTimeInterval time = shown.presentedTime;
+                        const CFTimeInterval observed = CACurrentMediaTime();
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            const bool first = ![record[@"frames"][frame][@"presentation_callback_observed"] boolValue];
+                            updateFrame(frame, @{@"presentation_callback_observed": @YES, @"presented_time": @(time),
+                                @"callback_observed_uptime": @(observed)});
+                            if (first) update(@{@"presentation_callbacks": @([record[@"presentation_callbacks"] unsignedIntegerValue] + 1)});
+                        });
+                    }];
+                    // Pixels and the command's completion have already been verified.
+                    [drawable present];
+                    updateFrame(frame, @{@"present_requested": @YES, @"present_request_uptime": @(CACurrentMediaTime())});
+                    NabuMetalSurfaceStats counters{};
+                    if (!native_bridge_metal_surface_stats(&counters)) {
+                        fail(@"Surface counters unavailable after frame"); [self showFailure]; [self removePattern]; return;
+                    }
+                    updateFrame(frame, @{@"surface_imports_made": @(counters.surface_imports_made),
+                        @"surface_imports_released": @(counters.surface_imports_released), @"surface_imports_held": @(counters.surface_imports_held),
+                        @"copied_copy_in_bytes": @(counters.copied_copy_in_bytes), @"copied_merge_back_bytes": @(counters.copied_merge_back_bytes)});
+                    NSMutableDictionary *uses = record[@"surface_use_counts"];
+                    NSString *surfaceID = [record[@"frames"][frame][@"surface_id"] stringValue];
+                    uses[surfaceID] = @([uses[surfaceID] unsignedIntegerValue] + 1);
+                    ++self.completedFrames;
+                    update(@{@"present_requested": @YES, @"present_requests": @(self.completedFrames),
+                        @"verified_frames": @(self.completedFrames), @"unique_surface_count": @(uses.count),
+                        @"surface_reuse_count": @(self.completedFrames - uses.count),
+                        @"surface_reuse_observed": @(self.completedFrames > uses.count),
+                        @"gpu_pixels_checked": @(self.completedFrames * Width * Height),
+                        @"direct_surface_pixels_checked": @(self.completedFrames * Width * Height)});
+                    if (self.completedFrames == FrameCount) {
+                        if (!saveFrames()) { [self showFailure]; [self removePattern]; return; }
+                        snapshot(@"counters_after_gpu");
+                        update(@{@"gpu_test_passed": @YES, @"result": @"awaiting_visual_confirmation", @"stage": @"awaiting_user"});
+                        self.statusLabel.text = @"64帧已完成。确认动画后，请清除图案。";
+                    } else {
+                        // Do not retain the drawable into the next acquisition; CA owns the presented frame.
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, FrameDelayMS * NSEC_PER_MSEC),
+                            dispatch_get_main_queue(), ^{ [self nextFrame]; });
+                    }
+                } @catch (NSException *exception) { fail(exception.reason ?: exception.name); [self showFailure]; [self removePattern]; }
+            });
+        }
+    });
 }
 
 - (void)showFailure {
@@ -360,17 +450,22 @@ static bool render(id<MTLDevice> device, id<CAMetalDrawable> drawable) {
         @"release_check_attempts": @(self.releaseAttempts)});
     if (!balanced && self.releaseAttempts < 30)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkReleasedImports]; });
+    else update(@{@"release_check_complete": @YES, @"resource_release_passed": @(balanced)});
 }
 
 - (void)removePattern {
     self.removalRequested = YES;
     if (self.rendering) { update(@{@"removal_waiting_for_gpu": @YES}); return; }
     if (!self.metalLayer) return;
+    if (![record[@"pixels_saved"] boolValue] && !saveFrames()) [self showFailure];
+    if ([record[@"result"] isEqual:@"running"]) update(@{@"result": @"stopped_before_completion"});
     stage(@"remove_layer");
     [self.metalLayer removeFromSuperlayer];
-    self.heldDrawable = nil;
     self.metalLayer.device = nil;
     self.metalLayer = nil;
+    self.readback = nil;
+    self.commandQueue = nil;
+    self.pipeline = nil;
     self.metalDevice = nil;
     [CATransaction flush];
     update(@{@"layer_removed": @YES});
@@ -409,10 +504,15 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         record = [@{@"run_id": @((uint64_t)([NSDate date].timeIntervalSince1970 * 1000000)),
-            @"mode": @"CAMetalLayer application", @"construction": @"MTLCreateSystemDefaultDevice",
+            @"test_revision": @174, @"mode": @"CAMetalLayer sequential frames", @"construction": @"MTLCreateSystemDefaultDevice",
             @"result": @"running", @"gpu_test_passed": @NO, @"present_requested": @NO,
-            @"presentation_callback_observed": @NO, @"layer_removed": @NO,
+            @"presentation_callbacks": @0, @"present_requests": @0, @"verified_frames": @0,
+            @"frames_requested": @(FrameCount), @"frame_delay_ms": @(FrameDelayMS), @"maximum_drawable_count": @2,
+            @"one_command_in_flight": @YES, @"timing_scope": @"CPU uptime observations; no hardware vsync claim",
+            @"frames": [NSMutableArray array], @"surface_use_counts": [NSMutableDictionary dictionary], @"layer_removed": @NO,
             @"frontend_messages": [NSMutableArray array], @"documents": documents.path} mutableCopy];
+        gpuFrames = [NSMutableData data];
+        surfaceFrames = [NSMutableData data];
         stage(@"main");
         native_bridge_metal_set_problem_observer(problem, nullptr);
         @try {
