@@ -1,0 +1,81 @@
+name: nabu16 - sensors RPC original analysis
+on:
+  workflow_dispatch:
+    inputs:
+      source_release_id:
+        description: Temporary draft release containing sensors-rpc-inputs.tar
+        required: true
+        type: string
+      source_sha256:
+        description: Digest recorded when packing the selected original ELF inputs
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  sensors-rpc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Read the selected original ELF inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RELEASE_ID: ${{ inputs.source_release_id }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 }}
+        run: |
+          mkdir -p build log/ci/sensors-rpc
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,tarfile
+          root=pathlib.Path('log/ci/sensors-rpc')
+          release_id=int(os.environ['SOURCE_RELEASE_ID'])
+          repo=os.environ['GITHUB_REPOSITORY']
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{release_id}']))
+          asset=next(a for a in release['assets'] if a['name']=='sensors-rpc-inputs.tar')
+          data=subprocess.check_output(['gh','api','-H','Accept: application/octet-stream',f'repos/{repo}/releases/assets/{asset["id"]}'])
+          if hashlib.sha256(data).hexdigest()!=os.environ['SOURCE_SHA256']:
+              raise RuntimeError('Input archive differs from selected acquisition')
+          archive=pathlib.Path('build/sensors-rpc-inputs.tar');archive.write_bytes(data)
+          rows=[]
+          with tarfile.open(archive) as tar:
+              for name in ('sscrpcd','libadsprpc.so','libssc.so'):
+                  blob=tar.extractfile(name).read()
+                  if blob[:4]!=b'\x7fELF':raise RuntimeError(name+' is not ELF')
+                  (root/name).write_bytes(blob)
+                  rows.append({'name':name,'bytes':len(blob),'sha256':hashlib.sha256(blob).hexdigest()})
+          (root/'input-acquisition.json').write_text(json.dumps({'release_id':release_id,'asset_id':asset['id'],'inputs':rows},indent=2)+'\n')
+          PY
+      - name: Download the existing pinned Ghidra release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/sensors-rpc/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('log/ci/sensors-rpc/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          if 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()!=asset['digest']:
+              raise RuntimeError('Ghidra download digest mismatch')
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Recover sensorspd attachment and reverse listener initialization
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          mkdir -p build/ghidra-sensors-rpc
+          for name in sscrpcd libadsprpc.so libssc.so; do
+            build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-sensors-rpc "$name" -import "log/ci/sensors-rpc/$name" -analysisTimeoutPerFile 300 -scriptPath analysis/image4 -postScript ExportImage4.java log/ci/sensors-rpc "$name" -log "log/ci/sensors-rpc/$name-ghidra.log"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: sensors-rpc-analysis-${{ github.run_number }}
+          path: |
+            log/ci/sensors-rpc/*.c
+            log/ci/sensors-rpc/*.asm
+            log/ci/sensors-rpc/*.json
+            log/ci/sensors-rpc/*.log
+          retention-days: 3
