@@ -122,7 +122,7 @@ static void capture() {
 static void gain() {
     using namespace NabuPcmGain;
     for(unsigned below=0;below<=384;++below) {
-        double reference=std::pow(10.0,(12.0-below/8.0)/20.0);
+        double reference=std::pow(10.0,(16.0-below/8.0)/20.0);
         auto g=NabuPcmGain::gain(below,false);assert(std::abs(g/(double)(1<<24)-reference)<0.00002);
         assert(NabuPcmGain::gain(below,true)==0);
         for(int value=-32768;value<=32767;value+=127) {
@@ -134,7 +134,7 @@ static void gain() {
     uint64_t clips=0;assert(sample(10000,Maximum,clips)==32767&&sample(-10000,Maximum,clips)==-32768&&clips==2);
     assert(sample(32767,0,clips)==0);
 }
-int main() {capture();gain();std::puts("PASS: AFE original codec config, mono TX134, COPP0, capture/restart/late events, real close failures/timeouts, +12dB gain and saturation");}
+int main() {capture();gain();std::puts("PASS: AFE original codec config, mono TX134, COPP0, capture/restart/late events, real close failures/timeouts, +16dB gain and saturation");}
 '''
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True)
