@@ -1,0 +1,31 @@
+name: nabu16 - Native sensor consumers
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/sensor-probe.yml'
+      - 'tools/build_nabu_sensor_probe.py'
+      - 'userland/nabu/src/sensor_probe.m'
+      - 'userland/nabu/src/sensor_bridge.*'
+      - 'userland/nabu/src/sensor_units.h'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sensor-probe:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile and sign native sensor consumers and the bridge ABI
+        run: python3 tools/build_nabu_sensor_probe.py --output artifacts/nabu-sensor-probe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-sensor-probe-${{ github.run_number }}
+          path: artifacts/nabu-sensor-probe/
+          retention-days: 14
