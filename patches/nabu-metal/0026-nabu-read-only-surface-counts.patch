@@ -1,0 +1,76 @@
+diff --git a/crates/metal2vulkan-runtime/src/work_counts.rs b/crates/metal2vulkan-runtime/src/work_counts.rs
+--- a/crates/metal2vulkan-runtime/src/work_counts.rs
++++ b/crates/metal2vulkan-runtime/src/work_counts.rs
+@@ -4928,3 +4928,72 @@
++/// Narrow, read-only diagnostics for the isolated Nabu IOSurface qualification.
++#[doc(hidden)]
++pub struct NabuSurfaceWorkCounts {
++    pub host_pointer_imports_made: u64,
++    pub host_pointer_import_bytes_made: u64,
++    pub copied_host_buffers_made: u64,
++    pub copied_host_buffers_refused: u64,
++    pub copied_host_buffers_degraded: u64,
++    pub copied_copy_in_bytes: u64,
++    pub copied_merge_back_bytes: u64,
++    pub host_textures_in_place: u64,
++    pub shadowed_textures: u64,
++    pub host_texture_shadows_exact: u64,
++    pub host_texture_shadows_render_target: u64,
++    pub host_texture_shadows_shader_write: u64,
++    pub host_texture_shadows_check_pending: u64,
++    pub host_texture_shadows_check_failed: u64,
++    pub host_texture_shadows_unchecked: u64,
++    pub host_texture_shadows_refused_rows: u64,
++    pub host_texture_shadows_refused_detached: u64,
++    pub host_texture_shadows_refused_image: u64,
++    pub host_texture_shadows_refused_pitch: u64,
++    pub host_texture_shadows_refused_placement: u64,
++    pub host_texture_shadows_refused_source: u64,
++    pub host_texture_shadows_refused_dma_buf: u64,
++    pub in_place_checks_run: u64,
++    pub in_place_checks_passed: u64,
++    pub in_place_checks_failed: u64,
++    pub in_place_checks_unchecked: u64,
++    pub in_place_checks_recalled: u64,
++}
++
++impl Device {
++    /// Read counters without work_counts()'s deferred render lowering.
++    #[doc(hidden)]
++    pub fn nabu_surface_work_counts(&self) -> NabuSurfaceWorkCounts {
++        let counters = &self.shared().counts;
++        NabuSurfaceWorkCounts {
++            host_pointer_imports_made: counters.host_pointer_imports_made.load(Ordering::Relaxed),
++            host_pointer_import_bytes_made: counters.host_pointer_import_bytes_made.load(Ordering::Relaxed),
++            copied_host_buffers_made: counters.copied_host_buffers_made.load(Ordering::Relaxed),
++            copied_host_buffers_refused: counters.copied_host_buffers_refused.load(Ordering::Relaxed),
++            copied_host_buffers_degraded: counters.copied_host_buffers_degraded.load(Ordering::Relaxed),
++            copied_copy_in_bytes: counters.copied_copy_in_bytes.load(Ordering::Relaxed),
++            copied_merge_back_bytes: counters.copied_merge_back_bytes.load(Ordering::Relaxed),
++            host_textures_in_place: counters.host_textures_in_place.load(Ordering::Relaxed),
++            shadowed_textures: counters.shadowed_textures.load(Ordering::Relaxed),
++            host_texture_shadows_exact: counters.host_texture_shadows_exact.load(Ordering::Relaxed),
++            host_texture_shadows_render_target: counters.host_texture_shadows_render_target.load(Ordering::Relaxed),
++            host_texture_shadows_shader_write: counters.host_texture_shadows_shader_write.load(Ordering::Relaxed),
++            host_texture_shadows_check_pending: counters.host_texture_shadows_check_pending.load(Ordering::Relaxed),
++            host_texture_shadows_check_failed: counters.host_texture_shadows_check_failed.load(Ordering::Relaxed),
++            host_texture_shadows_unchecked: counters.host_texture_shadows_unchecked.load(Ordering::Relaxed),
++            host_texture_shadows_refused_rows: counters.host_texture_shadows_refused[0].load(Ordering::Relaxed),
++            host_texture_shadows_refused_detached: counters.host_texture_shadows_refused[1].load(Ordering::Relaxed),
++            host_texture_shadows_refused_image: counters.host_texture_shadows_refused[2].load(Ordering::Relaxed),
++            host_texture_shadows_refused_pitch: counters.host_texture_shadows_refused[3].load(Ordering::Relaxed),
++            host_texture_shadows_refused_placement: counters.host_texture_shadows_refused[4].load(Ordering::Relaxed),
++            host_texture_shadows_refused_source: counters.host_texture_shadows_refused[5].load(Ordering::Relaxed),
++            host_texture_shadows_refused_dma_buf: counters.host_texture_shadows_refused[6].load(Ordering::Relaxed),
++            in_place_checks_run: counters.in_place_checks_run.load(Ordering::Relaxed),
++            in_place_checks_passed: counters.in_place_checks_passed.load(Ordering::Relaxed),
++            in_place_checks_failed: counters.in_place_checks_failed.load(Ordering::Relaxed),
++            in_place_checks_unchecked: counters.in_place_checks_unchecked.load(Ordering::Relaxed),
++            in_place_checks_recalled: counters.in_place_checks_recalled.load(Ordering::Relaxed),
++        }
++    }
++}
++
+ impl Device {
+     /// Resource declarations, scope/resource barriers, omitted serial barriers, fence updates
+     /// and waits, submitted summaries, access visibility, emitted/omitted CPU visibility,

@@ -1,0 +1,64 @@
+name: nabu16 - NC IOSurface Metal
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-iosurface.yml'
+      - 'tools/build_nabu_gpu_metal_probe.py'
+      - 'patches/nabu-metal/NativeMetalSurfaceStats.rs'
+      - 'patches/nabu-metal/NativeMetalSurfaceStats.inc'
+      - 'patches/nabu-metal/0026-nabu-read-only-surface-counts.patch'
+      - 'userland/nabu/src/NabuMetalSurfaceStats.h'
+      - 'userland/nabu/src/gpu_iosurface_probe.mm'
+      - 'userland/nabu/src/gpu_iosurface_smoke.metal'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  gpu-iosurface:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch the same qualified frontend and translator sources
+        run: >-
+          python3 tools/fetch_sources.py
+          --only nabu UniXNU-turnip-reference AdrenoMetal metal2vulkan
+          --report artifacts/gpu-iosurface-sources.json
+      - name: Reuse the Turnip artifact qualified in run 166
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42576001993 --name nabu-gpu-vulkan-1
+          --dir inputs/turnip-vulkan
+      - name: Reuse the standard factory bundle and entitled helper from run 169
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42603179764 --name nabu-system-metal-2
+          --dir inputs/system-metal
+      - name: Install the qualified bridge compiler dependencies
+        run: |
+          brew install llvm@21
+          rustup toolchain install 1.98.1 --profile minimal --target aarch64-apple-ios
+      - name: Build the isolated NC IOSurface probe and read-only frontend statistics
+        run: >-
+          python3 tools/build_nabu_gpu_metal_probe.py
+          --iosurface --system-metal-input inputs/system-metal/nabu-system-metal
+          --work build/gpu-iosurface --output artifacts/nabu-gpu-iosurface
+          --turnip-input inputs/turnip-vulkan/nabu-gpu-vulkan
+          --mtl-device-bytes 528 --llvm-as "$(brew --prefix llvm@21)/bin/llvm-as"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-gpu-iosurface-${{ github.run_number }}
+          path: |
+            artifacts/nabu-gpu-iosurface/
+            artifacts/gpu-iosurface-sources.json
+          retention-days: 14
