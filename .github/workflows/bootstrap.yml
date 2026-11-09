@@ -11,6 +11,7 @@ on:
       - 'patches/darwinboot/**'
       - 'patches/nabu-storage/**'
       - 'patches/nabu-input/**'
+      - 'patches/nabu-display/**'
       - 'patches/nabu-wireless/**'
       - 'patches/nabu-audio/**'
       - 'patches/nabu-gpu/**'

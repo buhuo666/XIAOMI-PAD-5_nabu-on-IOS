@@ -1,0 +1,37 @@
+--- a/iokit/Kernel/MiniIOMobileFramebuffer.cpp
++++ b/iokit/Kernel/MiniIOMobileFramebuffer.cpp
+@@ -36,6 +36,9 @@
+ #include <IOKit/IOBufferMemoryDescriptor.h>
+ 
+ #include "MiniIOSurface.h"
++
++extern "C" void nabu_backlight_init(void);
++extern "C" IOReturn nabu_backlight_set_power(bool on);
+ 
+ extern "C" void hakios_tl(const char * format, ...) __printflike(1, 2);
+ 
+@@ -583,6 +586,7 @@
+ 	if (!configureDisplay()) {
+ 		return false;
+ 	}
++	nabu_backlight_init();
+ 	if (gMeasure && kernel_thread_start(measurePanel, NULL, &thread) == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
+ 	}
+@@ -1642,10 +1646,15 @@
+ 			    args->scalarInputCount > 1 ? in[1] : 0, args->scalarInputCount > 2 ? in[2] : 0, micros(mach_absolute_time()));
+ 		}
+ 		return kIOReturnSuccess;
++	case kFBMethodRequestPowerChange:
++		if (args->scalarInputCount != 1) {
++			return kIOReturnBadArgument;
++		}
++		return nabu_backlight_set_power(in[0] != 0);
++
+ 	case kFBMethodSwapSignal:
+ 	case kFBMethodSwapCancel:
+ 	case kFBMethodSwapCancelAll:
+-	case kFBMethodRequestPowerChange:
+ 	case kFBMethodChangeFrameInfo:
+ 		return kIOReturnSuccess;
+ 

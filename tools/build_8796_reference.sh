@@ -54,7 +54,7 @@ cd "$PROJECT_ROOT/src/hakios-8796"
 python3 tools/hakios-config.py defconfig defconfig
 bash xnu/apply.sh "$XNU_SRC" 2>&1 | tee "$PROJECT_ROOT/log/ci/apply.log"
 : > "$PROJECT_ROOT/log/ci/project-patches.sha256"
-for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch loader-return-diagnostics.patch nabu-log-capture.patch nabu-panic-early-log.patch nabu-native-display.patch nabu-export-contract.patch miniamfi-csops-xml.patch nabu-wifi-control-state.patch nabu-wifi-station-lifecycle.patch; do
+for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.patch bcm2837-bootstrap-capacity.patch generic-smp-diagnostics.patch loader-return-diagnostics.patch nabu-log-capture.patch nabu-panic-early-log.patch nabu-native-display.patch nabu-display-power.patch nabu-export-contract.patch miniamfi-csops-xml.patch nabu-wifi-control-state.patch nabu-wifi-station-lifecycle.patch; do
   git -C "$XNU_SRC" apply --check "$PROJECT_ROOT/patches/8796/$patch"
   git -C "$XNU_SRC" apply "$PROJECT_ROOT/patches/8796/$patch"
   shasum -a 256 "$PROJECT_ROOT/patches/8796/$patch" >> "$PROJECT_ROOT/log/ci/project-patches.sha256"
@@ -74,6 +74,8 @@ python3 tools/check_nabu_panic_early.py --tree "$XNU_SRC" --output log/ci/nabu-p
 python3 tools/check_nabu_log_runtime.py --output log/ci/nabu-log-runtime
 python3 tools/check_nabu_log_format.py --output log/ci/nabu-log-format --native-fixture log/ci/nabu-log-writer/valid-slot.bin
 python3 tools/check_return_diagnostics.py --tree "$XNU_SRC" --output log/ci/return-diagnostics-host
+python3 tools/prepare_nabu_display_power.py --tree "$XNU_SRC" --output log/ci/nabu-display-power/source.json
+python3 tools/check_nabu_display_power.py --tree "$XNU_SRC" --output log/ci/nabu-display-power/checks
 python3 tools/check_nabu_display.py --tree "$XNU_SRC" --output log/ci/nabu-display-host
 python3 tools/check_nabu_export_contract.py --tree "$XNU_SRC" --output log/ci/nabu-export-contract.json
 export NABU_EXPORT_CONTRACT=20F66-37-v1
@@ -98,7 +100,7 @@ report={'purpose':'HakiOS 8796 host compilation reference; not a nabu device ima
           'sha256':hashlib.sha256((root/'patches/8796'/name).read_bytes()).hexdigest()}
           for name in ('pmap-nonmonitor-queries.patch','bcm2837-apple-iommu-query-returns.patch',
                        'bcm2837-bootstrap-capacity.patch','generic-smp-diagnostics.patch','loader-return-diagnostics.patch','nabu-log-capture.patch','nabu-panic-early-log.patch',
-                       'nabu-native-display.patch','nabu-export-contract.patch','miniamfi-csops-xml.patch','nabu-wifi-control-state.patch','nabu-wifi-station-lifecycle.patch')],
+                       'nabu-native-display.patch','nabu-display-power.patch','nabu-export-contract.patch','miniamfi-csops-xml.patch','nabu-wifi-control-state.patch','nabu-wifi-station-lifecycle.patch')],
         'export_contract':json.loads((root/'log/ci/nabu-export-contract.json').read_text())}
 generated=[]
 for p in sorted((tree/'BUILD').rglob('*.iig.cpp')):
