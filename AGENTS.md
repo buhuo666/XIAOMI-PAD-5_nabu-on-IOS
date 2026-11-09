@@ -1,5 +1,22 @@
 # 项目工作规则
 
+第173轮已按用户要求整合息屏、传感器诊断和GPU App：组合内核为
+artifacts/nabu-display-sensors-integrated/kernel/kernel.native-apfs.macho，采用已实测
+息屏基底，保留61个对象、替换入口并加SLPI，共63个（GPU37个）。实际分支、原组件
+范围及正式加载器检查通过。启动包artifacts/nabu-bootstrap-combined-sensors包含
+v173用户态和20个SLPI固件文件，APFS/读回通过；仅root挂载助手，无旧GPU探针任务。
+App CI42621723942成功；配套42621723810因macOS执行器容量不足未运行两项作业，
+不能称全套CI通过。统一配置使用slot1及nabu-slpi=1，旧v168绑定slot14不再用于本轮。
+当前部署状态以log/host/gpu-v173/continuation.json为准。用户已授权报告齐全后统一测试。
+
+2026-11-09“传感器2”已完成供“30”统一整合测试的SLPI诊断候选，未部署或启动。
+交接见docs/NABU-SENSORS.md及log/host/sensors-20261109/handoff.json。
+内核artifacts/nabu-sensors-ready-20261109/kernel/kernel.native-apfs.macho基于v168，
+统一测试需以息屏修复的link-command重新组合；固件启动包已通过APFS检查和20文件读回。
+Android四路SSC物理采样通过，气压/距离为空立即结束；后置BU27030的SSC缺物理标志，
+不能据默认false判定硬件不存在。iPadOS仅准备PAS/SMP2P/GLINK/SSC服务发现诊断，
+sensor_pd、实时采样及原生HID尚未完成，不能称传感器修复已通过。SMC不返回仍是实测风险。
+
 2026-11-09息屏display01实机通过：用户确认背光完全熄灭，连续三次唤醒、亮度和
 触摸正常。bcd4def完整CI42621253671通过，新内核为
 artifacts/nabu-display-power-ready/kernel.native-apfs.macho（保留v168的62个服务/GPU对象）。
@@ -8,10 +25,8 @@ artifacts/nabu-display-power-ready/kernel.native-apfs.macho（保留v168的62个
 但需新建对应日志清单，不能沿用绑定v168的slot14清单。面板支持120Hz，本轮只修
 背光，未验证120Hz硬件同步或整机深睡。见docs/NABU-DISPLAY-POWER.md。
 
-第173轮候选App已提交19b5b728eaa61ffe3b909fb3d946e6d10d9fe7e2，使用真实CAMetalLayer、
-完成后双路像素核对再present。CI42621723942及配套42621723810等待macOS执行器；
-host checks通过。v173仅挂载助手bootstrap的apfsck/原生读回通过，slot14已准备，
-尚未部署/启动；设备仍在Android。接续见log/host/gpu-v173/continuation.json。
+第173轮App源码19b5b728eaa61ffe3b909fb3d946e6d10d9fe7e2使用真实CAMetalLayer，
+完成后双路像素核对再present。安装包已通过编译、签名和下载时审查，尚待应用实测。
 
 2026-11-09第172轮默认IOSurface复制兼容实机通过：Mach完整读回16KiB，32轮/64命令，
 双向各32768像素及保护区0错，资源1/1释放、held0。pointer0、copied1、degraded1、

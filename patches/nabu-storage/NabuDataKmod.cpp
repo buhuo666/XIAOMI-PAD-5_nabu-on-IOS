@@ -17,6 +17,9 @@ void nabu_adsp_start(void);
 #ifdef NABU_GPU_SERVICE
 void nabu_gpu_start(void);
 #endif
+#ifdef NABU_SLPI_TRIAL
+void nabu_slpi_start(void);
+#endif
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
     if (nabu_aes_start()) return KERN_FAILURE;
@@ -33,6 +36,9 @@ static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 #endif
 #ifdef NABU_GPU_SERVICE
     nabu_gpu_start();
+#endif
+#ifdef NABU_SLPI_TRIAL
+    nabu_slpi_start();
 #endif
     return KERN_SUCCESS;
 }

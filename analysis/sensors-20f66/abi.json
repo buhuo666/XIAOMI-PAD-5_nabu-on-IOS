@@ -1,0 +1,23 @@
+{
+  "build": "iPad7,11 iPadOS 16.5 20F66",
+  "evidence_kind": "static-original-cache",
+  "runtime_verified": false,
+  "channels": [
+    {"kind": "accelerometer", "usage_page": 65280, "usage": 3, "event_type": 13, "xyz_fields": [851968, 851969, 851970], "consumer": "0x19190ce38", "create": "IOHIDEventCreateAccelerometerEvent"},
+    {"kind": "gyroscope", "usage_page": 65280, "usage": 9, "event_type": 20, "xyz_fields": [1310720, 1310721, 1310722], "consumer": "0x19190de4c", "create": "IOHIDEventCreateGyroEvent"},
+    {"kind": "magnetometer", "usage_page": 65280, "usage": 10, "event_type": 21, "xyz_fields": [1376256, 1376257, 1376258], "consumer": "0x191b56f58", "create": "IOHIDEventCreateCompassEvent"},
+    {"kind": "ambient_light", "usage_page": 65280, "usage": 4, "event_type": 12, "lux_field": 786432, "lux_field_type": "integer", "consumer": "0x1aeeeeec4", "create": "IOHIDEventCreateAmbientLightSensorEvent"}
+  ],
+  "event_timestamp": "mach_absolute_time units for the current XNU boot",
+  "interval_properties": {"ReportInterval": "microseconds", "BatchInterval": "microseconds"},
+  "published_presence_source": "runtime physical sensor discovery and valid samples; not this ABI table",
+  "installation_matrix": null,
+  "als_orientation_enum": null,
+  "als_automatic_brightness_requires_registry_service": true,
+  "limitations": [
+    "Original CMMotionManager availability derives from donor model capability tables, not hardware enumeration.",
+    "Public raw CoreMotion events, device-motion fusion and system orientation require separate runtime validation.",
+    "Gyro subtype is not Android accuracy; CoreMotion applies an internal magnetometer bias.",
+    "The table describes APIs and does not enable any device or publish a virtual sensor."
+  ]
+}

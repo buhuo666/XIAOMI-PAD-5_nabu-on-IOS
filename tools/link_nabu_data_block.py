@@ -482,7 +482,8 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
               'bluetooth_trial': definitions.get('_nabu_bluetooth_version_trial'),
               'bluetooth_firmware': definitions.get('_nabu_bluetooth_load_firmware'),
               'modem_trial': definitions.get('_nabu_modem_start_trial'),
-              'adsp_trial': definitions.get('_nabu_adsp_start'), 'relocations': relocation_counts,
+              'adsp_trial': definitions.get('_nabu_adsp_start'),
+              'slpi_trial': definitions.get('_nabu_slpi_start'), 'relocations': relocation_counts,
               'gpu_start': definitions.get('_nabu_gpu_start'),
               'branch_veneers': len(branch_targets),
               'return_trace_symbols': {name: definitions[name] for name in (
