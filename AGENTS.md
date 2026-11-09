@@ -1,5 +1,12 @@
 # 项目工作规则
 
+2026-11-09“霍尔开关”对话用户已选择单独测试；传感器3先完成了sensors01启动。
+用户随后说明仍在iPadOS、稍后恢复Android；霍尔候选等待恢复后先保全sensors01日志
+再启动，尚未部署或改写任何日志槽。内核nabu-hall-20261109-r2、启动包
+nabu-bootstrap-hall-20261109及CI42630476319均已就绪，iPadOS开合效果尚未实测。
+仅验证GPIO9保护盖合上息屏/打开唤醒，独立于SLPI。内核与启动包已完成检查，
+见docs/NABU-HALL.md及log/host/hall-20261109/continuation.json；实机状态以该记录为准。
+
 用户最新澄清：传感器全部交给新对话“传感器3”；本对话继续GPU，不接手传感器修复。
 第173轮统一实测已完成：正常UIKit App经CAMetalLayer显示红黄条纹和紫色方块，
 用户确认图案、清除及两次息屏唤醒/触摸正常。GPU和实际IOSurface各1024像素0错，
