@@ -1,5 +1,8 @@
 name: nabu16 - sensors RPC original analysis
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths: ['.github/workflows/sensors-rpc-analysis.yml']
   workflow_dispatch:
     inputs:
       source_release_id:
@@ -23,8 +26,8 @@ jobs:
       - name: Read the selected original ELF inputs
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RELEASE_ID: ${{ inputs.source_release_id }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 }}
+          SOURCE_RELEASE_ID: ${{ inputs.source_release_id || '439343931' }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 || '309b6646d12eb4fa533898af0ba837f0588d40f86cd699a972c8fa34445b2c10' }}
         run: |
           mkdir -p build log/ci/sensors-rpc
           python3 - <<'PY'
