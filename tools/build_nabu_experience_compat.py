@@ -25,6 +25,7 @@ def main():
     subprocess.run(['codesign', '--verify', '--strict', str(binary)], check=True)
     report = {'command': command, 'bytes': binary.stat().st_size,
               'scope': '1600x2560 native display at scale2; zero derived keyboard height; bundled iPad still screen filter',
+              'settings_keyboard_trace': 'Preferences only: actual layout size, field focus and keyboard/window geometry; no entered text; screen queries deferred past construction',
               'runtime_verified': False}
     (args.output / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
 
