@@ -189,7 +189,7 @@ def disassemble(address):
             for reg in ins.regs_access()[1]:
                 known.pop(regname(ins, reg), None)
         known.update(assigned)
-        lines.append(f'{ins.address:016x}: {ins.mnemonic:9s} {ins.op_str}' + (' ; ' + ' | '.join(notes) if notes else ''))
+        lines.append((f'{ins.address:016x}: {ins.mnemonic:9s} {ins.op_str}' + (' ; ' + ' | '.join(notes) if notes else '')).rstrip())
     r = region(address, end-address)
     filename = f'{address:x}.asm'
     (OUT / filename).write_text('\n'.join(lines)+'\n', encoding='utf-8')
