@@ -1,0 +1,81 @@
+{
+  "build": "20F66",
+  "image": "/System/Library/Frameworks/Metal.framework/Metal",
+  "image_uuid": "88922408fd68339684653775ce66ff60",
+  "class_count": 313,
+  "selected": [
+    {
+      "name": "_MTLDevice",
+      "instance_start": 8,
+      "instance_size": 528,
+      "flags": "0x4",
+      "class": {
+        "va": "0x1e1b2dc98",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 173464728,
+        "bytes": 40
+      },
+      "ro": {
+        "va": "0x1d56991a8",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 889256,
+        "bytes": 72
+      },
+      "list_entry": {
+        "va": "0x1d56940f8",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 868600,
+        "bytes": 8
+      }
+    },
+    {
+      "name": "MTLSharedEventHandle",
+      "instance_start": 8,
+      "instance_size": 16,
+      "flags": "0x0",
+      "class": {
+        "va": "0x1e1b2e530",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 173466928,
+        "bytes": 40
+      },
+      "ro": {
+        "va": "0x1d5698350",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 885584,
+        "bytes": 72
+      },
+      "list_entry": {
+        "va": "0x1d56945f0",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 869872,
+        "bytes": 8
+      }
+    },
+    {
+      "name": "MTLSharedEventListener",
+      "instance_start": 8,
+      "instance_size": 8,
+      "flags": "0x0",
+      "class": {
+        "va": "0x1e1b2ec38",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 173468728,
+        "bytes": 40
+      },
+      "ro": {
+        "va": "0x1d5698398",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 885656,
+        "bytes": 72
+      },
+      "list_entry": {
+        "va": "0x1d56945f8",
+        "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.27.dylddata",
+        "file_offset": 869880,
+        "bytes": 8
+      }
+    }
+  ],
+  "scope": "Static original class_ro metadata decoded through dyld v2 slide masks; runtime may additionally realize superclass layout"
+}
