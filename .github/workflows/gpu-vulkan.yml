@@ -1,0 +1,40 @@
+name: nabu16 - standalone A640 Vulkan
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-vulkan.yml'
+      - 'tools/build_nabu_gpu_vulkan_probe.py'
+      - 'userland/nabu/src/gpu_vulkan_probe.cpp'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu-vulkan:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch pinned Turnip, nabu ABI and smoke sources
+        run: >-
+          python3 tools/fetch_sources.py --only nabu UniXNU-turnip-reference AdrenoMetal
+          --report artifacts/gpu-vulkan-sources.json
+      - name: Install host shader and build tools
+        run: brew install ninja glslang
+      - name: Build iOS 16.5 Turnip and standalone Vulkan probe
+        run: >-
+          python3 tools/build_nabu_gpu_vulkan_probe.py
+          --work build/gpu-vulkan --output artifacts/nabu-gpu-vulkan
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-gpu-vulkan-${{ github.run_number }}
+          path: |
+            artifacts/nabu-gpu-vulkan/
+            artifacts/gpu-vulkan-sources.json
+          retention-days: 14
