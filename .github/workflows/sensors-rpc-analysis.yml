@@ -1,8 +1,5 @@
 name: nabu16 - sensors RPC original analysis
 on:
-  push:
-    branches: [nabu16-bootstrap]
-    paths: ['.github/workflows/sensors-rpc-analysis.yml']
   workflow_dispatch:
     inputs:
       input_set:
@@ -35,9 +32,9 @@ jobs:
       - name: Read the selected original ELF inputs
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_SET: ${{ inputs.input_set || 'rom-listeners' }}
-          SOURCE_RELEASE_ID: ${{ inputs.source_release_id || '439343931' }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 || '651e709c024eddba1972febd3bf90b38094c90738f9519c02daca686f006185c' }}
+          INPUT_SET: ${{ inputs.input_set }}
+          SOURCE_RELEASE_ID: ${{ inputs.source_release_id }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 }}
         run: |
           mkdir -p build log/ci/sensors-rpc
           python3 - <<'PY'
@@ -78,7 +75,7 @@ jobs:
           PY
       - name: Recover sensorspd attachment and reverse listener initialization
         env:
-          INPUT_SET: ${{ inputs.input_set || 'rom-listeners' }}
+          INPUT_SET: ${{ inputs.input_set }}
         run: |
           export JAVA_HOME="$JAVA_HOME_21_X64"
           mkdir -p build/ghidra-sensors-rpc
