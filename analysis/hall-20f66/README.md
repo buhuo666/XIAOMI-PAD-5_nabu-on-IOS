@@ -47,8 +47,15 @@ explicit nabu board adaptation, not a claim that an Apple Hall device exists.
 Android DT `soc/gpio_keys/hall_key`: GPIO phandle 0x38, pin 9, active-low 1,
 input type 5 (EV_SW), code 0 (SW_LID), debounce 15 ms and wakeup flag. The
 `gpio_keys/pinctrl-0` phandle 0x68c configures the volume-up PMIC GPIO6, not Hall.
-The existing SM8150 pinctrl reference maps GPIO9 to NORTH. NORTH base plus
-9*0x1000 gives `0x03109000`, input bit 0 at offset 4.
+The existing SM8150 pinctrl reference maps GPIO9 to NORTH. The live Android
+TLMM register base is `0x03000000`; the vendor driver defines NORTH as offset
+`0x00900000`. Adding GPIO9's `9*0x1000` gives `0x03909000`, input bit 0 at
+offset 4. The first candidate incorrectly used WEST's `0x03100000` base.
+Evidence: `log/host/hall-20261109/gpio-address-review.json` and the retained
+vendor `log/host/wireless-v76/source/vendor/drivers/pinctrl/qcom/pinctrl-sm8150.c`.
+The hall01 boot returned automatically to Android before any runtime text was
+committed; the address error is confirmed, while reboot attribution awaits
+the corrected candidate's device test.
 
 Host tests verify production debounce and extracted bridge dispatch functions.
 They do not prove device wake. This implementation polls while XNU is running;

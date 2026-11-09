@@ -5,9 +5,10 @@
 #include <stdint.h>
 
 /* Captured nabu DT: hall_key GPIO9, active low, debounce 15 ms, SW_LID.
- * SM8150 GPIO9 is on NORTH (0x03100000), stride 0x1000.
+ * Live TLMM base 0x03000000 + vendor NORTH offset 0x00900000,
+ * GPIO stride 0x1000. WEST is 0x03100000 and does not own GPIO9.
  */
-#define NABU_HALL_GPIO_PA 0x03109000ULL
+#define NABU_HALL_GPIO_PA 0x03909000ULL
 #define NABU_HALL_POLL_MS 16
 #define NABU_HALL_PROPERTY "nabu-hall-closed"
 #define NABU_HALL_HID_PAGE 0xff09

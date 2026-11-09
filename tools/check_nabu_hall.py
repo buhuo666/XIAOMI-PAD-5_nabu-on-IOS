@@ -96,7 +96,7 @@ int main(void) {
     assert(!nabu_hall_sample(&s,0xaaaa)); assert(nabu_hall_sample(&s,0xaaaa) && s.closed);
     uint32_t config=0xa5a5ffff;
     assert(nabu_hall_input_config(config)==(config & ~0x23cu));
-    assert(NABU_HALL_GPIO_PA==0x03109000 && NABU_HALL_POLL_MS>=15);
+    assert(NABU_HALL_GPIO_PA==0x03909000 && NABU_HALL_POLL_MS>=15);
     if (!setjmp(stop)) hall_thread((void *)1);
     assert(attempts==4 && accepted==3 && released==4);
     assert(!observed[0] && observed[1] && !observed[2]);

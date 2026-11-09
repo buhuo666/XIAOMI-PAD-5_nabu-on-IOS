@@ -56,7 +56,7 @@ def main():
                   target='arm64-apple-ios16.5', baseline_link=str(a.baseline_link_command.resolve()),
                   commands=commands, link_command_file=str(recipe), boot_argument='nabu-hall=1',
                   required_userland='Hall-enabled libnabu.input.dylib; nabu-input=1',
-                  hardware='GPIO9, NORTH, active low, SW_LID', gpio_pa='0x03109000',
+                  hardware='GPIO9, NORTH, active low, SW_LID', gpio_pa='0x03909000',
                   device_tested=False, deep_sleep_wake_verified=False)
     (a.output/'build-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
