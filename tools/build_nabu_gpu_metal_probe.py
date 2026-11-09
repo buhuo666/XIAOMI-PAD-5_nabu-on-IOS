@@ -27,6 +27,31 @@ SURFACE_STATS_PATCH = '0026-nabu-read-only-surface-counts.patch'
 SURFACE_COPY_READ_PATCH = '0027-nabu-ios-copied-host-read.patch'
 
 
+def stage_system_shader_compatibility(metal):
+    """Fix only the two 20F66 system shader failures observed in run177."""
+    frontend = metal / 'NativeBridgeMetalFrontend.mm'
+    replace_once(frontend,
+        '// Bytes of a function constant of MTLDataType `type` (scalars and 2/4-wide vectors; 3-wide vectors are not qualified).',
+        '// Packed bytes of qualified constants; 20F66 QuartzCore also uses UChar3 (51).')
+    replace_once(frontend, ' case 48:case 52:case 56:return 4;',
+        ' case 48:case 52:case 56:return 4;\n case 51:return 3; // _MTLConstantDataSize(51) and runtime canonicalizer both use three bytes.')
+    anchor = '- (void)newFunctionWithName:(NSString *)name constantValues:(MTLFunctionConstantValues *)values completionHandler:'
+    text = frontend.read_text(encoding='utf-8')
+    assert text.count(anchor) == 1
+    extra = '''// 20F66's pipeline-library overload extracts an optional function cache.
+// This frontend compiles the original function/constants through its runtime cache.
+- (id<MTLFunction>)newFunctionWithName:(NSString *)name constantValues:(MTLFunctionConstantValues *)values
+                     pipelineLibrary:(id)pipelineLibrary error:(NSError **)error {
+ (void)pipelineLibrary;
+ if(values)return [self newFunctionWithName:name constantValues:values error:error];
+ id<MTLFunction> function=[self newFunctionWithName:name];
+ if(error)*error=function?nil:nbError([NSString stringWithFormat:@"function %@: %@",name,lastError()]);
+ return function;
+}
+'''
+    frontend.write_text(text.replace(anchor, extra + anchor), encoding='utf-8')
+
+
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -92,7 +117,7 @@ def reuse_surface_factory(source, output):
                            'replace_previous_trial_job': True, 'standard_factory_required': True}}
 
 
-def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False):
+def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False, system_shaders=False):
     """Use nabu's relevant frontend patches and UniXNU's bridge build entry."""
     work.mkdir(parents=True, exist_ok=False)
     (work / '.cache').mkdir()
@@ -140,6 +165,8 @@ def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=
     assert rust == RUST and msrv == '1.98', 'Reassess the pinned bridge compiler and MSRV'
     if iosurface or iosurface_copy_read:
         stage_surface_statistics(root, metal, copy_read=iosurface_copy_read)
+    if system_shaders:
+        stage_system_shader_compatibility(metal)
     return {'frontend': metal, 'translator': translator, 'bridge_script': bridge,
             'patches': patches, 'rust_toolchain': rust, 'rust_msrv': msrv,
             'source_commits': {name: source_pins[name]['commit'] for name in
@@ -160,9 +187,12 @@ def main():
     parser.add_argument('--iosurface-copy-read', action='store_true',
                         help='Build the default IOSurface probe with the iOS Mach copied-host-pages reader; implies --iosurface')
     parser.add_argument('--iosurface-input', type=Path, help='CI42607114009 artifact, required with --iosurface-copy-read')
+    parser.add_argument('--system-shaders', action='store_true', help='Run177 fixes: packed UChar3 and pipelineLibrary function overload')
     args = parser.parse_args()
     if args.iosurface_copy_read:
         args.iosurface = True
+    if args.system_shaders and not args.iosurface_copy_read:
+        parser.error('--system-shaders requires the qualified iOS copy reader path')
     if args.iosurface and args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66:
         parser.error('IOSurface mode requires the qualified 528-byte Metal ABI')
     if args.iosurface and not args.iosurface_copy_read and args.system_metal_input is None:
@@ -266,7 +296,11 @@ def main():
         shutil.copyfile(library, output / library.name)
         shutil.copyfile(turnip_input / 'build-report.json', output / 'turnip-input-report.json')
         staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface,
-                       iosurface_copy_read=args.iosurface_copy_read)
+                       iosurface_copy_read=args.iosurface_copy_read, system_shaders=args.system_shaders)
+        report['system_shader_compatibility'] = args.system_shaders
+        if args.system_shaders:
+            report['system_shader_fixes'] = ['UChar3 type 51: packed three bytes',
+                'newFunctionWithName:constantValues:pipelineLibrary:error: uses actual runtime specialization']
         report.update(frontend_patches=staged['patches'], rust_toolchain=staged['rust_toolchain'], rust_msrv=staged['rust_msrv'],
                       source_commits=staged['source_commits'],
                       frontend_adaptations=['_MTLDevice instance size 536 -> reviewed 20F66 size 528',
@@ -303,6 +337,11 @@ def main():
         run([sys.executable, staged['bridge_script'], '--target', 'ios'], cwd=work, env=env)
         metal = staged['frontend']
         bridge_library = work / 'build/adreno-metal-bridge/ios/libadreno_metal_bridge.a'
+        if args.system_shaders:
+            # Preserve the expensive Rust link input for subsequent frontend-only fixes.
+            shutil.copyfile(bridge_library, output / bridge_library.name)
+            report['retained_bridge_archive'] = bridge_library.name
+            shutil.copytree(metal, output / 'frontend-source', ignore=shutil.ignore_patterns('.git'))
         sdk = run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path']).stdout.strip()
         base = ['xcrun', '--sdk', 'iphoneos', 'clang++', '-target', TARGET, '-isysroot', sdk,
                 '-std=c++17', '-O2', '-g', '-fobjc-arc', '-Wall', '-Wextra', '-Werror',

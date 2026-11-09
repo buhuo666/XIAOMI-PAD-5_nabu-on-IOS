@@ -1,0 +1,53 @@
+name: nabu16 - system Metal shader compatibility
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-system-shaders.yml'
+      - 'tools/check_nabu_system_shader_compat.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  system-shaders:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch the qualified frontend and runtime sources
+        run: >-
+          python3 tools/fetch_sources.py
+          --only nabu UniXNU-turnip-reference AdrenoMetal metal2vulkan
+          --report artifacts/gpu-system-shader-sources.json
+      - name: Reuse Turnip and the qualified surface inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42607114009 --name nabu-gpu-iosurface-1
+          --dir inputs/qualified-iosurface
+      - name: Install bridge compiler dependencies
+        run: |
+          brew install llvm@21
+          rustup toolchain install 1.98.1 --profile minimal --target aarch64-apple-ios
+      - name: Build the two observed system shader fixes
+        run: >-
+          python3 tools/build_nabu_gpu_metal_probe.py
+          --system-shaders --iosurface-copy-read
+          --iosurface-input inputs/qualified-iosurface/nabu-gpu-iosurface
+          --turnip-input inputs/qualified-iosurface/nabu-gpu-iosurface
+          --work build/gpu-system-shaders --output artifacts/nabu-system-shaders
+          --mtl-device-bytes 528 --llvm-as "$(brew --prefix llvm@21)/bin/llvm-as"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-system-shaders-${{ github.run_number }}
+          path: |
+            artifacts/nabu-system-shaders/
+            artifacts/gpu-system-shader-sources.json
+          retention-days: 14
