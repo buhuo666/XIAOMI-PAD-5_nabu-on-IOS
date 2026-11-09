@@ -86,4 +86,68 @@ python3 tools/build_nabu_system_metal_probe.py --input inputs/qualified-metal/na
 实际mount helper经host桩编译运行，核对root限制、只读union、原bundle保留、新bundle读回、
 全部检查后原子发布ready、任一检查失败不发布ready。记录位于
 `log/host/system-metal-v168/source-check.json` 与 `mount-helper-host.*.log`。
-这些不是设备挂载或标准Metal工厂验收；macOS编译、签名及工厂实际执行待下一轮CI/实机。
+这些host测试不验证设备的挂载权限；第168轮实际结果与修复见下文。
+
+## 第168轮挂载权限错误与最小修复
+
+CI42601686196的编译和签名通过，设备也正常启动；用户确认桌面、触摸正常并恢复Android。
+`log/host/gpu-v168/metal-runtime/nabu-system-metal-mount.stderr.log` 记录：
+
+```text
+NABU_METAL_MOUNT result=fail stage=union_mount errno=1 text=Operation not permitted
+```
+
+此阶段在 `geteuid()==0`、来源文件stat、目标目录statfs通过后才执行。
+probe随后在 `plugin_mount_ready` 等待30秒后退出，未调用标准Metal工厂；因此本轮没有新的
+GPU测试结果，Media里已有像素文件仍是第167轮的结果。
+
+明确的拒绝条件在 `bindfs_mount()`：原XNU只接受 `com.apple.private.bindfs-allow`，
+hakios补丁增加了PID1豁免，实际条件为：
+
+```c
+if (!IOCurrentTaskHasEntitlement(BINDFS_ENTITLEMENT) && proc_getpid(current_proc()) != 1) {
+    return EPERM;
+}
+```
+
+证据为 `src/hakios-8796/xnu/hakios.patch:1060–1076`，以及已应用补丁的
+`build/xnu8796-capacity/tree/bsd/miscfs/bindfs/bind_vfsops.c:142–148`。
+原有 `init.c` 的LaunchDaemons/HAL和可选 `/flash/bin` union均由PID1直接mount；
+launchd启动的root子进程没有这个PID1豁免。第168轮构建脚本给helper签名时没有传入entitlements，
+对应CI的 `build-report.json` 中helper签名命令也没有 `--entitlements`。
+
+其它候选检查与本轮条件：
+
+| 检查 | 源码/构建证据 | 判断 |
+| --- | --- | --- |
+| union未编入时直接EPERM | `vfs_syscalls.c:920–925`；CI42570303718的 `kernel-build.log:1205` 为DEVELOPMENT_ARM64_BCM2837，`MASTER.arm64.bcm2837:29` 的FILESYS_DEV启用config_union_mounts | 本次构建支持union |
+| 覆盖目录所有者/root | `vfs_syscalls.c:1902–1914` | root通过身份条件；若getattr本身失败仍可映射为EPERM，但未有这类证据 |
+| VFC_VFSLOCALARGS | `vfs_syscalls.c:1171–1178`、`vfs_conf.c:179–190` | bindfs仅有VFC_VFS64BITREADY，且此调用来自userspace；不适用 |
+| 根卷改为可写/更新 | `vfs_syscalls.c:927–953,1249–1261` | 本次是Extensions目录新挂载且MNT_RDONLY；不适用 |
+| MAC mount钩子 | `kern_minimac.c:113–116,351–354` | 当前AMFI/Sandbox stand-in未注册mount拒绝钩子，无需额外sandbox entitlement |
+
+专用key的读取链路已经核对：
+
+1. `src/xnu-8796/iokit/bsddev/IOKitBSDInit.cpp:1508–1534` 将当前进程交给
+   `amfi->OSEntitlements.queryEntitlementBooleanWithProc()`。
+2. `src/hakios-8796/xnu/files/libkern/amfi/miniamfi.c:94–96,250` 转入
+   `miniamfi_entitlement_boolean()`。
+3. 同目录 `miniamfi_entitlements.cpp:33–78` 调用 `cs_entitlements_blob_get()`，解析
+   签名XML；仅当该key对应 `kOSBooleanTrue` 时返回KERN_SUCCESS。
+4. `src/xnu-8796/bsd/kern/kern_cs.c:1723–1729` 要求CS_SIGNED；本内核
+   `kern_minimac.c:45–62` 的签名钩子为已有签名设置此位。`ubc_subr.c:845–891` 读取
+   已验证签名中的CSSLOT_ENTITLEMENTS。既有system-service-probe和GPU probe同样使用
+   ad-hoc codesign、entitlements XML、strict verify及签名内容回读。
+
+据此，最小修复只改 `tools/build_nabu_system_metal_probe.py`：mount helper签入
+`{'com.apple.private.bindfs-allow': True}`，保留原4KiB签名页和identifier；执行
+`codesign --verify --strict`，再以 `codesign --display --xml --entitlements -` 回读，
+要求只有这一项且类型为boolean true，并把实际回读值写进 `mount_helper.entitlements`。
+共用Vulkan `sign()` 固定核对GPU probe权限，故helper在本脚本单独签名；未改共用构建器、
+内核、init、mount helper C代码、probe、bundle或已通过前端。
+
+本地Python语法和签名runner测试通过：仅单一boolean true被接受，缺key、false、整数1和
+额外key均拒绝。记录：`log/host/system-metal-v168/mount-entitlement-check/report.json`。
+这是构建脚本的host验证；新的实际codesign回读需下一次macOS CI完成，修复后的挂载、ready
+文件和标准工厂实际执行仍需下一轮实机验证。现有日志没有内核mount分支trace，不能把
+明确缺少的必要权限条件表述为设备上已观测到的唯一返回点。

@@ -18,6 +18,26 @@ from build_nabu_gpu_vulkan_probe import TARGET, ENTITLEMENTS, macho_target, sign
 
 ROOT = Path(__file__).resolve().parents[1]
 QUALIFIED_RUN = '42590211952'
+MOUNT_ENTITLEMENTS = {'com.apple.private.bindfs-allow': True}
+
+
+def sign_mount_helper(path, run):
+    # bindfs grants PID 1 an exception; a launchd root job needs this exact key.
+    entitlements = path.parent / 'mount-entitlements.plist'
+    entitlements.write_bytes(plistlib.dumps(MOUNT_ENTITLEMENTS))
+    identifier = 'org.nabu16.metal-plugin-mount'
+    run(['codesign', '--force', '--sign', '-', '--timestamp=none', '--pagesize', '4096',
+         '--identifier', identifier, '--entitlements', entitlements, path])
+    run(['codesign', '--verify', '--strict', path])
+    detail = run(['codesign', '--display', '--verbose=4', path]).stderr
+    match = re.search(r'^CDHash=([0-9a-f]{40})$', detail, re.M)
+    if not match or not re.search(r'^Page size=4096$', detail, re.M):
+        raise ValueError(path.name + ' lacks the required CDHash or 4 KiB signature pages')
+    signed = plistlib.loads(run(['codesign', '--display', '--xml', '--entitlements', '-', path]).stdout.encode())
+    if signed != MOUNT_ENTITLEMENTS or signed['com.apple.private.bindfs-allow'] is not True:
+        raise ValueError('Signed mount helper must carry only boolean bindfs-allow=true')
+    return {'file': path.name, 'bytes': path.stat().st_size, 'cdhash': match[1],
+            'identifier': identifier, 'signature_page_bytes': 4096, 'entitlements': signed}
 
 
 def jobs():
@@ -125,7 +145,7 @@ def main():
         run(['xcrun', '--sdk', 'iphoneos', 'clang', '-target', TARGET, '-isysroot', sdk, '-std=c11',
              '-O2', '-Wall', '-Wextra', '-Werror', '-fstack-protector-strong',
              ROOT / 'userland/nabu/src/gpu_metal_mount.c', '-o', helper])
-        report['mount_helper'] = sign(helper, 'org.nabu16.metal-plugin-mount', run)
+        report['mount_helper'] = sign_mount_helper(helper, run)
         macho_target(helper, 2)
         jobs_path = output / 'LaunchDaemons'
         jobs_path.mkdir()
