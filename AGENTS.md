@@ -1,5 +1,18 @@
 # 项目工作规则
 
+2026-11-09息屏display01实机通过：用户确认背光完全熄灭，连续三次唤醒、亮度和
+触摸正常。bcd4def完整CI42621253671通过，新内核为
+artifacts/nabu-display-power-ready/kernel.native-apfs.macho（保留v168的62个服务/GPU对象）。
+9次背光请求全部回读成功、bus-error0；3,462,248字节前缀及完整64MiB槽1已备份
+清空，APFS143，设备已回Android。未额外重启Android。GPU下一轮可复用此内核，
+但需新建对应日志清单，不能沿用绑定v168的slot14清单。面板支持120Hz，本轮只修
+背光，未验证120Hz硬件同步或整机深睡。见docs/NABU-DISPLAY-POWER.md。
+
+第173轮候选App已提交19b5b728eaa61ffe3b909fb3d946e6d10d9fe7e2，使用真实CAMetalLayer、
+完成后双路像素核对再present。CI42621723942及配套42621723810等待macOS执行器；
+host checks通过。v173仅挂载助手bootstrap的apfsck/原生读回通过，slot14已准备，
+尚未部署/启动；设备仍在Android。接续见log/host/gpu-v173/continuation.json。
+
 2026-11-09第172轮默认IOSurface复制兼容实机通过：Mach完整读回16KiB，32轮/64命令，
 双向各32768像素及保护区0错，资源1/1释放、held0。pointer0、copied1、degraded1、
 shadow1/in-place0，copy-in65920、merge-back13568字节；不等同零复制或桌面加速。

@@ -83,6 +83,8 @@ def verify_prepared_log(shell, prepared, kernel_sha, serial_sha):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--output', type=Path, default=ROOT/'artifacts/nabu-chain')
+    ap.add_argument('--config', type=Path, default=ROOT/'configs/nabu-unixnu.toml',
+                    help='Boot menu template for this trial, including its reserved log slot')
     ap.add_argument('--kernel', type=Path, default=KERNEL)
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--adb', default='D:/platform-tools/adb.exe')
@@ -176,7 +178,7 @@ def main():
     userland_serial = (validate_userland_serial(a.userland_serial_file.read_text(encoding='ascii').strip())
                        if a.userland_serial_file else None)
     efi = ROOT/'artifacts/nabu-efi'
-    config_bytes=(ROOT/'configs/nabu-unixnu.toml').read_bytes()
+    config_bytes=a.config.read_bytes()
     config=tomllib.loads(config_bytes.decode())
     entry=next(x for x in config['entry'] if x['id']=='nabu8796')
     if a.wireless_survey or a.bluetooth_version or a.bluetooth_firmware:

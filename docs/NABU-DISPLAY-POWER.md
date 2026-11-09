@@ -23,6 +23,10 @@ KTZ8866 的0x08寄存器 bit6 是背光使能。关闭时清此位，开启时�
 固件原有亮度。无需切断 GPIO27 HWEN，或改变 GPIO114/115及 LCD bias 寄存器。
 这项修复是背光关断；DSI扫描时钟、LCD面板深睡、整机低功耗和亮度滑块仍需各自实现。
 
+用户已确认面板支持120Hz；Android已有60/120Hz模式记录。当前
+MiniIOMobileFramebuffer默认提供60Hz软件节拍，不能据此声称物理面板只支持60Hz，
+也不能用修改软件定时器证明已实现120Hz硬件同步。本次不改变刷新率配置。
+
 ## 硬件依据
 
 - 本机Android实时设备树：`soc/i2c@880000/ktz8866@11`，地址0x11，HWEN=27，
@@ -45,4 +49,35 @@ KTZ8866 的0x08寄存器 bit6 是背光使能。关闭时清此位，开启时�
   读写及回读失败，以及从消费树提取的实际selector分支和错误传播。
 - `tools/check_nabu_display.py`：原有17项显示配置检查通过。
 - 新NabuBacklight.cpp使用已有8796导出头文件，arm64-apple-ios16.5编译通过。
-- 完整内核构建与真机反复锁屏/唤醒尚待验证；以上不能替代实际关灯观察。
+- 第一轮CI42621220409（6c66088）因补丁CRLF换行导致`patch does not apply`，
+  尚未开始编译内核。修正为LF后，完整CI42621253671（bcd4def）全部成功。
+- 下载的真实内核已核对两处ARM64调用：framebuffer start调用backlight init，
+  externalMethod调用backlight set_power；不是只有源码中存在入口。
+- 重新预链接原版APFS/USB/FairPlay，复用第168轮已验证的62个服务/GPU对象。
+  沿用第164轮的0x2a0000字节额外DATA空间；8954个直接分支、2693个远分支、
+  48个原版组件区间保持、返回诊断及实际loader布局检查均通过。
+
+## display01 实机通过
+
+用户随后要求在其他编译排队期间立即单独启动。本轮通过`fastboot boot`临时启动，
+没有额外重启Android。内核为`artifacts/nabu-display-power-ready/kernel.native-apfs.macho`，
+bootstrap沿用`artifacts/nabu-bootstrap-gpu-v172/bootstrap.apfs`。
+
+用户确认黑暗处背光完全熄灭，连续三次唤醒、亮度和触摸正常。完整64MiB槽回收后，
+连续日志前缀3,462,248字节记录9次成功请求：初始0x5f→0x5f，以及4次
+off 0x5f→0x1f、4次on 0x1f→0x5f，全部`result=verified bus-error=0`。
+首次系统锁屏外的三次手动循环与用户观察吻合；自动锁屏定时、面板深睡、120Hz
+硬件同步及整机休眠功耗没有独立验收。
+
+APFS记录142→143、fullfsync=ok；GPU原有后端仍到state=ready，本轮不重复扩大
+为新GPU应用呈现验收。用户已手动回到Android，USB连接。slot1完整备份并清空读回
+通过；日志没有END记录，保存的是连续捕获前缀，不称为内核整个生命周期日志。
+
+slot14已由GPU第173轮预留，因此本轮先完整备份并回收旧slot1。部署工具增加
+`--config`来选择本轮slot1的独立菜单模板，默认配置和旧参数验证保持原有行为。
+第173轮采用新内核时，必须重新准备与新内核绑定的日志清单；不能沿用绑定v168
+内核的旧slot14清单。可使用现在已清空的slot1及本轮的独立配置方式。
+
+证据：`log/host/display-power-20261109/result-summary.json`，
+`log/device/nabu-boot-20261109-display01/runtime-log/`；历史slot1备份位于
+`log/device/nabu-history-slot01-20261109/`。下一轮GPU测试可复用上述已实测息屏内核。
