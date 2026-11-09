@@ -67,6 +67,10 @@ and 20F66 system:
 - `NabuGpuProblemLog.h` derives from the pinned a640 logger and sends bounded
   problem records to the existing IOLog capture instead of the reference ESP
   writer. It does not own a separate device log slot.
+- `NabuGpuMemoryPolicy.h` extends the pinned A640 owned-BO policy to both
+  IOService userland and Metal builds. User-owned buffers use Normal-NC and
+  bypass the cached pool; both client modes get the full VM object capacity.
+  Diagnostic builds retain 16 objects. This does not enable cached imports.
 
 No vendor firmware, Apple binaries or generated GPU object files belong here.
 Hardware execution, rendering and 20F66 client compatibility require separate

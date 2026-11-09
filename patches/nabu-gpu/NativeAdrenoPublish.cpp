@@ -1631,6 +1631,14 @@ IOReturn AGXDeviceUserClient::externalMethod(uint32_t selector,IOExternalMethodA
     const IOReturn result=IOUserClient::externalMethod(selector,arguments,const_cast<IOExternalMethodDispatch *>(&table[selector-1]),
         target?target:this,reference);
     __atomic_store_n(&native_adreno_metal_diag.ext_status,uint32_t(result),__ATOMIC_RELAXED);
+#if defined(NABU_GPU_USERLAND) && NABU_GPU_USERLAND
+    if(result && (selector==NativeAdrenoMethodBoAlloc || selector==NativeAdrenoMethodBoMap ||
+                  selector==NativeAdrenoMethodBoCpuMapV2)) {
+        IOLog("NabuGPU: user-buffer-failure method=%u status=%08x input=%u output=%u\n",
+            selector,uint32_t(result),arguments?arguments->structureInputSize:0,
+            arguments?arguments->structureOutputSize:0);
+    }
+#endif
     return result;
 }
 /* A nonzero limit caps simultaneously live connections for one process name.
