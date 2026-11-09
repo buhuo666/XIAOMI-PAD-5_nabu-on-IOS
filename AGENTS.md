@@ -1,5 +1,15 @@
 # 项目工作规则
 
+第169轮后用户明确要求后续真机测试不再额外重启Android：恢复Android后直接回收、
+部署并切bootloader临时启动，不执行额外adb reboot。此约束覆盖之前完整Android
+重启的试验步骤，见docs/SPECIAL-STEPS.md第8条。
+
+2026-11-09第169轮标准MTLCreateSystemDefaultDevice实机通过：真实AGX registry ID、
+fill4096、compute1024、guards128、render1024/红256/其他0、padding4096，3个命令
+缓冲Completed。只读插件挂载通过，用户桌面触摸正常；3,074,483字节及64MiB槽已
+备份清空，APFS139。继续独立NC wrapped IOSurface共享导入、双向像素和释放测试；
+工厂目前只准入测试进程，尚不表示桌面、IOSurface或应用硬件加速完成。
+
 2026-11-09第168轮AGX发现服务、CP写入及ABI查询通过，桌面触摸正常；系统Metal
 尚未调用：root插件挂载缺少com.apple.private.bindfs-allow而返回EPERM，probe
 在ready检查后退出。3,339,280字节及64MiB日志槽备份清空，APFS138。下一轮仅补
