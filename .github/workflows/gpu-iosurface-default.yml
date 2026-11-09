@@ -1,0 +1,45 @@
+name: nabu16 - default IOSurface Metal
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-iosurface-default.yml'
+      - 'tools/build_nabu_iosurface_default_probe.py'
+      - 'userland/nabu/src/gpu_iosurface_default_probe.mm'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  gpu-iosurface-default:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch the qualified kernel ABI headers
+        run: >-
+          python3 tools/fetch_sources.py --only nabu
+          --report artifacts/gpu-iosurface-default-source.json
+      - name: Reuse the native payloads qualified in run 170
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42607114009 --name nabu-gpu-iosurface-1
+          --dir inputs/qualified-iosurface
+      - name: Build only the default-allocation IOSurface probe
+        run: >-
+          python3 tools/build_nabu_iosurface_default_probe.py
+          --input inputs/qualified-iosurface/nabu-gpu-iosurface
+          --output artifacts/nabu-gpu-iosurface-default
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-gpu-iosurface-default-${{ github.run_number }}
+          path: |
+            artifacts/nabu-gpu-iosurface-default/
+            artifacts/gpu-iosurface-default-source.json
+          retention-days: 14
