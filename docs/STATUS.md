@@ -11,7 +11,8 @@
 第159/160轮连续黑屏已定位到Windows打包换行回归：inject.conf的CRLF使每行末尾
 进程名携带CR，setup/input/Lockdown/蓝牙兼容模块未加载。第160轮8,776,991字节
 连续日志前缀及64MiB槽已备份清空，APFS129→130。第161轮改为字节写入保留LF，
-继续包含Spotlight；APFS结构检查与原生配置读回通过，桌面恢复和搜索键盘待实测。
+继续包含Spotlight；APFS结构检查与原生配置读回通过。第161轮用户已确认桌面正常，
+搜索键盘和输入正常，黑屏回归与本次Spotlight键盘问题通过实机验收。
 见[黑屏修复](../analysis/nabu-spotlight-black-screen-v161.md)。
 
 第156轮用户复测+12dB仍稍小，明确要求+16dB；第157轮仅调整软件PCM最大增益至

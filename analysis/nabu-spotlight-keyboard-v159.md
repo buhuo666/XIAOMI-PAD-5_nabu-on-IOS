@@ -26,3 +26,7 @@ Preferences、MobileNotes等程序，桌面搜索实际在独立Spotlight进程�
 
 验收要求：桌面下拉显示完整键盘；中英文可输入、删除；退出搜索再进入仍正常；
 原生日志确认Spotlight加载适配并取得非零按键布局高度。
+
+后续第159/160轮黑屏由Windows打包把inject.conf写为CRLF引起，与新增Spotlight
+选择器本身无关。第161轮保留Spotlight并修正字节写入，用户确认桌面、搜索键盘和输入
+正常。详见[nabu-spotlight-black-screen-v161.md](nabu-spotlight-black-screen-v161.md)。
