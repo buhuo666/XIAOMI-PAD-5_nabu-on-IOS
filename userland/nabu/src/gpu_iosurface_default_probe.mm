@@ -13,14 +13,19 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
 #include <mach-o/dyld.h>
 #include <pthread.h>
 #include <signal.h>
+
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+// iOS omits mach_vm.h; use the same Mach ABI as the runtime copy reader.
+extern "C" kern_return_t mach_vm_read_overwrite(vm_map_t target_task,
+    mach_vm_address_t address, mach_vm_size_t size, mach_vm_address_t data,
+    mach_vm_size_t *outsize);
 
 #ifndef NABU_EXPECTED_MTL_DEVICE_BYTES
 #error Supply the reviewed 20F66 _MTLDevice instance size.

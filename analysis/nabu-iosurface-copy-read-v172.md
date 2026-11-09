@@ -119,3 +119,8 @@ Python/YAML、复用内容不会覆盖新frontend、原三个构建模式的源�
 记录：`log/host/iosurface-copy-read-v172/build-source-check.json` 和 `old-modes-check.json`。
 原生Rust/iOS编译、链接及Mach自检仍需新CI和实机；本地没有把这一修复宣称为复制GPU已通过。
 本子任务不提交、派发CI或操作设备。
+
+首个轻量探针CI42615556910发现iOS18.5 SDK的mach_vm.h只有unsupported错误，
+因此改为使用mach/mach.h提供的类型显式声明同一Mach函数ABI。保持真实接口与
+自检行为不变；本机20F66既有fairplay导入记录也含该libSystem符号。声明的原生
+编译、链接由修正后的CI验证。此错误发生于探针编译，没有进行真机部署。
