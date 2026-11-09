@@ -13,7 +13,9 @@ from probe_nabu_system_services import afc_read
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('names', nargs='+', choices=['keyboard-diagnostic.json', 'counts.plist'])
+    parser.add_argument('--bundle-id', default='org.nabu.LocalTest')
+    parser.add_argument('names', nargs='+', choices=['keyboard-diagnostic.json', 'counts.plist',
+                        'metal-present-result.json', 'metal-present-readback.bgra', 'metal-present-readback.json'])
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     device, = [d for d in list_mux_devices()['response']['DeviceList']
@@ -30,7 +32,7 @@ def main():
     if reply.get('EnableServiceSSL'):
         stream = wrap_pinned(context, stream, record)
     try:
-        reply = exchange(stream, {'Command': 'VendDocuments', 'Identifier': 'org.nabu.LocalTest'})
+        reply = exchange(stream, {'Command': 'VendDocuments', 'Identifier': args.bundle_id})
         if reply.get('Status') != 'Complete':
             raise RuntimeError(reply)
         afc = AFC(stream)

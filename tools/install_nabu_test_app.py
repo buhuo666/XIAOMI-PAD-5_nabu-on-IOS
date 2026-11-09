@@ -38,16 +38,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument('--ipa', type=Path)
-    action.add_argument('--uninstall', action='store_true', help='Remove only org.nabu.LocalTest')
+    action.add_argument('--uninstall', action='store_true', help='Remove the explicitly selected test bundle (default org.nabu.LocalTest)')
+    parser.add_argument('--bundle-id', default='org.nabu.LocalTest')
+    parser.add_argument('--app-name', default='LocalTest', help='Directory name under Payload, without .app')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    info = {'CFBundleIdentifier': 'org.nabu.LocalTest'}
+    info = {'CFBundleIdentifier': args.bundle_id}
     if args.ipa:
         with zipfile.ZipFile(args.ipa) as package:
-            info = plistlib.loads(package.read('Payload/LocalTest.app/Info.plist'))
-            assert info['CFBundleIdentifier'] == 'org.nabu.LocalTest'
+            info = plistlib.loads(package.read('Payload/' + args.app_name + '.app/Info.plist'))
+            if info['CFBundleIdentifier'] != args.bundle_id:
+                parser.error('IPA bundle identifier differs from --bundle-id')
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {'started_utc': utc_now(), 'bundle_id': info['CFBundleIdentifier'],
+    report = {'started_utc': utc_now(), 'bundle_id': info['CFBundleIdentifier'], 'app_name': args.app_name,
               'ipa_bytes': args.ipa.stat().st_size if args.ipa else None,
               'action': 'uninstall' if args.uninstall else 'install', 'installed_verified': False,
               'uninstall_verified': False,
@@ -84,7 +87,7 @@ def main():
             afc_socket = start_service('com.apple.afc')
             afc = AFC(afc_socket)
             afc.command(0x09, b'/PublicStaging\0', accepted=(0, 16))
-            path = ('PublicStaging/NabuLocalTest-' + uuid.uuid4().hex + '.ipa').encode()
+            path = ('PublicStaging/Nabu' + args.app_name + '-' + uuid.uuid4().hex + '.ipa').encode()
             handle = afc.command(0x0d, struct.pack('<Q', 3) + b'/' + path + b'\0')
             staged = True
             with args.ipa.open('rb') as source:
