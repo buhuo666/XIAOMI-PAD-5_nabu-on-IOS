@@ -1,5 +1,11 @@
 # 项目工作规则
 
+2026-11-09第170轮NC wrapped IOSurface实机通过：32轮/65命令，双向各32768像素，
+保护区及生命周期像素错误0；真实16KiB导入1次，copy0、in-place1、shadow0，释放1/1、
+held0及owner解除映射/释放通过。用户桌面触摸正常，3,364,841字节及64MiB槽备份
+清空，APFS140。本轮未额外重启Android。继续普通系统IOSurface路径与呈现；当前
+NC结果和测试进程工厂不能等同普通缓存表面、跨进程或桌面硬件加速完成。
+
 第169轮后用户明确要求后续真机测试不再额外重启Android：恢复Android后直接回收、
 部署并切bootloader临时启动，不执行额外adb reboot。此约束覆盖之前完整Android
 重启的试验步骤，见docs/SPECIAL-STEPS.md第8条。
