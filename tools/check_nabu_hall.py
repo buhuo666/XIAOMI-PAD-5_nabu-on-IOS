@@ -33,7 +33,9 @@ def main():
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 #define FIELD_IS_BUILT_IN 4
 typedef void *id;
 typedef void *SEL;
