@@ -46,5 +46,13 @@ CopiedBuffers同步行为。实机桌面及像素结果仍待后续验证。
 写入、子页偏移、原VA保护变化、撤销与同址新对象隔离、自有映射释放、初始不可读拒绝，
 以及实际copy_in/merge_back的CPU冲突优先规则和移除后停止比较。没有调用GPU。
 构建随后在Rust编译前因脚本未将新0028项登记到允许的补丁尾部而停止；20faac2已修复
-这项构建清单，专项CI42757503932继续构建。不能将主机通过称为iPadOS桌面通过。
+这项构建清单，专项CI42757503932随后完整成功。不能将主机通过称为iPadOS桌面通过。
 原始报告在artifacts/ci/42756846244-attempt-1/nabu-owned-copy-pages-1/copied-pages-host-check。
+
+## 第180轮上机候选
+
+最终CI42757503932的前端18,126,848字节，一次下载审查确认普通ARM64、iOS16.5目标、
+签名页与CodeDirectory相符，依赖均在本机系统；28项runtime补丁和资源alias实现保留。
+8组真实Mach测试在最终任务再次通过。与CI42738127355的诊断工厂组合，启动包为
+artifacts/nabu-bootstrap-gpu-v180/bootstrap.apfs（67,973,120字节），APFS检查和12项读回
+通过。已建立本轮日志槽1，复用display01内核开始部署；桌面和App结果待实机确认。
