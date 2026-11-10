@@ -61,10 +61,12 @@ def main():
                         help='Add system Metal and shared cached-page imports; implies --userland, without scanout')
     parser.add_argument('--dpu-snapshot', action='store_true',
                         help='Read inherited display registers once; no display writes or scanout changes')
+    parser.add_argument('--dpu-producer', action='store_true',
+                        help='Register scheduler read leases with a kernel containing NabuDpuDisplay; implies --userland')
     parser.add_argument('--dpu-smmu-depth', type=int, choices=[0, 1, 2], default=0,
                         help='With --dpu-snapshot: ID only, routes, or related contexts; deep reads wait for USB attachment')
     args = parser.parse_args()
-    if args.system_metal:args.userland=True
+    if args.system_metal or args.dpu_producer:args.userland=True
     args.output.mkdir(parents=True, exist_ok=True)
     staged = args.output/'source'
     staged.mkdir(exist_ok=True)
@@ -87,6 +89,10 @@ def main():
             path = ROOT/'patches/nabu-display'/name
             shutil.copyfile(path, staged/name)
             source_map[name] = str(path.relative_to(ROOT))
+    if args.dpu_producer:
+        path = ROOT/'patches/nabu-display/NabuDpuProducer.h'
+        shutil.copyfile(path, staged/path.name)
+        source_map[path.name] = str(path.relative_to(ROOT))
     reference = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
     pinned = next(s for s in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources']
                   if s['name'] == 'nabu')['commit']
@@ -96,6 +102,7 @@ def main():
     flags = json.loads(args.compile_command.read_text())
     if args.userland:flags+=['-DNABU_GPU_USERLAND=1']
     if args.system_metal:flags+=['-DNABU_GPU_SYSTEM_METAL=1']
+    if args.dpu_producer:flags+=['-DNABU_DPU_PRODUCER=1']
     if args.dpu_snapshot:flags+=['-DNABU_DPU_SNAPSHOT=1',
                                '-DNABU_DPU_SNAPSHOT_DEPTH='+str(args.dpu_smmu_depth)]
     flags += ['-fno-common', '-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]

@@ -32,6 +32,9 @@
 #include "NativeAdrenoDisplay.h"
 #include "NativeAdrenoScheduler.h"
 #include "NabuGpuProblemLog.h"
+#if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
+#include "NabuDpuProducer.h"
+#endif
 
 /* Exact 8796 private declarations hidden by the exported kext headers. The
  * nonvirtual IOUserClient entry retains the kernel's filter/dispatch path. */
@@ -222,6 +225,53 @@ void completionWorker(thread_call_param_t,thread_call_param_t)
     }
     IOLockUnlock(g.lock);
 }
+
+#if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
+/* The display owns this opaque read until its last hardware/CPU read ends.
+ * Scheduler acquisition records accepted writers before ring publication and
+ * prevents later overlapping GPU writes from issuing while the read is held. */
+static IOReturn dpuAcquireProducer(IOMemoryDescriptor *memory,
+    void (*ready)(void *,IOReturn),void *context,void **out)
+{
+    if(!out) {
+        return kIOReturnBadArgument;
+    }
+    *out=nullptr;
+    NativeAdrenoSurfaceRead *read=nullptr;
+    const IOReturn status=native_adreno_surface_acquire_read(memory,ready,context,&read);
+    if(!read) {
+        return status?status:kIOReturnNotReady;
+    }
+    *out=read;
+    if(status==kIOReturnNotReady) {
+        // Observe the actual CP timestamp even if its completion IRQ was lost.
+        thread_call_enter(g.completionCall);
+    }
+    return status;
+}
+
+static IOReturn dpuProducerStatus(void *read,uint32_t *hardwareFence)
+{
+    if(!read) {
+        return kIOReturnBadArgument;
+    }
+    const IOReturn status=native_adreno_surface_read_status(
+        static_cast<NativeAdrenoSurfaceRead *>(read),hardwareFence);
+    if(status==kIOReturnNotReady) {
+        thread_call_enter(g.completionCall);
+    }
+    return status;
+}
+
+static void dpuReleaseProducer(void *read)
+{
+    native_adreno_surface_release_read(static_cast<NativeAdrenoSurfaceRead *>(read));
+}
+
+static const NabuDpuProducerOps dpuProducerOps={
+    dpuAcquireProducer,dpuProducerStatus,dpuReleaseProducer
+};
+#endif
 
 /* BoProfileRecords retains one Vulkan device's counters, bins and slow events.
  * The connection generation and device ID identify the reporting owner. Closed
@@ -1896,6 +1946,12 @@ extern "C" IOReturn native_adreno_publish(NativeAdrenoVm *vm,NativeAdrenoSubmit 
     native_adreno_profile_set_continuous_clock(profileContinuousMicroseconds);
     nabu_gpu_problem_log_initialize();
     g.service=service;g.published=true;
+#if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
+    const IOReturn producerStatus=nabu_dpu_register_producer(&dpuProducerOps);
+    service->setProperty("DisplayProducerStatus",uint32_t(producerStatus),32);
+    IOLog("NabuGPU: DPU producer registration status=%08x per_surface=1 accepted_writers=1\n",
+        uint32_t(producerStatus));
+#endif
     service->setName("NativeAdrenoGpu");
     service->registerService();
 
@@ -2198,7 +2254,8 @@ extern "C" IOReturn native_adreno_surface_read_status(NativeAdrenoSurfaceRead *r
         return kIOReturnSuccess;
     }
     IOLockLock(g.lock);
-    const IOReturn status=g.submit->scheduler()->readStatus(read,latestHardware);
+    const IOReturn status=g.failed?kIOReturnIOError:
+        g.submit->scheduler()->readStatus(read,latestHardware);
     IOLockUnlock(g.lock);
     return status;
 }

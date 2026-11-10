@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+#pragma once
+// Bind this display domain to its own helpers, independent of GPU/WLAN copies.
+#define ArmSmmu4KEncodeContext NabuDpu_ArmSmmu4KEncodeContext
+#define ArmSmmu4KValidateContextReadback NabuDpu_ArmSmmu4KValidateContextReadback
+#define ArmSmmu4KProgramDisabledContext NabuDpu_ArmSmmu4KProgramDisabledContext
+#define ArmSmmu4KDisableOwnedContext NabuDpu_ArmSmmu4KDisableOwnedContext
+#define ArmSmmu4KObserveOwnedContext NabuDpu_ArmSmmu4KObserveOwnedContext
+#define ArmSmmu4KSyncContextTlb NabuDpu_ArmSmmu4KSyncContextTlb
+#define ArmSmmu4KSynchronizeOwnedContext NabuDpu_ArmSmmu4KSynchronizeOwnedContext
+#define ArmSmmu4KInvalidateAllOwnedContext NabuDpu_ArmSmmu4KInvalidateAllOwnedContext

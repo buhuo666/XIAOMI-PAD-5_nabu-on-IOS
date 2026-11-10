@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Run the actual mapper binding with host IOKit/MMIO fixtures, then compile the real ARM64 binding."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+from check_darwinboot_8796 import host_command, host_path
+
+ROOT = Path(__file__).resolve().parents[1]
+DIR = ROOT / 'patches/nabu-display'
+ORACLE = ROOT / 'src/ArmSmmu4K-nabu'
+STUB = r'''
+#pragma once
+#include <cstdint>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
+#include <vector>
+using IOReturn=int;using IOByteCount=uint64_t;using IOOptionBits=uint32_t;using ppnum_t=uint32_t;
+constexpr int kIOReturnSuccess=0,kIOReturnNotReady=-1,kIOReturnNoMemory=-2,kIOReturnUnsupported=-3,
+    kIOReturnIOError=-4,kIOReturnBadArgument=-5,kIOReturnNoResources=-6;
+constexpr unsigned kIODirectionOut=1,kIODirectionInOut=3,kIOMemoryMapperNone=0x10,
+    kIOMemoryPhysicallyContiguous=0x20,kIOMapWriteCombineCache=0x40,kIOMapInhibitCache=0x80;
+constexpr unsigned VM_WIMG_MASK=255,VM_WIMG_WCOMB=2;
+inline void *kernel_task=nullptr;inline int gIOServicePlane=0;
+inline uint64_t appsMemory[0x100000/8]={};
+inline void *IOMallocZero(size_t n){return std::calloc(1,n);}
+inline void IOFree(void *p,size_t){std::free(p);}
+inline void IODelay(unsigned){}
+inline void IOLog(const char *,...){}
+class OSObject {public:virtual ~OSObject()=default;virtual void release(){delete this;}
+    void *metaCast(const char *s){return std::strcmp(s,"NabuUsbNativeController")==0?this:nullptr;}};
+class OSIterator:public OSObject {bool seen=false;public:OSObject *getNextObject(){static OSObject native;if(seen)return nullptr;seen=true;return &native;}};
+class IOService:public OSObject {public:static IOService *getPlatform(){static IOService platform;return &platform;}
+    OSIterator *getChildIterator(int){return new OSIterator;}};
+class IOMemoryMap:public OSObject {public:uintptr_t getVirtualAddress(){return reinterpret_cast<uintptr_t>(appsMemory);}};
+class IOMemoryDescriptor:public OSObject {
+public:
+    uint64_t bytes=0,physical=0;unsigned refs=1,prepares=0;bool failComplete=false;
+    std::vector<uint64_t> pages;
+    void retain(){++refs;}void release()override{assert(refs);if(!--refs)delete this;}
+    uint64_t getLength(){return bytes;}
+    IOReturn prepare(unsigned=3){++prepares;return 0;}
+    IOReturn complete(unsigned=3){if(failComplete)return kIOReturnIOError;assert(prepares);--prepares;return 0;}
+    uint64_t getPhysicalSegment(uint64_t at,IOByteCount *len,unsigned){
+        if(pages.empty()){*len=bytes-at;return physical+at;}
+        *len=4096-(at&4095);return pages.at(at/4096)+(at&4095);
+    }
+};
+class IODeviceMemory:public IOMemoryDescriptor {public:
+    static IODeviceMemory *withRange(uint64_t pa,uint64_t n){assert(pa==0x15000000);auto *p=new IODeviceMemory;p->physical=pa;p->bytes=n;return p;}
+    IOMemoryMap *map(unsigned){return new IOMemoryMap;}
+};
+class IOBufferMemoryDescriptor:public IOMemoryDescriptor {
+    void *storage=nullptr;
+public:
+    ~IOBufferMemoryDescriptor(){std::free(storage);}
+    static IOBufferMemoryDescriptor *inTaskWithPhysicalMask(void *,unsigned opts,uint64_t n,uint64_t mask){
+        assert((opts&kIOMapWriteCombineCache)&&(opts&kIOMemoryPhysicallyContiguous));
+        assert(mask==0xfffffff000ull);auto *p=new IOBufferMemoryDescriptor;p->physical=0x180000000ull;p->bytes=n;
+        p->storage=std::aligned_alloc(4096,n);assert(p->storage);return p;
+    }
+    void *getBytesNoCopy(){return storage;}
+};
+extern "C" inline unsigned int pmap_cache_attributes(ppnum_t){return VM_WIMG_WCOMB;}
+'''
+
+HARNESS = r'''
+#include "fake_kernel.h"
+#include <map>
+#include <cstdio>
+#include "NabuDpuMapper.cpp"
+namespace MP=NabuDpuMapper;namespace SC=NabuDpuScanout;namespace PT=NabuDpuPageTable;
+struct Dpu {
+    std::map<uint32_t,uint32_t> regs;
+    uint32_t halt=0x11;
+    Dpu(){BASELINE}
+    static bool read(void *p,SC::Region r,uint32_t at,uint32_t *out){
+        if(r==SC::Vbif){assert(at==0x200||at==0x204);*out=static_cast<Dpu *>(p)->halt;return true;}
+        *out=static_cast<Dpu *>(p)->regs[at];return true;
+    }
+    static bool write(void *,SC::Region,uint32_t,uint32_t){assert(false);return false;}
+    static bool barrier(void *){return true;}static uint64_t clock(void *){return 0;}static void wait(void *,unsigned){assert(false);}
+    SC::Io io(){return {this,read,write,barrier,clock,wait};}
+};
+static uint32_t &reg(uint32_t at){return reinterpret_cast<uint32_t *>(appsMemory)[at/4];}
+static void initApps(){
+    std::memset(appsMemory,0,sizeof(appsMemory));reg(0x20)=0x4c017e5e;reg(0x24)=0x60000038;reg(0x28)=0x5555;
+    for(unsigned i=0;i<94;++i)reg(0xc00+4*i)=2u<<16;
+    reg(0x80c)=0x84200800;reg(0xc0c)=2;reg(0x810)=0x80000140;reg(0xc10)=3;
+    reg(0x1008)=0x1f000;reg(0x1808)=1;reg(0x82000)=0xe0;reg(0x82010)=0x4001c067;reg(0x82058)=0x400;
+    reg(0x100c)=0x1f300;reg(0x180c)=1;reg(0x83000)=1;appsMemory[0x83020/8]=5ull<<48;
+}
+static MP::Binding *prepared(){int error=99;auto before=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
+    MP::Binding *b=MP::prepare(&error);assert(b&&error==0&&!b->active&&!b->programAttempted);
+    assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0);return b;}
+static void finish(MP::Binding *b){ // Host-only lifetime cleanup after simulated hardware removal.
+    for(unsigned i=0;i<32;++i)if(b->slots[i].memory){b->slots[i].memory->failComplete=false;MP::releaseDescriptor(b,i);}
+    b->programAttempted=false;MP::destroyBeforeProgram(b);
+}
+static IOMemoryDescriptor *memory(uint64_t pa){auto *m=new IOMemoryDescriptor;m->bytes=8192;m->pages={pa,pa+0x8000};return m;}
+int main(){
+    initApps();Dpu dpu;SC::State state={};assert(SC::initialize(dpu.io(),state,nullptr)==SC::Ok);state.phase=SC::Quiesced;
+    MP::Binding *b=prepared();auto before=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
+    dpu.halt=0;assert(MP::preflightSources(b,dpu.io())==0);
+    assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported&&!b->programAttempted&&!MP::poisoned(b));
+    dpu.halt=0x11;
+    dpu.regs[0x9014]=0x90000000;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);
+    assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0&&!b->programAttempted);dpu.regs[0x9014]=0;
+    dpu.regs[0x22ec]=1;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);dpu.regs[0x22ec]=0;
+    assert(MP::activateAfterQuiesce(b,dpu.io(),state)==0&&b->active);
+    assert(!(reg(0x82000)&(1u<<6))&&(reg(0x82000)&(1u<<5))&&(reg(0x82000)&1));
+    for(unsigned i=0;i<sizeof(appsMemory)/4;++i){
+        uint32_t at=i*4;const uint32_t old=reinterpret_cast<uint32_t *>(before.data())[i];
+        if(old==reg(at))continue;
+        assert(at==0x1008||at==0x1808||at==0x82000||at==0x82010||at==0x82020||at==0x82024||
+            at==0x82028||at==0x8202c||at==0x82030||at==0x82038||at==0x8203c||at==0x82610||at==0x827f0);
+    }
+    assert(reg(0x80c)==0x84200800&&reg(0xc0c)==2&&reg(0x810)==0x80000140&&reg(0xc10)==3);
+    auto *a=memory(0x280000000ull),*c=memory(0x340000000ull),*unused=memory(0x380000000ull);
+    PT::Mapping ma,mc,mu;unsigned retired;
+    assert(MP::mapDescriptor(b,a,64,8128,&ma)==0&&a->refs==2&&a->prepares==1&&ma.iova==PT::SlotStart+64);
+    assert(MP::accept(b,ma,&retired)==0&&retired==PT::NoSlot);
+    assert(MP::mapDescriptor(b,c,0,8192,&mc)==0);
+    assert(MP::accept(b,mc,&retired)==0&&retired==ma.slot);
+    assert(MP::releaseRetired(b,ma.slot,ma.token)==0&&a->refs==1&&a->prepares==0);
+    assert(MP::mapDescriptor(b,unused,0,8192,&mu)==0);
+    assert(MP::discardUnsubmitted(b,mu)==0&&unused->refs==1&&unused->prepares==0);
+    assert(MP::mapDescriptor(b,unused,0,8192,&mu)==0);
+    assert(MP::accept(b,mu,&retired)==0&&retired==mc.slot);
+    auto oldState=b->state;reg(0x82058)|=2;
+    assert(MP::readFault(b)==kIOReturnIOError&&!b->failed&&!b->state.poisoned);
+    assert(std::memcmp(&oldState,&b->state,sizeof(oldState))==0);
+    assert(MP::releaseRetired(b,mc.slot,mc.token)==kIOReturnIOError&&b->failed&&b->state.poisoned);
+    assert(c->refs==2&&c->prepares==1);reg(0x82058)=0x400;
+    assert(MP::mapDescriptor(b,a,0,8192,&ma)==kIOReturnIOError);
+    finish(b);a->release();c->release();unused->release();
+    initApps();b=prepared();assert(MP::activateAfterQuiesce(b,dpu.io(),state)==0);
+    auto *m=memory(0x400000000ull);PT::Mapping mm;assert(MP::mapDescriptor(b,m,0,8192,&mm)==0);
+    m->failComplete=true;assert(MP::discardUnsubmitted(b,mm)==kIOReturnIOError&&MP::poisoned(b));
+    assert(m->refs==2&&m->prepares==1);finish(b);m->release();
+    std::puts("PASS actual mapper binding: readonly prepare, source/WB gate, CB2-only writes, CFIE0/CFRE1, PA import, retained descriptors, cancellation and lock-free fault read");
+}
+'''
+
+
+def run(command):
+    r = subprocess.run(host_command(command), capture_output=True, text=True, encoding='utf-8', errors='replace')
+    if r.returncode:
+        raise RuntimeError(r.stdout + '\n' + r.stderr)
+    return r.stdout
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--kernel-command', type=Path, required=True)
+    args = ap.parse_args()
+    snapshot = json.loads((ROOT / 'log/host/gpu-v185/dpu-snapshot.json').read_text())['registers']
+    values = {v['offset']: v['value'] for name, group in snapshot.items()
+              if name.startswith(('MDSS', 'CTL', 'LM', 'SSPP', 'INTF')) for v in group.values()}
+    baseline = '\n'.join(f'regs[0x{k:x}]=0x{v:x};' for k, v in values.items())
+    with tempfile.TemporaryDirectory(prefix='nabu-mapper-fixture-') as td:
+        tmp = Path(td); includes = tmp / 'include'; includes.mkdir()
+        (includes / 'fake_kernel.h').write_text(STUB)
+        for name in ['IOKit/IOTypes.h', 'IOKit/IOLib.h', 'IOKit/IOBufferMemoryDescriptor.h',
+                     'IOKit/IODeviceMemory.h', 'IOKit/IOService.h', 'IOKit/IOPlatformExpert.h',
+                     'kern/task.h', 'mach/vm_param.h', 'vm/memory_types.h']:
+            p = includes / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text('#include "fake_kernel.h"\n')
+        fixture = tmp / 'fixture.cpp'; fixture.write_text(HARNESS.replace('BASELINE', baseline))
+        objects = []; cc = 'clang' if sys.platform == 'darwin' else 'clang-18'
+        cxx = 'clang++' if sys.platform == 'darwin' else 'clang++-18'
+        for name in ['ArmSmmu4KContext', 'ArmSmmu4KProgram']:
+            obj = tmp / (name + '.o'); objects.append(host_path(obj))
+            run([cc, '-std=c11', '-O1', '-g', '-fsanitize=address,undefined', '-I' + host_path(ORACLE),
+                 '-c', host_path(ORACLE / (name + '.c')), '-o', host_path(obj)])
+        binary = tmp / 'fixture'
+        run([cxx, '-std=c++17', '-O1', '-g', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+             '-DNABU_DPU_MAPPER_HOST_TEST', '-I' + host_path(includes), '-I' + host_path(DIR), '-I' + host_path(ORACLE),
+             host_path(fixture), host_path(DIR / 'NabuDpuPageTable.cpp'), host_path(DIR / 'NabuDpuScanoutCore.cpp'),
+             *objects, '-o', host_path(binary)])
+        output = run([host_path(binary)])
+        raw = json.loads(args.kernel_command.read_text()); flags = []; i = 0
+        while i < len(raw):
+            if raw[i] in ['-include', '-c', '-o']:
+                i += 2
+            else:
+                flags.append(raw[i]); i += 1
+        target = tmp / 'mapper.o'
+        command = flags + ['-Wall', '-Wextra', '-Werror', '-I' + host_path(DIR), '-I' + host_path(ORACLE),
+                           '-c', host_path(DIR / 'NabuDpuMapper.cpp'), '-o', host_path(target)]
+        run(command)
+        stack = max(int(x.split('\t')[1]) for x in target.with_suffix('.su').read_text().splitlines())
+        assert stack <= 1024
+        # Inspect the actual ARM64 readFault body: a volatile FSR load, no stores,
+        # locks, logging, waits or state access helper calls.
+        ir = tmp / 'mapper.ll'; run(command[:-2] + ['-o', host_path(ir), '-S', '-emit-llvm'])
+        text = ir.read_text(); symbol = '_ZN13NabuDpuMapper9readFaultEPNS_7BindingE'
+        body = text.split('@' + symbol + '(', 1)[1].split('\n}', 1)[0]
+        assert 'load volatile i32' in body and 'store ' not in body
+        assert 'IOLog' not in body and 'IODelay' not in body and 'IOLock' not in body
+        print(json.dumps({'passed': True, 'result': output.strip(), 'arm64_kernel_compiled': True,
+                          'max_function_stack_bytes': stack, 'readFault_no_stores_locks_waits': True,
+                          'scope': 'Host binding fixtures and local ARM64 compile; no device access or live activation'}, indent=2))
+
+
+if __name__ == '__main__':
+    main()

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import shutil
+from prepare_nabu_display_sync import install as install_display_sync
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,10 +23,12 @@ def main():
     content = conf.read_text()
     if entry not in content:
         conf.write_text(content + '\n' + entry + '\n')
+    sync = install_display_sync(args.tree)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'backend': str(folder),
         'interface': 'RequestPowerChange -> nabu_backlight_set_power',
-        'scope': 'KTZ8866 LED enable; preserves brightness and panel bias'}, indent=2) + '\n')
+        'scope': 'KTZ8866 LED enable; preserves brightness and panel bias',
+        'display_sync': sync}, indent=2) + '\n')
 
 
 if __name__ == '__main__':
