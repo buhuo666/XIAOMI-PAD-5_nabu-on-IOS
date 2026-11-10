@@ -35,6 +35,7 @@ static struct HIDAPI hid;
 @property(nonatomic, strong) NSMutableDictionary *channels;
 @property(nonatomic, strong) NSMutableArray *alsServices;
 @property(nonatomic, strong) NSMutableArray *orientationEvents;
+@property(nonatomic, strong) NSMutableArray *diagnosticSnapshots;
 @property(nonatomic, strong) NSString *directory;
 @property(nonatomic, strong) NSDictionary *availability;
 @property(nonatomic, strong) NSString *hidStatus;
@@ -51,6 +52,7 @@ static struct HIDAPI hid;
 - (void)als:(HIDEvent)event service:(HIDService)service;
 - (void)orientation:(NSDictionary *)record;
 - (void)stop;
+- (void)captureKernelDiagnostics:(NSString *)phase;
 - (NSDictionary *)report;
 @end
 
@@ -70,6 +72,81 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     if (!data) { fprintf(stderr, "sensor JSON error: %s\n", error.description.UTF8String); return; }
     [self.events writeData:data];
     [self.events writeData:[@"\n" dataUsingEncoding:NSUTF8StringEncoding]];
+}
+
+- (void)captureKernelDiagnostics:(NSString *)phase
+{
+    BOOL first = [phase isEqualToString:@"start"];
+    NSString *suffix = first ? @"-start" : @"";
+    NSString *slpiFile = [NSString stringWithFormat:@"slpi-report%@.txt", suffix];
+    NSString *sourcesFile = [NSString stringWithFormat:@"sensor-sources%@.plist", suffix];
+    NSMutableDictionary *snapshot = [@{@"phase":phase, @"uptime":@(uptime()),
+        @"slpi_file":slpiFile, @"sources_file":sourcesFile} mutableCopy];
+    NSData *slpiData = [NSData data];
+    io_registry_entry_t chosen = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/chosen");
+    snapshot[@"chosen_found"] = @(chosen != IO_OBJECT_NULL);
+    if (chosen) {
+        CFTypeRef value = IORegistryEntryCreateCFProperty(chosen, CFSTR("nabu-slpi-report"), kCFAllocatorDefault, 0);
+        snapshot[@"slpi_property_present"] = @(value != NULL);
+        if (value) {
+            CFTypeID type = CFGetTypeID(value);
+            if (type == CFDataGetTypeID()) {
+                snapshot[@"slpi_property_type"] = @"CFData";
+                slpiData = [(__bridge NSData *)value copy];
+            } else if (type == CFStringGetTypeID()) {
+                snapshot[@"slpi_property_type"] = @"CFString";
+                slpiData = [(__bridge NSString *)value dataUsingEncoding:NSUTF8StringEncoding];
+            } else {
+                CFStringRef typeName = CFCopyTypeIDDescription(type);
+                snapshot[@"slpi_property_type"] = (__bridge_transfer NSString *)typeName;
+                snapshot[@"slpi_error"] = @"unsupported property type; no text representation substituted";
+            }
+            CFRelease(value);
+        }
+        IOObjectRelease(chosen);
+    }
+    NSError *writeError = nil;
+    snapshot[@"slpi_bytes"] = @(slpiData.length);
+    // Write even when absent, so an older run's report is never left as current.
+    BOOL saved = [slpiData writeToFile:[self.directory stringByAppendingPathComponent:slpiFile]
+        options:NSDataWritingAtomic error:&writeError];
+    snapshot[@"slpi_write_ok"] = @(saved);
+    if (writeError) snapshot[@"slpi_write_error"] = writeError.localizedDescription;
+
+    io_iterator_t iterator = IO_OBJECT_NULL;
+    kern_return_t status = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("NabuSensorSource"), &iterator);
+    snapshot[@"source_matching_status"] = @(status);
+    NSMutableArray *sources = [NSMutableArray array];
+    if (status == KERN_SUCCESS) {
+        io_service_t service;
+        while ((service = IOIteratorNext(iterator))) {
+            NSMutableDictionary *item = [NSMutableDictionary dictionary];
+            uint64_t registryID = 0;
+            kern_return_t idStatus = IORegistryEntryGetRegistryEntryID(service, &registryID);
+            item[@"registry_id_status"] = @(idStatus);
+            if (idStatus == KERN_SUCCESS) item[@"registry_id"] = @(registryID);
+            io_name_t className = {0};
+            if (IOObjectGetClass(service, className) == KERN_SUCCESS) item[@"class"] = [NSString stringWithUTF8String:className];
+            CFMutableDictionaryRef properties = NULL;
+            kern_return_t propertyStatus = IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0);
+            item[@"properties_status"] = @(propertyStatus);
+            if (propertyStatus == KERN_SUCCESS && properties) item[@"properties"] = (__bridge_transfer NSDictionary *)properties;
+            [sources addObject:item];
+            IOObjectRelease(service);
+        }
+        IOObjectRelease(iterator);
+    }
+    snapshot[@"source_count"] = @(sources.count);
+    NSError *propertyError = nil;
+    NSData *propertyData = [NSPropertyListSerialization dataWithPropertyList:sources format:NSPropertyListBinaryFormat_v1_0 options:0 error:&propertyError];
+    BOOL propertiesSaved = propertyData && [propertyData writeToFile:[self.directory stringByAppendingPathComponent:sourcesFile]
+        options:NSDataWritingAtomic error:&propertyError];
+    snapshot[@"source_properties_write_ok"] = @(propertiesSaved);
+    if (propertyError) snapshot[@"source_properties_error"] = propertyError.localizedDescription;
+    [self.diagnosticSnapshots addObject:snapshot];
+    [self write:@{@"kind":@"kernel_diagnostics", @"snapshot":snapshot}];
+    NSData *metadata = [NSJSONSerialization dataWithJSONObject:self.diagnosticSnapshots options:NSJSONWritingPrettyPrinted error:NULL];
+    [metadata writeToFile:[self.directory stringByAppendingPathComponent:@"kernel-diagnostics.json"] atomically:YES];
 }
 
 - (void)startHID
@@ -106,6 +183,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     self.channels = [NSMutableDictionary dictionary];
     self.alsServices = [NSMutableArray array];
     self.orientationEvents = [NSMutableArray array];
+    self.diagnosticSnapshots = [NSMutableArray array];
     self.started = uptime();
     for (NSString *name in @[@"accelerometer", @"gyroscope", @"magnetometer", @"deviceMotion", @"ambientLight"])
         self.channels[name] = [@{@"samples":@0, @"errors":@0, @"nonmonotonic":@0, @"invalid":@0,
@@ -123,6 +201,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     [self write:@{@"kind":@"start", @"uptime":@(self.started), @"seconds":@(seconds),
         @"availability":self.availability, @"hid":self.hidStatus,
         @"note":@"availability is a system declaration; only callbacks establish data delivery"}];
+    [self captureKernelDiagnostics:@"start"];
     NSOperationQueue *queue = NSOperationQueue.mainQueue;
     __weak NabuSensorProbe *weak = self;
     if (self.motion.accelerometerAvailable)
@@ -220,6 +299,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     NSMutableDictionary *out = [@{@"schema":@1, @"started_uptime":@(self.started), @"stopped_uptime":@(self.stopped),
         @"complete":@(self.complete), @"availability":self.availability, @"channels":self.channels,
         @"hid_status":self.hidStatus, @"als_services":self.alsServices, @"orientation_events":self.orientationEvents,
+        @"kernel_diagnostics":self.diagnosticSnapshots,
         @"automatic_brightness_verified":@NO, @"sensor_hardware_origin_verified_by_probe":@NO,
         @"note":@"Correlate these native callbacks with the same boot's physical SSC records. ALS registry presence does not establish AABC initialization."} mutableCopy];
     BOOL raw = YES;
@@ -249,6 +329,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     __weak NabuSensorProbe *weak = self;
     self.finishTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(__unused NSTimer *timer) {
         NabuSensorProbe *strong = weak;
+        [strong captureKernelDiagnostics:@"finish"];
         strong.complete = YES;
         NSDictionary *report = strong.report;
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];

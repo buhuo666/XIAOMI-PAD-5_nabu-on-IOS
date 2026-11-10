@@ -78,14 +78,15 @@ def main():
         report['cli'] = {'file':cli.name, **sign(cli,'org.nabu.sensor-probe',entitlements),
             'bytes':cli.stat().st_size,
             'runtime_command':'/redwood/sbin/nabu-sensor-probe 30 /var/mobile/Media/NabuSensorProbe',
-            'outputs':['sensor-events.jsonl','sensor-result.json']}
+            'outputs':['sensor-events.jsonl','sensor-result.json','slpi-report-start.txt','slpi-report.txt',
+                       'sensor-sources-start.plist','sensor-sources.plist','kernel-diagnostics.json']}
 
         app = output/'Payload/NabuSensorProbe.app'
         app.mkdir(parents=True)
         executable = app/'NabuSensorProbe'
         info = {'CFBundleIdentifier':'org.nabu.SensorProbe','CFBundleName':'NabuSensorProbe',
                 'CFBundleDisplayName':'传感器诊断','CFBundleExecutable':'NabuSensorProbe',
-                'CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'1.0',
+                'CFBundlePackageType':'APPL','CFBundleVersion':'2','CFBundleShortVersionString':'1.1',
                 'CFBundleInfoDictionaryVersion':'6.0','MinimumOSVersion':'16.5',
                 'CFBundleSupportedPlatforms':['iPhoneOS'],'LSRequiresIPhoneOS':True,
                 'UIDeviceFamily':[2],'UIRequiresFullScreen':True,'UILaunchScreen':{},
@@ -99,7 +100,12 @@ def main():
         macho_target(executable,2)
         report['app'] = {'directory':app.relative_to(output).as_posix(),
             **sign(app,'org.nabu.SensorProbe',entitlements),'executable_bytes':executable.stat().st_size,'seconds':30,
-            'outputs':['Documents/sensor-events.jsonl','Documents/sensor-result.json']}
+            'outputs':['Documents/sensor-events.jsonl','Documents/sensor-result.json',
+                'Documents/slpi-report-start.txt','Documents/slpi-report.txt',
+                'Documents/sensor-sources-start.plist','Documents/sensor-sources.plist',
+                'Documents/kernel-diagnostics.json'],
+            'kernel_diagnostics':{'phases':['start','finish'],'slpi_property':'IODeviceTree:/chosen:nabu-slpi-report',
+                'slpi_preserved_types':['CFData','CFString'],'read_only_service_class':'NabuSensorSource'}}
         ipa = output/'NabuSensorProbe.ipa'
         with zipfile.ZipFile(ipa,'w',zipfile.ZIP_DEFLATED) as archive:
             for path in sorted((output/'Payload').rglob('*')):
