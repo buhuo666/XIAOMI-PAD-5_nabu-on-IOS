@@ -73,18 +73,38 @@ struct Binding {
     IOReturn failure;
     bool powerOn;
     bool firstWorkerTraced;
+    bool traceQuiesce;
+    unsigned quiesceReads, quiesceWrites;
     Mapper::Binding *activeMapper;
 };
 static Binding *display;
 static void worker(void *, wait_result_t);
 
+static void traceRegister(const char *phase, Scan::Region region, uint32_t offset, uint32_t value) {
+    char marker[112];
+    snprintf(marker, sizeof(marker), "%s region=%u offset=%#x value=%#x", phase, region, offset, value);
+    NabuDpuCheckpoint::record(marker);
+}
 static bool read32(void *p, Scan::Region region, uint32_t offset, uint32_t *v) {
     auto b = static_cast<Binding *>(p);
-    *v = (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4]; return true;
+    const bool trace = b->traceQuiesce && b->quiesceReads++ < 8;
+    if (trace) traceRegister("quiesce-read-enter", region, offset, 0);
+    *v = (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4];
+    if (trace) traceRegister("quiesce-read-returned", region, offset, *v);
+    return true;
 }
 static bool write32(void *p, Scan::Region region, uint32_t offset, uint32_t v) {
     auto b = static_cast<Binding *>(p);
-    (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4] = v; return true;
+    const bool trace = b->traceQuiesce && b->quiesceWrites++ < 3;
+    if (trace) traceRegister("quiesce-write-enter", region, offset, v);
+    (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4] = v;
+    // Trace completion only after the same barrier used by the core. This
+    // distinguishes a returned store from one still pending at the device.
+    if (trace) {
+        __asm__ volatile("dsb sy" ::: "memory");
+        traceRegister("quiesce-write-returned", region, offset, v);
+    }
+    return true;
 }
 static bool barrier(void *) { __asm__ volatile("dsb sy" ::: "memory"); return true; }
 static uint64_t clockUs(void *) { return nowUs(); }
@@ -215,7 +235,9 @@ static IOReturn initializeMapper(Binding *b) {
     if (result) return result;
     Scan::Diagnostic d{};
     NabuDpuCheckpoint::record("xin-quiesce-enter");
+    b->traceQuiesce = NabuDpuCheckpoint::enabled();
     auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
+    b->traceQuiesce = false;
     IOLog("NABU DPU: quiesce status=%u region=%u offset=%#x want=%#x got=%#x\n",
         status, d.region, d.offset, d.expected, d.observed);
     NabuDpuCheckpoint::record("xin-quiesce-returned", status);

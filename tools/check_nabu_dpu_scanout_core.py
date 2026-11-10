@@ -45,6 +45,10 @@ struct Fake {
     static bool read(void *p,Region r,uint32_t at,uint32_t *out) {
         auto &f=*static_cast<Fake *>(p);f.advance();
         assert(!(at&3) && at+4<=(r==Mdss?MdssBytes:VbifBytes));
+        // Model the client-clock prerequisite of the original halt sequence.
+        // The old quiesce implementation reads VBIF before setting VIG0 bit0.
+        if(r==Vbif) assert((f.regs.at({Mdss,Vig0ForceClock})&1) &&
+                          (f.regs.at({Mdss,Vig1ForceClock})&1));
         if(r==Mdss && at==Ctl0+CtlFlush) {*out=f.flushing?3:0;return true;}
         if(r==Mdss && (at==Intf1+0xac || at==Intf2+0xac)) {
             *out=f.frameBase+uint32_t((at==Intf2+0xac && !f.slaveRuns)?0:f.now/f.period);return true;
@@ -135,8 +139,12 @@ int main() {
       assert(quiesce(f.io(),s,1000,&d)==Timeout && s.phase==Failed);
       assert(f.regs.at({Vbif,HaltRequest})==0x31 && d.observed==1);
       assert(resume(f.io(),s,&d)==StateError); }
+    { Fake f;State s={};initialize(f.io(),s,&d);f.regs[{Vbif,HaltRequest}]|=1;
+      assert(quiesce(f.io(),s,HaltTimeoutUs,&d)==Busy && s.phase==Failed);
+      assert(f.writes.size()==2 && f.regs.at({Vbif,HaltRequest})==0x21);
+      assert(s.current_iova==GopPhysical && f.active[0]==GopPhysical); }
     assert(!writable(Mdss,0x201c) && !writable(Mdss,Intf1) && !writable(Vbif,HaltStatus));
-    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, dual-frame retirement, wrap, failures, halt ACK and resume preservation");
+    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, dual-frame retirement, wrap, failures, clocks before every VBIF halt access, busy ownership, halt ACK and resume preservation");
 }
 '''
 

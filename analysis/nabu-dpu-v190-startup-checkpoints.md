@@ -44,3 +44,34 @@ Local validation:
   GPU187); complete consuming-kernel validation must come from macOS CI.
 
 Live trial state and subsequent findings: `log/host/gpu-v190/continuation.json`.
+
+## Live result
+
+Complete CI 42818600464 and the 64-object link/loader checks passed. The user
+confirmed the same black screen entering iPadOS. The full 64 MiB slot and
+818,053 bytes of runtime prefix were collected and cleared with readback;
+APFS count is 169 and Android boot partitions are unchanged.
+
+Committed markers prove success of user surface mapping, producer wait, native
+VM cache queries, inactive display table construction and source preflight.
+The last marker is `xin-quiesce-enter` at 49.389396 seconds. No return from
+quiesce and no entry to CB2 activation were committed. The evidence narrows the
+stall to quiesce or the checkpoint's return boundary, not IOSurface creation or
+the pmap page-number query. It does not identify an individual MMIO access.
+
+GPU191 corrects the existing quiesce ordering so both VIG force clocks are set
+before the first VBIF access. The fixed Android source's
+`sde_vbif_set_xin_halt` sets the client force clock before the request-register
+read inside `sde_hw_set_halt_ctrl`. Our previous code read that register first.
+The register base still matches the saved device DTB; it was not changed.
+
+The regression fixture now rejects any VBIF access before the force clocks.
+GPU190's actual quiesce body fails that assertion; the corrected body passes,
+including inherited request ownership and resume preservation. This test
+models the source ordering, not physical bus behavior. The new scanout core
+and display backend compile for ARM64; the core's maximum stack is 128 bytes.
+
+GPU191 also records entry and return of the first eight quiesce reads and three
+writes, including write completion barriers. This is confined to normal-thread
+quiesce with tracing enabled, outside display state locks. It will distinguish
+clock-register, VBIF request and halt-status access if the stall remains.

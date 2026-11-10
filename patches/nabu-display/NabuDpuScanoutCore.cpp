@@ -170,9 +170,8 @@ Status quiesce(const Io &io, State &s, unsigned timeout_us, Diagnostic *d) {
     Status result = equal(io, Mdss, Ctl0 + CtlFlush, 0, d);
     if (result != Ok) return result == ReadbackMismatch ? Busy : result;
     uint32_t request, clocks[2];
-    if (!rd(io, Vbif, HaltRequest, &request) || !rd(io, Mdss, Vig0ForceClock, &clocks[0]) ||
+    if (!rd(io, Mdss, Vig0ForceClock, &clocks[0]) ||
         !rd(io, Mdss, Vig1ForceClock, &clocks[1])) return IoError;
-    if (request & XinMask) return Busy; // someone already holds these request bits
     s.clock_bit_before[0] = clocks[0] & 1; s.clock_bit_before[1] = clocks[1] & 1;
     for (unsigned i = 0; i < 2; ++i) {
         const uint32_t at = i ? Vig1ForceClock : Vig0ForceClock;
@@ -180,6 +179,11 @@ Status quiesce(const Io &io, State &s, unsigned timeout_us, Diagnostic *d) {
         result = equal(io, Mdss, at, clocks[i] | 1, d);
         if (result != Ok) return fail(s, result);
     }
+    // Match the original sde_vbif_set_xin_halt ordering: force client clocks
+    // before the FIRST VBIF access, including the request-register RMW read.
+    // GPU190's final committed marker was entry to this quiesce operation.
+    if (!rd(io, Vbif, HaltRequest, &request)) return fail(s, IoError);
+    if (request & XinMask) return fail(s, Busy); // retain clocks after mutation; do not claim another halt
     if (!wr(io, s, Vbif, HaltRequest, request | XinMask) || !io.barrier(io.cookie)) return fail(s, IoError);
     result = equal(io, Vbif, HaltRequest, request | XinMask, d);
     if (result != Ok) return fail(s, result);
