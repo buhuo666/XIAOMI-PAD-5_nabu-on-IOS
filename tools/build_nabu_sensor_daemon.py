@@ -13,8 +13,8 @@ from build_nabu_gpu_vulkan_probe import macho_target
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'arm64-apple-ios16.5'
-# Present in Apple's IOHIDEventSystemMonitor entitlement profile. Its acceptance
-# by the original 20F66 virtual-service server remains a separate device check.
+# Original 20F66 ConnectionCreate maps this Boolean to flag 8; virtual-service
+# creation checks that flag for type 4. Runtime AMFI/bootstrap access is untested.
 ENTITLEMENTS = {'com.apple.private.hid.client.event-dispatch': True}
 
 
@@ -32,7 +32,8 @@ def main():
         'source_abi': 'patches/nabu-sensors/NabuSensorHid.h', 'source_abi_version': 1,
         'source_service': 'NabuSensorSource', 'source_open_type': 0x534e,
         'entitlements': ENTITLEMENTS,
-        'entitlement_evidence': 'Apple IOHIDFamily tools/IOHIDEventSystemMonitor-Entitlements.plist; local evidence log/host/sensors-daemon-20261110',
+        'entitlement_evidence': '20F66 __IOHIDEventSystemConnectionCreate 0x18e4c5358..0x18e4c5390; __io_hideventsystem_create_virtual_service 0x18e4d6d08..0x18e4d6d20; analysis/nabu-sensor-daemon-20261110.md',
+        'original_server_static_authorization_gate_verified': True,
         'independent_virtual_service_authority_verified': False,
         'axes_six_face_verified': False, 'device_executed': False,
         'automatic_launch_added': False,
