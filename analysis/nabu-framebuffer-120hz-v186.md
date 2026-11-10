@@ -22,3 +22,29 @@ This setting does not implement hardware-vblank notifications, DPU page flips,
 variable refresh, or prove 120 distinct rendered frames each second. Those
 display changes remain separate from the qualified GPU184 direct-IOSurface
 page-sharing path. State: `log/host/gpu-v186/continuation.json`.
+
+## Runtime result
+
+GPU186 was deployed/read back and temporarily booted. GPU readiness passed;
+the user confirmed desktop/touch but little improvement and/or remaining
+tearing. The native `com.apple.mobile.diagnostics_relay` service returned the
+live IORegistry entry when queried with `Request=IORegistry` and
+`EntryClass=IOMobileFramebuffer` (EntryName did not match):
+
+- Horizontal/vertical active pixels: 1600/2560.
+- Both SyncRate and PreciseSyncRate: 7864320, exactly 120 in 16.16.
+- IOMFBDisplayRefresh minimum/maximum/step: 35791394, approximately 1/120 s
+  in 32.32; displayRefreshStepMachTime: 159999 ticks.
+
+Receipt: `log/host/gpu-v186/display-ioregistry-class.json`; original reply is
+`display-ioregistry-class.plist`. This confirms the requested runtime setting;
+it is not a measurement of delivered application FPS or scanout retirement.
+
+The actual generated ADT was parsed separately: it has no display refresh-rate
+property. DarwinBoot passes these settings in DARWIN_BOOT_ARGS.CommandLine,
+separately from DeviceTree. No invented ADT property was added. See
+`log/host/gpu-v186/device-tree-check.json`.
+
+The device remains in iPadOS with the 120 Hz setting active. The current
+kernel log slot has not been collected or cleared; GPU retains device
+ownership. Collect this slot before preparing any subsequent device trial.
