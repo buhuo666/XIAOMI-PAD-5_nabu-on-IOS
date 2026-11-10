@@ -1,0 +1,52 @@
+{
+  "platform_image": {
+    "path": "/usr/lib/system/libsystem_platform.dylib",
+    "address": "0x1d031c000",
+    "cache_file": "dyld_shared_cache_arm64.23",
+    "file_offset": 111460352,
+    "cpu_subtype": 0,
+    "file_type": 6
+  },
+  "pc": "0x1d031cfe4",
+  "pc_function": {
+    "name": "__platform_memmove",
+    "address": "0x1d031cdc0",
+    "next_local_symbol": "0x1d031d148",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.23",
+    "file_offset": 111463872,
+    "bytes": 904,
+    "assembly": "1d031cdc0.asm",
+    "calls": []
+  },
+  "frontend": {
+    "path": "artifacts\\ci\\42653980143-attempt-1\\nabu-system-shaders-1\\nabu-system-shaders\\symbols\\libnabu-metal-frontend.dylib",
+    "function_address": "0x97173c",
+    "function_end": "0x971930",
+    "file_offset": 9901884,
+    "bytes": 500,
+    "symbols": [
+      {
+        "name": "__RNvMs0_NtCs9qklOhkseMl_20metal2vulkan_runtime6copiedNtB5_13CopiedBuffers7copy_in",
+        "address": 9901884,
+        "section": 1
+      },
+      {
+        "name": "",
+        "address": 9901884,
+        "section": 1
+      },
+      {
+        "name": "__RNvMs0_NtCs9qklOhkseMl_20metal2vulkan_runtime6copiedNtB5_13CopiedBuffers7copy_in",
+        "address": 9901884,
+        "section": 1
+      },
+      {
+        "name": "",
+        "address": 9901884,
+        "section": 1
+      }
+    ],
+    "return_address": "0x971840",
+    "assembly": "frontend-copy-in.asm"
+  }
+}

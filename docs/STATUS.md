@@ -2,6 +2,12 @@
 
 更新：2026-11-10，Asia/Shanghai。
 
+第179轮定点诊断已回收：31次桌面SIGSEGV统一落在CopiedBuffers::copy_in调用
+系统memmove读取源页首8字节，原VA为何失效尚未证实。47,326,534字节前缀、完整
+64MiB槽1及31,071,999字节syslog已保全清槽；APFS152、Android引导分区未变。
+资源alias修复CI42738127415和新产物审查通过；正在准备第180轮复制源自有共享映射，
+见[故障证据与修复](../analysis/nabu-system-copied-pages-v180.md)。设备在Android，尚未准备新槽。
+
 第177轮系统接入已到原版消费者：backboardd、mediaserverd实际取得GPU前端，零延迟
 硬件启动与桌面进程就绪等待生效。但系统片段着色器使用的uchar3被前端拒绝，媒体服务
 缺少pipelineLibrary函数重载，导致服务反复退出、桌面未完成。3,356,432字节前缀、

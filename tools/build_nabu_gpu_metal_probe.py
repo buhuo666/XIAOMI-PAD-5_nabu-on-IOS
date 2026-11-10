@@ -5,6 +5,7 @@ The passed Turnip artifact is reused byte-for-byte. The pinned frontend/runtime
 are staged locally; no system discovery plugin, scanout or daemon is built.
 """
 import argparse
+import difflib
 import importlib.util
 import json
 import os
@@ -65,6 +66,58 @@ def stage_system_resource_aliasing(root, metal):
     replace_once(frontend, '- (BOOL)isAliasable {return NO;} \\\n', '')
     frontend.write_text(frontend.read_text(encoding='utf-8') +
                         '\n#include "NativeMetalResourceAliasing.inc"\n', encoding='utf-8')
+
+
+def stage_owned_copy_pages(root, metal):
+    """Hold the source VM object while run179's copied entry may still read it."""
+    relative = 'crates/metal2vulkan-runtime/src/copied.rs'
+    original = (root / 'src/metal2vulkan' / relative).read_text(encoding='utf-8')
+    source = original
+    replacements = [
+        ('use std::sync::{Arc, Mutex};',
+         'use std::sync::{Arc, Mutex};\n\n'
+         '#[cfg(any(target_os = "macos", target_os = "ios"))]\n'
+         '#[path = "nabu_copied_pages.rs"]\nmod owned_pages;'),
+        ("    /// The caller's bytes (the buffer's `contents`).\n    pages: NonNull<u8>,",
+         '    /// A stable shared view on Apple; the caller pointer on other hosts.\n'
+         '    pages: NonNull<u8>,\n'
+         '    #[cfg(any(target_os = "macos", target_os = "ios"))]\n'
+         '    _owned_pages: owned_pages::OwnedPages,'),
+        ('        let mut snapshot = Vec::new();',
+         '        // Keep the source object independently of the caller VA. Contents and\n'
+         '        // import identity elsewhere still use that original caller address.\n'
+         '        #[cfg(any(target_os = "macos", target_os = "ios"))]\n'
+         '        let owned_pages = unsafe { owned_pages::OwnedPages::new(pages, length) }\n'
+         '            .map_err(|status| match status {\n'
+         '                3 | 6 => NotCopied::OutOfHostMemory,\n'
+         '                _ => NotCopied::Unreadable,\n'
+         '            })?;\n'
+         '        #[cfg(any(target_os = "macos", target_os = "ios"))]\n'
+         '        let pages = owned_pages.pointer();\n'
+         '        let mut snapshot = Vec::new();'),
+        ('            pages,\n            copy,\n            snapshot,',
+         '            pages,\n'
+         '            #[cfg(any(target_os = "macos", target_os = "ios"))]\n'
+         '            _owned_pages: owned_pages,\n'
+         '            copy,\n            snapshot,'),
+    ]
+    for old, new in replacements:
+        if source.count(old) != 1:
+            raise ValueError('Update the run179 copied-source adaptation: ' + old)
+        source = source.replace(old, new)
+    module_path = 'crates/metal2vulkan-runtime/src/nabu_copied_pages.rs'
+    module = (root / 'patches/nabu-metal/NativeCopiedPages.rs').read_text(encoding='utf-8')
+    patch = 'diff --git a/' + relative + ' b/' + relative + '\n'
+    patch += ''.join(difflib.unified_diff(original.splitlines(keepends=True), source.splitlines(keepends=True),
+                                        fromfile='a/' + relative, tofile='b/' + relative))
+    patch += 'diff --git a/' + module_path + ' b/' + module_path + '\nnew file mode 100644\n'
+    patch += ''.join(difflib.unified_diff([], module.splitlines(keepends=True),
+                                        fromfile='/dev/null', tofile='b/' + module_path))
+    patch_dir = metal / 'bridge/patches'
+    name = '0028-nabu-owned-copied-pages.patch'
+    (patch_dir / name).write_text(patch, encoding='utf-8', newline='\n')
+    series = patch_dir / 'series'
+    series.write_text(series.read_text(encoding='utf-8') + name + '\n', encoding='utf-8')
 
 
 def load_module(name, path):
@@ -133,7 +186,7 @@ def reuse_surface_factory(source, output):
 
 
 def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False, system_shaders=False,
-          system_resources=False):
+          system_resources=False, owned_copy_pages=False):
     """Use nabu's relevant frontend patches and UniXNU's bridge build entry."""
     work.mkdir(parents=True, exist_ok=False)
     (work / '.cache').mkdir()
@@ -185,6 +238,8 @@ def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=
         stage_system_shader_compatibility(metal)
     if system_resources:
         stage_system_resource_aliasing(root, metal)
+    if owned_copy_pages:
+        stage_owned_copy_pages(root, metal)
     return {'frontend': metal, 'translator': translator, 'bridge_script': bridge,
             'patches': patches, 'rust_toolchain': rust, 'rust_msrv': msrv,
             'source_commits': {name: source_pins[name]['commit'] for name in
@@ -208,6 +263,8 @@ def main():
     parser.add_argument('--system-shaders', action='store_true', help='Run177 fixes: packed UChar3 and pipelineLibrary function overload')
     parser.add_argument('--system-resources', action='store_true',
                         help='Run178 resource aliasing fix through the actual heap runtime; requires --system-shaders')
+    parser.add_argument('--owned-copy-pages', action='store_true',
+                        help='Run179 fix: retain a shared VM view for each live copied source; requires --system-resources')
     args = parser.parse_args()
     if args.iosurface_copy_read:
         args.iosurface = True
@@ -215,6 +272,8 @@ def main():
         parser.error('--system-shaders requires the qualified iOS copy reader path')
     if args.system_resources and not args.system_shaders:
         parser.error('--system-resources requires --system-shaders to retain the run177 fixes')
+    if args.owned_copy_pages and not args.system_resources:
+        parser.error('--owned-copy-pages requires --system-resources to retain the resource fixes')
     if args.iosurface and args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66:
         parser.error('IOSurface mode requires the qualified 528-byte Metal ABI')
     if args.iosurface and not args.iosurface_copy_read and args.system_metal_input is None:
@@ -319,12 +378,15 @@ def main():
         shutil.copyfile(turnip_input / 'build-report.json', output / 'turnip-input-report.json')
         staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface,
                        iosurface_copy_read=args.iosurface_copy_read, system_shaders=args.system_shaders,
-                       system_resources=args.system_resources)
+                       system_resources=args.system_resources, owned_copy_pages=args.owned_copy_pages)
         report['system_shader_compatibility'] = args.system_shaders
         if args.system_shaders:
             report['system_shader_fixes'] = ['UChar3 type 51: packed three bytes',
                 'newFunctionWithName:constantValues:pipelineLibrary:error: uses actual runtime specialization']
         report['system_resource_aliasing'] = args.system_resources
+        report['owned_copy_pages'] = args.owned_copy_pages
+        if args.owned_copy_pages:
+            report['copied_source_lifetime'] = 'Owned shared Mach mapping until copied entry removal; original contents and import keys unchanged'
         if args.system_resources:
             report['system_resource_fixes'] = [
                 'Buffer and root-texture makeAliasable/isAliasable use the actual runtime heap state',
