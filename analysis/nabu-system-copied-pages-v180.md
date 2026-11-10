@@ -39,3 +39,12 @@ fault-lr-symbolication.txt。QuartzCore Mach事务fence超时是独立观察，�
 读写地址与其生命周期一致；更上层为何释放/保护原VA仍需保留为未知。构建前需以真实
 Mach测试验证双向共享、原地址撤销/保护、同址新对象隔离和映射释放，并验证实际
 CopiedBuffers同步行为。实机桌面及像素结果仍待后续验证。
+
+## 真实macOS主机验证
+
+源码42adccb的CI42756846244已通过8组真实Mach与生产CopiedBuffers测试：共享的双向
+写入、子页偏移、原VA保护变化、撤销与同址新对象隔离、自有映射释放、初始不可读拒绝，
+以及实际copy_in/merge_back的CPU冲突优先规则和移除后停止比较。没有调用GPU。
+构建随后在Rust编译前因脚本未将新0028项登记到允许的补丁尾部而停止；20faac2已修复
+这项构建清单，专项CI42757503932继续构建。不能将主机通过称为iPadOS桌面通过。
+原始报告在artifacts/ci/42756846244-attempt-1/nabu-owned-copy-pages-1/copied-pages-host-check。
