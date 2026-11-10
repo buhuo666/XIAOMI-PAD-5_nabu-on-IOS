@@ -8,6 +8,9 @@ on:
       - 'userland/nabu/src/sensor_probe.m'
       - 'userland/nabu/src/sensor_bridge.*'
       - 'userland/nabu/src/sensor_units.h'
+      - 'userland/nabu/src/sensor_daemon.m'
+      - 'tools/build_nabu_sensor_daemon.py'
+      - 'patches/nabu-sensors/NabuSensorHid.h'
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,9 +26,17 @@ jobs:
           persist-credentials: false
       - name: Compile and sign native sensor consumers and the bridge ABI
         run: python3 tools/build_nabu_sensor_probe.py --output artifacts/nabu-sensor-probe
+      - name: Compile and sign the real-source HID bridge owner
+        run: python3 tools/build_nabu_sensor_daemon.py --output artifacts/nabu-sensor-daemon
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: nabu-sensor-probe-${{ github.run_number }}
           path: artifacts/nabu-sensor-probe/
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-sensor-daemon-${{ github.run_number }}
+          path: artifacts/nabu-sensor-daemon/
           retention-days: 14
