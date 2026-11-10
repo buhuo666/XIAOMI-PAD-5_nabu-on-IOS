@@ -9,7 +9,12 @@
 #include <IOKit/IOLib.h>
 #include <IOKit/IOLocks.h>
 #include <IOKit/IORegistryEntry.h>
+#include <IOKit/IOService.h>
+#include <IOKit/IOUserClient.h>
 #include <IOKit/IODeviceTreeSupport.h>
+#include <libkern/c++/OSDictionary.h>
+#include <libkern/c++/OSNumber.h>
+#include <libkern/c++/OSString.h>
 #include <kern/clock.h>
 #include <kern/thread.h>
 #include <pexpert/pexpert.h>
@@ -137,7 +142,7 @@ bool requested() {
     uint32_t on = 0;
     return PE_parse_boot_argn("nabu-dpu", &on, sizeof(on)) && on == 1;
 }
-Binding *start() {
+static Binding *allocateBinding() {
     auto b = IONewZero(Binding, 1);
     if (!b) return nullptr;
     b->submitLock = IOLockAlloc(); b->stateLock = IOLockAlloc(); b->listenerLock = IOLockAlloc();
@@ -152,7 +157,13 @@ Binding *start() {
         b->failure = kIOReturnUnsupported;
         IOLog("NABU DPU: inherited topology rejected status=%u at=%#x want=%#x got=%#x\n",
             status, d.offset, d.expected, d.observed);
-    } else {
+    }
+    return b;
+}
+Binding *start() {
+    auto b = allocateBinding();
+    if (!b) return nullptr;
+    if (!b->failure) {
         int error = 0;
         b->clock = NabuDpuVBlank::start(vblank, b, &error);
         if (!b->clock) b->failure = kIOReturnNotReady;
@@ -481,6 +492,237 @@ IOReturn wait(Binding *b, uint32_t id, uint32_t flags, uint64_t timeoutMs) {
         }
     }
     IOLockUnlock(b->stateLock); return result;
+}
+
+// The diagnostic worker owns these requests independently of SwapEnd. The
+// gate drains the real GOP writer and then releases its lock before MMIO or
+// persistent checkpoints, which may themselves wait for other kernel work.
+struct DiagnosticSession {
+    IOService *owner;
+    IOLock *lock;
+    Binding *engine;
+    OSString *requestId;
+    bool busy, drawing, frozen, snapshotPassed, haltResume;
+};
+static DiagnosticSession *diagnostics;
+bool diagnosticsRequested() {
+    uint32_t on = 0;
+    return !requested() && PE_parse_boot_argn("nabu-dpu-diag", &on, sizeof(on)) && on == 1;
+}
+void publishDiagnostics(IOService *owner) {
+    auto d = IONewZero(DiagnosticSession, 1);
+    if (!d) return;
+    d->lock = IOLockAlloc();
+    if (!d->lock) { IODelete(d, DiagnosticSession, 1); return; }
+    d->owner = owner; owner->retain();
+    __atomic_store_n(&diagnostics, d, __ATOMIC_RELEASE);
+    owner->setProperty("NabuDpuDiagnosticAvailable", kOSBooleanTrue);
+    owner->setProperty("NabuDpuDiagnosticState", "waiting-for-post-desktop-request");
+}
+void diagnosticDrawBegin() {
+    auto d = __atomic_load_n(&diagnostics, __ATOMIC_ACQUIRE);
+    if (!d) return;
+    IOLockLock(d->lock);
+    while (d->frozen) IOLockSleep(d->lock, &d->frozen, THREAD_UNINT);
+    d->drawing = true;
+    IOLockUnlock(d->lock);
+}
+void diagnosticDrawEnd() {
+    auto d = __atomic_load_n(&diagnostics, __ATOMIC_ACQUIRE);
+    if (!d) return;
+    IOLockLock(d->lock); d->drawing = false;
+    IOLockWakeup(d->lock, &d->drawing, false); IOLockUnlock(d->lock);
+}
+static void freezeDiagnosticGop(DiagnosticSession *d) {
+    IOLockLock(d->lock); d->frozen = true;
+    while (d->drawing) IOLockSleep(d->lock, &d->drawing, THREAD_UNINT);
+    IOLockUnlock(d->lock);
+}
+static void thawDiagnosticGop(DiagnosticSession *d) {
+    IOLockLock(d->lock); d->frozen = false;
+    IOLockWakeup(d->lock, &d->frozen, false); IOLockUnlock(d->lock);
+}
+static void diagnosticNumber(OSDictionary *out, const char *key, uint64_t value) {
+    auto number = OSNumber::withNumber(value, 64);
+    if (number) { out->setObject(key, number); number->release(); }
+}
+static void diagnosticStage(DiagnosticSession *d, const char *stage) {
+    d->owner->setProperty("NabuDpuDiagnosticState", stage);
+    NabuDpuCheckpoint::record(stage);
+}
+static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const char *name, bool readVbif) {
+    auto values = OSDictionary::withCapacity(8);
+    if (!values) return Scan::IoError;
+    struct Register { const char *name; Scan::Region region; uint32_t offset; };
+    const Register registers[] = {
+        {"halt_request", Scan::Vbif, Scan::HaltRequest}, {"halt_ack", Scan::Vbif, Scan::HaltStatus},
+        {"vig0_address", Scan::Mdss, Scan::Vig0 + Scan::SrcAddress},
+        {"vig1_address", Scan::Mdss, Scan::Vig1 + Scan::SrcAddress},
+        {"vig0_clock", Scan::Mdss, Scan::Vig0ForceClock},
+        {"vig1_clock", Scan::Mdss, Scan::Vig1ForceClock},
+    };
+    for (const auto &reg : registers) {
+        if (reg.region == Scan::Vbif && !readVbif) continue;
+        uint32_t value;
+        if (!read32(b, reg.region, reg.offset, &value)) { values->release(); return Scan::IoError; }
+        diagnosticNumber(values, reg.name, value);
+    }
+    out->setObject(name, values); values->release(); return Scan::Ok;
+}
+static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
+    diagnosticStage(d, "diagnostic-topology-enter");
+    if (!d->engine) d->engine = allocateBinding();
+    auto b = d->engine;
+    if (!b || b->failure) return Scan::StateError;
+    Scan::Diagnostic error{};
+    Scan::State observed{};
+    auto status = Scan::initialize(b->io, observed, &error);
+    if (status != Scan::Ok) return status;
+    Scan::Counters before{}, after{};
+    status = Scan::readCounters(b->io, before);
+    if (status != Scan::Ok) return status;
+    status = diagnosticRegisters(b, out, "before", false);
+    if (status != Scan::Ok) return status;
+    if (d->haltResume) {
+        diagnosticStage(d, "diagnostic-gop-drain-enter");
+        freezeDiagnosticGop(d);
+        diagnosticStage(d, "diagnostic-gop-drained");
+        int irqError = 0;
+        b->clock = NabuDpuVBlank::start(vblank, b, &irqError);
+        diagnosticNumber(out, "irq_start_status", uint32_t(irqError));
+        if (!b->clock) return Scan::IoError;
+        NabuDpuVBlank::Sample irq{};
+        auto fault = NabuDpuVBlank::pauseForHandover(b->clock, &irq);
+        diagnosticNumber(out, "irq_pause_fault", fault);
+        if (fault) return Scan::IoError;
+        diagnosticStage(d, "diagnostic-halt-enter");
+        b->traceQuiesce = NabuDpuCheckpoint::enabled();
+        b->quiesceReads = b->quiesceWrites = 0;
+        const auto haltBegan = nowUs();
+        status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &error);
+        b->traceQuiesce = b->traceVbifPending = false;
+        const auto haltUs = nowUs() - haltBegan;
+        const auto haltStatus = status;
+        uint32_t haltedRequest = 0, haltedAck = 0;
+        uint64_t resumeUs = 0;
+        // Resume immediately after capturing the real ACK. No allocation,
+        // logging or synchronous checkpoint extends the halted interval.
+        if (status == Scan::Ok) {
+            read32(b, Scan::Vbif, Scan::HaltRequest, &haltedRequest);
+            read32(b, Scan::Vbif, Scan::HaltStatus, &haltedAck);
+            const auto resumeBegan = nowUs();
+            status = Scan::resume(b->io, b->scan, &error);
+            b->traceVbifPending = false;
+            resumeUs = nowUs() - resumeBegan;
+        }
+        diagnosticNumber(out, "halt_us", haltUs);
+        diagnosticNumber(out, "halt_status", haltStatus);
+        diagnosticNumber(out, "halted_request", haltedRequest);
+        diagnosticNumber(out, "halted_ack", haltedAck);
+        diagnosticNumber(out, "resume_us", resumeUs);
+        if (haltStatus == Scan::Ok) diagnosticNumber(out, "resume_status", status);
+        diagnosticNumber(out, "error_region", error.region);
+        diagnosticNumber(out, "error_offset", error.offset);
+        diagnosticNumber(out, "error_expected", error.expected);
+        diagnosticNumber(out, "error_observed", error.observed);
+        diagnosticStage(d, "diagnostic-halt-resume-returned");
+        if (status != Scan::Ok) return status;
+        fault = NabuDpuVBlank::resumeAfterHandover(b->clock, &irq);
+        diagnosticNumber(out, "irq_resume_fault", fault);
+        if (fault) return Scan::IoError;
+        status = Scan::readCounters(b->io, before);
+        if (status != Scan::Ok) return status;
+    }
+    IOSleep(50);
+    status = Scan::readCounters(b->io, after);
+    if (status != Scan::Ok) return status;
+    for (unsigned i = 0; i < 2; ++i) {
+        const uint32_t delta = after.frame[i] - before.frame[i];
+        diagnosticNumber(out, i ? "slave_frame_delta" : "master_frame_delta", delta);
+        if (!delta || delta >= 0x80000000u) return Scan::ReadbackMismatch;
+    }
+    diagnosticNumber(out, "sample_us", after.end_us - before.end_us);
+    status = diagnosticRegisters(b, out, "after", d->haltResume);
+    if (status != Scan::Ok) return status;
+    observed = {};
+    status = Scan::initialize(b->io, observed, &error);
+    if (status != Scan::Ok) return status;
+    if (d->haltResume) {
+        uint32_t request, ack, clock0, clock1;
+        read32(b, Scan::Vbif, Scan::HaltRequest, &request);
+        read32(b, Scan::Vbif, Scan::HaltStatus, &ack);
+        read32(b, Scan::Mdss, Scan::Vig0ForceClock, &clock0);
+        read32(b, Scan::Mdss, Scan::Vig1ForceClock, &clock1);
+        if ((request & Scan::XinMask) || (ack & Scan::XinMask) ||
+            (clock0 & 1) != b->scan.clock_bit_before[0] ||
+            (clock1 & 1) != b->scan.clock_bit_before[1]) return Scan::ReadbackMismatch;
+        NabuDpuVBlank::Sample irq{};
+        NabuDpuVBlank::snapshot(b->clock, &irq);
+        diagnosticNumber(out, "irq_count", irq.irqCount);
+        diagnosticNumber(out, "irq_frame_sequence", irq.masterSequence);
+        diagnosticNumber(out, "irq_fault", irq.fault);
+        diagnosticNumber(out, "master_underruns", irq.underrun[0]);
+        diagnosticNumber(out, "slave_underruns", irq.underrun[1]);
+        if (irq.fault || !irq.masterSequence) return Scan::IoError;
+        NabuDpuVBlank::stop(b->clock); b->clock = nullptr;
+    }
+    return Scan::Ok;
+}
+static void diagnosticWorker(void *cookie, wait_result_t) {
+    auto d = static_cast<DiagnosticSession *>(cookie);
+    auto out = OSDictionary::withCapacity(24);
+    if (out) {
+        out->setObject("request_id", d->requestId);
+        out->setObject("halt_resume_requested", d->haltResume ? kOSBooleanTrue : kOSBooleanFalse);
+        out->setObject("smmu_changed", kOSBooleanFalse);
+        out->setObject("scanout_address_changed", kOSBooleanFalse);
+        diagnosticNumber(out, "started_us", nowUs());
+        const auto status = runDiagnostic(d, out);
+        diagnosticNumber(out, "status", status);
+        diagnosticNumber(out, "finished_us", nowUs());
+        const bool uncertain = status != Scan::Ok && d->frozen && d->engine && d->engine->scan.mutation_attempted;
+        if (status != Scan::Ok && !uncertain && d->engine && d->engine->clock) {
+            NabuDpuVBlank::stop(d->engine->clock); d->engine->clock = nullptr;
+        }
+        if (status != Scan::Ok && d->engine) d->engine->failure = kIOReturnIOError;
+        IOLockLock(d->lock);
+        if (status == Scan::Ok && !d->haltResume) d->snapshotPassed = true;
+        IOLockUnlock(d->lock);
+        if (!uncertain) thawDiagnosticGop(d);
+        out->setObject("gop_writer_frozen", uncertain ? kOSBooleanTrue : kOSBooleanFalse);
+        diagnosticStage(d, status == Scan::Ok ? "diagnostic-complete" : "diagnostic-failed");
+        d->owner->setProperty("NabuDpuDiagnosticResult", out); out->release();
+    } else d->owner->setProperty("NabuDpuDiagnosticState", "report-allocation-failed");
+    IOLockLock(d->lock); d->requestId->release(); d->requestId = nullptr; d->busy = false;
+    IOLockUnlock(d->lock);
+    thread_terminate(current_thread());
+}
+IOReturn diagnosticRequest(OSObject *properties, bool desktopStarted) {
+    auto d = __atomic_load_n(&diagnostics, __ATOMIC_ACQUIRE);
+    if (!d) return kIOReturnUnsupported;
+    const auto privilege = IOUserClient::clientHasPrivilege(current_task(), kIOClientPrivilegeAdministrator);
+    if (privilege) return privilege;
+    auto dict = OSDynamicCast(OSDictionary, properties);
+    auto action = dict ? OSDynamicCast(OSString, dict->getObject("NabuDpuDiagnostic")) : nullptr;
+    auto id = dict ? OSDynamicCast(OSString, dict->getObject("RequestID")) : nullptr;
+    if (!dict || dict->getCount() != 2 || !action || !id || !id->getLength() || id->getLength() > 64)
+        return kIOReturnBadArgument;
+    const bool haltResume = action->isEqualTo("HaltResume");
+    if (!haltResume && !action->isEqualTo("Snapshot")) return kIOReturnUnsupported;
+    if (!desktopStarted) return kIOReturnNotReady;
+    IOLockLock(d->lock);
+    if (d->busy || d->frozen) { IOLockUnlock(d->lock); return kIOReturnBusy; }
+    if (haltResume && !d->snapshotPassed) { IOLockUnlock(d->lock); return kIOReturnNotReady; }
+    d->busy = true; d->haltResume = haltResume; d->requestId = id; id->retain();
+    IOLockUnlock(d->lock);
+    d->owner->setProperty("NabuDpuDiagnosticState", "queued");
+    thread_t thread;
+    if (kernel_thread_start(diagnosticWorker, d, &thread) != KERN_SUCCESS) {
+        IOLockLock(d->lock); d->busy = false; d->requestId = nullptr; id->release(); IOLockUnlock(d->lock);
+        return kIOReturnNoResources;
+    }
+    thread_set_thread_name(thread, "Nabu DPU diagnostic"); thread_deallocate(thread);
+    return kIOReturnSuccess;
 }
 }
 

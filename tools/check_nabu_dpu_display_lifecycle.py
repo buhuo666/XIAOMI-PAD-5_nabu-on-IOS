@@ -119,6 +119,10 @@ int IOLockSleepDeadline(IOLock *l,const void *,uint64_t deadline,int){
     held.release();return status==std::cv_status::timeout?THREAD_TIMED_OUT:0;
 }
 void IOLockWakeup(IOLock *l,const void *,bool){l->condition.notify_all();}
+void IOLockSleep(IOLock *l,const void *,int){
+    std::unique_lock<std::mutex> held(l->mutex,std::adopt_lock);
+    ++l->sleeps;l->condition.wait(held);held.release();
+}
 void IOLog(const char *,...){}
 void hakios_tl(const char *,...){}
 bool gTouchLat=false;
@@ -160,6 +164,7 @@ IOReturn sendAsyncResult64WithOptions(const OSAsyncReference64 &r,IOReturn error
 class IOService{};
 class OSDictionary{};
 class OSObject{};
+class OSString{};
 struct IOExternalMethodArguments{};
 struct IOExternalMethodDispatch{};
 class IOUserClient:public IOService {
@@ -321,6 +326,23 @@ int main(){
         c.clientClose();c.free();++groups;
     }
     assert(timerEnters==0);
+    {
+        using namespace NabuDpuDisplay;
+        diagnosticDrawBegin();diagnosticDrawEnd(); // Disabled mode changes nothing.
+        DiagnosticSession d{};d.lock=IOLockAlloc();diagnostics=&d;
+        diagnosticDrawBegin();
+        auto freeze=std::async(std::launch::async,[&]{freezeDiagnosticGop(&d);});
+        assert(freeze.wait_for(20ms)==std::future_status::timeout); // Existing pixel writer must finish.
+        diagnosticDrawEnd();freeze.get();
+        assert(d.frozen && !d.drawing);
+        assert(d.lock->mutex.try_lock());d.lock->mutex.unlock(); // No lock held during MMIO/checkpoints.
+        auto nextWriter=std::async(std::launch::async,[&]{diagnosticDrawBegin();diagnosticDrawEnd();});
+        assert(nextWriter.wait_for(20ms)==std::future_status::timeout); // No new writes while halted.
+        IOLockWakeup(d.lock,&d.frozen,false);
+        assert(nextWriter.wait_for(20ms)==std::future_status::timeout); // Spurious wake cannot unfreeze.
+        thawDiagnosticGop(&d);nextWriter.get();
+        assert(!d.frozen && !d.drawing);diagnostics=nullptr;IOLockFree(d.lock);++groups;
+    }
     std::printf("PASS %u actual-code lifecycle, concurrent notification and ledger/wait groups; no software ticks\n",groups);
 }
 '''
@@ -333,6 +355,10 @@ def harness(framebuffer):
     # observe fields. No method/body or lifecycle expression is rewritten.
     client = client.replace('class IOMobileFramebufferUserClient', 'struct IOMobileFramebufferUserClient', 1)
     result = PRELUDE + '\nnamespace NabuDpuDisplay {\n'
+    result += body(display, 'struct DiagnosticSession', ';') + '\nstatic DiagnosticSession *diagnostics;\n'
+    for signature in ('void diagnosticDrawBegin(', 'void diagnosticDrawEnd(',
+                      'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop('):
+        result += body(display, signature) + '\n'
     for signature in ('static void vblank(', 'void subscribe(', 'void unsubscribe(', 'bool snapshot(', 'IOReturn wait('):
         result += body(display, signature) + '\n'
     result += '}\n' + client + '\n'

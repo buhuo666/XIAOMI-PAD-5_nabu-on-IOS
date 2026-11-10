@@ -23,10 +23,11 @@ def main():
     bluetooth_source = ROOT / 'userland/nabu/src/bluetooth_probe.m'
     wifi_source = ROOT / 'userland/nabu/src/wifi_control_probe.m'
     audio_source = ROOT / 'userland/nabu/src/audio_probe.m'
+    dpu_source = ROOT / 'userland/nabu/src/dpu_probe.m'
     binary = args.output / 'system-service-probe'
     command = ['xcrun', 'clang', '-target', 'arm64-apple-ios16.5', '-isysroot', sdk,
                '-fobjc-arc', '-Os', '-Wall', '-Wextra', '-Werror',
-               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source), str(wifi_source), str(audio_source),
+               '-Wno-deprecated-declarations', str(source), str(wallpaper_source), str(sqlite_watch_source), str(experience_source), str(experience_compat), str(bluetooth_source), str(wifi_source), str(audio_source), str(dpu_source),
                '-framework', 'Foundation', '-framework', 'CoreFoundation', '-framework', 'ImageIO',
                '-framework', 'CoreGraphics', '-framework', 'UIKit', '-framework', 'AVFAudio', '-o', str(binary)]
     subprocess.run(command, check=True)

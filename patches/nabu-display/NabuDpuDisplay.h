@@ -2,6 +2,8 @@
 #pragma once
 #include <IOKit/IOTypes.h>
 #include "NabuDpuVBlank.h"
+class IOService;
+class OSObject;
 
 namespace NabuDpuDisplay {
 struct Binding;
@@ -22,5 +24,13 @@ IOReturn wait(Binding *, uint32_t id, uint32_t flags, uint64_t timeoutMs);
 void subscribe(Binding *, Listener *);
 void unsubscribe(Binding *, Listener *);
 bool snapshot(Binding *, NabuDpuVBlank::Sample *);
+// Post-desktop diagnostics keep fDpu unset and the GOP presenter selected.
+// Publication allocates only software state; MMIO begins on a paired request.
+bool diagnosticsRequested();
+void publishDiagnostics(IOService *);
+IOReturn diagnosticRequest(OSObject *, bool desktopStarted);
+// Wrap the presenter's complete show/settle operations, including row helpers.
+void diagnosticDrawBegin();
+void diagnosticDrawEnd();
 }
 extern "C" void nabu_dpu_power_changed(bool on);

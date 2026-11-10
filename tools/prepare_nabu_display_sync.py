@@ -142,6 +142,34 @@ IOMobileFramebufferUserClient::vsyncFired''')
             '\tcase kFBMethodSwapCancelAll:\n\t\treturn fOwner->fDpu ? kIOReturnUnsupported : kIOReturnSuccess;\n')
         path.write_text(text)
 
+    # Optional diagnostics retain the GOP presenter. Hardware access starts
+    # only after an administrator's post-desktop request, on a separate worker.
+    text = path.read_text()
+    if 'NabuDpuDisplay::diagnosticRequest(' not in text:
+        text = replace(text, '\tvirtual bool start(IOService * provider) APPLE_KEXT_OVERRIDE;\n\tbool configureDisplay(void);',
+            '\tvirtual IOReturn setProperties(OSObject *) APPLE_KEXT_OVERRIDE;\n'
+            '\tvirtual bool start(IOService * provider) APPLE_KEXT_OVERRIDE;\n\tbool configureDisplay(void);')
+        text = replace(text, 'bool\nIOMobileFramebuffer::start(IOService * provider)', '''IOReturn
+IOMobileFramebuffer::setProperties(OSObject *properties)
+{
+    return NabuDpuDisplay::diagnosticRequest(properties, fGraphics);
+}
+
+bool
+IOMobileFramebuffer::start(IOService * provider)''')
+        text = replace(text, '\tif (panel_thread_start(&IOMobileFramebuffer::presenterMain, this, &thread)',
+            '\tif (NabuDpuDisplay::diagnosticsRequested()) NabuDpuDisplay::publishDiagnostics(this);\n'
+            '\tif (panel_thread_start(&IOMobileFramebuffer::presenterMain, this, &thread)')
+        text = replace(text, '\t\t\t\tsettle(swap, surfaces);',
+            '\t\t\t\tNabuDpuDisplay::diagnosticDrawBegin();\n'
+            '\t\t\t\tsettle(swap, surfaces);\n'
+            '\t\t\t\tNabuDpuDisplay::diagnosticDrawEnd();')
+        text = replace(text, '\t\tshow(swap, surfaces);',
+            '\t\tNabuDpuDisplay::diagnosticDrawBegin();\n'
+            '\t\tshow(swap, surfaces);\n'
+            '\t\tNabuDpuDisplay::diagnosticDrawEnd();')
+        path.write_text(text)
+
     path = folder / 'NabuBacklight.cpp'
     text = path.read_text()
     if 'nabu_dpu_power_changed' not in text:

@@ -49,6 +49,7 @@ extern NSDictionary *nabuBluetoothTransportTrial(void);
 extern NSDictionary *nabuBluetoothSocketTrial(void);
 extern NSDictionary *nabuWiFiControlTrial(NSString *action);
 extern NSDictionary *nabuAudioRequest(NSString *action, NSString *identifier);
+extern NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier);
 
 static void saveReport(NSDictionary *report, NSString *name);
 
@@ -610,6 +611,9 @@ int main(void) {
                         else if ([action isEqual:@"GPUInventory"]) {
                             result[@"read_only"] = @YES;
                             result[@"gpu"] = gpuSnapshot();
+                        }
+                        else if ([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"]) {
+                            result[@"dpu"] = nabuDpuRequest(action, request[@"ID"] ?: @"");
                         }
                         else if ([action isEqual:@"WirelessInventory"]) {
                             result[@"read_only"] = @YES;
