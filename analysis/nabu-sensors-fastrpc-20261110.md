@@ -92,3 +92,20 @@ transaction响应经过真实成功字段核对后才向调用者返回成功。
 
 两个最终候选的正式loader检查均通过。下一次设备仍先执行mode3，以真实FastRPC
 应答、registry/SUID和当前boot时钟记录闭合，再选择原生mode4的domain配置。
+
+## 已打包的原生HID owner
+
+独立daemon提交`f578358`，CI`42741490056`编译、签名和下载审查通过。20F66原版
+服务器确认type4的虚拟服务注册检查event-dispatch entitlement bit3，已选唯一
+`com.apple.private.hid.client.event-dispatch=true`；真实注册/open/dispatch尚未运行。
+详见[nabu-sensor-daemon-20261110.md](nabu-sensor-daemon-20261110.md)。
+
+`artifacts/nabu-bootstrap-native-sensors-20261110/bootstrap.apfs`为84,586,496字节，
+保留完整r2 FastRPC Boot和既有App，仅重建NabuInit：加入122,512字节daemon及
+246字节root RunAtLoad任务。APFS检查、daemon和任务文件的原生逐字节读回通过。
+任务参数显式为`--axes 1,2,3`，持续运行并将诊断写入控制台；只在有真实源/样本后
+创建虚拟HID。轴变换仍为候选，不表示已通过六面、旋转或自动亮度。
+
+此原生启动包只配合mode4使用；下一次sensors03仍先使用mode3 r6与无daemon的
+完整FastRPC r2启动包。尚未准备新的设备日志槽，所有新候选均未部署/启动。
+当前GPU179仍待Android回收日志及设备交接。

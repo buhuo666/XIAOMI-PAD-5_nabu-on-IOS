@@ -142,7 +142,9 @@ ADSP 续调卡住记录，首轮 SLPI 仍需通过边界日志定位这一风险
 
 历史的mode1候选只做服务发现；mode2已实测七类查询，但尚无SUID事件或样本。
 FastRPC `sensor_pd`、registry/校准
-文件反向服务已形成mode3候选，但尚未实测；持续采样与原生发布仍待接通。`userland/nabu/src/sensor_bridge.*` 是未接入
+文件反向服务已形成mode3候选，但尚未实测；mode4持续样本源和独立HID owner已
+接入并分别通过编译/链接/主机检查，84,586,496字节原生启动包已完成APFS读回，
+仍待iPadOS实际注册、样本和系统功能验收。`userland/nabu/src/sensor_bridge.*` 是未接入
 运行后端的接口候选，没有随本启动包加载。真实 iPadOS 数据还需要当前启动的
 SSC→Mach 时钟映射、六面坐标/符号验证、HID/CoreMotion 接收验证；自动亮度还需
 真实 IORegistry/AABC 接口。上述步骤完成前，不宣称旋转、自动亮度、指南针或

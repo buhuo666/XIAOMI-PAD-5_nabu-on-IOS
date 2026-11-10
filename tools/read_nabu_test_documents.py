@@ -16,7 +16,9 @@ def main():
     parser.add_argument('--bundle-id', default='org.nabu.LocalTest')
     parser.add_argument('names', nargs='+', choices=['keyboard-diagnostic.json', 'counts.plist',
                         'metal-present-result.json', 'metal-present-readback.bgra', 'metal-present-readback.json',
-                        'metal-present-frames.bgra', 'metal-present-surfaces.bgra', 'metal-present-frames.json'])
+                        'metal-present-frames.bgra', 'metal-present-surfaces.bgra', 'metal-present-frames.json',
+                        'sensor-events.jsonl', 'sensor-result.json', 'slpi-report-start.txt', 'slpi-report.txt',
+                        'sensor-sources-start.plist', 'sensor-sources.plist', 'kernel-diagnostics.json'])
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     device, = [d for d in list_mux_devices()['response']['DeviceList']
