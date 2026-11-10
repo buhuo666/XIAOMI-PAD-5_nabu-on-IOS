@@ -546,9 +546,22 @@ static void diagnosticNumber(OSDictionary *out, const char *key, uint64_t value)
     auto number = OSNumber::withNumber(value, 64);
     if (number) { out->setObject(key, number); number->release(); }
 }
-static void diagnosticStage(DiagnosticSession *d, const char *stage) {
+static void diagnosticStage(DiagnosticSession *d, const char *stage, uint32_t result = 0) {
     d->owner->setProperty("NabuDpuDiagnosticState", stage);
-    NabuDpuCheckpoint::record(stage);
+    const bool running = !d->engine || !d->engine->scan.mutation_attempted ||
+                         d->engine->scan.phase == Scan::Ready;
+    if (!(d->activateGop || d->mapperActivated) || !running) {
+        NabuDpuCheckpoint::record(stage, result);
+        return;
+    }
+    // These boundaries are outside the XIN-halted interval and all callback
+    // locks. GPU198 reached identity activation with trace=0 but lost the
+    // host connection before its post-resume result could be read. Keep this
+    // evidence persistent without re-enabling the critical-path MMIO trace.
+    IOLog("NABU DPU DIAGNOSTIC: %s result=%#x id=%s\n", stage, result,
+          d->requestId->getCStringNoCopy());
+    const int error = nabu_log_checkpoint();
+    if (error) IOLog("NABU DPU DIAGNOSTIC: %s commit-error=%d\n", stage, error);
 }
 static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const char *name, bool readVbif) {
     auto values = OSDictionary::withCapacity(8);
@@ -569,11 +582,17 @@ static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const cha
     }
     out->setObject(name, values); values->release(); return Scan::Ok;
 }
-static Scan::Status diagnosticMapper(Binding *b, OSDictionary *out) {
+static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDictionary *out) {
     Mapper::ActiveSnapshot s{};
+    diagnosticStage(d, "diagnostic-mapper-read-enter");
     IOLockLock(b->stateLock);
     const auto status = Mapper::snapshotActive(b->mapper, &s);
     IOLockUnlock(b->stateLock);
+    IOLog("NABU DPU DIAGNOSTIC mapper: status=%#x active=%u context=%u routes=%u identity=%u pages=%u SCTLR=%#x FSR=%#x GFSR=%#x TLB=%#x root=%#llx TTBR=%#llx/%#llx\n",
+          status, s.active, s.contextMatches, s.routesUnchanged, s.gopIdentity,
+          s.identityPages, s.sctlr, s.fsr, s.globalFsr, s.tlbStatus,
+          s.tablePhysical, s.ttbr0, s.ttbr1);
+    diagnosticStage(d, "diagnostic-mapper-read-returned", status);
     auto values = OSDictionary::withCapacity(20);
     if (!values) return Scan::IoError;
     diagnosticNumber(values, "status", status);
@@ -619,9 +638,10 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticStage(d, "diagnostic-identity-takeover-enter");
         const auto activated = initializeMapper(b);
         diagnosticNumber(out, "activate_status", activated);
-        diagnosticStage(d, "diagnostic-identity-takeover-returned");
+        diagnosticStage(d, "diagnostic-identity-takeover-returned", activated);
         if (activated) return Scan::IoError;
         status = Scan::readCounters(b->io, before);
+        diagnosticStage(d, "diagnostic-resumed-counters-read", status);
         if (status != Scan::Ok) return status;
     }
     if (d->haltResume) {
@@ -675,31 +695,49 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         status = Scan::readCounters(b->io, before);
         if (status != Scan::Ok) return status;
     }
+    diagnosticStage(d, "diagnostic-counter-sample-enter");
     IOSleep(50);
     status = Scan::readCounters(b->io, after);
+    diagnosticStage(d, "diagnostic-counter-sample-returned", status);
     if (status != Scan::Ok) return status;
+    IOLog("NABU DPU DIAGNOSTIC counters: before=%u/%u after=%u/%u sample-us=%llu\n",
+          before.frame[0], before.frame[1], after.frame[0], after.frame[1],
+          after.end_us - before.end_us);
     for (unsigned i = 0; i < 2; ++i) {
         const uint32_t delta = after.frame[i] - before.frame[i];
         diagnosticNumber(out, i ? "slave_frame_delta" : "master_frame_delta", delta);
         if (!delta || delta >= 0x80000000u) return Scan::ReadbackMismatch;
     }
     diagnosticNumber(out, "sample_us", after.end_us - before.end_us);
+    diagnosticStage(d, "diagnostic-resumed-registers-enter");
     status = diagnosticRegisters(b, out, "after", d->haltResume || d->activateGop);
+    diagnosticStage(d, "diagnostic-resumed-registers-returned", status);
     if (status != Scan::Ok) return status;
     observed = {};
+    diagnosticStage(d, "diagnostic-resumed-topology-enter");
     status = Scan::initialize(b->io, observed, &error);
+    IOLog("NABU DPU DIAGNOSTIC topology: status=%u region=%u offset=%#x want=%#x got=%#x\n",
+          status, error.region, error.offset, error.expected, error.observed);
+    diagnosticStage(d, "diagnostic-resumed-topology-returned", status);
     if (status != Scan::Ok) return status;
     if (d->haltResume || d->activateGop) {
+        diagnosticStage(d, "diagnostic-resumed-irq-enter");
         uint32_t request, ack, clock0, clock1;
         read32(b, Scan::Vbif, Scan::HaltRequest, &request);
         read32(b, Scan::Vbif, Scan::HaltStatus, &ack);
         read32(b, Scan::Mdss, Scan::Vig0ForceClock, &clock0);
         read32(b, Scan::Mdss, Scan::Vig1ForceClock, &clock1);
+        IOLog("NABU DPU DIAGNOSTIC resumed: request=%#x ack=%#x clock=%#x/%#x inherited=%u/%u\n",
+              request, ack, clock0, clock1, b->scan.clock_bit_before[0], b->scan.clock_bit_before[1]);
         if ((request & Scan::XinMask) || (ack & Scan::XinMask) ||
             (clock0 & 1) != b->scan.clock_bit_before[0] ||
             (clock1 & 1) != b->scan.clock_bit_before[1]) return Scan::ReadbackMismatch;
         NabuDpuVBlank::Sample irq{};
         NabuDpuVBlank::snapshot(b->clock, &irq);
+        IOLog("NABU DPU DIAGNOSTIC IRQ: fault=%u count=%llu sequence=%llu underrun=%llu/%llu request=%#x ack=%#x clock=%#x/%#x\n",
+              irq.fault, irq.irqCount, irq.masterSequence, irq.underrun[0], irq.underrun[1],
+              request, ack, clock0, clock1);
+        diagnosticStage(d, "diagnostic-resumed-irq-returned", irq.fault);
         diagnosticNumber(out, "irq_count", irq.irqCount);
         diagnosticNumber(out, "irq_frame_sequence", irq.masterSequence);
         diagnosticNumber(out, "irq_fault", irq.fault);
@@ -710,7 +748,7 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
     }
     // Keep the observer alive after takeover so idle scanout faults are still
     // noticed while the normal GOP presenter continues writing the desktop.
-    if (b->mapper) return diagnosticMapper(b, out);
+    if (b->mapper) return diagnosticMapper(d, b, out);
     return Scan::Ok;
 }
 static void diagnosticWorker(void *cookie, wait_result_t) {
@@ -742,7 +780,9 @@ static void diagnosticWorker(void *cookie, wait_result_t) {
         IOLockUnlock(d->lock);
         if (!uncertain) thawDiagnosticGop(d);
         out->setObject("gop_writer_frozen", uncertain ? kOSBooleanTrue : kOSBooleanFalse);
-        diagnosticStage(d, status == Scan::Ok ? "diagnostic-complete" : "diagnostic-failed");
+        IOLog("NABU DPU DIAGNOSTIC result: status=%u programmed=%u frozen=%u\n",
+              status, mapperProgrammed, uncertain);
+        diagnosticStage(d, status == Scan::Ok ? "diagnostic-complete" : "diagnostic-failed", status);
         d->owner->setProperty("NabuDpuDiagnosticResult", out); out->release();
     } else d->owner->setProperty("NabuDpuDiagnosticState", "report-allocation-failed");
     IOLockLock(d->lock); d->requestId->release(); d->requestId = nullptr; d->busy = false;

@@ -86,6 +86,7 @@ PRELUDE = r'''
 #include <vector>
 #include "NabuDpuVBlank.h"
 #include "NabuDpuSwapLedger.h"
+#include "NabuDpuScanoutCore.h"
 using IOReturn=uint32_t;
 using UInt32=uint32_t;
 using io_user_reference_t=uint64_t;
@@ -161,10 +162,16 @@ IOReturn sendAsyncResult64WithOptions(const OSAsyncReference64 &r,IOReturn error
     assert(r.port && !r.port->released);
     Message m{};m.port=r.port;std::copy(args,args+6,m.args.begin());messages.push_back(m);return 0;
 }
-class IOService{};
+class IOService {public:void setProperty(const char *,const char *){}};
 class OSDictionary{};
 class OSObject{};
-class OSString{};
+class OSString {public:const char *getCStringNoCopy(){return "fixture-request";}};
+unsigned diagnosticCommits=0;
+int nabu_log_checkpoint(){++diagnosticCommits;return 0;}
+namespace NabuDpuCheckpoint {
+// GPU199 keeps nabu-dpu-trace=0. Critical-path record() remains disabled.
+bool record(const char *,uint32_t=0){return true;}
+}
 struct IOExternalMethodArguments{};
 struct IOExternalMethodDispatch{};
 class IOUserClient:public IOService {
@@ -178,6 +185,7 @@ public:
 };
 namespace NabuDpuDisplay {
 namespace Swap=NabuDpuSwap;
+namespace Scan=NabuDpuScanout;
 namespace Mapper {
 struct Binding {IOReturn fault=0;};
 IOReturn readFault(Binding *b){return b->fault;}
@@ -189,6 +197,7 @@ struct Binding {
     IOLock *stateLock=IOLockAlloc(),*listenerLock=IOLockAlloc();
     NabuDpuVBlank::Binding *clock=nullptr;
     Mapper::Binding *activeMapper=nullptr;
+    Scan::State scan{};
     NabuDpuVBlank::Sample sample{};
     Listener *listeners=nullptr;
     Swap::Ledger ledger{};
@@ -343,7 +352,25 @@ int main(){
         thawDiagnosticGop(&d);nextWriter.get();
         assert(!d.frozen && !d.drawing);diagnostics=nullptr;IOLockFree(d.lock);++groups;
     }
-    std::printf("PASS %u actual-code lifecycle, concurrent notification and ledger/wait groups; no software ticks\n",groups);
+    {
+        using namespace NabuDpuDisplay;
+        Binding b;IOService owner;OSString request;
+        DiagnosticSession d{};d.engine=&b;d.owner=&owner;d.requestId=&request;
+        b.scan.phase=Scan::Ready;
+        diagnosticStage(&d,"snapshot");assert(diagnosticCommits==0);
+        d.activateGop=true;
+        diagnosticStage(&d,"before-halt");assert(diagnosticCommits==1);
+        b.scan.mutation_attempted=true;b.scan.phase=Scan::Quiesced;
+        diagnosticStage(&d,"still-halted");assert(diagnosticCommits==1);
+        b.scan.phase=Scan::Failed;
+        diagnosticStage(&d,"resume-unverified",1);assert(diagnosticCommits==1);
+        b.scan.phase=Scan::Ready;
+        diagnosticStage(&d,"resume-verified");assert(diagnosticCommits==2);
+        d.activateGop=false;d.mapperActivated=true;
+        diagnosticStage(&d,"later-snapshot");assert(diagnosticCommits==3);
+        ++groups;
+    }
+    std::printf("PASS %u actual-code lifecycle, concurrent notification, checkpoint and ledger/wait groups; no software ticks\n",groups);
 }
 '''
 
@@ -357,7 +384,8 @@ def harness(framebuffer):
     result = PRELUDE + '\nnamespace NabuDpuDisplay {\n'
     result += body(display, 'struct DiagnosticSession', ';') + '\nstatic DiagnosticSession *diagnostics;\n'
     for signature in ('void diagnosticDrawBegin(', 'void diagnosticDrawEnd(',
-                      'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop('):
+                      'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop(',
+                      'static void diagnosticStage('):
         result += body(display, signature) + '\n'
     for signature in ('static void vblank(', 'void subscribe(', 'void unsubscribe(', 'bool snapshot(', 'IOReturn wait('):
         result += body(display, signature) + '\n'
