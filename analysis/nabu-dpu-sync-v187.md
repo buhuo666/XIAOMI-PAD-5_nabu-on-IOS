@@ -56,10 +56,27 @@ IOSurface compilation requires Apple's XNU compiler builtins; vanilla local
 LLVM is not a substitute. The full macOS CI kernel build remains required.
 Receipts and raw native-ABI evidence are under `log/host/gpu-v187/`.
 
-Before device testing: verify the shipped frontend has actually submitted all
-producer work before SwapEnd (a grouped runtime can report Scheduled earlier),
-link the new GPU registration into the rebuilt kernel, check loader layout and
-branches, and obtain device handover. Test ordinary desktop scrolling, clear,
+The actual Turnip frontend uses native timelines and immediate Mesa submission;
+the runtime's held-group gate is disabled for Turnip. In this deployed stack,
+Scheduled follows the IOConnect submission's acceptance by the kernel, so the
+read lease captures its already accepted writer dependencies. Evidence is in
+`log/host/gpu-v187/producer-bridge.md`.
+
+Full macOS CI42788703892 passed at cac37fd, including the native framebuffer,
+IOSurface and DPU compilation, producer fixtures and lifecycle fixtures. The
+final candidate also includes a locally compiled/tested GPU close fix: a client
+whose displayed surface outlives process exit is retained and reclaimed by the
+existing completion worker after actual reader retirement, without a new idle
+polling loop. Six concurrent close/retirement tests passed.
+
+The candidate kernel is `artifacts/nabu-gpu-ready-v187/kernel.native-apfs.macho`.
+It links 64 service/GPU/Hall objects, retains the Hall03 bootstrap and lock-screen
+libraries, and passes checks of 8,978 actual direct branches, 2,731 far branches,
+48 original component extents, and the actual loader's final memory layout.
+
+The user chose to let sensor testing continue first. No GPU187 log slot was
+prepared and no device deployment/boot was performed. After device handover,
+test ordinary desktop scrolling, clear,
 power changes, resource reuse and measured hardware acceptance/retirement.
 No claim of repaired tearing or 120 distinct displayed frames per second has
 been made before that qualification.

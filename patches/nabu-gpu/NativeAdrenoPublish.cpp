@@ -188,13 +188,19 @@ struct Published {
     IOService *service=nullptr;
     bool slots[NativeAdrenoMaxClients]{};
     char slot_names[NativeAdrenoMaxClients][20]{}; /* Owners of occupied slots, including failed teardown. */
+    AGXDeviceUserClient *closingClients[NativeAdrenoMaxClients+1]{};
+    unsigned closingCount=0;
     bool kernel_client=false;
     uint32_t input_bits=0,output_bits=0;
     uint32_t opened=0,closed=0;
 } g;
 
+unsigned collectClosedClientsLocked(AGXDeviceUserClient **);
+void destroyClosedClients(AGXDeviceUserClient **,unsigned);
+
 void completionWorker(thread_call_param_t,thread_call_param_t)
 {
+    AGXDeviceUserClient *closed[NativeAdrenoMaxClients+1];
     IOLockLock(g.lock);
     if(__atomic_exchange_n(&g.interruptFailure,0,__ATOMIC_ACQ_REL)) {
         g.failed=true;
@@ -212,6 +218,7 @@ void completionWorker(thread_call_param_t,thread_call_param_t)
     }
     ++g.completionEvent;
     IOLockWakeup(g.lock,&g.completionEvent,false);
+    const unsigned closedCount=collectClosedClientsLocked(closed);
     for(;;) {
         NativeAdrenoSurfaceRead *read=g.submit->scheduler()->takeCallback();
         if(!read) {
@@ -224,6 +231,8 @@ void completionWorker(thread_call_param_t,thread_call_param_t)
         IOLockWakeup(g.lock,read,false);
     }
     IOLockUnlock(g.lock);
+    // Termination may release IOKit objects and enter their free paths.
+    destroyClosedClients(closed,closedCount);
 }
 
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
@@ -628,10 +637,12 @@ class AGXDeviceUserClient : public IOUserClient {
     IOReturn mapCpu(const NativeAdrenoAbiBoCpuMapV2 &,NativeAdrenoAbiBoCpuMapV2Reply &);
     IOReturn unmapCpu(const NativeAdrenoAbiBoCpuUnmapV2 &);
     IOReturn dropCpuMappings();
+    void finishCloseLocked(uint64_t peak);
     static IOReturn action(OSObject *target,void *reference,IOExternalMethodArguments *arguments);
     IOReturn run(uint32_t method,const void *input,size_t input_size,void *output,size_t output_size);
 public:
     bool initializeMethodLocks();
+    bool finishDeferredCloseLocked();
     void setHandoffOnly() {handoffOnly_=true;}
     IOReturn mount(bool kernel,unsigned connection_limit);
     friend IOReturn runCore(AGXDeviceUserClient *,uint32_t,const void *,size_t,void *,size_t);
@@ -1090,6 +1101,10 @@ IOReturn AGXDeviceUserClient::dropCpuMappings()
 IOReturn AGXDeviceUserClient::clientClose()
 {
     IOLockLock(g.lock);
+    if(closing_) {
+        IOLockUnlock(g.lock);
+        return kIOReturnSuccess;
+    }
     closing_=true;
     if(live_) {
         core_->beginClose();
@@ -1115,6 +1130,7 @@ IOReturn AGXDeviceUserClient::clientClose()
     }
     IOLockUnlock(legacyCpuLock_);
     IOLockLock(g.lock);
+    bool deferred=false;
     const uint64_t clientPeak=live_?core_->windowPeak():0;
     if(!status && live_) {
         const uint64_t peak=core_->windowPeak();
@@ -1130,20 +1146,17 @@ IOReturn AGXDeviceUserClient::clientClose()
                 break;
             }
         }
-        /* A failed teardown leaves the objects live and the slot taken: nothing is forced or reused. */
+        /* A displayed surface can outlive the process indefinitely. Keep the
+         * client until the real reader retires, then finish on the GPU worker. */
         if(!status) {
-            live_=false;
-            if(kernel_) {
-                g.kernel_client=false;
-            } else if(slot_<NativeAdrenoMaxClients) {
-                g.slots[slot_]=false;
-                memset(g.slot_names[slot_],0,sizeof(g.slot_names[slot_]));
-            }
-            ++g.closed;native_adreno_metal_diag.closes=native_adreno_metal_diag.closes+1;
-            if(NativeAdrenoClientRecord *record=kernel_?nullptr:clientRecord(name_)) {
-                record->closes=record->closes+1;record->slot=0xff;
-                if(peak>>20>record->peak_mib)record->peak_mib=uint32_t(peak>>20);
-            }
+            finishCloseLocked(peak);
+        } else if(status==kIOReturnBusy || status==kIOReturnTimeout) {
+            retain();
+            g.closingClients[kernel_?NativeAdrenoMaxClients:slot_]=this;
+            ++g.closingCount;
+            deferred=true;
+            status=kIOReturnSuccess; // Close accepted; resources remain live.
+            thread_call_enter(g.completionCall);
         }
     }
     if(!kernel_ && slot_<NativeAdrenoMaxClients) {
@@ -1153,8 +1166,59 @@ IOReturn AGXDeviceUserClient::clientClose()
     }
     IOLockUnlock(g.lock);
     if(mailbox)mailbox->release();
-    if(!status)terminate();
+    if(!status && !deferred)terminate();
     return status;
+}
+
+void AGXDeviceUserClient::finishCloseLocked(uint64_t peak)
+{
+    live_=false;
+    if(kernel_) {
+        g.kernel_client=false;
+    } else if(slot_<NativeAdrenoMaxClients) {
+        g.slots[slot_]=false;
+        memset(g.slot_names[slot_],0,sizeof(g.slot_names[slot_]));
+    }
+    ++g.closed;native_adreno_metal_diag.closes=native_adreno_metal_diag.closes+1;
+    if(NativeAdrenoClientRecord *record=kernel_?nullptr:clientRecord(name_)) {
+        record->closes=record->closes+1;record->slot=0xff;
+        if(peak>>20>record->peak_mib)record->peak_mib=uint32_t(peak>>20);
+    }
+}
+
+bool AGXDeviceUserClient::finishDeferredCloseLocked()
+{
+    const uint64_t peak=core_->windowPeak();
+    const IOReturn status=core_->releaseAll(&g.clock,0);
+    if(status) return false;
+    finishCloseLocked(peak);
+    IOLog("NabuGPU: deferred client_close process=%s slot=%u completed after reader retirement\n",name_,slot_);
+    return true;
+}
+
+namespace {
+unsigned collectClosedClientsLocked(AGXDeviceUserClient **closed)
+{
+    unsigned count=0;
+    // Faulted DMA must retain its mappings, including already closing clients.
+    if(g.failed || !g.closingCount) return count;
+    for(auto &client:g.closingClients) {
+        if(client && client->finishDeferredCloseLocked()) {
+            closed[count++]=client;
+            client=nullptr;
+            --g.closingCount;
+        }
+    }
+    return count;
+}
+
+void destroyClosedClients(AGXDeviceUserClient **closed,unsigned count)
+{
+    for(unsigned at=0;at<count;++at) {
+        closed[at]->terminate();
+        closed[at]->release(); // The pending table owned this reference.
+    }
+}
 }
 void AGXDeviceUserClient::free()
 {
@@ -2273,6 +2337,7 @@ extern "C" void native_adreno_surface_release_read(NativeAdrenoSurfaceRead *read
     }
     scheduler->releaseRead(read);
     IOLockWakeup(g.lock,&g.completionEvent,false);
+    if(g.closingCount) thread_call_enter(g.completionCall);
     IOLockUnlock(g.lock);
 }
 
