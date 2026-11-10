@@ -12,6 +12,8 @@
 #include <IOKit/IOMemoryDescriptor.h>
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSNumber.h>
+#include <libkern/c++/OSArray.h>
+#include <libkern/c++/OSDictionary.h>
 #include <mach/kmod.h>
 
 extern "C" kmod_info_t g_kernel_kmod_info;
@@ -45,6 +47,7 @@ class NabuSensorUserClient : public IOUserClient {
     IOSharedDataQueue *queue=nullptr;
     IOMemoryDescriptor *memory=nullptr;
     mach_port_t notification=MACH_PORT_NULL;
+    uint32_t generation=0;
     bool closing=false;
     IOReturn mappingStatus=kIOReturnSuccess;
     void closeQueue();
@@ -58,7 +61,11 @@ public:
     IOReturn registerNotificationPort(mach_port_t,UInt32,io_user_reference_t) APPLE_KEXT_OVERRIDE;
     IOReturn clientMemoryForType(UInt32,IOOptionBits *,IOMemoryDescriptor **) APPLE_KEXT_OVERRIDE;
     IOReturn externalMethod(uint32_t,IOExternalMethodArguments *,IOExternalMethodDispatch *,OSObject *,void *) APPLE_KEXT_OVERRIDE;
-    bool enqueue(const NabuSensorRecord &record) {return !closing&&queue&&queue->enqueue((void *)&record,sizeof(record));}
+    // Called under sourceLock. A retained old client can observe status changes
+    // but cannot receive samples belonging to a resumed source generation.
+    bool enqueue(const NabuSensorRecord &record) {
+        return !closing&&queue&&generation==source->status.generation&&queue->enqueue((void *)&record,sizeof(record));
+    }
 };
 OSDefineMetaClassAndStructors(NabuSensorUserClient,IOUserClient)
 
@@ -77,6 +84,18 @@ bool NabuSensorSource::describe(const NabuSensorDescription &description)
        setProperty("NabuNativeHIDPublished",kOSBooleanFalse);
     suid->release();
     if(!applied)return false;
+    if(description.kind==NabuSensorAmbientLight){
+        OSDictionary *pair=OSDictionary::withCapacity(2);
+        OSArray *pairs=OSArray::withCapacity(1);
+        OSNumber *page=OSNumber::withNumber(0xff00,32),*usage=OSNumber::withNumber(4,32);
+        const bool als=pair&&pairs&&page&&usage&&pair->setObject("DeviceUsagePage",page)&&
+            pair->setObject("DeviceUsage",usage)&&pairs->setObject(pair)&&
+            setProperty("DeviceUsagePairs",pairs)&&setProperty("PrimaryUsagePage",0xff00,32)&&
+            setProperty("PrimaryUsage",4,32);
+        if(usage)usage->release();if(page)page->release();
+        if(pairs)pairs->release();if(pair)pair->release();
+        if(!als)return false;
+    }
     status.description=description;
     return true;
 }
@@ -127,6 +146,7 @@ bool NabuSensorUserClient::start(IOService *provider)
     IOLockLock(sourceLock);
     const bool accepted=source->status.active&&!source->client;
     if(accepted){
+        generation=source->status.generation;
         source->client=this;
         NabuSensorRecord snapshot=source->status.latest;
         snapshot.flags|=NabuSensorRecordCurrentSnapshot;
@@ -212,7 +232,8 @@ IOReturn NabuSensorUserClient::setControl(OSObject *object,void *,IOExternalMeth
     if(request.control>NabuSensorBatchIntervalUs||request.reserved)return kIOReturnBadArgument;
     IOLockLock(sourceLock);
     NabuSensorSource *source=connection->source;
-    const bool active=!connection->closing&&source&&source->status.active;
+    const bool active=!connection->closing&&source&&source->status.active&&
+        connection->generation==source->status.generation;
     NabuSensorControlHandler handler=controlHandler;
     void *context=controlContext;
     const uint32_t kind=active?source->status.description.kind:0;

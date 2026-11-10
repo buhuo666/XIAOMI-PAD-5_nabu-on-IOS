@@ -17,13 +17,15 @@ typedef struct __IOHIDEvent *HIDEvent;
 typedef void (*HIDCallback)(void *, void *, HIDService, HIDEvent);
 struct HIDAPI {
     HIDClient (*create)(CFAllocatorRef, int, CFDictionaryRef);
-    void (*match)(HIDClient, CFDictionaryRef);
+    void (*match_multiple)(HIDClient, CFArrayRef);
+    CFArrayRef (*services)(HIDClient);
     void (*register_event)(HIDClient, HIDCallback, void *, void *);
     void (*schedule)(HIDClient, dispatch_queue_t);
     void (*unschedule)(HIDClient, dispatch_queue_t);
     uint32_t (*type)(HIDEvent);
     uint64_t (*timestamp)(HIDEvent);
     CFIndex (*integer)(HIDEvent, uint32_t);
+    double (*floating)(HIDEvent, uint32_t);
     CFTypeRef (*registry_id)(HIDService);
     CFTypeRef (*copy_property)(HIDService, CFStringRef);
 };
@@ -34,6 +36,7 @@ static struct HIDAPI hid;
 @property(nonatomic, strong) NSFileHandle *events;
 @property(nonatomic, strong) NSMutableDictionary *channels;
 @property(nonatomic, strong) NSMutableArray *alsServices;
+@property(nonatomic, strong) NSMutableArray *hidServiceSnapshots;
 @property(nonatomic, strong) NSMutableArray *orientationEvents;
 @property(nonatomic, strong) NSMutableArray *diagnosticSnapshots;
 @property(nonatomic, strong) NSString *directory;
@@ -50,6 +53,8 @@ static struct HIDAPI hid;
 - (void)start:(double)seconds directory:(NSString *)directory;
 - (void)receive:(NSString *)kind timestamp:(double)timestamp values:(NSArray *)values error:(NSError *)error;
 - (void)als:(HIDEvent)event service:(HIDService)service;
+- (void)hidEvent:(HIDEvent)event service:(HIDService)service;
+- (void)captureHIDServices:(NSString *)phase;
 - (void)orientation:(NSDictionary *)record;
 - (void)stop;
 - (void)captureKernelDiagnostics:(NSString *)phase;
@@ -61,7 +66,7 @@ static double uptime(void) { return NSProcessInfo.processInfo.systemUptime; }
 static void hid_event(void *target, void *context, HIDService service, HIDEvent event)
 {
     (void)target;
-    [(__bridge NabuSensorProbe *)context als:event service:service];
+    [(__bridge NabuSensorProbe *)context hidEvent:event service:service];
 }
 
 @implementation NabuSensorProbe
@@ -167,22 +172,53 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     if (!library) { self.hidStatus = @"IOKit load failed"; return; }
 #define LOAD(field, symbol) do { hid.field = dlsym(library, symbol); if (!hid.field) { self.hidStatus = @"missing " symbol; return; } } while (0)
     LOAD(create, "IOHIDEventSystemClientCreateWithType");
-    LOAD(match, "IOHIDEventSystemClientSetMatching");
+    LOAD(match_multiple, "IOHIDEventSystemClientSetMatchingMultiple");
+    LOAD(services, "IOHIDEventSystemClientCopyServices");
     LOAD(register_event, "IOHIDEventSystemClientRegisterEventCallback");
     LOAD(schedule, "IOHIDEventSystemClientScheduleWithDispatchQueue");
     LOAD(unschedule, "IOHIDEventSystemClientUnscheduleFromDispatchQueue");
     LOAD(type, "IOHIDEventGetType");
     LOAD(timestamp, "IOHIDEventGetTimeStamp");
     LOAD(integer, "IOHIDEventGetIntegerValue");
+    LOAD(floating, "IOHIDEventGetFloatValue");
     LOAD(registry_id, "IOHIDServiceClientGetRegistryID");
     LOAD(copy_property, "IOHIDServiceClientCopyProperty");
 #undef LOAD
     self.hidClient = hid.create(NULL, 1, NULL); /* Monitor, not an injector. */
     if (!self.hidClient) { self.hidStatus = @"monitor creation failed"; return; }
-    hid.match(self.hidClient, (__bridge CFDictionaryRef)@{@"DeviceUsagePage":@0xff00, @"DeviceUsage":@4});
+    NSMutableArray *matches = [NSMutableArray array];
+    for (NSNumber *usage in @[@3, @9, @10, @4])
+        [matches addObject:@{@"DeviceUsagePage":@0xff00, @"DeviceUsage":usage}];
+    hid.match_multiple(self.hidClient, (__bridge CFArrayRef)matches);
     hid.register_event(self.hidClient, hid_event, NULL, (__bridge void *)self);
     hid.schedule(self.hidClient, dispatch_get_main_queue());
     self.hidStatus = @"scheduled; delivery unverified";
+}
+
+- (void)captureHIDServices:(NSString *)phase
+{
+    NSMutableArray *services = [NSMutableArray array];
+    CFArrayRef found = self.hidClient ? hid.services(self.hidClient) : NULL;
+    for (CFIndex i = 0; found && i < CFArrayGetCount(found); ++i) {
+        HIDService service = (HIDService)CFArrayGetValueAtIndex(found, i);
+        NSMutableDictionary *item = [NSMutableDictionary dictionary];
+        CFTypeRef registryID = hid.registry_id(service);
+        if (registryID && CFGetTypeID(registryID) == CFNumberGetTypeID())
+            item[@"registry_id"] = (__bridge NSNumber *)registryID;
+        for (NSString *key in @[@"Product", @"Manufacturer", @"Built-In", @"Transport",
+            @"DeviceUsagePage", @"DeviceUsage", @"PrimaryUsagePage", @"PrimaryUsage",
+            @"ReportInterval", @"BatchInterval", @"NabuSourceRegistryID", @"NabuSourceGeneration"] ) {
+            CFTypeRef value = hid.copy_property(service, (__bridge CFStringRef)key);
+            if (value) { item[key] = [(__bridge id)value description]; CFRelease(value); }
+        }
+        [services addObject:item];
+    }
+    NSMutableDictionary *snapshot = [@{@"phase":phase, @"uptime":@(uptime()),
+        @"client_created":@(self.hidClient != NULL), @"copy_services_returned":@(found != NULL),
+        @"services":services} mutableCopy];
+    if (found) CFRelease(found);
+    [self.hidServiceSnapshots addObject:snapshot];
+    [self write:@{@"kind":@"hid_services", @"snapshot":snapshot}];
 }
 
 - (void)start:(double)seconds directory:(NSString *)directory
@@ -194,10 +230,12 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     self.events = [NSFileHandle fileHandleForWritingAtPath:path];
     self.channels = [NSMutableDictionary dictionary];
     self.alsServices = [NSMutableArray array];
+    self.hidServiceSnapshots = [NSMutableArray array];
     self.orientationEvents = [NSMutableArray array];
     self.diagnosticSnapshots = [NSMutableArray array];
     self.started = uptime();
-    for (NSString *name in @[@"accelerometer", @"gyroscope", @"magnetometer", @"deviceMotion", @"ambientLight"])
+    for (NSString *name in @[@"accelerometer", @"gyroscope", @"magnetometer", @"deviceMotion", @"ambientLight",
+        @"hidAccelerometer", @"hidGyroscope", @"hidMagnetometer"])
         self.channels[name] = [@{@"samples":@0, @"errors":@0, @"nonmonotonic":@0, @"invalid":@0,
                                   @"callbacks_after_stop":@0, @"latest_timestamp":@0} mutableCopy];
     self.motion = [[CMMotionManager alloc] init];
@@ -214,6 +252,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
         @"availability":self.availability, @"hid":self.hidStatus,
         @"note":@"availability is a system declaration; only callbacks establish data delivery"}];
     [self captureKernelDiagnostics:@"start"];
+    [self captureHIDServices:@"start"];
     NSOperationQueue *queue = NSOperationQueue.mainQueue;
     __weak NabuSensorProbe *weak = self;
     if (self.motion.accelerometerAvailable)
@@ -269,6 +308,23 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     [self write:@{@"kind":@"sample", @"sensor":kind, @"timestamp":@(timestamp), @"received":@(uptime()), @"values":values}];
 }
 
+- (void)hidEvent:(HIDEvent)event service:(HIDService)service
+{
+    uint32_t type = hid.type(event);
+    if (type == 12) { [self als:event service:service]; return; }
+    NSString *channel = nil;
+    if (type == 13) channel = @"hidAccelerometer";
+    else if (type == 20) channel = @"hidGyroscope";
+    else if (type == 21) channel = @"hidMagnetometer";
+    else return;
+    mach_timebase_info_data_t timebase;
+    mach_timebase_info(&timebase);
+    double stamp = (double)hid.timestamp(event) * timebase.numer / timebase.denom / 1e9;
+    uint32_t field = type << 16;
+    [self receive:channel timestamp:stamp values:@[@(hid.floating(event, field)),
+        @(hid.floating(event, field + 1)), @(hid.floating(event, field + 2))] error:nil];
+}
+
 - (void)als:(HIDEvent)event service:(HIDService)service
 {
     if (hid.type(event) != 12) return;
@@ -308,12 +364,13 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
 
 - (NSDictionary *)report
 {
-    NSMutableDictionary *out = [@{@"schema":@1, @"started_uptime":@(self.started), @"stopped_uptime":@(self.stopped),
+    NSMutableDictionary *out = [@{@"schema":@2, @"started_uptime":@(self.started), @"stopped_uptime":@(self.stopped),
         @"complete":@(self.complete), @"availability":self.availability, @"channels":self.channels,
         @"hid_status":self.hidStatus, @"als_services":self.alsServices, @"orientation_events":self.orientationEvents,
+        @"hid_service_snapshots":self.hidServiceSnapshots,
         @"kernel_diagnostics":self.diagnosticSnapshots,
         @"automatic_brightness_verified":@NO, @"sensor_hardware_origin_verified_by_probe":@NO,
-        @"note":@"Correlate these native callbacks with the same boot's physical SSC records. ALS registry presence does not establish AABC initialization."} mutableCopy];
+        @"note":@"CoreMotion and raw HID counters are independent. Only CoreMotion callbacks satisfy raw_three_axis_delivery_passed. Correlate with this boot's SSC records; ALS service presence does not establish AABC initialization."} mutableCopy];
     BOOL raw = YES;
     for (NSString *name in @[@"accelerometer", @"gyroscope", @"magnetometer"]) {
         NSDictionary *state = self.channels[name];
@@ -330,6 +387,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     if (self.stopping) return;
     self.stopping = YES;
     self.stopped = uptime();
+    [self captureHIDServices:@"stop"];
     [self.motion stopAccelerometerUpdates];
     [self.motion stopGyroUpdates];
     [self.motion stopMagnetometerUpdates];
@@ -342,6 +400,7 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     self.finishTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(__unused NSTimer *timer) {
         NabuSensorProbe *strong = weak;
         [strong captureKernelDiagnostics:@"finish"];
+        if (strong.hidClient) { CFRelease(strong.hidClient); strong.hidClient = NULL; }
         strong.complete = YES;
         NSDictionary *report = strong.report;
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
@@ -359,6 +418,8 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
 @interface SensorViewController : UIViewController
 @property(nonatomic, strong) NabuSensorProbe *probe;
 @property(nonatomic, strong) UILabel *label;
+@property(nonatomic, strong) UIButton *sampleButton;
+- (void)beginSampling;
 @end
 @implementation SensorViewController
 - (void)viewDidLoad
@@ -368,24 +429,40 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
     self.label = [[UILabel alloc] init];
     self.label.numberOfLines = 0;
     self.label.font = [UIFont monospacedSystemFontOfSize:21 weight:UIFontWeightRegular];
-    self.label.text = @"传感器诊断：正在采样30秒\n\n请缓慢转动平板，并遮挡、移开前置光线传感器。\n\n结束后会显示各通道实际样本数。";
     self.label.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.label];
     [NSLayoutConstraint activateConstraints:@[[self.label.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:32],
         [self.label.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-32],
         [self.label.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor]]];
+    self.sampleButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.sampleButton setTitle:@"重新采样" forState:UIControlStateNormal];
+    self.sampleButton.titleLabel.font = [UIFont systemFontOfSize:22];
+    self.sampleButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.sampleButton addTarget:self action:@selector(beginSampling) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.sampleButton];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.sampleButton.topAnchor constraintEqualToAnchor:self.label.bottomAnchor constant:28],
+        [self.sampleButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor]]];
+    [self beginSampling];
+    [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(deviceOrientation:) name:UIDeviceOrientationDidChangeNotification object:nil];
+}
+- (void)beginSampling
+{
+    self.sampleButton.enabled = NO;
+    self.label.text = @"传感器诊断：正在采样30秒\n\n请缓慢转动平板，并遮挡、移开前置光线传感器。\n\n结束后会显示各通道实际样本数。";
     self.probe = [[NabuSensorProbe alloc] init];
     __weak SensorViewController *weak = self;
     self.probe.finished = ^(NSDictionary *report) {
         NSDictionary *c = report[@"channels"];
-        weak.label.text = [NSString stringWithFormat:@"采样完成\n\n加速度：%@\n陀螺仪：%@\n磁场：%@\n融合姿态：%@\n环境光：%@\n\n报告已保存到本应用Documents。\n自动亮度仍需单独实测。",
+        weak.label.text = [NSString stringWithFormat:@"采样完成\n\n加速度：%@\n陀螺仪：%@\n磁场：%@\n融合姿态：%@\n环境光：%@\n\n原生三轴数据：%@\n报告已保存，自动亮度需单独实测。",
             c[@"accelerometer"][@"samples"], c[@"gyroscope"][@"samples"], c[@"magnetometer"][@"samples"],
-            c[@"deviceMotion"][@"samples"], c[@"ambientLight"][@"samples"]];
+            c[@"deviceMotion"][@"samples"], c[@"ambientLight"][@"samples"],
+            [report[@"raw_three_axis_delivery_passed"] boolValue] ? @"已收到" : @"未通过"];
+        weak.sampleButton.enabled = YES;
     };
     NSString *directory = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
     [self.probe start:30 directory:directory];
-    [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(deviceOrientation:) name:UIDeviceOrientationDidChangeNotification object:nil];
 }
 - (void)deviceOrientation:(NSNotification *)notification
 {

@@ -23,7 +23,10 @@ enum {
  * the queue once before waiting (the initial snapshot predates the port), then
  * drain after each notification. Query Status.active as well as record_type:
  * a full queue may drop an invalidation record, but never the active=false
- * status. A snapshot keeps the original sample sequence and timestamp. */
+ * status. A snapshot keeps the original sample sequence and timestamp.
+ * Each connection belongs to its open-time generation: if Status.generation
+ * changes, close and reopen. The old connection receives no new-generation
+ * samples and cannot control the resumed source. Status remains readable. */
 
 struct NabuSensorDescription {
     uint32_t abi_version;

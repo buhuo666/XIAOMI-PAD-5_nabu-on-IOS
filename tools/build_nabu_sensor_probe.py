@@ -33,6 +33,7 @@ def main():
     report = {'result':'building', 'target':TARGET, 'commands':[],
               'ci':{'run_id':os.environ.get('GITHUB_RUN_ID'), 'head_sha':os.environ.get('GITHUB_SHA')},
               'device_executed':False, 'hardware_transport_included':False,
+              'bridge_host_tests_passed':False,
               'capabilities_modified':False, 'automatic_launch_added':False,
               'sensor_bridge_integrated':False, 'entitlements':ENTITLEMENTS}
 
@@ -65,6 +66,13 @@ def main():
         report['xcode'] = run(['xcodebuild','-version']).stdout.strip()
         if not report['xcode'].startswith('Xcode 16.4\n'):
             raise ValueError('Select Xcode 16.4')
+        host_sdk = run(['xcrun','--sdk','macosx','--show-sdk-path']).stdout.strip()
+        bridge_test = output/'sensor-bridge-test'
+        run(['xcrun','--sdk','macosx','clang','-isysroot',host_sdk,'-std=c11','-O1','-g',
+             '-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
+             ROOT/'userland/nabu/tests/sensor_bridge_test.c','-framework','CoreFoundation','-o',bridge_test])
+        report['bridge_host_test'] = run([bridge_test]).stdout.strip()
+        report['bridge_host_tests_passed'] = True
         sdk = run(['xcrun','--sdk','iphoneos','--show-sdk-path']).stdout.strip()
         base = ['xcrun','--sdk','iphoneos','clang','-target',TARGET,'-isysroot',sdk,
                 '-Os','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations']
@@ -86,7 +94,7 @@ def main():
         executable = app/'NabuSensorProbe'
         info = {'CFBundleIdentifier':'org.nabu.SensorProbe','CFBundleName':'NabuSensorProbe',
                 'CFBundleDisplayName':'传感器诊断','CFBundleExecutable':'NabuSensorProbe',
-                'CFBundlePackageType':'APPL','CFBundleVersion':'3','CFBundleShortVersionString':'1.2',
+                'CFBundlePackageType':'APPL','CFBundleVersion':'4','CFBundleShortVersionString':'1.3',
                 'CFBundleInfoDictionaryVersion':'6.0','MinimumOSVersion':'16.5',
                 'CFBundleSupportedPlatforms':['iPhoneOS'],'LSRequiresIPhoneOS':True,
                 'UIDeviceFamily':[2],'UIRequiresFullScreen':True,'UILaunchScreen':{},
@@ -105,7 +113,9 @@ def main():
                 'Documents/sensor-sources-start.plist','Documents/sensor-sources.plist',
                 'Documents/kernel-diagnostics.json'],
             'kernel_diagnostics':{'phases':['start','finish'],'slpi_property':'IODeviceTree:/chosen:nabu-slpi-report',
-                'slpi_preserved_types':['CFData','CFString'],'read_only_service_class':'NabuSensorSource'}}
+                'slpi_preserved_types':['CFData','CFString'],'read_only_service_class':'NabuSensorSource'},
+            'independent_hid_monitor_channels':['accelerometer','gyroscope','magnetometer','ambientLight'],
+            'coremotion_pass_uses_only_coremotion_callbacks':True,'manual_resampling':True}
         ipa = output/'NabuSensorProbe.ipa'
         with zipfile.ZipFile(ipa,'w',zipfile.ZIP_DEFLATED) as archive:
             for path in sorted((output/'Payload').rglob('*')):

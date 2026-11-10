@@ -114,6 +114,8 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
     if (result) return result;
     if (size != sizeof(_status) || _status.description.abi_version != NabuSensorSourceAbi ||
         _status.description.kind != _kind || !_status.active) return kIOReturnNotReady;
+    result = IORegistryEntryGetRegistryEntryID(service, &_registryID);
+    if (result || !_registryID) return result ? result : kIOReturnNotFound;
 
     result = IOConnectMapMemory64(_connection, NabuSensorSourceQueueMemory, mach_task_self(),
                                  &_address, &_mappedBytes, kIOMapAnywhere);
@@ -162,6 +164,8 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
         .manufacturer = _status.description.manufacturer,
         .physical_suid = {_status.description.physical_suid[0], _status.description.physical_suid[1]},
         .axes = {self.owner.axisX, self.owner.axisY, self.owner.axisZ},
+        .source_registry_id = _registryID,
+        .source_generation = _status.generation,
     };
     _bridge = nabu_sensor_bridge_create(_hid, &description, apply_control, (__bridge void *)self);
     if (!_bridge) return kIOReturnNoResources;
@@ -290,8 +294,9 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
     if (_closing) return;
     _closing = YES; _pending = NO;
     if (block) [self.owner.failedGenerations addObject:self.identity];
-    int removed = _bridge ? nabu_sensor_bridge_invalidate(_bridge) : 0;
-    [self log:@"retiring" values:@{@"reason":reason, @"code":@(code), @"hid_remove_result":@(removed),
+    int invalidated = _bridge ? nabu_sensor_bridge_invalidate(_bridge) : 0;
+    [self log:@"retiring" values:@{@"reason":reason, @"code":@(code), @"bridge_invalidate_result":@(invalidated),
+        @"removal_scope":@"client-local cleanup; original API exposes no server acknowledgement",
         @"received":@(_samples), @"dispatched":@(_dispatched)}];
     if (_connection) IOConnectSetNotificationPort(_connection, NabuSensorSourceQueueNotification, MACH_PORT_NULL, 0);
     if (_notification) dispatch_source_cancel(_notification);
@@ -311,8 +316,7 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
     /* Unscheduling prevents new HID callbacks. This final queue item follows
      * already queued callbacks while retaining their unowned bridge context. */
     dispatch_async(self.owner.queue, ^{
-        int finalRemoval = removed && self.bridge ? nabu_sensor_bridge_invalidate(self.bridge) : 0;
-        int destroyed = !finalRemoval && self.bridge ? nabu_sensor_bridge_destroy(self.bridge) : finalRemoval;
+        int destroyed = self.bridge ? nabu_sensor_bridge_destroy(self.bridge) : 0;
         if (!destroyed) self.bridge = NULL;
         if (self.hid) { CFRelease(self.hid); self.hid = NULL; }
         if (destroyed) {

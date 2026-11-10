@@ -14,6 +14,10 @@ struct nabu_sensor_description {
     const char *manufacturer;
     uint64_t physical_suid[2];
     int8_t axes[3];
+    /* Actual IORegistry identity read from the opened NabuSensorSource.
+     * These identify the provider; they never replace the virtual HID ID. */
+    uint64_t source_registry_id;
+    uint32_t source_generation;
 };
 
 enum nabu_sensor_control {
@@ -52,8 +56,10 @@ int nabu_sensor_bridge_publish(struct nabu_sensor_bridge *bridge,
 int nabu_sensor_bridge_flush(struct nabu_sensor_bridge *bridge);
 
 /* On SUID loss, transport failure, stale continuous data or explicit stop:
- * invalidate first, remove the service and clear its cached sample. Failed
- * removal returns EIO and can be retried; no new samples can revive this object.
+ * invalidate first, invoke the private void removal API and clear the local
+ * service/sample references. 0 means local cleanup completed; the 20F66 API
+ * exposes no remote-removal acknowledgement. No new samples can revive this
+ * object. The owner still must unschedule/drain callbacks before destroy.
  */
 int nabu_sensor_bridge_invalidate(struct nabu_sensor_bridge *bridge);
 

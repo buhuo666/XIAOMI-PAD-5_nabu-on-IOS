@@ -21,7 +21,9 @@ struct virtual_service_callbacks {
 
 extern IOHIDServiceClientRef IOHIDVirtualServiceClientCreateWithCallbacks(
     IOHIDEventSystemClientRef, CFDictionaryRef, const struct virtual_service_callbacks *, void *, void *);
-extern Boolean IOHIDVirtualServiceClientRemove(IOHIDServiceClientRef);
+/* 20F66 0x18e5049e0 has no result: it always drops the local service after
+ * attempting the MIG removal, and returns after a void lock-unlock call. */
+extern void IOHIDVirtualServiceClientRemove(IOHIDServiceClientRef);
 extern Boolean IOHIDVirtualServiceClientDispatchEvent(IOHIDServiceClientRef, IOHIDEventRef);
 extern IOHIDEventRef IOHIDEventCreateAccelerometerEvent(CFAllocatorRef, uint64_t, double, double, double, uint32_t);
 extern IOHIDEventRef IOHIDEventCreateGyroEvent(CFAllocatorRef, uint64_t, double, double, double, uint32_t);
@@ -159,9 +161,15 @@ struct nabu_sensor_bridge *nabu_sensor_bridge_create(IOHIDEventSystemClientRef c
     CFDictionarySetValue(b->properties, CFSTR("Product"), product);
     CFDictionarySetValue(b->properties, CFSTR("Manufacturer"), manufacturer);
     CFDictionarySetValue(b->properties, CFSTR("NabuPhysicalSUID"), suid);
+    if (d->kind == NABU_SENSOR_AMBIENT_LIGHT && d->source_registry_id && d->source_generation) {
+        put_number(b->properties, CFSTR("NabuSourceRegistryID"), (int64_t)d->source_registry_id);
+        put_number(b->properties, CFSTR("NabuSourceGeneration"), d->source_generation);
+        put_number(b->properties, CFSTR("NabuALSAssociationABI"), 1);
+    }
     CFRelease(product); CFRelease(manufacturer); CFRelease(suid); CFRelease(pairs); CFRelease(pair);
-    /* Do not invent ALS Orientation/Placement/ColorSupport or Apple registry IDs.
-     * An event-visible virtual ALS does not establish that AABC can open it.
+    /* Orientation/Placement/color capability retain the original defaults.
+     * NabuSourceRegistryID is a separately verified physical provider identity,
+     * not a claim that the virtual HID service has a kernel registry ID.
      */
     return b;
 }
@@ -238,11 +246,11 @@ int nabu_sensor_bridge_invalidate(struct nabu_sensor_bridge *b)
         b->latest = NULL;
     }
     if (b->service) {
-        if (!IOHIDVirtualServiceClientRemove(b->service))
-            return EIO;
+        IOHIDVirtualServiceClientRemove(b->service);
         CFRelease(b->service);
         b->service = NULL;
     }
+    /* Only local invalidation/cleanup is observable through this API. */
     return 0;
 }
 
