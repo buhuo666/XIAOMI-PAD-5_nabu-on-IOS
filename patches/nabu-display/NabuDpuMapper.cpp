@@ -80,6 +80,7 @@ static IOReturn fail(Binding *b, IOReturn result) {
     b->failed = true; b->state.poisoned = true; return result;
 }
 bool poisoned(Binding *b) { return !b || b->failed || b->state.poisoned; }
+bool programmingAttempted(Binding *b) { return b && b->programAttempted; }
 IOReturn readFault(Binding *b) {
     if (!b || !b->active) return kIOReturnNotReady;
     // Deliberately independent of table state and the root submit lock.
@@ -108,9 +109,10 @@ static bool readImage(Binding *b, ArmSmmu4KContextImage &image) {
         !rd32(b, Cb + 0x30, &image.tcr) && !rd32(b, Cb + 0x38, &image.mair0) &&
         !rd32(b, Cb + 0x3c, &image.mair1);
 }
-static bool imageMatches(Binding *b, bool enabled) {
+static bool imageMatches(Binding *b, bool enabled, ArmSmmu4KContextImage *observed = nullptr) {
     ArmSmmu4KContextImage actual;
     if (!readImage(b, actual)) return false;
+    if (observed) *observed = actual;
     const auto &e = b->expected;
     const uint32_t expectedSctlr = enabled ? e.sctlr : 0;
     // Same hardware readback allowances as ArmSmmu4KValidateContextReadback:
@@ -121,6 +123,30 @@ static bool imageMatches(Binding *b, bool enabled) {
         !((actual.tcr2 ^ e.tcr2) & ~tbiSet) && actual.ttbr0 == e.ttbr0 && actual.ttbr1 == e.ttbr1 &&
         actual.mair0 == e.mair0 && actual.mair1 == e.mair1 && !(actual.sctlr & Cfie) &&
         !((actual.sctlr ^ expectedSctlr) & ~asidpneClear);
+}
+IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
+    if (!out) return kIOReturnBadArgument;
+    *out = {};
+    if (!b || !b->active || poisoned(b)) return kIOReturnNotReady;
+    out->active = b->active; out->tablePhysical = b->arena.physical; out->asid = b->asid;
+    ArmSmmu4KContextImage actual{};
+    out->contextMatches = imageMatches(b, true, &actual);
+    out->ttbr0 = actual.ttbr0; out->ttbr1 = actual.ttbr1; out->sctlr = actual.sctlr;
+    out->cbar = actual.cbar; out->cba2r = actual.cba2r; out->tcr = actual.tcr; out->tcr2 = actual.tcr2;
+    out->mair0 = actual.mair0; out->mair1 = actual.mair1;
+    if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
+        rd32(b, Cb + 0x7f4, &out->tlbStatus)) return kIOReturnIOError;
+    out->routesUnchanged = PT::verifyRoutesUnchanged({b, routeRead}, b->routes) == PT::Ok;
+    out->gopIdentity = true;
+    for (uint32_t offset = 0; offset < PT::GopBytes; offset += PT::PageBytes) {
+        const uint32_t address = PT::GopStart + offset;
+        if (b->arena.tables[PT::leafIndex(address)] != PT::leafDescriptor(address)) {
+            out->gopIdentity = false; break;
+        }
+        ++out->identityPages;
+    }
+    return out->contextMatches && out->routesUnchanged && out->gopIdentity &&
+        !(out->fsr & FaultMask) && !out->globalFsr && !(out->tlbStatus & 1) ? kIOReturnSuccess : kIOReturnIOError;
 }
 static bool sync(Binding *b) {
     ArmSmmu4KProgramResult result = {};

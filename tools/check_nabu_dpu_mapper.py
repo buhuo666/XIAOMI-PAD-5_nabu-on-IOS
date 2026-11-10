@@ -143,6 +143,24 @@ int main(){
             at==0x82028||at==0x8202c||at==0x82030||at==0x82038||at==0x8203c||at==0x82610||at==0x827f0);
     }
     assert(reg(0x80c)==0x84200800&&reg(0xc0c)==2&&reg(0x810)==0x80000140&&reg(0xc10)==3);
+    MP::ActiveSnapshot snapshot{};
+    assert(MP::programmingAttempted(b)&&MP::snapshotActive(b,&snapshot)==0);
+    assert(snapshot.active&&snapshot.contextMatches&&snapshot.routesUnchanged&&snapshot.gopIdentity);
+    assert(snapshot.identityPages==4000&&snapshot.tablePhysical==b->arena.physical);
+    const auto gopLeaf=PT::leafIndex(PT::GopStart);
+    const uint64_t oldLeaf=b->arena.tables[gopLeaf];b->arena.tables[gopLeaf]=0;
+    assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.gopIdentity);
+    b->arena.tables[gopLeaf]=oldLeaf;
+    reg(0x82000)^=1;
+    assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.contextMatches);
+    reg(0x82000)^=1;
+    reg(0x810)^=1;
+    assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.routesUnchanged);
+    reg(0x810)^=1;
+    reg(0x82058)=2;
+    assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&snapshot.fsr==2);
+    reg(0x82058)=0;
+    assert(MP::snapshotActive(b,&snapshot)==0&&!MP::poisoned(b)); // Snapshot never mutates recovery state.
     auto *a=memory(0x280000000ull),*c=memory(0x340000000ull),*unused=memory(0x380000000ull);
     PT::Mapping ma,mc,mu;unsigned retired;
     assert(MP::mapDescriptor(b,a,64,8128,&ma)==0&&a->refs==2&&a->prepares==1&&ma.iova==PT::SlotStart+64);

@@ -502,7 +502,7 @@ struct DiagnosticSession {
     IOLock *lock;
     Binding *engine;
     OSString *requestId;
-    bool busy, drawing, frozen, snapshotPassed, haltResume;
+    bool busy, drawing, frozen, snapshotPassed, haltResume, haltPassed, activateGop, mapperActivated;
 };
 static DiagnosticSession *diagnostics;
 bool diagnosticsRequested() {
@@ -569,11 +569,36 @@ static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const cha
     }
     out->setObject(name, values); values->release(); return Scan::Ok;
 }
+static Scan::Status diagnosticMapper(Binding *b, OSDictionary *out) {
+    Mapper::ActiveSnapshot s{};
+    IOLockLock(b->stateLock);
+    const auto status = Mapper::snapshotActive(b->mapper, &s);
+    IOLockUnlock(b->stateLock);
+    auto values = OSDictionary::withCapacity(20);
+    if (!values) return Scan::IoError;
+    diagnosticNumber(values, "status", status);
+    diagnosticNumber(values, "root_physical", s.tablePhysical);
+    diagnosticNumber(values, "ttbr0", s.ttbr0); diagnosticNumber(values, "ttbr1", s.ttbr1);
+    diagnosticNumber(values, "asid", s.asid); diagnosticNumber(values, "sctlr", s.sctlr);
+    diagnosticNumber(values, "cbar", s.cbar); diagnosticNumber(values, "cba2r", s.cba2r);
+    diagnosticNumber(values, "tcr", s.tcr); diagnosticNumber(values, "tcr2", s.tcr2);
+    diagnosticNumber(values, "mair0", s.mair0); diagnosticNumber(values, "mair1", s.mair1);
+    diagnosticNumber(values, "fsr", s.fsr); diagnosticNumber(values, "global_fsr", s.globalFsr);
+    diagnosticNumber(values, "tlb_status", s.tlbStatus); diagnosticNumber(values, "identity_pages", s.identityPages);
+    values->setObject("active", s.active ? kOSBooleanTrue : kOSBooleanFalse);
+    values->setObject("context_matches", s.contextMatches ? kOSBooleanTrue : kOSBooleanFalse);
+    values->setObject("routes_unchanged", s.routesUnchanged ? kOSBooleanTrue : kOSBooleanFalse);
+    values->setObject("gop_identity", s.gopIdentity ? kOSBooleanTrue : kOSBooleanFalse);
+    out->setObject("mapper", values); values->release();
+    return status == kIOReturnSuccess ? Scan::Ok : Scan::IoError;
+}
 static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
     diagnosticStage(d, "diagnostic-topology-enter");
     if (!d->engine) d->engine = allocateBinding();
     auto b = d->engine;
-    if (!b || b->failure) return Scan::StateError;
+    if (!b) return Scan::StateError;
+    IOLockLock(b->stateLock); const bool failed = b->failure != kIOReturnSuccess; IOLockUnlock(b->stateLock);
+    if (failed) return Scan::StateError;
     Scan::Diagnostic error{};
     Scan::State observed{};
     auto status = Scan::initialize(b->io, observed, &error);
@@ -583,6 +608,22 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
     if (status != Scan::Ok) return status;
     status = diagnosticRegisters(b, out, "before", false);
     if (status != Scan::Ok) return status;
+    if (d->activateGop) {
+        diagnosticStage(d, "diagnostic-gop-drain-enter");
+        freezeDiagnosticGop(d);
+        diagnosticStage(d, "diagnostic-gop-drained");
+        int irqError = 0;
+        b->clock = NabuDpuVBlank::start(vblank, b, &irqError);
+        diagnosticNumber(out, "irq_start_status", uint32_t(irqError));
+        if (!b->clock) return Scan::IoError;
+        diagnosticStage(d, "diagnostic-identity-takeover-enter");
+        const auto activated = initializeMapper(b);
+        diagnosticNumber(out, "activate_status", activated);
+        diagnosticStage(d, "diagnostic-identity-takeover-returned");
+        if (activated) return Scan::IoError;
+        status = Scan::readCounters(b->io, before);
+        if (status != Scan::Ok) return status;
+    }
     if (d->haltResume) {
         diagnosticStage(d, "diagnostic-gop-drain-enter");
         freezeDiagnosticGop(d);
@@ -629,6 +670,7 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         if (status != Scan::Ok) return status;
         fault = NabuDpuVBlank::resumeAfterHandover(b->clock, &irq);
         diagnosticNumber(out, "irq_resume_fault", fault);
+        diagnosticNumber(out, "masked_top_status_at_resume", irq.topStatus);
         if (fault) return Scan::IoError;
         status = Scan::readCounters(b->io, before);
         if (status != Scan::Ok) return status;
@@ -642,12 +684,12 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         if (!delta || delta >= 0x80000000u) return Scan::ReadbackMismatch;
     }
     diagnosticNumber(out, "sample_us", after.end_us - before.end_us);
-    status = diagnosticRegisters(b, out, "after", d->haltResume);
+    status = diagnosticRegisters(b, out, "after", d->haltResume || d->activateGop);
     if (status != Scan::Ok) return status;
     observed = {};
     status = Scan::initialize(b->io, observed, &error);
     if (status != Scan::Ok) return status;
-    if (d->haltResume) {
+    if (d->haltResume || d->activateGop) {
         uint32_t request, ack, clock0, clock1;
         read32(b, Scan::Vbif, Scan::HaltRequest, &request);
         read32(b, Scan::Vbif, Scan::HaltStatus, &ack);
@@ -664,8 +706,11 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticNumber(out, "master_underruns", irq.underrun[0]);
         diagnosticNumber(out, "slave_underruns", irq.underrun[1]);
         if (irq.fault || !irq.masterSequence) return Scan::IoError;
-        NabuDpuVBlank::stop(b->clock); b->clock = nullptr;
+        if (!d->activateGop) { NabuDpuVBlank::stop(b->clock); b->clock = nullptr; }
     }
+    // Keep the observer alive after takeover so idle scanout faults are still
+    // noticed while the normal GOP presenter continues writing the desktop.
+    if (b->mapper) return diagnosticMapper(b, out);
     return Scan::Ok;
 }
 static void diagnosticWorker(void *cookie, wait_result_t) {
@@ -674,19 +719,26 @@ static void diagnosticWorker(void *cookie, wait_result_t) {
     if (out) {
         out->setObject("request_id", d->requestId);
         out->setObject("halt_resume_requested", d->haltResume ? kOSBooleanTrue : kOSBooleanFalse);
-        out->setObject("smmu_changed", kOSBooleanFalse);
+        out->setObject("activate_gop_requested", d->activateGop ? kOSBooleanTrue : kOSBooleanFalse);
         out->setObject("scanout_address_changed", kOSBooleanFalse);
         diagnosticNumber(out, "started_us", nowUs());
         const auto status = runDiagnostic(d, out);
+        const bool mapperProgrammed = d->engine && Mapper::programmingAttempted(d->engine->mapper);
+        out->setObject("smmu_changed", d->activateGop && mapperProgrammed ? kOSBooleanTrue : kOSBooleanFalse);
+        out->setObject("smmu_programmed", mapperProgrammed ? kOSBooleanTrue : kOSBooleanFalse);
         diagnosticNumber(out, "status", status);
         diagnosticNumber(out, "finished_us", nowUs());
         const bool uncertain = status != Scan::Ok && d->frozen && d->engine && d->engine->scan.mutation_attempted;
         if (status != Scan::Ok && !uncertain && d->engine && d->engine->clock) {
             NabuDpuVBlank::stop(d->engine->clock); d->engine->clock = nullptr;
         }
-        if (status != Scan::Ok && d->engine) d->engine->failure = kIOReturnIOError;
+        if (status != Scan::Ok && d->engine) {
+            IOLockLock(d->engine->stateLock); d->engine->failure = kIOReturnIOError; IOLockUnlock(d->engine->stateLock);
+        }
         IOLockLock(d->lock);
-        if (status == Scan::Ok && !d->haltResume) d->snapshotPassed = true;
+        if (status == Scan::Ok && !d->haltResume && !d->activateGop) d->snapshotPassed = true;
+        if (status == Scan::Ok && d->haltResume) d->haltPassed = true;
+        if (status == Scan::Ok && d->activateGop) d->mapperActivated = true;
         IOLockUnlock(d->lock);
         if (!uncertain) thawDiagnosticGop(d);
         out->setObject("gop_writer_frozen", uncertain ? kOSBooleanTrue : kOSBooleanFalse);
@@ -708,12 +760,15 @@ IOReturn diagnosticRequest(OSObject *properties, bool desktopStarted) {
     if (!dict || dict->getCount() != 2 || !action || !id || !id->getLength() || id->getLength() > 64)
         return kIOReturnBadArgument;
     const bool haltResume = action->isEqualTo("HaltResume");
-    if (!haltResume && !action->isEqualTo("Snapshot")) return kIOReturnUnsupported;
+    const bool activateGop = action->isEqualTo("ActivateGop");
+    if (!haltResume && !activateGop && !action->isEqualTo("Snapshot")) return kIOReturnUnsupported;
     if (!desktopStarted) return kIOReturnNotReady;
     IOLockLock(d->lock);
     if (d->busy || d->frozen) { IOLockUnlock(d->lock); return kIOReturnBusy; }
     if (haltResume && !d->snapshotPassed) { IOLockUnlock(d->lock); return kIOReturnNotReady; }
-    d->busy = true; d->haltResume = haltResume; d->requestId = id; id->retain();
+    if (activateGop && !d->haltPassed) { IOLockUnlock(d->lock); return kIOReturnNotReady; }
+    if ((haltResume || activateGop) && d->mapperActivated) { IOLockUnlock(d->lock); return kIOReturnUnsupported; }
+    d->busy = true; d->haltResume = haltResume; d->activateGop = activateGop; d->requestId = id; id->retain();
     IOLockUnlock(d->lock);
     d->owner->setProperty("NabuDpuDiagnosticState", "queued");
     thread_t thread;

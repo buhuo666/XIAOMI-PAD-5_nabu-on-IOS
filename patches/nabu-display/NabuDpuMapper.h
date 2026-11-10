@@ -33,6 +33,16 @@ IOReturn checkFault(Binding *);
 // waiting. The root publishes Binding only after activation and owns failure state.
 IOReturn readFault(Binding *);
 bool poisoned(Binding *);
+bool programmingAttempted(Binding *);
+struct ActiveSnapshot {
+    uint64_t tablePhysical, ttbr0, ttbr1;
+    uint32_t asid, sctlr, cbar, cba2r, tcr, tcr2, mair0, mair1;
+    uint32_t fsr, globalFsr, tlbStatus, identityPages;
+    bool active, contextMatches, routesUnchanged, gopIdentity;
+};
+// Read back the active domain and every GOP identity leaf. No register or
+// table writes; the display serializes this with mapper/IRQ fault accesses.
+IOReturn snapshotActive(Binding *, ActiveSnapshot *);
 // Descriptor prepare/retain persists until successful release+TLBI. Table pool,
 // MMIO map and uncertain descriptors remain boot-owned; no implicit teardown.
 }

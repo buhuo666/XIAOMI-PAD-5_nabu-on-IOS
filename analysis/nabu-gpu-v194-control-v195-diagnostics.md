@@ -65,3 +65,21 @@ ARM64 编译通过；DPU 集成对象 ARM64 编译通过，最大单函数栈 48
 2. 独立 DPU 暂停/恢复、页表、翻帧：GPU195 首先验证暂停/恢复，其他仍待验。
 3. 原版系统及真实 App Metal 兼容与耗时：继续保留，尚未完成。
 4. 正确、无撕裂、低延迟、持续高刷：尚未完成，120Hz 属性及 64 帧测试均不能替代。
+
+## GPU195 实机与 GPU196 助手修正
+
+完整内核 CI 42837281278、helper CI 42837281139、链接及加载器检查通过后，
+GPU195 已临时启动。用户确认桌面和触摸正常，GPUInventory 就绪通过。
+`NabuDpuDiagnosticAvailable=true`；第一次 Snapshot 的 submit_status 为
+`0xe00002c1`。实际服务助手 UID 为 501，原 launch job 的 UserName 是 mobile，
+与此前把它当作 root 助手的假设不符。内核的管理员检查拒绝了请求，状态仍为
+`waiting-for-post-desktop-request`，没有任何 diagnostic-* 检查点或 DPU MMIO。
+
+3,854,535 字节有效日志及完整 64MiB 槽已回收，清空读回通过，引导分区未变。
+这不是新的物理 DPU 失败，也不构成暂停/恢复验证。
+
+GPU196 复用相同的 GPU195 内核，仅更新助手与 launch job。普通服务继续 mobile；
+新增 root job 以 `--dpu-only` 进入只处理两个固定 DPU 动作的入口。mobile 助手
+转发配对主机请求，root 助手执行管理员 IORegistry 请求并返回同 ID 的真实结果。
+结果位于 root 所有的 `/private/var/run/nabu-dpu`，只有 requests 子目录供 mobile
+写入；root 不在 mobile 可替换的父目录中创建结果或修改目录所有权。

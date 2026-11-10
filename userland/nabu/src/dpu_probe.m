@@ -38,7 +38,8 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
     if (![available isEqual:@YES]) {
         out[@"error"] = @"diagnostic boot option unavailable";
     } else {
-        NSString *command = [action isEqual:@"DpuSnapshot"] ? @"Snapshot" : @"HaltResume";
+        NSString *command = [action isEqual:@"DpuSnapshot"] ? @"Snapshot" :
+            ([action isEqual:@"DpuActivateGop"] ? @"ActivateGop" : @"HaltResume");
         NSDictionary *request = @{@"NabuDpuDiagnostic": command, @"RequestID": identifier};
         int status = setProperties(entry, (__bridge CFTypeRef)request);
         out[@"submit_status"] = @((uint32_t)status);
@@ -59,7 +60,7 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
 }
 
 // A dedicated root launch job selects this entry point. The regular services
-// probe remains mobile; the root process accepts only these two DPU commands.
+// probe remains mobile; the root process accepts only the named DPU commands.
 int nabuDpuServiceMain(void) {
     if (getuid() != 0) return 1;
     @autoreleasepool {
@@ -84,7 +85,8 @@ int nabuDpuServiceMain(void) {
                 if (request) {
                     [fm removeItemAtPath:requestPath error:NULL];
                     NSString *action = request[@"Action"], *identifier = request[@"ID"];
-                    if (([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"]) &&
+                    if (([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
+                         [action isEqual:@"DpuActivateGop"]) &&
                         [identifier isKindOfClass:NSString.class] && identifier.length && identifier.length <= 64) {
                         NSDictionary *result = nabuDpuRequest(action, identifier);
                         NSData *bytes = [NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];
