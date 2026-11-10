@@ -13,7 +13,7 @@ public:
         Suid suid;
         unsigned type=0,samples=0,nonmonotonic=0;
         uint64_t first=0,last=0;
-        bool sent=false,configured=false,disabled=false;
+        bool sent=false,configured=false,disabled=false,failed=false;
         Sample latest;
     };
     struct Result {
@@ -106,6 +106,8 @@ private:
         if(p.result||p.error||(p.has_response&&p.response)){
             ++result.qmi_failures;
             if(q.kind==Lookup)discovery[q.type].state=State::Unavailable;
+            if(q.kind==ConfigureRequest)for(unsigned i=0;i<stream_count;++i)
+                if(equal(streams[i].suid,q.suid))streams[i].failed=true;
             return;
         }
         if(p.has_client){result.has_client=true;result.client=p.client;}
@@ -133,7 +135,7 @@ private:
             }
         }else if(id==SampleEvent){
             for(unsigned i=0;i<self.stream_count;++i){
-                auto &s=self.streams[i];if(!equal(s.suid,suid)||!s.sent||self.result.stopping)continue;
+                auto &s=self.streams[i];if(!equal(s.suid,suid)||!s.sent||s.failed||self.result.stopping)continue;
                 Sample sample;if(!parse_sample(payload,sample)){++self.result.invalid;return;}
                 bool ordered=!s.samples||ticks>s.last;
                 if(!ordered)++s.nonmonotonic;
@@ -147,6 +149,8 @@ private:
                 self.io.ssc_event(self.streams[i].type,suid,id,ticks,payload);
         }else if(id==ErrorEvent){
             ++self.result.errors;
+            for(unsigned i=0;i<self.stream_count;++i)
+                if(equal(self.streams[i].suid,suid))self.streams[i].failed=true;
             self.io.ssc_event(TypeCount,suid,id,ticks,payload);
         }
     }

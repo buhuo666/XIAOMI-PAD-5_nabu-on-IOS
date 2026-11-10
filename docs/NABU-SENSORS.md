@@ -5,7 +5,7 @@
 2026-11-10用户要求持续修复直到iPadOS传感器正常。FastRPC独立GLINK、SLPI 34位
 DMA、并发listener/注册、原机只读文件服务及真实mmap已形成mode3候选，宿主检查、
 内核编译链接与分支检查通过，尚未实测。原生CoreMotion/HID诊断App也已完成CI。
-原机soc0属性已只读补齐，最终r5内核与完整r2启动包通过检查。设备仍由GPU179
+原机soc0属性已只读补齐，最终r6内核与完整r2启动包通过检查。设备仍由GPU179
 对话使用，下一轮待其交回；未准备日志槽或部署。当前候选和未完成项
 见[FastRPC接续](../analysis/nabu-sensors-fastrpc-20261110.md)；下文保留sensors02结果。
 

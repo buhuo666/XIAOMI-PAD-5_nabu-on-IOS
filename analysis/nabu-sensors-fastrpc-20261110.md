@@ -5,9 +5,9 @@
 
 ## mode3 候选
 
-候选内核：`artifacts/nabu-sensors-fastrpc-20261110-r5/kernel/kernel.native-apfs.macho`。
-参数`nabu-slpi=3`，沿用已实测display01基底及原有63个对象。实际链接后9,242个
-直接分支和2,843个远跳转通过，48个原组件范围保留。没有替换EFI。
+候选内核：`artifacts/nabu-sensors-fastrpc-20261110-r6/kernel/kernel.native-apfs.macho`。
+参数`nabu-slpi=3`，沿用已实测display01基底及原有63个对象。实际链接后9,247个
+直接分支和2,850个远跳转通过，48个原组件范围保留。没有替换EFI。
 
 启动包：`artifacts/nabu-bootstrap-fastrpc-20261110-r2/bootstrap.apfs`，84,459,520字节。
 在原组合包Boot中加入`/rpc/files.bin`，298个文件和真实空目录有逐字节原生读回。
@@ -40,8 +40,8 @@
 | 会话并发/映射/registry | 70项0失败；`sensors-fastrpc-20261109/session-host-review-r2` |
 | 两路GLINK分片和intent隔离 | 原DT与ASan/UBSan通过；`sensors-fastrpc-20261109/glink-host` |
 | 34位SLPI映射与原WLAN/音频回归 | ASan/UBSan通过；`sensors-fastrpc-20261109/dma-host` |
-| 内核编译 | 单栈帧上限4096；最大2240字节 |
-| 最终r5加载器 | ASan/UBSan通过；`sensors-fastrpc-20261109/kernel-window-r5` |
+| 内核编译 | 单栈帧上限4096；r6最大2192字节，FP/SIMD为0 |
+| 最终r6加载器 | ASan/UBSan通过；`sensors-fastrpc-20261109/kernel-window-r6` |
 | 持续SSC回放 | 真实Android包回放及主动停止通过；`sensors-fastrpc-20261109/continuous-census-host` |
 
 上表检查目录均相对`log/host/`。独立审查保留四个修复前失败：附加未知ADD_PAGES
@@ -68,3 +68,27 @@ NabuSensorSource服务和用户态HID桥；验证时钟、坐标、CoreMotion、
 原内核没有IOHIDEventService类，不能通过伪装类名或返回成功代替完整接入。
 
 状态：`log/host/sensors-fastrpc-20261109/continuation.json`。
+
+## 后续原生接入候选（尚未实测）
+
+`artifacts/nabu-sensors-native-20261110-r3/kernel/kernel.native-apfs.macho`已链接真实
+NabuSensorSource，mode4在独立内核线程持续泵送SLPI，保留原有启动/关闭超时；失去
+SLPI/SSC或采样停止时撤销源状态。四路真实Android包回放已贯穿Census到原生传输
+边界，保留SI rawbits和原始SSC时间；主机使用受控时间映射，不作为iPadOS证据。
+
+时钟domain由显式`nabu-ssc-clock`选择，默认0不发布。候选domain有原件/硬件依据后，
+同boot连续四个加速度样本还须满足100ms跨度、稳定本地时钟bracket及非负有界age。
+只有这些检查成立才确认epoch；不能用收到样本的时刻拟合采样偏移。发现时间跳变
+立即撤销已有源，自动休眠后重启采样尚未完成实测。
+
+采样/批处理间隔由IOUserClient mailbox交给SSC同端点、同client、同SUID，独立高位
+transaction响应经过真实成功字段核对后才向调用者返回成功。超时不重发已发送请求。
+实际重配频率、是否存在重复流和HID/CoreMotion消费仍需真机确认。
+
+第一次native对象指令审查发现主SLPI编译器生成321条FP/SIMD寄存器操作（含结构
+清零/复制），尽管代码不做采样浮点运算。已对SLPI和源对象统一加入
+`-mgeneral-regs-only`并在构建中强制检查实际指令；r6 mode3和r3 mode4均为0条。
+此发现未被归因为sensors02零样本的已证实原因。mode4最大栈2192字节，源对象176。
+
+两个最终候选的正式loader检查均通过。下一次设备仍先执行mode3，以真实FastRPC
+应答、registry/SUID和当前boot时钟记录闭合，再选择原生mode4的domain配置。

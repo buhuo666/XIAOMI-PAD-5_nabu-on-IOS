@@ -195,6 +195,12 @@ static void glink_sampling_test(){
     static Wire timeout;static NabuSlpiGlink::Link<Wire> stalled(timeout);timeout.opened(stalled,true);
     timeout.qrtr(4,400,9,12);stalled.step(20);stalled.step(9020);
     assert(stalled.result().timeout&&stalled.result().close_sent);stalled.step(10020);assert(stalled.done());
+    static Wire continuous_wire;static NabuSlpiGlink::Link<Wire> continuous(continuous_wire);
+    continuous.sampling_window(0);continuous_wire.opened(continuous,true);
+    continuous_wire.qrtr(4,400,9,12);continuous.step(20);continuous.step(90020);
+    assert(!continuous.done()&&!continuous.result().timeout&&!continuous.result().close_sent);
+    continuous.finish();continuous_wire.rx(11,1,0);continuous.step(90030);
+    assert(continuous.done()&&continuous.result().close_ack&&!continuous.result().timeout);
 }
 static void glink_rpc_test(){
     static Wire w;static NabuSlpiGlink::Link<Wire> link(w);

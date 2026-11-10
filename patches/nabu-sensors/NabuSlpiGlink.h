@@ -248,6 +248,8 @@ template<class IO> class Link {
 public:
     constexpr explicit Link(IO &provider):io(provider){}
     void enable_rpc(RpcReceiver receive,void *context){rpc_receiver=receive;rpc_context=context;}
+    // Zero retains the transport for the continuous sensor owner. Opening,
+    // discovery and shutdown still keep their existing bounded deadlines.
     void sampling_window(uint32_t milliseconds){sample_window_ms=milliseconds;}
     bool send_rpc(const uint8_t *data,uint32_t bytes){
         if(!r.rpc_opened||r.broken||phase==Closing||phase==Finished||bytes>512)return false;
@@ -269,7 +271,7 @@ public:
         if(phase==Idle||phase==Finished)return;now=elapsed_ms;pump();if(r.broken)return;
         if(phase==Discovering||phase==Sampling)flush();
         if((phase==Opening&&now-phase_start>=5000)||(phase==Discovering&&now-phase_start>=10000)||
-           (phase==Sampling&&now-phase_start>=sample_window_ms)){r.timeout=true;close();}
+           (phase==Sampling&&sample_window_ms&&now-phase_start>=sample_window_ms)){r.timeout=true;close();}
         if(phase==Discovering&&r.ssc_found){
             if(sample_mode){phase=Sampling;phase_start=now;}else close();
         }

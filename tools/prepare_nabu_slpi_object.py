@@ -18,7 +18,7 @@ def main():
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     flags=json.loads(a.compile_command.read_text(encoding='utf-8'))
     source=ROOT/'patches/nabu-sensors/NabuSlpi.cpp';obj=a.output/'NabuSlpi.o'
-    command=flags+['-fno-common','-fstack-usage','-Wframe-larger-than=4096','-Werror=frame-larger-than',
+    command=flags+['-mgeneral-regs-only','-fno-common','-fstack-usage','-Wframe-larger-than=4096','-Werror=frame-larger-than',
                    '-c',host_path(source),'-o',host_path(obj)]
     result=subprocess.run(host_command(command),capture_output=True)
     (a.output/'compile.log').write_bytes(result.stdout+result.stderr)
