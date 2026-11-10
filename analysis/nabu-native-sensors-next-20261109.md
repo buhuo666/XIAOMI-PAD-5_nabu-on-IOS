@@ -121,11 +121,13 @@ HID部分只申请monitor client，匹配0xff00/4读取lux，记录service属性
 ## App内回收SLPI诊断的增量
 
 提交`0e094fc`新增启动/结束时的只读内核诊断快照，App版本2/1.1。CI`42737717224`
-通过，最终产物在`artifacts/ci/42737717224-attempt-1/nabu-sensor-probe-3/`，下载时
-一次审查通过。CLI118,496字节、App可执行文件140,544字节，桥接库70,848字节。
+通过。随后`33d6d7e`让启动快照也立即刷新latest文件，避免中途退出时保留前一轮的
+`slpi-report.txt`。**当前版本3/1.2，CI`42738268575`通过，最终产物为
+`artifacts/ci/42738268575-attempt-1/nabu-sensor-probe-4/`**，下载时一次审查通过。
+CLI118,496字节、App可执行文件140,544字节，桥接库70,848字节。
 
-启动读取`IODeviceTree:/chosen`的`nabu-slpi-report`存为`slpi-report-start.txt`，
-结束存为`slpi-report.txt`。CFData按原字节保存，CFString按UTF-8保存，实际类型、
+启动读取`IODeviceTree:/chosen`的`nabu-slpi-report`同时存为`slpi-report-start.txt`
+和`slpi-report.txt`，结束再次更新`slpi-report.txt`。CFData按原字节保存，CFString按UTF-8保存，实际类型、
 存在性、字节数和写出结果进入`kernel-diagnostics.json`。没有报告时写空文件，
 避免留下前一轮的文本被误认为当前结果；不把其他CF类型的description冒充原始报告。
 
@@ -150,7 +152,7 @@ registry ID、类名、属性读取结果；完整属性保持plist类型，写�
 没有伪造`class IOHIDEventService`头来调用未知vtable，也没有给普通IOService改名
 冒充HID服务。直接内核HID事件路线需要另行集成真实IOHIDFamily，当前未实施。
 
-新增`patches/nabu-sensors/NabuSensorHid.h/.cpp`实现真实`NabuSensorSource`与
+提交`6410735`新增`patches/nabu-sensors/NabuSensorHid.h/.cpp`实现真实`NabuSensorSource`与
 `NabuSensorUserClient`，文件名保留计划中的HID边界，但属性明确
 `NabuNativeHIDPublished=false`。它是用户态桥接可消费的硬件样本源，不是原生HID
 完成证明。没有改主SLPI、链接脚本、NabuInit或启动包。
