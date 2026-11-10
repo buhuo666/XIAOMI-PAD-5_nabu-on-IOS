@@ -1,5 +1,11 @@
 name: nabu16 - copied sync performance
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-copied-sync.yml'
+      - 'patches/nabu-metal/NativeCopiedSync.rs'
+      - 'tools/check_nabu_copied_sync.py'
   workflow_dispatch:
 permissions:
   contents: read
