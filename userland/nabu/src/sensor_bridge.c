@@ -159,9 +159,15 @@ struct nabu_sensor_bridge *nabu_sensor_bridge_create(IOHIDEventSystemClientRef c
     CFDictionarySetValue(b->properties, CFSTR("Product"), product);
     CFDictionarySetValue(b->properties, CFSTR("Manufacturer"), manufacturer);
     CFDictionarySetValue(b->properties, CFSTR("NabuPhysicalSUID"), suid);
+    if (d->kind == NABU_SENSOR_AMBIENT_LIGHT && d->source_registry_id && d->source_generation) {
+        put_number(b->properties, CFSTR("NabuSourceRegistryID"), (int64_t)d->source_registry_id);
+        put_number(b->properties, CFSTR("NabuSourceGeneration"), d->source_generation);
+        put_number(b->properties, CFSTR("NabuALSAssociationABI"), 1);
+    }
     CFRelease(product); CFRelease(manufacturer); CFRelease(suid); CFRelease(pairs); CFRelease(pair);
-    /* Do not invent ALS Orientation/Placement/ColorSupport or Apple registry IDs.
-     * An event-visible virtual ALS does not establish that AABC can open it.
+    /* Orientation/Placement/color capability retain the original defaults.
+     * NabuSourceRegistryID is a separately verified physical provider identity,
+     * not a claim that the virtual HID service has a kernel registry ID.
      */
     return b;
 }

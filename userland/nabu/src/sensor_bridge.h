@@ -14,6 +14,10 @@ struct nabu_sensor_description {
     const char *manufacturer;
     uint64_t physical_suid[2];
     int8_t axes[3];
+    /* Actual IORegistry identity read from the opened NabuSensorSource.
+     * These identify the provider; they never replace the virtual HID ID. */
+    uint64_t source_registry_id;
+    uint32_t source_generation;
 };
 
 enum nabu_sensor_control {

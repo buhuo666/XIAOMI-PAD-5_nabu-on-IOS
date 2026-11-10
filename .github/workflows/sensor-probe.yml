@@ -10,6 +10,10 @@ on:
       - 'userland/nabu/src/sensor_units.h'
       - 'userland/nabu/src/sensor_daemon.m'
       - 'tools/build_nabu_sensor_daemon.py'
+      - 'tools/build_nabu_sensor_brightness.py'
+      - 'tools/check_nabu_sensor_brightness.py'
+      - 'userland/nabu/src/sensor_brightness_*'
+      - 'userland/nabu/tests/sensor_brightness_*'
       - 'patches/nabu-sensors/NabuSensorHid.h'
   workflow_dispatch:
 permissions:
@@ -28,6 +32,8 @@ jobs:
         run: python3 tools/build_nabu_sensor_probe.py --output artifacts/nabu-sensor-probe
       - name: Compile and sign the real-source HID bridge owner
         run: python3 tools/build_nabu_sensor_daemon.py --output artifacts/nabu-sensor-daemon
+      - name: Test real CF association scopes and sign the ALS brightness bridge
+        run: python3 tools/build_nabu_sensor_brightness.py --output artifacts/nabu-sensor-brightness
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -39,4 +45,10 @@ jobs:
         with:
           name: nabu-sensor-daemon-${{ github.run_number }}
           path: artifacts/nabu-sensor-daemon/
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-sensor-brightness-${{ github.run_number }}
+          path: artifacts/nabu-sensor-brightness/
           retention-days: 14

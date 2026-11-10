@@ -114,6 +114,8 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
     if (result) return result;
     if (size != sizeof(_status) || _status.description.abi_version != NabuSensorSourceAbi ||
         _status.description.kind != _kind || !_status.active) return kIOReturnNotReady;
+    result = IORegistryEntryGetRegistryEntryID(service, &_registryID);
+    if (result || !_registryID) return result ? result : kIOReturnNotFound;
 
     result = IOConnectMapMemory64(_connection, NabuSensorSourceQueueMemory, mach_task_self(),
                                  &_address, &_mappedBytes, kIOMapAnywhere);
@@ -162,6 +164,8 @@ static bool apply_control(void *context, enum nabu_sensor_control control, uint6
         .manufacturer = _status.description.manufacturer,
         .physical_suid = {_status.description.physical_suid[0], _status.description.physical_suid[1]},
         .axes = {self.owner.axisX, self.owner.axisY, self.owner.axisZ},
+        .source_registry_id = _registryID,
+        .source_generation = _status.generation,
     };
     _bridge = nabu_sensor_bridge_create(_hid, &description, apply_control, (__bridge void *)self);
     if (!_bridge) return kIOReturnNoResources;
