@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/attr.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -50,6 +51,7 @@ extern NSDictionary *nabuBluetoothSocketTrial(void);
 extern NSDictionary *nabuWiFiControlTrial(NSString *action);
 extern NSDictionary *nabuAudioRequest(NSString *action, NSString *identifier);
 extern NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier);
+extern int nabuDpuServiceMain(void);
 
 static void saveReport(NSDictionary *report, NSString *name);
 
@@ -585,7 +587,8 @@ static NSDictionary *registerMissing(LSApplicationWorkspace *workspace, NSArray 
     return @{@"applications": results};
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1], "--dpu-only")) return nabuDpuServiceMain();
     @autoreleasepool {
         NSFileManager *fm = NSFileManager.defaultManager;
         [fm createDirectoryAtPath:reportDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
