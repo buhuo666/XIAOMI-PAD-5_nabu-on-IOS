@@ -1,0 +1,58 @@
+name: nabu16 - copied sync performance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  copied-sync:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch qualified sources
+        run: >-
+          python3 tools/fetch_sources.py
+          --only nabu UniXNU-turnip-reference AdrenoMetal metal2vulkan
+          --report artifacts/gpu-copied-sync-sources.json
+      - name: Install native Rust compiler
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --target aarch64-apple-ios
+      - name: Check exact byte behavior and release CPU cost
+        run: >-
+          python3 tools/check_nabu_copied_sync.py
+          --output artifacts/copied-sync-host-check
+      - name: Exercise actual Mach mapping and production registry with new loop
+        run: >-
+          python3 tools/check_nabu_owned_copy_pages.py --copied-sync
+          --output artifacts/copied-sync-mach-check
+      - name: Reuse qualified Turnip and surface inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42607114009 --name nabu-gpu-iosurface-1
+          --dir inputs/qualified-iosurface
+      - name: Install AIR assembler
+        run: brew install llvm@21
+      - name: Build iOS frontend with exact copied sync and bounded timings
+        run: >-
+          python3 tools/build_nabu_gpu_metal_probe.py
+          --copied-sync --owned-copy-pages --system-resources --system-shaders --iosurface-copy-read
+          --iosurface-input inputs/qualified-iosurface/nabu-gpu-iosurface
+          --turnip-input inputs/qualified-iosurface/nabu-gpu-iosurface
+          --work build/gpu-copied-sync --output artifacts/nabu-copied-sync
+          --mtl-device-bytes 528 --llvm-as "$(brew --prefix llvm@21)/bin/llvm-as"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-copied-sync-${{ github.run_number }}
+          path: |
+            artifacts/nabu-copied-sync/
+            artifacts/copied-sync-host-check/
+            artifacts/copied-sync-mach-check/
+            artifacts/gpu-copied-sync-sources.json
+          retention-days: 14

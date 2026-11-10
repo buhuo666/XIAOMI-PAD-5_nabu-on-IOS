@@ -27,6 +27,7 @@ QUALIFIED_FACTORY_RUN = '42603179764'
 SURFACE_STATS_PATCH = '0026-nabu-read-only-surface-counts.patch'
 SURFACE_COPY_READ_PATCH = '0027-nabu-ios-copied-host-read.patch'
 OWNED_COPY_PAGES_PATCH = '0028-nabu-owned-copied-pages.patch'
+COPIED_SYNC_PATCH = '0029-nabu-copied-sync-words.patch'
 
 
 def stage_system_shader_compatibility(metal):
@@ -69,7 +70,7 @@ def stage_system_resource_aliasing(root, metal):
                         '\n#include "NativeMetalResourceAliasing.inc"\n', encoding='utf-8')
 
 
-def stage_owned_copy_pages(root, metal):
+def stage_owned_copy_pages(root, metal, source_only=False):
     """Hold the source VM object while run179's copied entry may still read it."""
     relative = 'crates/metal2vulkan-runtime/src/copied.rs'
     original = (root / 'src/metal2vulkan' / relative).read_text(encoding='utf-8')
@@ -106,6 +107,8 @@ def stage_owned_copy_pages(root, metal):
         if source.count(old) != 1:
             raise ValueError('Update the run179 copied-source adaptation: ' + old)
         source = source.replace(old, new)
+    if source_only:
+        return source
     module_path = 'crates/metal2vulkan-runtime/src/nabu_copied_pages.rs'
     module = (root / 'patches/nabu-metal/NativeCopiedPages.rs').read_text(encoding='utf-8')
     patch = 'diff --git a/' + relative + ' b/' + relative + '\n'
@@ -119,6 +122,41 @@ def stage_owned_copy_pages(root, metal):
     (patch_dir / name).write_text(patch, encoding='utf-8', newline='\n')
     series = patch_dir / 'series'
     series.write_text(series.read_text(encoding='utf-8') + name + '\n', encoding='utf-8')
+
+
+def stage_copied_sync(root, metal):
+    """Replace the small-copy loop; retain byte-conflict semantics."""
+    relative = 'crates/metal2vulkan-runtime/src/copied.rs'
+    original = stage_owned_copy_pages(root, metal, source_only=True)
+    first = original.index('pub(crate) unsafe fn sync(')
+    last = original.index('/// Read the caller', first)
+    source = original[:first] + 'pub(crate) use nabu_copied_sync::sync;\n\n' + original[last:]
+    source = source.replace('use std::sync::{Arc, Mutex};',
+        'use std::sync::{Arc, Mutex};\n#[path = "nabu_copied_sync.rs"]\nmod nabu_copied_sync;')
+    assert source.count('        let mut moved = 0u64;') == 2
+    source = source.replace('        let mut moved = 0u64;',
+        '        let profile = nabu_copied_sync::profile_start();\n'
+        '        let mut scanned = 0u64;\n        let mut moved = 0u64;')
+    source = source.replace('        for entry in lock(&self.entries).iter_mut() {',
+        '        for entry in lock(&self.entries).iter_mut() {\n'
+        '            scanned += entry.snapshot.len() as u64;')
+    for counter, merge in [('copied_copied_in', 'false'), ('copied_merged_back', 'true')]:
+        line = f'        counts.{counter}(moved);'
+        assert source.count(line) == 1
+        source = source.replace(line, line + '\n'
+            f'        nabu_copied_sync::profile_finish({merge}, profile, scanned, moved);')
+    module_path = 'crates/metal2vulkan-runtime/src/nabu_copied_sync.rs'
+    module = (root / 'patches/nabu-metal/NativeCopiedSync.rs').read_text(encoding='utf-8')
+    patch = 'diff --git a/' + relative + ' b/' + relative + '\n'
+    patch += ''.join(difflib.unified_diff(original.splitlines(keepends=True), source.splitlines(keepends=True),
+        fromfile='a/' + relative, tofile='b/' + relative))
+    patch += 'diff --git a/' + module_path + ' b/' + module_path + '\nnew file mode 100644\n'
+    patch += ''.join(difflib.unified_diff([], module.splitlines(keepends=True),
+        fromfile='/dev/null', tofile='b/' + module_path))
+    directory = metal / 'bridge/patches'
+    (directory / COPIED_SYNC_PATCH).write_text(patch, encoding='utf-8', newline='\n')
+    series = directory / 'series'
+    series.write_text(series.read_text(encoding='utf-8') + COPIED_SYNC_PATCH + '\n', encoding='utf-8')
 
 
 def load_module(name, path):
@@ -187,7 +225,7 @@ def reuse_surface_factory(source, output):
 
 
 def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False, system_shaders=False,
-          system_resources=False, owned_copy_pages=False):
+          system_resources=False, owned_copy_pages=False, copied_sync=False):
     """Use nabu's relevant frontend patches and UniXNU's bridge build entry."""
     work.mkdir(parents=True, exist_ok=False)
     (work / '.cache').mkdir()
@@ -241,6 +279,10 @@ def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=
         stage_system_resource_aliasing(root, metal)
     if owned_copy_pages:
         stage_owned_copy_pages(root, metal)
+    if copied_sync:
+        stage_copied_sync(root, metal)
+        opening = 'extern "C" id native_bridge_metal_open(const char *loader,const char *cache,uint64_t registryID,void (*missing)(const char *,const char *)) {'
+        replace_once(frontend, opening, opening + '\n setenv("NABU_COPIED_SYNC_PROFILE","1",1);')
     return {'frontend': metal, 'translator': translator, 'bridge_script': bridge,
             'patches': patches, 'rust_toolchain': rust, 'rust_msrv': msrv,
             'source_commits': {name: source_pins[name]['commit'] for name in
@@ -266,6 +308,8 @@ def main():
                         help='Run178 resource aliasing fix through the actual heap runtime; requires --system-shaders')
     parser.add_argument('--owned-copy-pages', action='store_true',
                         help='Run179 fix: retain a shared VM view for each live copied source; requires --system-resources')
+    parser.add_argument('--copied-sync', action='store_true',
+                        help='Fixed-word copied synchronization with bounded trial timing; requires --owned-copy-pages')
     args = parser.parse_args()
     if args.iosurface_copy_read:
         args.iosurface = True
@@ -275,6 +319,8 @@ def main():
         parser.error('--system-resources requires --system-shaders to retain the run177 fixes')
     if args.owned_copy_pages and not args.system_resources:
         parser.error('--owned-copy-pages requires --system-resources to retain the resource fixes')
+    if args.copied_sync and not args.owned_copy_pages:
+        parser.error('--copied-sync requires --owned-copy-pages')
     if args.iosurface and args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66:
         parser.error('IOSurface mode requires the qualified 528-byte Metal ABI')
     if args.iosurface and not args.iosurface_copy_read and args.system_metal_input is None:
@@ -379,13 +425,17 @@ def main():
         shutil.copyfile(turnip_input / 'build-report.json', output / 'turnip-input-report.json')
         staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface,
                        iosurface_copy_read=args.iosurface_copy_read, system_shaders=args.system_shaders,
-                       system_resources=args.system_resources, owned_copy_pages=args.owned_copy_pages)
+                       system_resources=args.system_resources, owned_copy_pages=args.owned_copy_pages,
+                       copied_sync=args.copied_sync)
         report['system_shader_compatibility'] = args.system_shaders
         if args.system_shaders:
             report['system_shader_fixes'] = ['UChar3 type 51: packed three bytes',
                 'newFunctionWithName:constantValues:pipelineLibrary:error: uses actual runtime specialization']
         report['system_resource_aliasing'] = args.system_resources
         report['owned_copy_pages'] = args.owned_copy_pages
+        report['copied_sync_words'] = args.copied_sync
+        if args.copied_sync:
+            report['copied_sync_profile'] = 'Bounded per-process copy_in/merge_back wall time, scanned and moved bytes; no GPU-time claim'
         if args.owned_copy_pages:
             report['copied_source_lifetime'] = 'Owned shared Mach mapping until copied entry removal; original contents and import keys unchanged'
         if args.system_resources:
@@ -404,6 +454,8 @@ def main():
             additions = [SURFACE_STATS_PATCH] + ([SURFACE_COPY_READ_PATCH] if args.iosurface_copy_read else [])
             if args.owned_copy_pages:
                 additions.append(OWNED_COPY_PAGES_PATCH)
+            if args.copied_sync:
+                additions.append(COPIED_SYNC_PATCH)
             if len(patches) != 25 + len(additions) or patches[25:] != additions:
                 raise ValueError('IOSurface mode requires the 25 qualified patches followed by its named additions')
             report['runtime_patches'] = patches

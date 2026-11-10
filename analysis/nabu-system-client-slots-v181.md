@@ -43,3 +43,24 @@ NativeAdrenoPublish.cpp本地编译为arm64-apple-ios16.5，保留其余61个原
 候选 `artifacts/nabu-gpu-ready-v181/kernel.native-apfs.macho`；沿用GPU180启动包和普通名
 测试App。构建和主机测试不代表真机应用或桌面加速通过，实测状态见
 `log/host/gpu-v181/continuation.json`。
+
+## 第181轮实时观察
+
+已部署并读回、临时引导成功，原生USB与GPU就绪通过。实时日志中SpringBoard和
+chronod已进入前端设备初始化，未再出现GPU180的设备拒绝；四个核心进程未见PID更换。
+仍有一次QuartzCore fence超时，chronod还有pipeline library不支持；这些不作为
+应用或性能通过证据。等待用户桌面反馈，再开已有普通Metal App检查64帧。
+
+## 完成本轮回收
+
+用户确认测试正常，实际输出画面仍只有约1–3帧/秒；帧率是目测估计。普通名App的
+标准工厂和64帧256×256纹理采样实测通过，GPU/IOSurface各4,194,304像素0错，
+保护区0错、64个回调；清除后导入/释放平衡、无保留表面。64帧有61个表面，复用3次。
+提交至完成中位47.29ms、P95 56.95ms，包含CPU同步和GPU等待，不能等同纯GPU耗时。
+测试本身有125ms帧间延迟及逐帧读回，不是系统帧率基准。
+
+内核记录mediaserverd、backboardd、FitnessWidget、SBRendererService、chronod、
+SpringBoard和MetalPresent占用槽1/0/2/3/4/5/6，打开均成功；枚举连接关闭成功。
+4,623,704字节连续前缀和完整64MiB槽1已备份清空，APFS154，Android引导分区未变；
+11,468,682字节实时syslog保全。没有结束记录，不宣称日志完整。设备已恢复Android。
+继续GPU182复制同步性能对照与限量耗时记录，系统低帧率仍未解决。

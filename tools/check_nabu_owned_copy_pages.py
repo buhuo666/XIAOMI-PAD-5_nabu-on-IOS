@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 
-from build_nabu_gpu_metal_probe import stage_owned_copy_pages
+from build_nabu_gpu_metal_probe import stage_owned_copy_pages, stage_copied_sync
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -180,6 +180,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--stage-only', action='store_true')
+    parser.add_argument('--copied-sync', action='store_true')
     args = parser.parse_args()
     if sys.platform != 'darwin' and not args.stage_only:
         parser.error('Real Mach tests run on macOS; use --stage-only for local source checks')
@@ -190,14 +191,19 @@ def main():
     patch_dir.mkdir(parents=True)
     (patch_dir / 'series').write_text('')
     stage_owned_copy_pages(ROOT, metal)
+    if args.copied_sync:
+        stage_copied_sync(ROOT, metal)
     runtime = output / 'runtime'
     relative = Path('crates/metal2vulkan-runtime/src/copied.rs')
     (runtime / relative).parent.mkdir(parents=True)
     shutil.copyfile(ROOT / 'src/metal2vulkan' / relative, runtime / relative)
     # Isolate git apply from the enclosing checkout's ignored log/artifact paths.
     subprocess.run(['git', 'init', '--quiet'], cwd=runtime, check=True)
-    for patch in (ROOT / 'patches/nabu-metal/0027-nabu-ios-copied-host-read.patch',
-                  patch_dir / '0028-nabu-owned-copied-pages.patch'):
+    patches = [ROOT / 'patches/nabu-metal/0027-nabu-ios-copied-host-read.patch',
+               patch_dir / '0028-nabu-owned-copied-pages.patch']
+    if args.copied_sync:
+        patches.append(patch_dir / '0029-nabu-copied-sync-words.patch')
+    for patch in patches:
         subprocess.run(['git', 'apply', '--check', str(patch)], cwd=runtime, check=True)
         subprocess.run(['git', 'apply', str(patch)], cwd=runtime, check=True)
     source = (runtime / relative).read_text()
