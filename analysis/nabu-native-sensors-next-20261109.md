@@ -117,3 +117,77 @@ HID部分只申请monitor client，匹配0xff00/4读取lux，记录service属性
 实际验收按此顺序：当前boot的物理SSC样本 → HID三轴 → CoreMotion连续三轴 →
 静态六面/绕轴 → deviceMotion和界面旋转 → ALS明暗事件 → AABC初始化和真实背光变化。
 不存在的气压/距离保持不支持；后置ALS仍需补齐其真实属性解释。
+
+## App内回收SLPI诊断的增量
+
+提交`0e094fc`新增启动/结束时的只读内核诊断快照，App版本2/1.1。CI`42737717224`
+通过，最终产物在`artifacts/ci/42737717224-attempt-1/nabu-sensor-probe-3/`，下载时
+一次审查通过。CLI118,496字节、App可执行文件140,544字节，桥接库70,848字节。
+
+启动读取`IODeviceTree:/chosen`的`nabu-slpi-report`存为`slpi-report-start.txt`，
+结束存为`slpi-report.txt`。CFData按原字节保存，CFString按UTF-8保存，实际类型、
+存在性、字节数和写出结果进入`kernel-diagnostics.json`。没有报告时写空文件，
+避免留下前一轮的文本被误认为当前结果；不把其他CF类型的description冒充原始报告。
+
+同时通过`IOServiceGetMatchingServices`只读枚举真实`NabuSensorSource`，保存数量、
+registry ID、类名、属性读取结果；完整属性保持plist类型，写入
+`sensor-sources-start.plist`和`sensor-sources.plist`。以上文件在App的Documents，
+可随原生AFC/house_arrest回收，不需要为读取SLPI诊断先返回Android。具体设备访问
+授权和读回结果仍待新轮运行；当前产物没有操作真机。
+
+## 当前内核缺少HID基类，新增真实样本源
+
+本轮直接读取最终sensors02内核的23,343个导出符号与prelink模块清单：
+
+- 没有`IOHIDEventService`定义，也没有`IOHIDFamily`模块。
+- 唯一包含`IOHID`的导出是`_gIOHIDInterfaceClassName`，不是可继承类或dispatch实现。
+- `IOService`、`IOUserClient`、`IOSharedDataQueue`都真实存在；后两种队列相关导出
+  分别可查到28个`IOSharedDataQueue`、88个`IODataQueue`符号。
+- 现有`NabuTouch.cpp`已经明确把另一内核的IOHIDDevice接入改成当前内核的
+  `hakios_touch_post`；`hakios.input.c`提供字符队列，再由backboardd输入桥接消费。
+
+证据为`log/host/sensors-live-20261109/native-kernel-hid/inventory.json`。因此本轮
+没有伪造`class IOHIDEventService`头来调用未知vtable，也没有给普通IOService改名
+冒充HID服务。直接内核HID事件路线需要另行集成真实IOHIDFamily，当前未实施。
+
+新增`patches/nabu-sensors/NabuSensorHid.h/.cpp`实现真实`NabuSensorSource`与
+`NabuSensorUserClient`，文件名保留计划中的HID边界，但属性明确
+`NabuNativeHIDPublished=false`。它是用户态桥接可消费的硬件样本源，不是原生HID
+完成证明。没有改主SLPI、链接脚本、NabuInit或启动包。
+
+共享头不依赖IOKit，kind=0/1/2/3与`sensor_units.h`一致；Description104字节、
+Record64字节、Status224字节、Control16字节。Record保留SSC tick、当前boot的
+mach时间、原始IEEE754位与SSC accuracy，内核不做浮点、单位和坐标转换。
+
+| 接口 | 行为 |
+| --- | --- |
+| `nabu_sensor_hid_initialize` | 显式preModLoad/类初始化/postModLoad；只注册类，不创建传感器实例 |
+| `nabu_sensor_hid_submit` | 仅供已发现物理SUID的真实样本；首个有效样本才创建、发布IOService；后续检查时间递增 |
+| `nabu_sensor_hid_invalidate` | active=false，清除latest样本并发送独立失效记录；不重放旧数据维持ready |
+| `nabu_sensor_hid_set_control_handler` | 安装真实控制回调；无回调为Unsupported，实际成功才更新ReportInterval/BatchInterval |
+
+服务公开真实芯片/厂商/SUID、数据单位、active和generation。每个kind允许一个root
+消费者，open type为0x534e，memory/notification type均为0。selector0只读Status，
+selector1提交微秒控制请求。控制回调在IOUserClient上下文调用且不持有传输锁；
+后端若不能安全完成，须返回NotReady/Unsupported，不能排队后假称已经生效。
+
+每个连接使用64KiB IOSharedDataQueue并缓存同一个IOMemoryDescriptor；map/unmap
+共享该身份。close先停止写入和通知，再移除所有映射、unmap，最后才释放队列。
+这沿用项目GPU已实际遇到的用户PTE仍指向已释放内存问题的处理顺序；unmap失败
+会保留队列内存并记录原因，不释放仍可能被映射的内存。
+
+消费者打开后先映射、注册通知、主动drain一次，再等待通知。初始CurrentSnapshot
+在注册port前入队，保留源样本原时间与序号。满队列会增加dropped计数；失效标记
+也可能排队失败，所以每次读取必须同时检查Status.active。bridge在失效时移除其
+虚拟HID；新的有效generation再重建，不能靠给快照换时间戳维持数据流。
+
+独立检查命令：
+
+```powershell
+python tools/prepare_nabu_sensor_hid.py --compile-command build/nabu-aes-v32/compile-command.json --kernel artifacts/nabu-sensors-live-20261109/kernel/kernel.native-apfs.macho --output artifacts/nabu-sensor-source-20261110
+```
+
+该对象已实际ARM64编译，223个外部符号均在目标内核中解析；最大栈176字节。
+使用`-mgeneral-regs-only`且反汇编未发现浮点/SIMD指令，显式模块构造入口存在。
+报告`artifacts/nabu-sensor-source-20261110/report.json`为passed。尚未链接/启动、
+映射队列和执行IOUserClient调用；运行正确性不能由编译与符号检查代替。
