@@ -112,6 +112,12 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
         options:NSDataWritingAtomic error:&writeError];
     snapshot[@"slpi_write_ok"] = @(saved);
     if (writeError) snapshot[@"slpi_write_error"] = writeError.localizedDescription;
+    if (first) {
+        NSError *latestError = nil;
+        snapshot[@"latest_slpi_write_ok"] = @([slpiData writeToFile:[self.directory stringByAppendingPathComponent:@"slpi-report.txt"]
+            options:NSDataWritingAtomic error:&latestError]);
+        if (latestError) snapshot[@"latest_slpi_write_error"] = latestError.localizedDescription;
+    }
 
     io_iterator_t iterator = IO_OBJECT_NULL;
     kern_return_t status = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("NabuSensorSource"), &iterator);
@@ -143,6 +149,12 @@ static void hid_event(void *target, void *context, HIDService service, HIDEvent 
         options:NSDataWritingAtomic error:&propertyError];
     snapshot[@"source_properties_write_ok"] = @(propertiesSaved);
     if (propertyError) snapshot[@"source_properties_error"] = propertyError.localizedDescription;
+    if (first && propertyData) {
+        NSError *latestError = nil;
+        snapshot[@"latest_source_properties_write_ok"] = @([propertyData writeToFile:[self.directory stringByAppendingPathComponent:@"sensor-sources.plist"]
+            options:NSDataWritingAtomic error:&latestError]);
+        if (latestError) snapshot[@"latest_source_properties_error"] = latestError.localizedDescription;
+    }
     [self.diagnosticSnapshots addObject:snapshot];
     [self write:@{@"kind":@"kernel_diagnostics", @"snapshot":snapshot}];
     NSData *metadata = [NSJSONSerialization dataWithJSONObject:self.diagnosticSnapshots options:NSJSONWritingPrettyPrinted error:NULL];

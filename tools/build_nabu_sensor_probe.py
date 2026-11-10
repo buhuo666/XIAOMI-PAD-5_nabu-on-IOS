@@ -86,7 +86,7 @@ def main():
         executable = app/'NabuSensorProbe'
         info = {'CFBundleIdentifier':'org.nabu.SensorProbe','CFBundleName':'NabuSensorProbe',
                 'CFBundleDisplayName':'传感器诊断','CFBundleExecutable':'NabuSensorProbe',
-                'CFBundlePackageType':'APPL','CFBundleVersion':'2','CFBundleShortVersionString':'1.1',
+                'CFBundlePackageType':'APPL','CFBundleVersion':'3','CFBundleShortVersionString':'1.2',
                 'CFBundleInfoDictionaryVersion':'6.0','MinimumOSVersion':'16.5',
                 'CFBundleSupportedPlatforms':['iPhoneOS'],'LSRequiresIPhoneOS':True,
                 'UIDeviceFamily':[2],'UIRequiresFullScreen':True,'UILaunchScreen':{},
