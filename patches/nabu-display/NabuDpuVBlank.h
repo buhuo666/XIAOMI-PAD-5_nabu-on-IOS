@@ -47,6 +47,14 @@ Binding *start(Callback, void *cookie, int *error);
 // snapshot copies the last IRQ observations under an IRQ-safe lock. Its return
 // means the binding is active; inspect fault separately for hardware health.
 bool snapshot(Binding *, Sample *);
+// First-frame translation handover runs with GIC115 and our MDSS sources
+// masked. Drain the queued callback before the caller halts active XINs.
+// Resume only after XINs are running again; stale masked frame events are
+// cleared/rebased, never delivered as new presentation completions.
+// Caller uses thread context, serializes handover/stop, and holds no callback
+// locks. An error leaves interrupts masked and the binding paused.
+uint32_t pauseForHandover(Binding *, Sample *);
+uint32_t resumeAfterHandover(Binding *, Sample *);
 // Do not call stop from this binding's callback or while holding a lock the
 // callback needs. Caller serializes stop with its own uses of Binding. Stops
 // IRQ producers, waits for handlers/work, then frees mappings and the cookie
@@ -71,6 +79,7 @@ struct State {
 uint32_t prepare(const Io &, State &);
 uint32_t enable(const Io &, State &);
 uint32_t disable(const Io &, State &);
+uint32_t rearm(const Io &, State &);
 // Return whether the worker should observe this event. On sample.fault the
 // binding MUST mask GIC115 before returning from the interrupt. It must not
 // clear any foreign device source or report a successful native vblank.

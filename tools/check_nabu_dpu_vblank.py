@@ -143,6 +143,51 @@ int main() {
     }
     {
         Fixture f;Core::State s{};f.ready(s);
+        f.frame(101,101);assert(f.irq(s,MasterVSync,42));
+        assert(Core::disable(f.io(),s)==None && !s.enabled);
+        assert(f.regs[TopEnable]==(1u<<6));
+        f.accesses.clear();
+        // An in-flight IRQ after pause cannot access MDSS or queue work.
+        f.frame(110,110);assert(!f.irq(s,Owned,43));
+        assert(f.accesses.empty() && s.sample.irqCount==1);
+        f.regs[TopStatus]|=1u<<7;
+        assert(Core::rearm(f.io(),s)==None && s.enabled);
+        assert(s.sample.topStatus==(Owned|(1u<<7)));
+        assert(f.regs[TopStatus]==(1u<<7)); // no foreign acknowledgement
+        assert(s.countedMaster==110 && s.sample.masterSequence==1);
+        assert(s.sample.masterTimestamp==42 && s.sample.irqCount==1);
+        assert(s.sample.underrun[0]==0 && s.sample.underrun[1]==0);
+        assert(f.irq(s,MasterVSync,44)); // stale same-frame event is not a new frame
+        assert(s.sample.masterSequence==1 && s.sample.masterTimestamp==42);
+        f.frame(111,111);assert(f.irq(s,MasterVSync,45));
+        assert(s.sample.masterSequence==2 && s.sample.masterTimestamp==45);
+        ++groups;
+    }
+    {
+        Fixture f;Core::State s{};f.ready(s);
+        assert(Core::disable(f.io(),s)==None);
+        f.regs[Intf2]=0;
+        assert(Core::rearm(f.io(),s)==TimingStopped && !s.enabled);
+        assert(f.regs[TopEnable]==(1u<<6) && s.sample.masterSequence==0);
+        ++groups;
+    }
+    {
+        Fixture baseline;Core::State original{};baseline.ready(original);
+        assert(Core::disable(baseline.io(),original)==None);
+        baseline.operations=0;baseline.regs[TopStatus]=Owned;
+        assert(Core::rearm(baseline.io(),original)==None);
+        const unsigned count=baseline.operations;
+        for(unsigned fail=1;fail<=count;++fail) {
+            Fixture f;Core::State s{};f.ready(s);
+            assert(Core::disable(f.io(),s)==None);
+            f.operations=0;f.failAt=fail;f.regs[TopStatus]=Owned;
+            assert(Core::rearm(f.io(),s)!=None && !s.enabled);
+            assert(s.sample.masterSequence==0);
+        }
+        ++groups;
+    }
+    {
+        Fixture f;Core::State s{};f.ready(s);
         f.regs[TopStatus]=1u<<7; // foreign RAW pending, but disabled
         f.frame(101,101);assert(f.irq(s,MasterVSync,50));
         assert(s.sample.fault==None && s.sample.masterSequence==1 && f.regs[TopStatus]==1u<<7);
@@ -262,6 +307,14 @@ def main():
     assert stop.index('gic_v3_spi_mask') < stop.index('Core::disable') < stop.index('gic_v3_spi_detach')
     assert stop.index('IOSimpleLockUnlockEnableInterrupt') < stop.index('gic_v3_spi_detach')
     assert stop.index('gic_v3_spi_detach') < stop.index('thread_call_cancel_wait') < stop.index('release(b)')
+    pause = source[source.index('uint32_t pauseForHandover('):source.index('uint32_t resumeAfterHandover(')]
+    assert pause.index('b->paused = true') < pause.index('gic_v3_spi_mask') < pause.index('Core::disable')
+    assert pause.index('IOSimpleLockUnlockEnableInterrupt') < pause.index('thread_call_cancel_wait')
+    assert 'const bool live = b->live && !b->paused' in source and 'if (!b->live || b->paused)' in source
+    display = (CPP.parent / 'NabuDpuDisplay.cpp').read_text()
+    handover = display[display.index('static IOReturn initializeMapper('):display.index('static void finishRecord(')]
+    assert handover.index('pauseForHandover') < handover.index('Scan::quiesce') < handover.index('activateAfterQuiesce')
+    assert handover.index('activateAfterQuiesce') < handover.index('Scan::resume') < handover.index('resumeAfterHandover')
     # Check the actual XNU implementation: the header's older cancel_wait
     # description omits ONCE, but this kernel explicitly cancels and waits it.
     thread_call = (REFERENCE / 'thread_call.c').read_text()

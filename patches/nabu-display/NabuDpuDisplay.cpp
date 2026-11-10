@@ -233,6 +233,13 @@ static IOReturn initializeMapper(Binding *b) {
     IOReturn result = Mapper::preflightSources(b->mapper, b->io);
     NabuDpuCheckpoint::record("source-preflight-returned", result);
     if (result) return result;
+    NabuDpuVBlank::Sample irq{};
+    NabuDpuCheckpoint::record("handover-irq-pause-enter");
+    const auto paused = NabuDpuVBlank::pauseForHandover(b->clock, &irq);
+    IOLog("NABU DPU: handover IRQ paused fault=%u irq=%llu vsync=%llu underrun=%llu/%llu enable=%#x pending=%#x\n",
+        paused, irq.irqCount, irq.masterSequence, irq.underrun[0], irq.underrun[1], irq.topEnable, irq.topStatus);
+    NabuDpuCheckpoint::record("handover-irq-pause-returned", paused);
+    if (paused) return kIOReturnIOError;
     Scan::Diagnostic d{};
     NabuDpuCheckpoint::record("xin-quiesce-enter");
     b->traceQuiesce = NabuDpuCheckpoint::enabled();
@@ -251,6 +258,12 @@ static IOReturn initializeMapper(Binding *b) {
     NabuDpuCheckpoint::record("xin-resume-returned", status);
     if (status != Scan::Ok) return kIOReturnIOError;
     IOLockLock(b->stateLock); b->activeMapper = b->mapper; IOLockUnlock(b->stateLock);
+    NabuDpuCheckpoint::record("handover-irq-resume-enter");
+    const auto resumed = NabuDpuVBlank::resumeAfterHandover(b->clock, &irq);
+    IOLog("NABU DPU: handover IRQ resumed fault=%u frame=%u/%u pending=%#x enable=%#x\n",
+        resumed, irq.frame[0], irq.frame[1], irq.topStatus, irq.topEnable);
+    NabuDpuCheckpoint::record("handover-irq-resume-returned", resumed);
+    if (resumed) return kIOReturnIOError;
     IOLog("NABU DPU: CB2 enabled with boot GOP identity; direct IOSurface slots ready\n");
     return kIOReturnSuccess;
 }

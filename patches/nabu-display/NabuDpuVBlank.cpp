@@ -27,6 +27,7 @@ uint32_t disable(const Io &io, State &s) {
         !io.read32(io.cookie, TopEnable, &after) || (after & Owned) ||
         !io.read32(io.cookie, TopStatus, &status) || !acknowledge(io, status & Owned))
         s.sample.fault |= RegisterIo;
+    else { s.sample.topEnable = after; s.sample.topStatus = status; }
     return s.sample.fault;
 }
 uint32_t prepare(const Io &io, State &s) {
@@ -53,6 +54,21 @@ uint32_t enable(const Io &io, State &s) {
     s.sample.topEnable = after;
     s.enabled = true;
     return None;
+}
+uint32_t rearm(const Io &io, State &s) {
+    if (!s.prepared || s.enabled || s.sample.fault)
+        return s.sample.fault ? s.sample.fault : RegisterIo;
+    // No MMIO IRQ ran while XINs were halted. Record and clear the latched
+    // source, then seed from the live counters after the caller resumed XINs.
+    // Keep previous sequence/timestamps; only a subsequent IRQ advances them.
+    if (!io.read32(io.cookie, TopStatus, &s.sample.topStatus) ||
+        !acknowledge(io, s.sample.topStatus & Owned)) {
+        s.sample.fault |= RegisterIo; return s.sample.fault;
+    }
+    s.sample.fault |= counters(io, s.sample);
+    if (s.sample.fault) return s.sample.fault;
+    s.countedMaster = s.sample.frame[0];
+    return enable(io, s);
 }
 bool interrupt(const Io &io, State &state, uint64_t irqTimestamp) {
     if (!state.enabled) return false;
@@ -112,7 +128,7 @@ struct Binding {
     Callback callback;
     void *cookie;
     Core::State state;
-    bool attached, live;
+    bool attached, live, paused;
 };
 static bool read32(void *cookie, uint32_t at, uint32_t *out) {
     Binding *b = static_cast<Binding *>(cookie);
@@ -135,7 +151,7 @@ static void delivered(thread_call_param_t cookie, thread_call_param_t) {
     Binding *b = static_cast<Binding *>(cookie);
     Sample s;
     const IOInterruptState old = IOSimpleLockLockDisableInterrupt(b->lock);
-    const bool live = b->live;
+    const bool live = b->live && !b->paused;
     s = b->state.sample;
     IOSimpleLockUnlockEnableInterrupt(b->lock, old);
     // ONCE serializes callbacks. The sequence lives in State, so a slave event
@@ -146,7 +162,7 @@ static void arrived(void *cookie, uint32_t) {
     const uint64_t observed = mach_absolute_time();
     Binding *b = static_cast<Binding *>(cookie);
     const IOInterruptState old = IOSimpleLockLockDisableInterrupt(b->lock);
-    if (!b->live) {
+    if (!b->live || b->paused) {
         gic_v3_spi_mask(Interrupt);
     } else {
         const bool wake = Core::interrupt(io(b), b->state, observed);
@@ -203,6 +219,29 @@ bool snapshot(Binding *b, Sample *out) {
     const bool live = b->live;
     IOSimpleLockUnlockEnableInterrupt(b->lock, old);
     return live;
+}
+uint32_t pauseForHandover(Binding *b, Sample *out) {
+    const IOInterruptState old = IOSimpleLockLockDisableInterrupt(b->lock);
+    b->paused = true;
+    gic_v3_spi_mask(Interrupt);
+    const uint32_t fault = Core::disable(io(b), b->state);
+    *out = b->state.sample;
+    IOSimpleLockUnlockEnableInterrupt(b->lock, old);
+    // As in stop(), wait outside the lock used by IRQ and delivered(). An
+    // already dispatched IRQ sees paused and cannot queue another callback.
+    thread_call_cancel_wait(b->worker);
+    return fault;
+}
+uint32_t resumeAfterHandover(Binding *b, Sample *out) {
+    const IOInterruptState old = IOSimpleLockLockDisableInterrupt(b->lock);
+    const uint32_t fault = Core::rearm(io(b), b->state);
+    *out = b->state.sample;
+    if (!fault) {
+        b->paused = false;
+        gic_v3_spi_unmask(Interrupt);
+    }
+    IOSimpleLockUnlockEnableInterrupt(b->lock, old);
+    return fault;
 }
 void stop(Binding *b) {
     const IOInterruptState old = IOSimpleLockLockDisableInterrupt(b->lock);
