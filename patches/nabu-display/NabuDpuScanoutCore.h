@@ -21,10 +21,13 @@ enum Status { Ok, Pending, Argument, StateError, TopologyMismatch, Busy, IoError
 enum Phase { Uninitialized, Ready, Quiesced, Submitted, Failed };
 struct Io {
     void *cookie;
-    // Return true only for a completed real access. No synthesized success.
+    // Read the real Device register or issue the real Device store. A store
+    // returning is not peripheral completion: callers check readback/ACK.
+    // Preserve same-peripheral access ordering; no synthesized success.
     bool (*read32)(void *, Region, uint32_t offset, uint32_t *value);
     bool (*write32)(void *, Region, uint32_t offset, uint32_t value);
-    // Complete/order MMIO writes and subsequent readbacks (e.g. dsb sy).
+    // Complete/order accesses at the core's explicit boundaries (e.g. dsb sy).
+    // Do not hide a completion barrier inside write32 before a VBIF halt ACK.
     bool (*barrier)(void *);
     uint64_t (*now_us)(void *);
     void (*wait_us)(void *, unsigned);

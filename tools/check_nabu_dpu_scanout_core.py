@@ -31,6 +31,7 @@ struct Fake {
     uint64_t now=0, nextLatch=0, haltReady=0, period=8333;
     uint32_t active[2]={GopPhysical,GopPhysical}, frameBase=100;
     bool flushing=false, clearFlush=true, slaveRuns=true, haltAck=true, partialAck=false;
+    bool haltAckObserved=true;
     unsigned failWrite=0, writeDelay=0;
     Fake() { BASELINE
         regs[{Vbif,HaltRequest}]=0x20; regs[{Mdss,Vig0ForceClock}]=0xa0;
@@ -55,7 +56,9 @@ struct Fake {
         }
         if(r==Mdss && (at==Intf1+0xb0 || at==Intf2+0xb0)) {*out=uint32_t(f.now%f.period)*2758/f.period;return true;}
         if(r==Vbif && at==HaltStatus) {
-            *out=(f.haltAck && f.now>=f.haltReady)?(f.regs[{Vbif,HaltRequest}]&(f.partialAck?1:XinMask)):0;return true;
+            *out=(f.haltAck && f.now>=f.haltReady)?(f.regs[{Vbif,HaltRequest}]&(f.partialAck?1:XinMask)):0;
+            if((*out&XinMask)==XinMask)f.haltAckObserved=true;
+            return true;
         }
         auto it=f.regs.find({r,at});assert(it!=f.regs.end());*out=it->second;return true;
     }
@@ -66,11 +69,20 @@ struct Fake {
         if(r==Mdss && at==Ctl0+CtlFlush) {
             assert(value==3);f.flushing=true;f.nextLatch=(f.now/f.period+1)*f.period;
         }
-        if(r==Vbif && at==HaltRequest) f.haltReady=f.now+100;
+        if(r==Vbif && at==HaltRequest) {
+            f.haltReady=f.now+100;
+            if((value&XinMask)==XinMask)f.haltAckObserved=false;
+        }
         // A failed callback may already have reached hardware: no software rollback.
         return !f.failWrite || f.writes.size()!=f.failWrite;
     }
-    static bool barrier(void *p) {static_cast<Fake *>(p)->advance();return true;}
+    static bool barrier(void *p) {
+        auto &f=*static_cast<Fake *>(p);
+        // Model a peripheral whose halt write must be followed by ACK polling
+        // before a full completion barrier. This is a protocol-order fixture,
+        // not a claim to reproduce the physical cause of GPU191/192's stall.
+        assert(f.haltAckObserved);f.advance();return true;
+    }
     static uint64_t clock(void *p) {return static_cast<Fake *>(p)->now;}
     static void wait(void *p,unsigned us) {assert(us==50);static_cast<Fake *>(p)->now+=us;}
     Io io() {return {this,read,write,barrier,clock,wait};}
@@ -144,7 +156,7 @@ int main() {
       assert(f.writes.size()==2 && f.regs.at({Vbif,HaltRequest})==0x21);
       assert(s.current_iova==GopPhysical && f.active[0]==GopPhysical); }
     assert(!writable(Mdss,0x201c) && !writable(Mdss,Intf1) && !writable(Vbif,HaltStatus));
-    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, dual-frame retirement, wrap, failures, clocks before every VBIF halt access, busy ownership, halt ACK and resume preservation");
+    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, dual-frame retirement, wrap, failures, clocks before VBIF, hardware halt ACK before completion barrier, busy ownership and resume preservation");
 }
 '''
 

@@ -184,7 +184,11 @@ Status quiesce(const Io &io, State &s, unsigned timeout_us, Diagnostic *d) {
     // GPU190's final committed marker was entry to this quiesce operation.
     if (!rd(io, Vbif, HaltRequest, &request)) return fail(s, IoError);
     if (request & XinMask) return fail(s, Busy); // retain clocks after mutation; do not claim another halt
-    if (!wr(io, s, Vbif, HaltRequest, request | XinMask) || !io.barrier(io.cookie)) return fail(s, IoError);
+    // Original sde_hw_set_halt_ctrl uses writel_relaxed then polls CTRL1.
+    // Do not wait at a system completion barrier before the peripheral ACK.
+    // Same-peripheral Device accesses order the readback after this write;
+    // the full barrier below follows BOTH real hardware halt ACK bits.
+    if (!wr(io, s, Vbif, HaltRequest, request | XinMask)) return fail(s, IoError);
     result = equal(io, Vbif, HaltRequest, request | XinMask, d);
     if (result != Ok) return fail(s, result);
     const uint64_t began = io.now_us(io.cookie);
@@ -208,9 +212,10 @@ Status resume(const Io &io, State &s, Diagnostic *d) {
     if (!rd(io, Vbif, HaltRequest, &request) || !rd(io, Vbif, HaltStatus, &status)) return fail(s, IoError);
     if ((request & XinMask) != XinMask || (status & XinMask) != XinMask) return fail(s, ReadbackMismatch);
     // Parent has completed translation setup and kept the CURRENT storage mapped.
-    if (!wr(io, s, Vbif, HaltRequest, request & ~XinMask) || !io.barrier(io.cookie)) return fail(s, IoError);
+    if (!wr(io, s, Vbif, HaltRequest, request & ~XinMask)) return fail(s, IoError);
     Status result = equal(io, Vbif, HaltRequest, request & ~XinMask, d);
     if (result != Ok) return fail(s, result);
+    if (!io.barrier(io.cookie)) return fail(s, IoError);
     for (unsigned i = 0; i < 2; ++i) {
         if (s.clock_bit_before[i]) continue;
         const uint32_t at = i ? Vig1ForceClock : Vig0ForceClock;

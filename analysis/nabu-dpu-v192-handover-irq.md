@@ -50,3 +50,13 @@ actual-code display lifecycle (10 groups), and ARM64 compilation of the IRQ
 binding and display backend. The IRQ binding's maximum stack is 160 bytes.
 Complete XNU CI and hardware acceptance are tracked separately in
 `log/host/gpu-v192/continuation.json`.
+
+## Hardware result
+
+CI 42826799996 and the 64-object link/loader checks passed. The user reported
+black screen again. Online syslog captured 691,865 bytes and confirmed IRQ
+pause succeeded: fault=0, enable=0, IRQ/master sequence=3376, underrun=0/0.
+The full persistent slot later recovered 798,598 bytes ending at the same
+VBIF +0x200 write of 0x11, at 49.930372 seconds. There is no CB2 entry.
+The 64 MiB slot was cleared/read back, APFS count is 171, and Android boot
+partitions are unchanged. IRQ exclusion did not eliminate this stall.

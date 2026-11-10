@@ -74,6 +74,7 @@ struct Binding {
     bool powerOn;
     bool firstWorkerTraced;
     bool traceQuiesce;
+    bool traceVbifPending;
     unsigned quiesceReads, quiesceWrites;
     Mapper::Binding *activeMapper;
 };
@@ -87,7 +88,7 @@ static void traceRegister(const char *phase, Scan::Region region, uint32_t offse
 }
 static bool read32(void *p, Scan::Region region, uint32_t offset, uint32_t *v) {
     auto b = static_cast<Binding *>(p);
-    const bool trace = b->traceQuiesce && b->quiesceReads++ < 8;
+    const bool trace = b->traceQuiesce && !b->traceVbifPending && b->quiesceReads++ < 8;
     if (trace) traceRegister("quiesce-read-enter", region, offset, 0);
     *v = (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4];
     if (trace) traceRegister("quiesce-read-returned", region, offset, *v);
@@ -98,9 +99,11 @@ static bool write32(void *p, Scan::Region region, uint32_t offset, uint32_t v) {
     const bool trace = b->traceQuiesce && b->quiesceWrites++ < 3;
     if (trace) traceRegister("quiesce-write-enter", region, offset, v);
     (region == Scan::Mdss ? b->mdss : b->vbif)[offset / 4] = v;
-    // Trace completion only after the same barrier used by the core. This
-    // distinguishes a returned store from one still pending at the device.
-    if (trace) {
+    // A VBIF request must reach the ACK reads before any full completion
+    // barrier, including one hidden inside a diagnostic/logging call. The
+    // caller records the quiesce result only after the ACK polling returns.
+    if (region == Scan::Vbif) b->traceVbifPending = true;
+    if (trace && region != Scan::Vbif) {
         __asm__ volatile("dsb sy" ::: "memory");
         traceRegister("quiesce-write-returned", region, offset, v);
     }
@@ -245,6 +248,7 @@ static IOReturn initializeMapper(Binding *b) {
     b->traceQuiesce = NabuDpuCheckpoint::enabled();
     auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
     b->traceQuiesce = false;
+    b->traceVbifPending = false;
     IOLog("NABU DPU: quiesce status=%u region=%u offset=%#x want=%#x got=%#x\n",
         status, d.region, d.offset, d.expected, d.observed);
     NabuDpuCheckpoint::record("xin-quiesce-returned", status);
