@@ -28,12 +28,13 @@ APP_ENTITLEMENTS = {
 }
 
 
-def app_info(system_integration=False):
+def app_info(system_integration=False, shared_iosurface_source=False):
     return {
         'CFBundleIdentifier': BUNDLE_ID, 'CFBundleName': APP_NAME,
         'CFBundleDisplayName': 'GPU呈现测试', 'CFBundleExecutable': APP_NAME if system_integration else EXECUTABLE,
         'CFBundlePackageType': 'APPL', 'CFBundleInfoDictionaryVersion': '6.0',
-        'CFBundleVersion': '5' if system_integration else '4', 'CFBundleShortVersionString': '1.4' if system_integration else '1.3',
+        'CFBundleVersion': '6' if shared_iosurface_source else ('5' if system_integration else '4'),
+        'CFBundleShortVersionString': '1.5' if shared_iosurface_source else ('1.4' if system_integration else '1.3'),
         'CFBundleDevelopmentRegion': 'zh-Hans', 'CFBundleLocalizations': ['zh-Hans'],
         'CFBundleSupportedPlatforms': ['iPhoneOS'], 'MinimumOSVersion': '16.5',
         'LSRequiresIPhoneOS': True, 'UIDeviceFamily': [2], 'UIRequiresFullScreen': True,
@@ -48,7 +49,11 @@ def main():
     parser.add_argument('--input', type=Path, required=True, help='CI42615860281 nabu-gpu-iosurface-copy-read artifact directory')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--system-integration', action='store_true', help='Ordinary process name, Apple-only linkage and system factory loading')
+    parser.add_argument('--shared-iosurface-source', action='store_true',
+                        help='Write the default IOSurface directly and prewarm both surfaces without CPU cache synchronization; requires --system-integration')
     args = parser.parse_args()
+    if args.shared_iosurface_source and not args.system_integration:
+        parser.error('--shared-iosurface-source requires --system-integration')
     if sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('Apple App builds run in macOS GitHub Actions')
     source, output = args.input.resolve(), args.output.resolve()
@@ -70,6 +75,7 @@ def main():
         'gpu_exercised': False, 'presentation_verified': False,
         'test_revision': 177 if args.system_integration else 176, 'frames_requested': 64, 'frame_delay_ms': 125,
         'system_integration_app': args.system_integration, 'app_links_frontend': not args.system_integration,
+        'shared_iosurface_source': args.shared_iosurface_source,
         'width': 256, 'height': 256, 'source_upload_row_bytes': 1280,
         'fragment_shader': 'nabu_surface_sample', 'pattern': 'coordinate-gradient-frame-v1',
         'startup_readiness_before_uikit': True,
@@ -82,6 +88,18 @@ def main():
         'ci': {'run_id': os.environ.get('GITHUB_RUN_ID'), 'head_sha': os.environ.get('GITHUB_SHA')},
         'commands': [],
     }
+    if args.shared_iosurface_source:
+        report['shared_source_test'] = {
+            'allocation': 'IOSurfaceCreate with default cache mode and no address override',
+            'texture_construction': 'newTextureWithDescriptor:iosurface:plane:',
+            'cpu_input': 'Direct pattern writes to the IOSurface base address',
+            'source_upload_api_bytes': 0, 'source_staging_buffer_used': False,
+            'source_replace_region_called': False,
+            'source_cpu_prewarm': True, 'target_cpu_write_and_prewarm': True,
+            'cpu_lock_avoids_sync': True, 'cpu_cache_sync_requested': False,
+            'pixel_verification': '64 sampled GPU frames, direct IOSurface pixels, row and allocation guards',
+            'scope': 'Cache consistency qualification; actual cache attributes require kernel evidence; not a refresh-rate benchmark',
+        }
 
     def run(command):
         command = list(map(str, command))
@@ -115,6 +133,8 @@ def main():
         executable = app / executable_name
         driver_flags = (['-DNABU_METAL_SYSTEM_APP=1'] if args.system_integration else
                         ['-L', source, '-lnabu-metal-frontend', '-Wl,-rpath,/redwood/sbin'])
+        if args.shared_iosurface_source:
+            driver_flags.append('-DNABU_SHARED_IOSURFACE_SOURCE=1')
         run(['xcrun', '--sdk', 'iphoneos', 'clang++', '-target', TARGET, '-isysroot', sdk,
              '-std=c++17', '-O2', '-g', '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
              '-Wno-deprecated-declarations', '-fstack-protector-strong', '-DNABU_EXPECTED_MTL_DEVICE_BYTES=528',
@@ -127,7 +147,8 @@ def main():
         run(['xcrun', 'ibtool', '--compile', app / 'LaunchScreen.storyboardc',
              '--sdk', sdk, '--minimum-deployment-target', '16.5', '--target-device', 'ipad',
              ROOT / 'userland/nabu/apps/LocalTest/LaunchScreen.storyboard'])
-        (app / 'Info.plist').write_bytes(plistlib.dumps(app_info(args.system_integration), fmt=plistlib.FMT_BINARY))
+        (app / 'Info.plist').write_bytes(plistlib.dumps(
+            app_info(args.system_integration, args.shared_iosurface_source), fmt=plistlib.FMT_BINARY))
         entitlements = output / 'app-entitlements.plist'
         entitlements.write_bytes(plistlib.dumps(app_entitlements))
         run(['codesign', '--force', '--sign', '-', '--timestamp=none', '--pagesize', '4096',

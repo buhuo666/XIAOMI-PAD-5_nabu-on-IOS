@@ -29,12 +29,14 @@ def expected_frame(frame, revision=174):
     return bytes(pixels)
 
 
-def verify(folder, require_zero_copy=False):
+def verify(folder, require_zero_copy=False, require_shared_source=False):
     result = json.loads((folder / 'metal-present-result.json').read_text(encoding='utf-8'))
     metadata = json.loads((folder / 'metal-present-frames.json').read_text(encoding='utf-8'))
     gpu = (folder / 'metal-present-frames.bgra').read_bytes()
     surface = (folder / 'metal-present-surfaces.bgra').read_bytes()
     revision = result['test_revision']
+    shared_source = result.get('shared_iosurface_source') is True
+    require_zero_copy = require_zero_copy or require_shared_source
     width, height = (256, 256) if revision >= 176 else (WIDTH, HEIGHT)
     frame_bytes = width * height * 4
     issues = []
@@ -44,6 +46,20 @@ def verify(folder, require_zero_copy=False):
             issues.append(message)
 
     require(revision in (174, 175, 176, 177), 'App test revision differs')
+    if require_shared_source:
+        require(shared_source, 'Direct shared-IOSurface source test was not executed')
+    if shared_source:
+        require(result.get('source_surface_created') is True and
+                result.get('source_surface_default_allocation') is True and
+                result.get('source_cache_mode_overridden') is False and
+                result.get('source_surface_address_wrapped') is False,
+                'Source is not a default IOSurface allocation')
+        require(result.get('source_upload_api_bytes') == 0 and
+                result.get('source_cpu_cache_sync_requested') is False and
+                result.get('target_cpu_cache_sync_requested') is False,
+                'Source used an upload API or requested CPU cache synchronization')
+        require(result.get('source_surface_owner_released') is True,
+                'Source IOSurface owner has not been released')
     if revision == 177:
         require(result.get('process_basename') == 'MetalPresent' and result.get('app_links_frontend') is False,
                 'App still requires the diagnostic process identity or direct driver linkage')
@@ -92,6 +108,7 @@ def verify(folder, require_zero_copy=False):
     require(len(frames) == FRAMES, 'Frame history is incomplete')
     pixel_rows = []
     for index, frame in enumerate(frames):
+        reference = expected_frame(index, revision)
         require(frame['index'] == index, f'Frame {index}: index differs')
         require(frame.get('command_status') == 4, f'Frame {index}: GPU command not Completed')
         require(not frame.get('command_error'), f'Frame {index}: GPU command error')
@@ -104,8 +121,42 @@ def verify(folder, require_zero_copy=False):
                     frame.get('source_upload_row_bytes') == 1280, f'Frame {index}: source texture upload differs')
             for name in ('source_input_pixel_errors', 'source_input_guard_errors'):
                 require(frame.get(name) == 0, f'Frame {index}: {name} is not zero')
+        if shared_source:
+            source_bytes = frame.get('source_surface_allocation_bytes', 0)
+            target_bytes = frame.get('surface_allocation_bytes', 0)
+            require(source_bytes == result.get('source_surface_allocation_bytes') and
+                    source_bytes >= 1280 * height + 256 and target_bytes >= frame_bytes,
+                    f'Frame {index}: shared allocation sizes differ')
+            require(frame.get('source_surface_id', 0) > 0 and
+                    frame.get('source_surface_id') == result.get('source_surface_id'),
+                    f'Frame {index}: shared source identity differs')
+            for kind, size in (('source', source_bytes), ('target', target_bytes)):
+                require(frame.get(kind + '_cpu_write_executed') is True and
+                        frame.get(kind + '_cpu_written_bytes') == size and
+                        frame.get(kind + '_cpu_prewarm_executed') is True and
+                        frame.get(kind + '_cpu_prewarm_bytes') == size and
+                        frame.get(kind + '_cpu_cache_sync_requested') is False,
+                        f'Frame {index}: {kind} dirty/prewarmed cache test did not execute')
+                before_address = frame.get(kind + ('_cpu_address' if kind == 'source' else '_cpu_address_before'), 0)
+                require(before_address > 0 and frame.get(kind + '_cpu_address_after') == before_address and
+                        frame.get(kind + '_cpu_same_address') is True,
+                        f'Frame {index}: {kind} CPU mapping differs after GPU completion')
+                require(frame.get(kind + '_surface_guard_bytes') == size - frame_bytes,
+                        f'Frame {index}: {kind} guard coverage differs')
+            require(frame.get('source_cpu_pattern_bytes') == frame_bytes and
+                    frame.get('source_cpu_prewarm_checksum') == sum(reference) + 0x6c * (source_bytes - frame_bytes) and
+                    frame.get('target_cpu_prewarm_value') == 0x6c and
+                    frame.get('target_cpu_prewarm_checksum') == 0x6c * target_bytes,
+                    f'Frame {index}: prewarmed bytes do not match the independently expected contents')
+            require(frame.get('source_replace_region_called') is False and
+                    frame.get('source_staging_buffer_used') is False and
+                    frame.get('source_lock_options') == 2 and frame.get('source_read_lock_options') == 3 and
+                    frame.get('target_prewarm_lock_options') == 2 and frame.get('target_read_lock_options') == 3,
+                    f'Frame {index}: direct access/AvoidSync contract differs')
+            for key in ('source_unlock_status', 'source_read_unlock_status', 'target_prewarm_unlock_status',
+                        'target_surface_guard_errors'):
+                require(frame.get(key) == 0, f'Frame {index}: {key} is not zero')
         require(frame.get('present_requested') is True, f'Frame {index}: no present request')
-        reference = expected_frame(index, revision)
         counts = {}
         for name, raw in (('gpu', gpu), ('surface', surface)):
             actual = raw[index * frame_bytes:(index + 1) * frame_bytes]
@@ -165,6 +216,8 @@ def verify(folder, require_zero_copy=False):
         'gpu_copy_counters': result.get('counters_after_gpu'), 'release_counters': after,
         'zero_copy_required': require_zero_copy, 'iosurface_direct_import_observed': zero_copy,
         'iosurface_path_delta': delta,
+        'shared_source_required': require_shared_source,
+        'shared_source_cache_test_passed': shared_source and not issues,
         'visual_confirmation': 'requires user observation', 'hardware_vsync_verified': False,
         'system_wide_gpu_acceleration_verified': False,
     }
@@ -176,9 +229,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--require-zero-copy', action='store_true',
                         help='Also require real pointer imports, in-place textures, and no copied/shadow resources')
+    parser.add_argument('--require-shared-source', action='store_true',
+                        help='Require default IOSurface dirty-source/prewarmed-target coherence test and zero-copy storage')
     args = parser.parse_args()
     try:
-        report = verify(args.input, args.require_zero_copy)
+        report = verify(args.input, args.require_zero_copy, args.require_shared_source)
     except (OSError, ValueError, KeyError, TypeError) as error:
         report = {'result': 'fail', 'issues': [str(error)], 'evidence_complete': False}
     args.output.parent.mkdir(parents=True, exist_ok=True)

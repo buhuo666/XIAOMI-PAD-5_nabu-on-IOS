@@ -21,6 +21,12 @@
 #ifndef NABU_METAL_SYSTEM_APP
 #define NABU_METAL_SYSTEM_APP 0
 #endif
+#ifndef NABU_SHARED_IOSURFACE_SOURCE
+#define NABU_SHARED_IOSURFACE_SOURCE 0
+#endif
+#if NABU_SHARED_IOSURFACE_SOURCE && !NABU_METAL_SYSTEM_APP
+#error Shared IOSurface mode requires the ordinary system Metal App
+#endif
 
 #if NABU_METAL_SYSTEM_APP
 // Resolve diagnostics from the driver already loaded by Apple's Metal factory.
@@ -204,6 +210,50 @@ static NSUInteger guardErrors(const uint8_t *bytes, NSUInteger length) {
     return errors;
 }
 
+#if NABU_SHARED_IOSURFACE_SOURCE
+static void writeSharedPattern(uint8_t *bytes, NSUInteger row, NSUInteger allocation, NSUInteger frame) {
+    memset(bytes, Guard, allocation);
+    for (NSUInteger y = 0; y < Height; ++y) for (NSUInteger x = 0; x < Width; ++x) {
+        const Pixel color = expected(x, y, frame);
+        memcpy(bytes + y * row + x * 4, &color, sizeof(color));
+    }
+}
+
+static uint64_t prewarmBytes(const uint8_t *bytes, NSUInteger length) {
+    const volatile uint8_t *read = bytes;
+    uint64_t checksum = 0;
+    for (NSUInteger offset = 0; offset < length; ++offset) checksum += read[offset];
+    return checksum;
+}
+
+static IOSurfaceRef createSharedSource() {
+    // No IOSurfaceAddress or IOSurfaceCacheMode override: the platform owns the
+    // default allocation, which the Metal texture imports below.
+    NSDictionary *properties = @{
+        (__bridge NSString *)kIOSurfaceWidth: @(Width),
+        (__bridge NSString *)kIOSurfaceHeight: @(Height),
+        (__bridge NSString *)kIOSurfaceBytesPerElement: @4,
+        (__bridge NSString *)kIOSurfaceBytesPerRow: @(RowBytes),
+        (__bridge NSString *)kIOSurfaceAllocSize: @(RowBytes * Height + Suffix),
+        (__bridge NSString *)kIOSurfacePixelFormat: @(uint32_t(0x42475241))
+    };
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)properties);
+    if (!surface) { fail(@"Default source IOSurfaceCreate failed"); return nullptr; }
+    if (IOSurfaceGetWidth(surface) != Width || IOSurfaceGetHeight(surface) != Height ||
+        IOSurfaceGetPlaneCount(surface) != 0 || IOSurfaceGetBytesPerElement(surface) != 4 ||
+        IOSurfaceGetBytesPerRow(surface) != RowBytes ||
+        IOSurfaceGetAllocSize(surface) < RowBytes * Height + Suffix) {
+        CFRelease(surface); fail(@"Default source IOSurface layout differs"); return nullptr;
+    }
+    update(@{@"source_surface_created": @YES, @"source_surface_id": @(IOSurfaceGetID(surface)),
+        @"source_surface_row_bytes": @(IOSurfaceGetBytesPerRow(surface)),
+        @"source_surface_allocation_bytes": @(IOSurfaceGetAllocSize(surface)),
+        @"source_surface_default_allocation": @YES, @"source_cache_mode_overridden": @NO,
+        @"source_surface_address_wrapped": @NO, @"source_surface_owner_released": @NO});
+    return surface;
+}
+#endif
+
 static id<MTLRenderPipelineState> makePipeline(id<MTLDevice> device) {
     stage(@"render_pipeline");
     NSError *error = nil;
@@ -225,7 +275,7 @@ static id<MTLRenderPipelineState> makePipeline(id<MTLDevice> device) {
 
 static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderPipelineState> pipeline,
                    id<MTLCommandQueue> queue, id<MTLBuffer> readback,
-                   id<MTLTexture> source, NSMutableData *upload) {
+                   id<MTLTexture> source, NSMutableData *upload, IOSurfaceRef sharedSource) {
     id<MTLTexture> texture = drawable.texture;
     if (!texture || texture.width != Width || texture.height != Height ||
         texture.pixelFormat != MTLPixelFormatBGRA8Unorm || texture.framebufferOnly)
@@ -240,7 +290,52 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     updateFrame(frame, @{@"drawable_id": @(drawable.drawableID), @"texture_class": @(object_getClassName(texture)),
         @"surface_id": @(IOSurfaceGetID(surface)), @"surface_row_bytes": @(surfaceRow),
         @"surface_allocation_bytes": @(IOSurfaceGetAllocSize(surface)), @"texture_usage": @(texture.usage)});
-    auto *input = static_cast<uint8_t *>(upload.mutableBytes);
+    uint8_t *input;
+    const uint8_t *inputPixels;
+    NSUInteger inputRow;
+#if NABU_SHARED_IOSURFACE_SOURCE
+    (void)upload;
+    if (!sharedSource || source.iosurface != sharedSource)
+        return fail(@"Source texture does not retain the requested default IOSurface");
+    const IOSurfaceLockOptions cpuOptions = kIOSurfaceLockAvoidSync;
+    const kern_return_t sourceLocked = IOSurfaceLock(sharedSource, cpuOptions, nullptr);
+    if (sourceLocked) return fail([NSString stringWithFormat:@"Source IOSurfaceLock failed: %x", unsigned(sourceLocked)]);
+    input = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(sharedSource));
+    inputRow = IOSurfaceGetBytesPerRow(sharedSource);
+    const NSUInteger inputAllocation = IOSurfaceGetAllocSize(sharedSource);
+    if (!input) { IOSurfaceUnlock(sharedSource, cpuOptions, nullptr); return fail(@"Source IOSurface CPU address unavailable"); }
+    writeSharedPattern(input, inputRow, inputAllocation, frame);
+    const uint64_t sourceWarm = prewarmBytes(input, inputAllocation);
+    const kern_return_t sourceUnlocked = IOSurfaceUnlock(sharedSource, cpuOptions, nullptr);
+    if (sourceUnlocked) return fail([NSString stringWithFormat:@"Source IOSurfaceUnlock failed: %x", unsigned(sourceUnlocked)]);
+    inputPixels = input;
+
+    const kern_return_t targetLocked = IOSurfaceLock(surface, cpuOptions, nullptr);
+    if (targetLocked) return fail([NSString stringWithFormat:@"Target prewarm IOSurfaceLock failed: %x", unsigned(targetLocked)]);
+    auto *targetBefore = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(surface));
+    const NSUInteger targetAllocation = IOSurfaceGetAllocSize(surface);
+    if (!targetBefore) { IOSurfaceUnlock(surface, cpuOptions, nullptr); return fail(@"Target prewarm CPU address unavailable"); }
+    memset(targetBefore, Guard, targetAllocation);
+    const uint64_t targetWarm = prewarmBytes(targetBefore, targetAllocation);
+    const kern_return_t targetUnlocked = IOSurfaceUnlock(surface, cpuOptions, nullptr);
+    if (targetUnlocked) return fail([NSString stringWithFormat:@"Target prewarm IOSurfaceUnlock failed: %x", unsigned(targetUnlocked)]);
+    updateFrame(frame, @{@"source_surface_id": @(IOSurfaceGetID(sharedSource)),
+        @"source_cpu_address": @(uintptr_t(input)), @"source_surface_allocation_bytes": @(inputAllocation),
+        @"source_cpu_write_executed": @YES, @"source_cpu_written_bytes": @(inputAllocation),
+        @"source_cpu_pattern_bytes": @(Width * Height * 4), @"source_cpu_prewarm_executed": @YES,
+        @"source_cpu_prewarm_bytes": @(inputAllocation),
+        @"source_cpu_prewarm_checksum": @(sourceWarm), @"source_cpu_cache_sync_requested": @NO,
+        @"source_lock_options": @(cpuOptions), @"source_unlock_status": @(sourceUnlocked),
+        @"source_replace_region_called": @NO, @"source_staging_buffer_used": @NO,
+        @"target_cpu_address_before": @(uintptr_t(targetBefore)),
+        @"target_cpu_write_executed": @YES, @"target_cpu_written_bytes": @(targetAllocation),
+        @"target_cpu_prewarm_executed": @YES, @"target_cpu_prewarm_bytes": @(targetAllocation),
+        @"target_cpu_prewarm_checksum": @(targetWarm), @"target_cpu_prewarm_value": @(Guard),
+        @"target_cpu_cache_sync_requested": @NO, @"target_prewarm_lock_options": @(cpuOptions),
+        @"target_prewarm_unlock_status": @(targetUnlocked)});
+#else
+    (void)sharedSource;
+    input = static_cast<uint8_t *>(upload.mutableBytes);
     memset(input, Guard, ReadbackBytes);
     for (NSUInteger y = 0; y < Height; ++y) for (NSUInteger x = 0; x < Width; ++x) {
         const Pixel color = expected(x, y, frame);
@@ -249,6 +344,9 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     // CPU writes only the source texture. The drawable is written by the render pass.
     [source replaceRegion:MTLRegionMake2D(0, 0, Width, Height) mipmapLevel:0
         withBytes:input + Prefix bytesPerRow:RowBytes];
+    inputPixels = input + Prefix;
+    inputRow = RowBytes;
+#endif
     updateFrame(frame, @{@"source_upload_epoch": @(frame), @"source_upload_bytes": @(Width * Height * 4),
         @"source_upload_row_bytes": @(RowBytes), @"source_texture_class": @(object_getClassName(source))});
     memset(readback.contents, Guard, ReadbackBytes);
@@ -283,18 +381,53 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
 
     const auto *bytes = static_cast<const uint8_t *>(readback.contents);
     const NSUInteger gpuErrors = pixelErrors(bytes + Prefix, RowBytes, frame);
-    const NSUInteger inputErrors = pixelErrors(input + Prefix, RowBytes, frame);
+    IOSurfaceLockOptions readOptions = kIOSurfaceLockReadOnly;
+#if NABU_SHARED_IOSURFACE_SOURCE
+    readOptions = static_cast<IOSurfaceLockOptions>(readOptions | kIOSurfaceLockAvoidSync);
+    const kern_return_t sourceReadLocked = IOSurfaceLock(sharedSource, readOptions, nullptr);
+    if (sourceReadLocked) return fail([NSString stringWithFormat:@"Source read IOSurfaceLock failed: %x", unsigned(sourceReadLocked)]);
+    inputPixels = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(sharedSource));
+    if (!inputPixels) { IOSurfaceUnlock(sharedSource, readOptions, nullptr); return fail(@"Source read CPU address unavailable"); }
+#endif
+    const NSUInteger inputErrors = pixelErrors(inputPixels, inputRow, frame);
+#if NABU_SHARED_IOSURFACE_SOURCE
+    NSUInteger inputGuards = guardErrors(inputPixels + inputRow * Height, inputAllocation - inputRow * Height);
+    for (NSUInteger y = 0; y < Height; ++y)
+        inputGuards += guardErrors(inputPixels + y * inputRow + Width * 4, inputRow - Width * 4);
+    const bool sameSourceAddress = inputPixels == input;
+    const kern_return_t sourceReadUnlocked = IOSurfaceUnlock(sharedSource, readOptions, nullptr);
+    updateFrame(frame, @{@"source_cpu_address_after": @(uintptr_t(inputPixels)),
+        @"source_cpu_same_address": @(sameSourceAddress), @"source_read_lock_options": @(readOptions),
+        @"source_read_unlock_status": @(sourceReadUnlocked),
+        @"source_surface_guard_bytes": @(inputAllocation - Width * Height * 4)});
+    if (sourceReadUnlocked) return fail([NSString stringWithFormat:@"Source read IOSurfaceUnlock failed: %x", unsigned(sourceReadUnlocked)]);
+    if (!sameSourceAddress) return fail(@"Source CPU address changed across the GPU ownership interval");
+#else
     NSUInteger inputGuards = guardErrors(input, Prefix) + guardErrors(input + Prefix + RowBytes * Height, Suffix);
     for (NSUInteger y = 0; y < Height; ++y) inputGuards += guardErrors(input + Prefix + y * RowBytes + Width * 4, RowBytes - Width * 4);
+#endif
     NSUInteger guards = guardErrors(bytes, Prefix) + guardErrors(bytes + Prefix + RowBytes * Height, Suffix);
     for (NSUInteger y = 0; y < Height; ++y) guards += guardErrors(bytes + Prefix + y * RowBytes + Width * 4, RowBytes - Width * 4);
-    const kern_return_t locked = IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
+    const kern_return_t locked = IOSurfaceLock(surface, readOptions, nullptr);
     if (locked) return fail([NSString stringWithFormat:@"Drawable IOSurfaceLock failed: %x", unsigned(locked)]);
     const auto *pixels = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(surface));
     const NSUInteger directErrors = pixels ? pixelErrors(pixels, surfaceRow, frame) : Width * Height;
     NSMutableData *direct = [NSMutableData dataWithCapacity:Width * Height * 4];
     if (pixels) for (NSUInteger y = 0; y < Height; ++y) [direct appendBytes:pixels + y * surfaceRow length:Width * 4];
-    const kern_return_t unlocked = IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
+    NSUInteger targetGuards = 0;
+#if NABU_SHARED_IOSURFACE_SOURCE
+    const bool sameTargetAddress = pixels == targetBefore;
+    if (pixels) {
+        for (NSUInteger y = 0; y < Height; ++y)
+            targetGuards += guardErrors(pixels + y * surfaceRow + Width * 4, surfaceRow - Width * 4);
+        targetGuards += guardErrors(pixels + surfaceRow * Height, targetAllocation - surfaceRow * Height);
+    }
+    updateFrame(frame, @{@"target_cpu_address_after": @(uintptr_t(pixels)),
+        @"target_cpu_same_address": @(sameTargetAddress), @"target_read_lock_options": @(readOptions),
+        @"target_surface_guard_bytes": @(targetAllocation - Width * Height * 4),
+        @"target_surface_guard_errors": @(targetGuards)});
+#endif
+    const kern_return_t unlocked = IOSurfaceUnlock(surface, readOptions, nullptr);
     updateFrame(frame, @{@"gpu_pixels_checked": @(Width * Height), @"gpu_pixel_errors": @(gpuErrors),
         @"direct_surface_pixels_checked": @(Width * Height), @"direct_surface_pixel_errors": @(directErrors),
         @"readback_guard_errors": @(guards), @"surface_unlock_status": @(unlocked),
@@ -304,8 +437,11 @@ static bool render(id<CAMetalDrawable> drawable, NSUInteger frame, id<MTLRenderP
     [gpuFrames appendData:packed];
     [surfaceFrames appendData:direct];
     update(@{@"completed_command_buffers": @(frame + 1)});
-    if (gpuErrors || directErrors || guards || unlocked || inputErrors || inputGuards)
+    if (gpuErrors || directErrors || guards || unlocked || inputErrors || inputGuards || targetGuards)
         return fail(@"Sampled GPU pixels, IOSurface pixels or input/readback guards differ");
+#if NABU_SHARED_IOSURFACE_SOURCE
+    if (!sameTargetAddress) return fail(@"Drawable CPU address changed across the GPU ownership interval");
+#endif
     return true;
 }
 
@@ -342,6 +478,9 @@ static bool saveFrames() {
 @property(nonatomic, strong) id<MTLTexture> sourceTexture;
 @property(nonatomic, weak) id<MTLTexture> sourceTextureWitness;
 @property(nonatomic, strong) NSMutableData *upload;
+#if NABU_SHARED_IOSURFACE_SOURCE
+@property(nonatomic, assign) IOSurfaceRef sourceSurface;
+#endif
 @property(nonatomic) BOOL started;
 @property(nonatomic) BOOL rendering;
 @property(nonatomic) BOOL removalRequested;
@@ -355,6 +494,11 @@ static bool saveFrames() {
 @end
 
 @implementation MetalPresentController
+#if NABU_SHARED_IOSURFACE_SOURCE
+- (void)dealloc {
+    if (_sourceSurface) CFRelease(_sourceSurface);
+}
+#endif
 - (void)viewDidLoad {
     [super viewDidLoad];
     stage(@"view_did_load");
@@ -483,13 +627,24 @@ static bool saveFrames() {
                         width:Width height:Height mipmapped:NO];
                     source.storageMode = MTLStorageModeShared;
                     source.usage = MTLTextureUsageShaderRead;
+#if NABU_SHARED_IOSURFACE_SOURCE
+                    self.sourceSurface = createSharedSource();
+                    if (self.sourceSurface)
+                        self.sourceTexture = [self.metalDevice newTextureWithDescriptor:source iosurface:self.sourceSurface plane:0];
+#else
                     self.sourceTexture = [self.metalDevice newTextureWithDescriptor:source];
-                    self.sourceTextureWitness = self.sourceTexture;
                     self.upload = [NSMutableData dataWithLength:ReadbackBytes];
+#endif
+                    self.sourceTextureWitness = self.sourceTexture;
                     update(@{@"source_texture_created": @(self.sourceTexture != nil)});
                 }
                 if (!self.pipeline) { /* makePipeline saved the actual failure. */ }
-                else if (!self.commandQueue || !self.readback || !self.readback.contents || !self.sourceTexture || !self.upload)
+                else if (!self.commandQueue || !self.readback || !self.readback.contents || !self.sourceTexture ||
+#if NABU_SHARED_IOSURFACE_SOURCE
+                    !self.sourceSurface)
+#else
+                    !self.upload)
+#endif
                     fail(@"Command queue, texture input or readback allocation failed");
                 else {
                     const CFTimeInterval begin = CACurrentMediaTime();
@@ -497,7 +652,12 @@ static bool saveFrames() {
                     const CFTimeInterval acquired = CACurrentMediaTime();
                     updateFrame(frame, @{@"next_drawable_ms": @((acquired - begin) * 1000), @"acquired_uptime": @(acquired)});
                     if (!drawable) fail(@"CAMetalLayer nextDrawable returned nil");
-                    else passed = render(drawable, frame, self.pipeline, self.commandQueue, self.readback, self.sourceTexture, self.upload);
+                    else passed = render(drawable, frame, self.pipeline, self.commandQueue, self.readback, self.sourceTexture, self.upload,
+#if NABU_SHARED_IOSURFACE_SOURCE
+                        self.sourceSurface);
+#else
+                        nullptr);
+#endif
                 }
             } @catch (NSException *exception) { fail(exception.reason ?: exception.name); }
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -573,6 +733,9 @@ static bool saveFrames() {
     update(@{@"counters_after_layer_removal": stats(after), @"frontend_imports_returned_to_baseline": @(balanced),
         @"source_texture_wrapper_released": @(sourceReleased),
         @"release_check_attempts": @(self.releaseAttempts)});
+#if NABU_SHARED_IOSURFACE_SOURCE
+    update(@{@"source_surface_owner_released": @(self.sourceSurface == nullptr)});
+#endif
     if ((!balanced || !sourceReleased) && self.releaseAttempts < 30)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [self checkReleasedImports]; });
     else update(@{@"release_check_complete": @YES, @"resource_release_passed": @(balanced && sourceReleased)});
@@ -590,6 +753,12 @@ static bool saveFrames() {
     self.metalLayer = nil;
     self.readback = nil;
     self.sourceTexture = nil;
+#if NABU_SHARED_IOSURFACE_SOURCE
+    if (self.sourceSurface) {
+        CFRelease(self.sourceSurface);
+        self.sourceSurface = nullptr;
+    }
+#endif
     self.upload = nil;
     self.commandQueue = nil;
     self.pipeline = nil;
@@ -641,6 +810,14 @@ int main(int argc, char *argv[]) {
             @"one_command_in_flight": @YES, @"timing_scope": @"CPU uptime observations; no hardware vsync claim",
             @"frames": [NSMutableArray array], @"surface_use_counts": [NSMutableDictionary dictionary], @"layer_removed": @NO,
             @"frontend_messages": [NSMutableArray array], @"documents": documents.path} mutableCopy];
+#if NABU_SHARED_IOSURFACE_SOURCE
+        [record addEntriesFromDictionary:@{@"shared_iosurface_source": @YES,
+            @"mode": @"CAMetalLayer default IOSurface shared-page source",
+            @"source_upload_method": @"CPU writes default IOSurface base address",
+            @"source_upload_api_bytes": @0, @"source_cpu_cache_sync_requested": @NO,
+            @"target_cpu_cache_sync_requested": @NO,
+            @"cache_test_scope": @"CPU direct writes and target prewarm with IOSurface AvoidSync; actual cache mode requires kernel evidence"}];
+#endif
         gpuFrames = [NSMutableData data];
         surfaceFrames = [NSMutableData data];
         stage(@"main");
