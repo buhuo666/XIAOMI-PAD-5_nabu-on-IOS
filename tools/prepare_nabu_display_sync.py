@@ -22,7 +22,7 @@ def install(tree):
     for unit in UNITS:
         for suffix in ('.h', '.cpp'):
             shutil.copyfile(ROOT / 'patches/nabu-display' / (unit + suffix), folder / (unit + suffix))
-    for name in ('NabuDpuSwapLedger.h', 'NabuDpuProducer.h', 'NabuDpuSmmuNamespace.h'):
+    for name in ('NabuDpuSwapLedger.h', 'NabuDpuProducer.h', 'NabuDpuSmmuNamespace.h', 'NabuDpuCheckpoint.h'):
         shutil.copyfile(ROOT / 'patches/nabu-display' / name, folder / name)
     smmu = ROOT / 'src/nabu/gpu/upstream/ArmSmmu4K'
     for path in smmu.glob('*.h'):
@@ -56,6 +56,22 @@ MiniIOSurfaceDisplayUse(MiniIOSurface * s, int delta)
 
 void
 MiniIOSurfaceDrop(MiniIOSurface * s)''')
+        path.write_text(text)
+
+    # The last committed GPU188/189 lines surround the first full-screen
+    # surface's user mapping. Trace outside gSurfaceLock on both sides.
+    text = path.read_text()
+    if 'NabuDpuCheckpoint.h' not in text:
+        text = '#include "nabu_display/NabuDpuCheckpoint.h"\n' + text
+        text = replace(text, '\tuint64_t mapped_at = mach_absolute_time();',
+            '\tstatic uint32_t firstMapTraced;\n'
+            '\tconst bool traceMap = s->info.allocSize >= 16384000 && NabuDpuCheckpoint::enabled() &&\n'
+            '\t    __sync_bool_compare_and_swap(&firstMapTraced, 0, 1);\n'
+            '\tif (traceMap) NabuDpuCheckpoint::record("surface-user-map-enter");\n'
+            '\tuint64_t mapped_at = mach_absolute_time();')
+        text = replace(text, '\tmapped_at = mach_absolute_time() - mapped_at;',
+            '\tif (traceMap) NabuDpuCheckpoint::record("surface-user-map-returned", ret);\n'
+            '\tmapped_at = mach_absolute_time() - mapped_at;')
         path.write_text(text)
 
     path = kernel / 'MiniIOMobileFramebuffer.cpp'

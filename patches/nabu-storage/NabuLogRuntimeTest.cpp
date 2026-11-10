@@ -241,8 +241,32 @@ static void testGpuCheckpoint()
   assert(nabu_gpu_log_status(&committed,&error)!=0 && !committed && !error);
   puts("PASS GPU checkpoint observes only committed bytes; no writes, sealing or scheduling; unavailable on failed/finishing capture");
 }
+static void testDisplayCheckpoint()
+{
+  reset("");assert(nabuLogBeginConfigured()==0);
+  assert(nabu_log_checkpoint()==ENXIO && !appends);
+  reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
+  const auto target=published;const auto oldSchedules=schedules;
+  growOnAppend=true;assert(nabu_log_checkpoint()==0);
+  assert(saved.size()==target && published==target+5 && appends==1);
+  assert(!captureSealed && !sealCalls && !ends && schedules==oldSchedules && !lockDepth);
+  assertSavedPrefix();
+  assert(nabu_log_checkpoint()==0 && saved.size()==published && appends==2);
+  assertSavedPrefix();
+  reset("nabu-log-slot=0",2*65536);assert(nabuLogBeginConfigured()==0);
+  assert(nabu_log_checkpoint()==0 && appends==3 && !lockDepth);
+  assert(std::count(events.begin(),events.end(),"unlock")==4);
+  assertSavedPrefix();
+  reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
+  appendFailure=1;appendError=6;
+  assert(nabu_log_checkpoint()==EIO && !gNabuLogFlushed && !sealCalls && !ends);
+  assert(nabu_log_checkpoint()==EIO && appends==1);
+  reset("nabu-log-slot=0",100);assert(nabuLogBeginConfigured()==0);
+  gNabuLogFinishing=true;assert(nabu_log_checkpoint()==EBUSY && !appends);
+  puts("PASS display checkpoint commits a fixed prefix, preserves future capture, releases root lock per record and reports actual write/finish failures");
+}
 int main()
 {
-  testArguments();testPumps();testFinish();testCapacityAndLateQueue();testGpuCheckpoint();
+  testArguments();testPumps();testFinish();testCapacityAndLateQueue();testGpuCheckpoint();testDisplayCheckpoint();
   puts("PASS actual NabuLogRuntime scheduling and termination control flow");
 }

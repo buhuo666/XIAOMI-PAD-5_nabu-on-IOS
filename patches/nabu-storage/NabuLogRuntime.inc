@@ -119,6 +119,25 @@ extern "C" int nabu_gpu_log_status(uint64_t *committed,uint32_t *error)
   return unavailable;
 }
 
+// Normal-thread diagnostic boundary, without sealing or a separate disk path.
+// GPU188/189 stopped between the periodic pump's last prefix and the first
+// display handover. Commit a fixed captured prefix before each traced step;
+// release the shared root-read lock between records just as the pump does.
+extern "C" int nabu_log_checkpoint(void)
+{
+  if (!gNabuReadLock || !gNabuLogSelected) return ENXIO;
+  const uint32_t target=nabu_log_capture_length();
+  for (;;) {
+    IOLockLock(gNabuReadLock);
+    int error=gNabuLogRuntimeError;
+    if (!error && (gNabuLogFinishing || !nabuLogIsOpen())) error=EBUSY;
+    if (!error && gNabuLogFlushed<target && !nabuLogDrain(1)) error=gNabuLogRuntimeError;
+    const bool done=gNabuLogFlushed>=target;
+    IOLockUnlock(gNabuReadLock);
+    if (error || done) return error;
+  }
+}
+
 extern "C" void nabu_log_append_report(void)
 {
   if (!gNabuLogSelected) return;

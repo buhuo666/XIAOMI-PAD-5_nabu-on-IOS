@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 #include "NabuDpuMapper.h"
+#include "NabuDpuCheckpoint.h"
 #include "ArmSmmu4KContext.h"
 #include "ArmSmmu4KProgram.h"
 #include <IOKit/IOLib.h>
@@ -199,6 +200,7 @@ Binding *prepare(int *error) {
     for (unsigned candidate = 0xfffe; candidate >= 0xff00; --candidate)
         if (asidUnused(b, candidate)) { b->asid = candidate; break; }
     if (!b->asid) { IOLog("NABU DPU MAP no disjoint AArch64 ASID found; no context writes\n"); goto bad; }
+    NabuDpuCheckpoint::record("mapper-routes-qualified", b->asid);
     result = kIOReturnNoMemory;
     b->tableMemory = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
         static_cast<IOOptionBits>(kIODirectionInOut) | static_cast<IOOptionBits>(kIOMemoryMapperNone) |
@@ -228,8 +230,11 @@ Binding *prepare(int *error) {
                       i, physical + uint64_t(i) * 4096, attr, VM_WIMG_WCOMB); goto bad;
             }
         }
+        NabuDpuCheckpoint::record("table-cache-checked");
         b->arena = {static_cast<volatile uint64_t *>(b->tableMemory->getBytesNoCopy()), physical, PT::TablePages};
+        NabuDpuCheckpoint::record("table-initialize-enter");
         if (PT::prepareInactive(b->arena, visibility(b), b->state) != PT::Ok) goto bad;
+        NabuDpuCheckpoint::record("table-initialize-returned");
     }
     IOLog("NABU DPU MAP prepared tables_pa=%#llx pages=%u asid=%u routes=%u; no context writes\n",
           b->arena.physical, PT::TablePages, b->asid, b->routes.count);
@@ -305,12 +310,22 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
     // CFRE remains set to record faults in FSR; no stalls or implicit retries.
     b->expected.sctlr &= ~Cfie;
     const auto &e = b->expected;
-    if (wr32(b, Cb, 0) || barrier(b) || wr32(b, Cba2r, e.cba2r) || wr32(b, Cbar, e.cbar) ||
+    IOLog("NABU DPU MAP programming root=%#llx asid=%u SCTLR=%#x TCR=%#x TCR2=%#x MAIR=%#x/%#x\n",
+          b->arena.physical, b->asid, e.sctlr, e.tcr, e.tcr2, e.mair0, e.mair1);
+    NabuDpuCheckpoint::record("cb2-disable-enter");
+    if (wr32(b, Cb, 0) || barrier(b)) return fail(b, kIOReturnIOError);
+    NabuDpuCheckpoint::record("cb2-disable-returned");
+    if (wr32(b, Cba2r, e.cba2r) || wr32(b, Cbar, e.cbar) ||
         wr32(b, Cb + 0x10, e.tcr2) || wr32(b, Cb + 0x30, e.tcr) ||
         wr64(b, Cb + 0x20, e.ttbr0) || wr64(b, Cb + 0x28, e.ttbr1) ||
         wr32(b, Cb + 0x38, e.mair0) || wr32(b, Cb + 0x3c, e.mair1) || barrier(b) ||
-        !imageMatches(b, false) || !sync(b) || wr32(b, Cb, e.sctlr) || barrier(b) || !imageMatches(b, true))
+        !imageMatches(b, false))
         return fail(b, kIOReturnIOError);
+    NabuDpuCheckpoint::record("cb2-registers-returned");
+    if (!sync(b)) return fail(b, kIOReturnIOError);
+    NabuDpuCheckpoint::record("cb2-tlbsync-returned");
+    if (wr32(b, Cb, e.sctlr) || barrier(b) || !imageMatches(b, true)) return fail(b, kIOReturnIOError);
+    NabuDpuCheckpoint::record("cb2-enable-returned");
     if (PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok ||
         rd32(b, Cb + 0x58, &fsr) || (fsr & FaultMask)) return fail(b, kIOReturnIOError);
     b->active = true;

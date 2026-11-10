@@ -4,6 +4,7 @@
 #include "NabuDpuScanoutCore.h"
 #include "NabuDpuMapper.h"
 #include "NabuDpuSwapLedger.h"
+#include "NabuDpuCheckpoint.h"
 #include "../MiniIOSurface.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOLocks.h>
@@ -71,6 +72,7 @@ struct Binding {
     uint64_t accepted, producerWaitUs, lastDisplayTime, eventGeneration;
     IOReturn failure;
     bool powerOn;
+    bool firstWorkerTraced;
     Mapper::Binding *activeMapper;
 };
 static Binding *display;
@@ -203,16 +205,29 @@ static IOReturn waitProducer(Binding *b, Held &h) {
 static IOReturn initializeMapper(Binding *b) {
     if (b->mapper) return Mapper::poisoned(b->mapper) ? kIOReturnIOError : kIOReturnSuccess;
     int error = 0;
+    NabuDpuCheckpoint::record("mapper-prepare-enter");
     b->mapper = Mapper::prepare(&error);
+    NabuDpuCheckpoint::record("mapper-prepare-returned", error);
     if (!b->mapper) return error ? IOReturn(error) : kIOReturnNoMemory;
+    NabuDpuCheckpoint::record("source-preflight-enter");
     IOReturn result = Mapper::preflightSources(b->mapper, b->io);
+    NabuDpuCheckpoint::record("source-preflight-returned", result);
     if (result) return result;
     Scan::Diagnostic d{};
+    NabuDpuCheckpoint::record("xin-quiesce-enter");
     auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
+    IOLog("NABU DPU: quiesce status=%u region=%u offset=%#x want=%#x got=%#x\n",
+        status, d.region, d.offset, d.expected, d.observed);
+    NabuDpuCheckpoint::record("xin-quiesce-returned", status);
     if (status != Scan::Ok) return kIOReturnIOError;
+    NabuDpuCheckpoint::record("cb2-activate-enter");
     result = Mapper::activateAfterQuiesce(b->mapper, b->io, b->scan);
+    NabuDpuCheckpoint::record("cb2-activate-returned", result);
     if (result != kIOReturnSuccess) return result;
-    if (Scan::resume(b->io, b->scan, &d) != Scan::Ok) return kIOReturnIOError;
+    NabuDpuCheckpoint::record("xin-resume-enter");
+    status = Scan::resume(b->io, b->scan, &d);
+    NabuDpuCheckpoint::record("xin-resume-returned", status);
+    if (status != Scan::Ok) return kIOReturnIOError;
     IOLockLock(b->stateLock); b->activeMapper = b->mapper; IOLockUnlock(b->stateLock);
     IOLog("NABU DPU: CB2 enabled with boot GOP identity; direct IOSurface slots ready\n");
     return kIOReturnSuccess;
@@ -222,7 +237,7 @@ static void finishRecord(Binding *b, uint32_t id, Swap::Phase phase, IOReturn er
     if (auto r = b->ledger.find(id)) { r->phase = phase; r->error = error; }
     IOLockWakeup(b->stateLock, b, false); IOLockUnlock(b->stateLock);
 }
-static IOReturn flip(Binding *b, Held &h) {
+static IOReturn flip(Binding *b, Held &h, bool trace) {
     auto s = h.surface;
     const uint64_t bytes = uint64_t(s->info.bytesPerRow) * 2559 + 6400;
     IOLockLock(b->stateLock); IOReturn result = b->failure; IOLockUnlock(b->stateLock);
@@ -231,7 +246,9 @@ static IOReturn flip(Binding *b, Held &h) {
     if (result) return result;
     IOMemoryDescriptor *memory = s->client ? s->client : s->memory;
     const uint64_t offset = (s->client ? 0 : PAGE_SIZE) + uint64_t(s->info.offset);
+    if (trace) NabuDpuCheckpoint::record("surface-dpu-map-enter");
     result = Mapper::mapDescriptor(b->mapper, memory, offset, bytes, &h.mapping);
+    if (trace) NabuDpuCheckpoint::record("surface-dpu-map-returned", result);
     if (result) return result;
     const unsigned slot = h.mapping.slot;
     b->held[slot] = h; h = {}; // transfer before the first possible DPU access
@@ -243,10 +260,12 @@ static IOReturn flip(Binding *b, Held &h) {
     Scan::Frame frame{held.mapping.iova, s->info.bytesPerRow, bytes, held.mapping.token,
         1600, 2560, s->info.pixelFormat, s->info.bytesPerElement, s->info.planeCount, true};
     Scan::Diagnostic d{};
+    if (trace) NabuDpuCheckpoint::record("scan-submit-enter");
     IOLockLock(b->stateLock);
     result = b->failure ? b->failure : Mapper::checkFault(b->mapper);
     auto status = result ? Scan::IoError : Scan::submit(b->io, b->scan, frame, &d);
     IOLockUnlock(b->stateLock);
+    if (trace) NabuDpuCheckpoint::record("scan-submit-returned", status);
     if (status != Scan::Pending) {
         // Retain both old and new resources after any uncertain hardware write.
         return kIOReturnIOError;
@@ -263,6 +282,7 @@ static IOReturn flip(Binding *b, Held &h) {
         }
     }
     IOLockUnlock(b->stateLock);
+    if (trace) NabuDpuCheckpoint::record("scan-acceptance-returned", result);
     if (result) return result;
     unsigned old = PT::NoSlot;
     IOLockLock(b->stateLock);
@@ -299,11 +319,15 @@ static void worker(void *cookie, wait_result_t) {
         IOReturn result = b->failure;
         IOLockUnlock(b->stateLock);
         const uint32_t id = held.swap, sid = held.surface->sid;
+        const bool trace = !b->firstWorkerTraced && NabuDpuCheckpoint::enabled();
+        b->firstWorkerTraced = true;
+        if (trace) NabuDpuCheckpoint::record("producer-wait-enter");
         const uint64_t began = nowUs();
         if (!result) result = waitProducer(b, held);
         b->producerWaitUs += nowUs() - began;
+        if (trace) NabuDpuCheckpoint::record("producer-wait-returned", result);
         if (!result) {
-            result = flip(b, held);
+            result = flip(b, held, trace);
             if (result) {
                 IOLockLock(b->stateLock); b->failure = result; IOLockUnlock(b->stateLock);
             }
@@ -314,10 +338,15 @@ static void worker(void *cookie, wait_result_t) {
             IOLog("NABU DPU: swap=%u surface=%u failed=%#x scan-phase=%u; no completion fabricated\n",
                 id, sid, result, b->scan.phase);
         }
+        if (trace) NabuDpuCheckpoint::record("first-frame-worker-returned", result);
     }
 }
 IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     if (bytes < SwapBytes) return kIOReturnBadArgument;
+    static uint32_t firstPresentTraced;
+    const bool trace = NabuDpuCheckpoint::enabled() &&
+        __sync_bool_compare_and_swap(&firstPresentTraced, 0, 1);
+    if (trace) NabuDpuCheckpoint::record("present-enter");
     const uint32_t id = word(swap, SwapId), sid = word(swap, Surface);
     for (unsigned layer = 1; layer < 4; ++layer)
         if (word(swap, Surface + layer * 4)) return kIOReturnUnsupported;

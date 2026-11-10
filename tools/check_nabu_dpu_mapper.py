@@ -34,6 +34,8 @@ inline void *IOMallocZero(size_t n){return std::calloc(1,n);}
 inline void IOFree(void *p,size_t){std::free(p);}
 inline void IODelay(unsigned){}
 inline void IOLog(const char *,...){}
+inline bool PE_parse_boot_argn(const char *,void *,int){return false;}
+extern "C" inline int nabu_log_checkpoint(){assert(false);return 0;}
 class OSObject {public:virtual ~OSObject()=default;virtual void release(){delete this;}
     void *metaCast(const char *s){return std::strcmp(s,"NabuUsbNativeController")==0?this:nullptr;}};
 class OSIterator:public OSObject {bool seen=false;public:OSObject *getNextObject(){static OSObject native;if(seen)return nullptr;seen=true;return &native;}};
@@ -188,7 +190,7 @@ def main():
         (includes / 'fake_kernel.h').write_text(STUB)
         for name in ['IOKit/IOTypes.h', 'IOKit/IOLib.h', 'IOKit/IOBufferMemoryDescriptor.h',
                      'IOKit/IODeviceMemory.h', 'IOKit/IOService.h', 'IOKit/IOPlatformExpert.h',
-                     'kern/task.h', 'mach/vm_param.h', 'vm/memory_types.h']:
+                     'kern/task.h', 'mach/vm_param.h', 'vm/memory_types.h', 'pexpert/pexpert.h']:
             p = includes / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text('#include "fake_kernel.h"\n')
         fixture = tmp / 'fixture.cpp'; fixture.write_text(HARNESS.replace('BASELINE', baseline))
         objects = []; cc = 'clang' if sys.platform == 'darwin' else 'clang-18'
