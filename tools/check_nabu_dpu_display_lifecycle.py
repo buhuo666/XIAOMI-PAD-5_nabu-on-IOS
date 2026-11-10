@@ -134,7 +134,11 @@ void thread_call_cancel_wait(thread_call_t){}
 void thread_call_free(thread_call_t c){delete c;}
 void thread_call_enter_delayed(thread_call_t,uint64_t){++timerEnters;}
 struct Port{unsigned released=0;};
-using mach_port_t=Port *;
+// macOS libc already defines its user-space integer mach_port_t. The kernel
+// ABI under test uses an ipc_port pointer; keep that substitute local to the
+// extracted fixture without redeclaring the host platform's type.
+using DpuTestMachPort=Port *;
+#define mach_port_t DpuTestMachPort
 struct OSAsyncReference64{Port *port;uint64_t function,context;};
 void releaseNotificationPort(Port *p){assert(p && !p->released);++p->released;}
 void setAsyncReference64(OSAsyncReference64 &r,Port *p,uint64_t f,uint64_t c,task_t){r={p,f,c};}
