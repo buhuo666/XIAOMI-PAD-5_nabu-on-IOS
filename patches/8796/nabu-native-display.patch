@@ -1,5 +1,14 @@
 --- a/iokit/Kernel/MiniIOMobileFramebuffer.cpp
 +++ b/iokit/Kernel/MiniIOMobileFramebuffer.cpp
+@@ -76,7 +76,7 @@
+ 
+ #define kFBNotifyVSync          5
+ #define kFBNotifyTypes          8
+-#define kFBRefreshHz            60                      /* unless boot-arg fb_hz says otherwise */
++#define kFBRefreshHz            120                     /* Nabu panel measured at 120 Hz; fb_hz can override */
+ 
+ #define FRAME_TIMES             64                      /* milliseconds told apart between two frames */
+ #define FRAME_PAUSE             90                      /* from so many on, nothing was moving: not a slow frame */
 @@ -296,6 +296,7 @@
  	uint8_t *       fBase;                  /* the boot framebuffer: the panel */
  	uint32_t        fPanelWidth, fPanelHeight, fRowBytes;
