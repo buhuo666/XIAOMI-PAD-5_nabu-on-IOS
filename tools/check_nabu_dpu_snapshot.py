@@ -35,12 +35,12 @@ struct Fixture {
     std::map<std::tuple<std::string,unsigned,std::string>,uint64_t> notes;
     uint64_t now=0, period=0;
     uint32_t initial=0;
-    bool countEnabled=false, frozen=false;
+    bool countEnabled=false, frozen=false, zeroEnableReadback=false;
     static bool rd(void *p, Space s, uint32_t at, uint32_t *out) {
         auto &f=*static_cast<Fixture *>(p);
         assert(rangeFits(s,at)); f.reads.push_back({int(s),at});
         if(s==Mdss && (at==0x6b800 || at==0x6c000)) {*out=f.countEnabled?1:0;return true;}
-        if(s==Mdss && (at==0x6b8a8 || at==0x6c0a8)) {*out=f.countEnabled?3:0;return true;}
+        if(s==Mdss && (at==0x6b8a8 || at==0x6c0a8)) {*out=(f.countEnabled&&!f.zeroEnableReadback)?3:0;return true;}
         if(s==Mdss && (at==0x6b8ac || at==0x6c0ac)) {
             *out=f.initial+((f.period && !f.frozen)?uint32_t(f.now/f.period):0);return true;
         }
@@ -110,8 +110,9 @@ int main() {
     Fixture bad;bad.geometry(id0,(7u<<28)|80u);bad.route(1,0x800,0x420,3);capture(bad.reader(),0,Contexts);
     assert(bad.note("CB",3,"unknown_geometry_skipped")==1);
     for(auto r:bad.reads) if(r.first==Apps) assert(r.second<0x1000);
-    for(uint64_t period:{8333ull,16667ull}) {
+    for(uint64_t period:{8333ull,16667ull}) for(bool zeroReadback:{false,true}) {
         Fixture f;f.geometry();f.period=period;f.countEnabled=true;f.initial=UINT32_MAX-3;
+        f.zeroEnableReadback=zeroReadback; // GPU184 inherited register behavior
         capture(f.reader(),999,Identify);
         assert(f.now==250000 && f.note("SAMPLE",0,"polls")==249);
         uint64_t measured=f.note("SAMPLE",1,"poll_estimate_period_ns");

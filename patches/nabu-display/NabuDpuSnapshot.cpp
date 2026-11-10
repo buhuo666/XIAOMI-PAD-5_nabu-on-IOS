@@ -168,9 +168,11 @@ static void sample(const Reader &r, unsigned ms) {
     CounterSample track[2] = {};
     for (unsigned i = 0; i < 2; ++i) {
         CounterSample &s = track[i]; s.base = 0x6b800 + i * 0x800;
-        uint32_t timing, counters;
+        uint32_t timing;
+        // The inherited firmware returns zero at COUNT_EN while frame/line
+        // registers contain live state (GPU184). Android get_status likewise
+        // gates reads on timing-engine enable, not this write-control register.
         s.enabled = read(r, Mdss, s.base, &timing) && (timing & 1) &&
-            read(r, Mdss, s.base + 0xa8, &counters) && (counters & 3) == 3 &&
             read(r, Mdss, s.base + 0xac, &s.initialFrame);
         s.lastFrame = s.initialFrame;
         note(r, Mdss, "SAMPLE", i + 1, "counters_available", s.enabled);
@@ -234,6 +236,8 @@ void capture(const Reader &r, unsigned sample_ms, Depth depth) {
 #ifndef NABU_DPU_SNAPSHOT_HOST_TEST
 #include <IOKit/IOLib.h>
 #include <IOKit/IODeviceMemory.h>
+#include <IOKit/IOService.h>
+#include <IOKit/IOPlatformExpert.h>
 #include <kern/clock.h>
 namespace {
 struct Window {
@@ -251,6 +255,25 @@ struct Window {
     ~Window() { if (mapping) mapping->release(); if (memory) memory->release(); }
 };
 struct Binding { Window windows[2]; };
+static bool appsRegistersAccessible() {
+    // GPU184: USB's plan_bypass read all 94 implemented SMRs successfully.
+    // Its controller is attached only AFTER smmu_configure succeeds. Observe
+    // that same-boot ordering before reading display routes/contexts; this
+    // avoids depending on GPU/USB worker scheduling or the old early probe.
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        OSIterator *children = IOService::getPlatform()->getChildIterator(gIOServicePlane);
+        bool ready = false;
+        if (children) {
+            while (OSObject *child = children->getNextObject()) {
+                if (child->metaCast("NabuUsbNativeController")) { ready = true; break; }
+            }
+            children->release();
+        }
+        if (ready) return true;
+        IOSleep(10);
+    }
+    return false;
+}
 static bool mmioRead(void *cookie, NabuDpuSnapshot::Space space, uint32_t at, uint32_t *out) {
     const Window &w = static_cast<Binding *>(cookie)->windows[space];
     if (!w.base || !NabuDpuSnapshot::rangeFits(space, at) || at > w.bytes - 4) return false;
@@ -278,7 +301,11 @@ extern "C" void nabu_dpu_snapshot_once(unsigned sample_ms, unsigned smmu_depth) 
     Binding b;
     IOLog("NABU DPU SNAP begin read-only sample_ms=%u smmu_depth=%u\n", sample_ms, smmu_depth);
     if (!b.windows[Mdss].open(MdssPhysical, MdssBytes)) { IOLog("NABU DPU SNAP mdss-map-failed\n"); return; }
-    const Depth depth = smmu_depth == 1 ? Routes : smmu_depth == 2 ? Contexts : Identify;
+    Depth depth = smmu_depth == 1 ? Routes : smmu_depth == 2 ? Contexts : Identify;
+    if (depth != Identify) {
+        if (appsRegistersAccessible()) IOLog("NABU DPU SNAP APPS register-bank qualified by native USB attachment\n");
+        else { IOLog("NABU DPU SNAP APPS routes skipped: native USB not attached\n"); depth = Identify; }
+    }
     if (!b.windows[Apps].open(AppsPhysical, depth == Identify ? AppsIdentifyBytes : AppsBytes))
         IOLog("NABU DPU SNAP apps-map-failed\n");
     const Reader reader = {&b, mmioRead, nowUs, pauseMs, logValue};

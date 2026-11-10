@@ -60,3 +60,37 @@ Device acceptance remains pending: ninth-client creation, strict 64-frame
 dirty-source/prewarmed-target verification with zero copied/shadow buffers,
 then inherited display decoding for synchronized same-page scanout. The App
 has a fixed delay and readback, so it is not a 60/120 Hz benchmark.
+
+## GPU184 device result (supersedes pending status above)
+
+Kernel source commit `f3449db`, temporary boot recorded in
+`log/device/nabu-boot-20261110-184/run.json`. The shared-source App's independent
+strict check passed: 64 frames, 4,194,304 pixels in each raw stream, zero pixel
+or guard errors, three direct pointer imports/in-place textures, zero copied
+buffers/copy-in/merge-back/shadows, and all three imports released after clear.
+The user confirmed the pattern, clear and desktop. Submit-to-completion median
+was 6.47 ms (P95 11.72 ms); these are CPU observations, not hardware FPS.
+
+Eleven clients opened successfully. MobileSafari, Preferences and Spotlight
+used slots 8, 9 and 10 at 0x80000000, 0x88000000 and 0x90000000. The user
+confirmed Settings scrolling and Spotlight typing worked, but tearing remained.
+
+DPU snapshot completed: CTL0 drives LM0/1 and VIG0/1 into INTF1/2. Each half is
+800x2560, with the second half offset by 800 pixels; both source addresses are
+0x9c000000, stride 6400. This establishes the inherited fixed-GOP pipeline.
+It does not establish the display SMMU translation mode or synchronized flips.
+
+The sampler skipped polling because FRAME_LINE_COUNT_EN read as zero despite
+nonzero FRAME_COUNT/LINE_COUNT registers. Android's `sde_hw_intf_get_status`
+gates counter reads on TIMING_ENGINE_EN alone. GPU185 removes that extra gate,
+with host cases for both zero/nonzero enable readback at 60/120 Hz.
+
+The same log proves native USB successfully read all 94 implemented APPS SMRs
+before its controller was created (plan slot4, bank3, reuse1). GPU185 can read
+display routes and related context registers after observing native USB's
+attachment in the current boot. It still performs no display/SMMU writes.
+
+GPU184 recovery preserved 4,627,729 bytes of runtime prefix and the full 64 MiB
+slot; clear/readback passed, APFS is 156, Android boot partitions unchanged.
+State: `log/host/gpu-v184/continuation.json`; next: GPU185 hardware frequency
+measurement and display address-translation observation.

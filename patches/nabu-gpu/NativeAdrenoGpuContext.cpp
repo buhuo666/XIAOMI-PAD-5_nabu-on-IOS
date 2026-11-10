@@ -3,6 +3,9 @@
 #include <IOKit/IOLib.h>
 #if defined(NABU_DPU_SNAPSHOT) && NABU_DPU_SNAPSHOT
 extern "C" void nabu_dpu_snapshot_once(unsigned, unsigned);
+#ifndef NABU_DPU_SNAPSHOT_DEPTH
+#define NABU_DPU_SNAPSHOT_DEPTH 0
+#endif
 #endif
 
 static const uint64_t kIovas[GpuBufferCount]={GpuSqeIova,GpuRingIova,GpuMemptrsIova,GpuPwrupIova,GpuScratchIova};
@@ -94,7 +97,7 @@ IOReturn NativeAdrenoGpuContext::bringUp(const ArmSmmu4KIo *io,unsigned bank,uns
 #if defined(NABU_DPU_SNAPSHOT) && NABU_DPU_SNAPSHOT
     /* This sleepable GPU bring-up thread holds no display lock. The inherited
      * framebuffer is initialized before this point. Observe only, once. */
-    if(!status)nabu_dpu_snapshot_once(250,0);
+    if(!status)nabu_dpu_snapshot_once(250,NABU_DPU_SNAPSHOT_DEPTH);
 #endif
     return status;
 }

@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Standalone diagnostic; not registered with any driver or boot hook.
+// Optional diagnostic, invoked from the GPU bring-up hook when enabled.
 // Call once from a sleepable display thread after the inherited display is
 // initialized, outside display locks. sample_ms is clamped to 250. It observes
 // counters; it neither generates vblank nor signals GPU/scanout completion.
@@ -11,8 +11,10 @@
 // smmu_depth=0 reads ONLY IDR0/GFSR. NabuUsbProbe.cpp records an earlier stop
 // at the first APPS SMR access: known addresses/bounds do not prevent a powered-
 // down bank from hanging a bus read. Depth 1 (routes) and 2 (related contexts)
-// require separately established APPS register-bank accessibility. Default use
-// must pass 0. No IRQ ack/enable, stream change, clock write or table walk occurs.
+// require established APPS register-bank accessibility. GPU184's native USB
+// initialization scanned all 94 SMRs; the binding now requires that controller
+// to be attached in this boot before deep reads. Default use passes 0.
+// No IRQ ack/enable, stream change, clock write or table walk occurs.
 //
 // Link: this .cpp plus IOKit IODeviceMemory/IOMemoryMap, IOLib IOLog/IOSleep,
 // kern/clock.h mach_absolute_time/absolutetime_to_nanoseconds. No Linux linkage.

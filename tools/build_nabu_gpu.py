@@ -61,6 +61,8 @@ def main():
                         help='Add system Metal and shared cached-page imports; implies --userland, without scanout')
     parser.add_argument('--dpu-snapshot', action='store_true',
                         help='Read inherited display registers once; no display writes or scanout changes')
+    parser.add_argument('--dpu-smmu-depth', type=int, choices=[0, 1, 2], default=0,
+                        help='With --dpu-snapshot: ID only, routes, or related contexts; deep reads wait for USB attachment')
     args = parser.parse_args()
     if args.system_metal:args.userland=True
     args.output.mkdir(parents=True, exist_ok=True)
@@ -94,7 +96,8 @@ def main():
     flags = json.loads(args.compile_command.read_text())
     if args.userland:flags+=['-DNABU_GPU_USERLAND=1']
     if args.system_metal:flags+=['-DNABU_GPU_SYSTEM_METAL=1']
-    if args.dpu_snapshot:flags+=['-DNABU_DPU_SNAPSHOT=1']
+    if args.dpu_snapshot:flags+=['-DNABU_DPU_SNAPSHOT=1',
+                               '-DNABU_DPU_SNAPSHOT_DEPTH='+str(args.dpu_smmu_depth)]
     flags += ['-fno-common', '-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]
     cxx_only = {'-std=gnu++17', '-fapple-kext', '-fno-exceptions', '-fno-rtti',
                 '-fno-use-cxa-atexit', '-fno-c++-static-destructors', '-nostdinc++',
