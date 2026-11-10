@@ -1,0 +1,4583 @@
+{
+  "image": {
+    "path": "/System/Library/Frameworks/QuartzCore.framework/QuartzCore",
+    "address": "0x1881fb000",
+    "cache_file": "dyld_shared_cache_arm64.03",
+    "file_offset": 21983232,
+    "cpu_subtype": 0,
+    "file_type": 6
+  },
+  "scope": "Original 20F66 cache bytes; LC_FUNCTION_STARTS bounds and original symbols; Capstone disassembly, not runtime execution or decompilation. Reuses existing REA-unavailable record analysis/metal-library-20f66-v178/rea-availability.json.",
+  "strings": [
+    {
+      "address": "0x188517325",
+      "value": "timed out fence %llu\n",
+      "section": "__cstring",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 25244453
+    },
+    {
+      "address": "0x18852348b",
+      "value": "timed out fence %llu\n",
+      "section": "__oslogstring",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 25293963
+    }
+  ],
+  "functions": [
+    {
+      "name": "__ZN2CA6Render5FenceL17ftimeout_callbackEdPv",
+      "address": "0x1884972d4",
+      "next_local_symbol": "0x18849753c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24720084,
+      "bytes": 616,
+      "assembly": "1884972d4.asm",
+      "calls": [
+        {
+          "address": "0x188497324",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x18849737c",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884973ac",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884973b4",
+          "target": "0x18db38f58",
+          "resolved_target": "0x1ab0dd784",
+          "target_name": "_ht_fence_timeout",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884973b8",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884973d0",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884973e4",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497410",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0xc",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497420",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188497448",
+          "target": "0x18829d99c",
+          "resolved_target": "0x18829d99c",
+          "target_name": "__ZN2CA6Render5FenceL14resolve_fencesEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188497474",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884974ac",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x1884974dc",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1884972d4",
+              "label": "__ZN2CA6Render5FenceL17ftimeout_callbackEdPv"
+            },
+            "x0": {
+              "value": "0x3",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497530",
+          "target": "0x1884c9518",
+          "resolved_target": "0x18db147cc",
+          "target_name": "_dispatch_once_f",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc21b88",
+              "label": "__ZN2CA6Render5FenceL15fence_info_onceE"
+            },
+            "x2": {
+              "value": "0x1884971c8",
+              "label": "__ZN2CA6Render5FenceL15fence_info_initEv"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497538",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5Fence17create_fence_portEPjPy",
+      "address": "0x18849681c",
+      "next_local_symbol": "0x1884971c8",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24717340,
+      "bytes": 2476,
+      "assembly": "18849681c.asm",
+      "calls": [
+        {
+          "address": "0x188496874",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188496890",
+          "target": "0x18db39000",
+          "resolved_target": "0x1c0fe95fc",
+          "target_name": "_mach_port_allocate",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884968a8",
+          "target": "0x18db39030",
+          "resolved_target": "0x1c0fe8ba0",
+          "target_name": "_mach_port_insert_right",
+          "literal_registers": {
+            "x3": {
+              "value": "0x14",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884968b4",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884968c0",
+          "target": "0x18db38fc4",
+          "resolved_target": "0x1c0fe8064",
+          "target_name": "_mach_error_string",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884968d4",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18851726f",
+              "label": "Failed to insert right %u : %s"
+            },
+            "x0": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188496900",
+          "target": "0x18db38f34",
+          "resolved_target": "0x1c0fe7520",
+          "target_name": "_getpid",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18849690c",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496910",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18849691c",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496924",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188496984",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188496990",
+          "target": "0x18db38fc4",
+          "resolved_target": "0x1c0fe8064",
+          "target_name": "_mach_error_string",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884969cc",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18852346c",
+              "label": "Failed to insert right %u : %s"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x5": {
+              "value": "0x12",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884969e0",
+          "target": "0x18db3903c",
+          "resolved_target": "0x1c0fe9c28",
+          "target_name": "_mach_port_mod_refs",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884969f8",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188496ab8",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188496b3c",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496b5c",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496b70",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496cc0",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496ce4",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496e48",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188496ec8",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496ee8",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188496efc",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18849704c",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188497070",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18849712c",
+          "target": "0x188239588",
+          "resolved_target": "0x188239588",
+          "target_name": "__ZN2CA6Render6Server11notify_portEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18849714c",
+          "target": "0x18db39054",
+          "resolved_target": "0x1c0fe9ab8",
+          "target_name": "_mach_port_request_notification",
+          "literal_registers": {
+            "x2": {
+              "value": "0x46",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0x15",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497168",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497170",
+          "target": "0x18db38f4c",
+          "resolved_target": "0x1ab0d88e4",
+          "target_name": "_ht_fence_start",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188497188",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1884972d4",
+              "label": "__ZN2CA6Render5FenceL17ftimeout_callbackEdPv"
+            },
+            "x0": {
+              "value": "0x3",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884971b8",
+          "target": "0x1884c9518",
+          "resolved_target": "0x18db147cc",
+          "target_name": "_dispatch_once_f",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc21b88",
+              "label": "__ZN2CA6Render5FenceL15fence_info_onceE"
+            },
+            "x2": {
+              "value": "0x1884971c8",
+              "label": "__ZN2CA6Render5FenceL15fence_info_initEv"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884971c0",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1884971c4",
+          "target": "0x18832c9d8",
+          "resolved_target": "0x18832c9d8",
+          "target_name": "__ZSt28__throw_bad_array_new_lengthB6v15006v",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5FenceL15fence_info_initEv",
+      "address": "0x1884971c8",
+      "next_local_symbol": "0x1884972d4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24719816,
+      "bytes": 268,
+      "assembly": "1884971c8.asm",
+      "calls": [
+        {
+          "address": "0x1884971e0",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x1884971e8",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497208",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497224",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497240",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18849725c",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497274",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188497290",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1884972ac",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "__CASCreateFencePort",
+      "address": "0x188285cc8",
+      "next_local_symbol": "0x188285e84",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22551752,
+      "bytes": 444,
+      "assembly": "188285cc8.asm",
+      "calls": [
+        {
+          "address": "0x188285d0c",
+          "target": "0x18db3918c",
+          "resolved_target": "0x1c0fe785c",
+          "target_name": "_mig_get_reply_port",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188285d3c",
+          "target": "0x18db39a68",
+          "resolved_target": "0x1c0fe8654",
+          "target_name": "_voucher_mach_msg_set",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188285d5c",
+          "target": "0x18db38fe8",
+          "resolved_target": "0x1c0fe74d0",
+          "target_name": "_mach_msg",
+          "literal_registers": {
+            "x1": {
+              "value": "0x3",
+              "label": null
+            },
+            "x2": {
+              "value": "0x18",
+              "label": null
+            },
+            "x3": {
+              "value": "0x40",
+              "label": null
+            },
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188285d90",
+          "target": "0x18db39198",
+          "resolved_target": "0x1c0feb568",
+          "target_name": "_mig_put_reply_port",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188285de4",
+          "target": "0x18db39180",
+          "resolved_target": "0x1c0fea394",
+          "target_name": "_mig_dealloc_reply_port",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188285e4c",
+          "target": "0x18db38ff4",
+          "resolved_target": "0x1c0fe78f0",
+          "target_name": "_mach_msg_destroy",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188285e80",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__XCreateFencePort",
+      "address": "0x18829423c",
+      "next_local_symbol": "0x188294314",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22610492,
+      "bytes": 216,
+      "assembly": "18829423c.asm",
+      "calls": [
+        {
+          "address": "0x1882942d8",
+          "target": "0x18849681c",
+          "resolved_target": "0x18849681c",
+          "target_name": "__ZN2CA6Render5Fence17create_fence_portEPjPy",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "+[CAFenceHandle _newFenceFromServer:]",
+      "address": "0x188421b98",
+      "next_local_symbol": "0x188421d30",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24239000,
+      "bytes": 408,
+      "assembly": "188421b98.asm",
+      "calls": [
+        {
+          "address": "0x188421bc0",
+          "target": "0x18db3936c",
+          "resolved_target": "0x1800b5da8",
+          "target_name": "_objc_opt_self",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421be4",
+          "target": "0x188285cc8",
+          "resolved_target": "0x188285cc8",
+          "target_name": "__CASCreateFencePort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421c10",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421c28",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18850a4dd",
+              "label": "Server failed to create port for fence (%u)"
+            },
+            "x0": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421c40",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421c74",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18851fd4b",
+              "label": "Server failed to create port for fence (%u)"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x5": {
+              "value": "0x8",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421c8c",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421d18",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850a48f",
+              "label": "+[CAFenceHandle _newFenceFromServer:]"
+            },
+            "x1": {
+              "value": "0x18850a4b5",
+              "label": "CAFenceHandle.mm"
+            },
+            "x3": {
+              "value": "0x18850a4c6",
+              "label": "MACH_PORT_VALID (port)"
+            },
+            "x2": {
+              "value": "0x30",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421d24",
+          "target": "0x188346e30",
+          "resolved_target": "0x188346e30",
+          "target_name": "_x_log_crash",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1884fb15a",
+              "label": "Unentitled call to server!"
+            }
+          }
+        },
+        {
+          "address": "0x188421d28",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421d2c",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAFenceHandle _initWithPort:name:tracing:]",
+      "address": "0x1884219a8",
+      "next_local_symbol": "0x188421ae8",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24238504,
+      "bytes": 320,
+      "assembly": "1884219a8.asm",
+      "calls": [
+        {
+          "address": "0x1884219f4",
+          "target": "0x18db39330",
+          "resolved_target": "0x1800b1a40",
+          "target_name": "_objc_msgSendSuper2",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1826ba66a",
+              "label": "init"
+            }
+          }
+        },
+        {
+          "address": "0x188421a0c",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b904",
+              "label": "__ZZ44-[CAFenceHandle _initWithPort:name:tracing:]E16handle_name_lock"
+            }
+          }
+        },
+        {
+          "address": "0x188421a48",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9b904",
+              "label": "__ZZ44-[CAFenceHandle _initWithPort:name:tracing:]E16handle_name_lock"
+            }
+          }
+        },
+        {
+          "address": "0x188421a60",
+          "target": "0x18db396d8",
+          "resolved_target": "0x1d03c2484",
+          "target_name": "_pthread_mutex_init",
+          "literal_registers": {
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421a88",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421ad8",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850a509",
+              "label": "-[CAFenceHandle _initWithPort:name:tracing:]"
+            },
+            "x1": {
+              "value": "0x18850a4b5",
+              "label": "CAFenceHandle.mm"
+            },
+            "x3": {
+              "value": "0x18850a536",
+              "label": "self"
+            },
+            "x2": {
+              "value": "0x51",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421ae4",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAFenceHandle fenceId]",
+      "address": "0x188421994",
+      "next_local_symbol": "0x18842199c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24238484,
+      "bytes": 8,
+      "assembly": "188421994.asm",
+      "calls": []
+    },
+    {
+      "name": "-[CAFenceHandle _accessMachPort:]",
+      "address": "0x188225834",
+      "next_local_symbol": "0x1882258d0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22157364,
+      "bytes": 156,
+      "assembly": "188225834.asm",
+      "calls": [
+        {
+          "address": "0x188225860",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1d03c2490",
+          "target_name": "_pthread_mutex_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822586c",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188225878",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822588c",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882258c4",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1d03c24a8",
+          "target_name": "_pthread_mutex_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882258cc",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5FenceL14resolve_fencesEv",
+      "address": "0x18829d99c",
+      "next_local_symbol": "0x18829e764",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22649244,
+      "bytes": 3528,
+      "assembly": "18829d99c.asm",
+      "calls": [
+        {
+          "address": "0x18829da0c",
+          "target": "0x1883b45b4",
+          "resolved_target": "0x1883b45b4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE8__rehashILb1EEEvm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829da28",
+          "target": "0x1883b45b4",
+          "resolved_target": "0x1883b45b4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE8__rehashILb1EEEvm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829da44",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829da54",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829da7c",
+          "target": "0x188281f44",
+          "resolved_target": "0x188281f44",
+          "target_name": "__ZN2CA6Render5FenceL17is_fence_resolvedEyRNSt3__113unordered_setIyNS2_4hashIyEENS2_8equal_toIyEENS2_9allocatorIyEEEERKSA_SB_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829da98",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829daa8",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829dafc",
+          "target": "0x18db39000",
+          "resolved_target": "0x1c0fe95fc",
+          "target_name": "_mach_port_allocate",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829db0c",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829db10",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829db1c",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829db24",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829db40",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829dc08",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829dc8c",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829dcac",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829dcc0",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829de10",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829de34",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829defc",
+          "target": "0x18db39030",
+          "resolved_target": "0x1c0fe8ba0",
+          "target_name": "_mach_port_insert_right",
+          "literal_registers": {
+            "x3": {
+              "value": "0x14",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829df0c",
+          "target": "0x188239588",
+          "resolved_target": "0x188239588",
+          "target_name": "__ZN2CA6Render6Server11notify_portEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829df2c",
+          "target": "0x18db39054",
+          "resolved_target": "0x1c0fe9ab8",
+          "target_name": "_mach_port_request_notification",
+          "literal_registers": {
+            "x2": {
+              "value": "0x46",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0x15",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829df4c",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829df64",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18849753c",
+              "label": "__ZN2CA6Render5FenceL17btimeout_callbackEdPv"
+            },
+            "x0": {
+              "value": "0x3",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829dfd0",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829dff4",
+          "target": "0x1882d2ed0",
+          "resolved_target": "0x1882d2ed0",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e008",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e028",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e048",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e05c",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e064",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e07c",
+          "target": "0x18823777c",
+          "resolved_target": "0x18823777c",
+          "target_name": "__ZN2CA6Render17post_notificationENS0_16NotificationNameEPNS0_6ObjectEPvb",
+          "literal_registers": {
+            "x0": {
+              "value": "0x6",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e08c",
+          "target": "0x188497800",
+          "resolved_target": "0x188497800",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16BatchContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e0b0",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e0b8",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e0c8",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e0dc",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e104",
+          "target": "0x1884978b4",
+          "resolved_target": "0x1884978b4",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16BatchContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE25__emplace_unique_key_argsIjJRKNS_21piecewise_construct_tENS_5tupleIJRKjEEENSN_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e118",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e124",
+          "target": "0x1882dc990",
+          "resolved_target": "0x1882dc990",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE14__erase_uniqueIyEEmRKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e16c",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e1b4",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e23c",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e280",
+          "target": "0x188497c88",
+          "resolved_target": "0x188497c88",
+          "target_name": "__ZNSt3__16vectorINS_13unordered_setIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEENS6_IS8_EEED2B6v15006Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e284",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e2b0",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e2b4",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e2bc",
+          "target": "0x18db390f0",
+          "resolved_target": "0x1944b1d0c",
+          "target_name": "_malloc_zone_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e2cc",
+          "target": "0x188497ce0",
+          "resolved_target": "0x188497ce0",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16FenceContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIS7_PvEEEE",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e2f0",
+          "target": "0x1882f157c",
+          "resolved_target": "0x1882f157c",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIyPN2CA6Render5Fence9FenceInfoEEENS_22__unordered_map_hasherIyS7_NS_4hashIyEENS_8equal_toIyEELb1EEENS_21__unordered_map_equalIyS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e314",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e324",
+          "target": "0x1882f157c",
+          "resolved_target": "0x1882f157c",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIyPN2CA6Render5Fence9FenceInfoEEENS_22__unordered_map_hasherIyS7_NS_4hashIyEENS_8equal_toIyEELb1EEENS_21__unordered_map_equalIyS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e450",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e460",
+          "target": "0x1882ce0b8",
+          "resolved_target": "0x1882ce0b8",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence9FenceInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e58c",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e59c",
+          "target": "0x1882dc990",
+          "resolved_target": "0x1882dc990",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE14__erase_uniqueIyEEmRKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e5b0",
+          "target": "0x18db3903c",
+          "resolved_target": "0x1c0fe9c28",
+          "target_name": "_mach_port_mod_refs",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e5b4",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e5bc",
+          "target": "0x18db390f0",
+          "resolved_target": "0x1944b1d0c",
+          "target_name": "_malloc_zone_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e5c8",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e5cc",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e604",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e620",
+          "target": "0x18830e728",
+          "resolved_target": "0x18830e728",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIyPvEEEE",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e648",
+          "target": "0x18830f9e8",
+          "resolved_target": "0x18830f9e8",
+          "target_name": "__ZN2CA6Render5FenceL13send_rlfg_msgEjdjRKNSt3__113unordered_setIyNS2_4hashIyEENS2_8equal_toIyEENS2_9allocatorIyEEEE",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e670",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e67c",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e680",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e68c",
+          "target": "0x18823fadc",
+          "resolved_target": "0x18823fadc",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e690",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e694",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e69c",
+          "target": "0x18db390f0",
+          "resolved_target": "0x1944b1d0c",
+          "target_name": "_malloc_zone_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e6b4",
+          "target": "0x1884c9908",
+          "resolved_target": "0x1d031cdc0",
+          "target_name": "__platform_memmove",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e6e0",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e6f0",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e6f8",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e750",
+          "target": "0x1884c9518",
+          "resolved_target": "0x18db147cc",
+          "target_name": "_dispatch_once_f",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc21b88",
+              "label": "__ZN2CA6Render5FenceL15fence_info_onceE"
+            },
+            "x2": {
+              "value": "0x1884971c8",
+              "label": "__ZN2CA6Render5FenceL15fence_info_initEv"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18829e758",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e75c",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18829e760",
+          "target": "0x18832c9d8",
+          "resolved_target": "0x18832c9d8",
+          "target_name": "__ZSt28__throw_bad_array_new_lengthB6v15006v",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5FenceL17is_fence_resolvedEyRNSt3__113unordered_setIyNS2_4hashIyEENS2_8equal_toIyEENS2_9allocatorIyEEEERKSA_SB_",
+      "address": "0x188281f44",
+      "next_local_symbol": "0x188282124",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22536004,
+      "bytes": 480,
+      "assembly": "188281f44.asm",
+      "calls": [
+        {
+          "address": "0x188281f8c",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188281f9c",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188281fe8",
+          "target": "0x1883b45b4",
+          "resolved_target": "0x1883b45b4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE8__rehashILb1EEEvm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282000",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282018",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282034",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282044",
+          "target": "0x1882dec48",
+          "resolved_target": "0x1882dec48",
+          "target_name": "__ZNKSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_21__hash_const_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282058",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282070",
+          "target": "0x188281f44",
+          "resolved_target": "0x188281f44",
+          "target_name": "__ZN2CA6Render5FenceL17is_fence_resolvedEyRNSt3__113unordered_setIyNS2_4hashIyEENS2_8equal_toIyEENS2_9allocatorIyEEEERKSA_SB_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282094",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882820c0",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882820c8",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882820dc",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188282120",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5Fence16applyTransactionEjPNS1_11Transaction5FenceE",
+      "address": "0x1882a808c",
+      "next_local_symbol": "0x1882a89c0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22691980,
+      "bytes": 2356,
+      "assembly": "1882a808c.asm",
+      "calls": [
+        {
+          "address": "0x1882a80ec",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x1882a812c",
+          "target": "0x1882ce0b8",
+          "resolved_target": "0x1882ce0b8",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence9FenceInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8144",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a818c",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a819c",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a81a8",
+          "target": "0x188498df4",
+          "resolved_target": "0x188498df4",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16FenceContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a81cc",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a81d4",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a81e8",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8248",
+          "target": "0x18db39030",
+          "resolved_target": "0x1c0fe8ba0",
+          "target_name": "_mach_port_insert_right",
+          "literal_registers": {
+            "x3": {
+              "value": "0x13",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8258",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8260",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8270",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a828c",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a833c",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a83c0",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a83e0",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a83f4",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a84e4",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a85b4",
+          "target": "0x1884c9908",
+          "resolved_target": "0x1d031cdc0",
+          "target_name": "__platform_memmove",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a85c8",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a85dc",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8600",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a86e4",
+          "target": "0x18828c064",
+          "resolved_target": "0x18828c064",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjNS_13unordered_setIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEEEENS_22__unordered_map_hasherIjSA_NS3_IjEENS5_IjEELb1EEENS_21__unordered_map_equalIjSA_SD_SC_Lb1EEENS7_ISA_EEE25__emplace_unique_key_argsIjJRKNS_21piecewise_construct_tENS_5tupleIJRKjEEENSN_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeISA_PvEEEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1884e6fe4",
+              "label": "__ZNSt3__1L19piecewise_constructE.15688"
+            }
+          }
+        },
+        {
+          "address": "0x1882a86f4",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8724",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a872c",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8774",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8778",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a877c",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8798",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x3",
+              "label": null
+            },
+            "x1": {
+              "value": "0x1884972d4",
+              "label": "__ZN2CA6Render5FenceL17ftimeout_callbackEdPv"
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a87a0",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a87a8",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a8814",
+          "target": "0x188498df4",
+          "resolved_target": "0x188498df4",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16FenceContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8838",
+          "target": "0x1882e274c",
+          "resolved_target": "0x1882e274c",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEC2EOS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8898",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a88b4",
+          "target": "0x1882e274c",
+          "resolved_target": "0x1882e274c",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEC2EOS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a88d4",
+          "target": "0x1882e274c",
+          "resolved_target": "0x1882e274c",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEC2EOS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8900",
+          "target": "0x188261f58",
+          "resolved_target": "0x188261f58",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8914",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8948",
+          "target": "0x18827f4b8",
+          "resolved_target": "0x18827f4b8",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjNS_13unordered_setIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEEEEENS_22__unordered_map_hasherIjSA_NS3_IjEENS5_IjEELb1EEENS_21__unordered_map_equalIjSA_SD_SC_Lb1EEENS7_ISA_EEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a8954",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x1882a89ac",
+          "target": "0x1884c9518",
+          "resolved_target": "0x18db147cc",
+          "target_name": "_dispatch_once_f",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc21b88",
+              "label": "__ZN2CA6Render5FenceL15fence_info_onceE"
+            },
+            "x2": {
+              "value": "0x1884971c8",
+              "label": "__ZN2CA6Render5FenceL15fence_info_initEv"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882a89b4",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a89b8",
+          "target": "0x18832c9d8",
+          "resolved_target": "0x18832c9d8",
+          "target_name": "__ZSt28__throw_bad_array_new_lengthB6v15006v",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882a89bc",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render5FenceL11extract_msgEP17mach_msg_header_tmRNSt3__113unordered_setIyNS4_4hashIyEENS4_8equal_toIyEENS4_9allocatorIyEEEERdRjPjSG_",
+      "address": "0x1882efef0",
+      "next_local_symbol": "0x1882f0058",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22986480,
+      "bytes": 360,
+      "assembly": "1882efef0.asm",
+      "calls": [
+        {
+          "address": "0x1882f0030",
+          "target": "0x1883b45b4",
+          "resolved_target": "0x1883b45b4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE8__rehashILb1EEEvm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882f0040",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA3OGL12MetalContext9set_fenceEv",
+      "address": "0x188268ebc",
+      "next_local_symbol": "0x1882692ac",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22433468,
+      "bytes": 1008,
+      "assembly": "188268ebc.asm",
+      "calls": [
+        {
+          "address": "0x188268f90",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188269010",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188269030",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188269044",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188269254",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188269278",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188269290",
+          "target": "0x18832c9d8",
+          "resolved_target": "0x18832c9d8",
+          "target_name": "__ZSt28__throw_bad_array_new_lengthB6v15006v",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882692a0",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882692a8",
+          "target": "0x18db388e0",
+          "resolved_target": "0x1d0308348",
+          "target_name": "__Unwind_Resume",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA3OGL12MetalContext10test_fenceEm",
+      "address": "0x18823e494",
+      "next_local_symbol": "0x18823e4d0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22258836,
+      "bytes": 60,
+      "assembly": "18823e494.asm",
+      "calls": [
+        {
+          "address": "0x18823e4a8",
+          "target": "0x18827d044",
+          "resolved_target": "0x18827d044",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeImyEENS_22__unordered_map_hasherImS2_NS_4hashImEENS_8equal_toImEELb1EEENS_21__unordered_map_equalImS2_S7_S5_Lb1EEENS_9allocatorIS2_EEE4findImEENS_15__hash_iteratorIPNS_11__hash_nodeIS2_PvEEEERKT_",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA3OGL12MetalContext12delete_fenceEm",
+      "address": "0x18827c164",
+      "next_local_symbol": "0x18827c2c0",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22511972,
+      "bytes": 348,
+      "assembly": "18827c164.asm",
+      "calls": [
+        {
+          "address": "0x18827c17c",
+          "target": "0x18827d044",
+          "resolved_target": "0x18827d044",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeImyEENS_22__unordered_map_hasherImS2_NS_4hashImEENS_8equal_toImEELb1EEENS_21__unordered_map_equalImS2_S7_S5_Lb1EEENS_9allocatorIS2_EEE4findImEENS_15__hash_iteratorIPNS_11__hash_nodeIS2_PvEEEERKT_",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render6Server11notify_portEv",
+      "address": "0x188239588",
+      "next_local_symbol": "0x18823966c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22238600,
+      "bytes": 228,
+      "assembly": "188239588.asm",
+      "calls": [
+        {
+          "address": "0x1882395d0",
+          "target": "0x18db39000",
+          "resolved_target": "0x1c0fe95fc",
+          "target_name": "_mach_port_allocate",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18823960c",
+          "target": "0x18823f85c",
+          "resolved_target": "0x18823f85c",
+          "target_name": "__ZN2CA6Render6Server8port_setEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18823961c",
+          "target": "0x18db39048",
+          "resolved_target": "0x1c0fe965c",
+          "target_name": "_mach_port_move_member",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188239634",
+          "target": "0x18db3903c",
+          "resolved_target": "0x1c0fe9c28",
+          "target_name": "_mach_port_mod_refs",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188239668",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "__ZN2CA6Render6Server13server_threadEPv",
+      "address": "0x188243c40",
+      "next_local_symbol": "0x188245634",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22281280,
+      "bytes": 6644,
+      "assembly": "188243c40.asm",
+      "calls": [
+        {
+          "address": "0x188243c74",
+          "target": "0x201d03b4730",
+          "resolved_target": "0x201d03b4730",
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243ca0",
+          "target": "0x18db39738",
+          "resolved_target": "0x1d03ba508",
+          "target_name": "_pthread_setname_np",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1884fde84",
+              "label": "com.apple.coreanimation.render-server"
+            }
+          }
+        },
+        {
+          "address": "0x188243cbc",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243cd0",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1d03c2490",
+          "target_name": "_pthread_mutex_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cf8",
+              "label": "__ZN2CA6Render6Server6_mutexE"
+            }
+          }
+        },
+        {
+          "address": "0x188243cd4",
+          "target": "0x18db3972c",
+          "resolved_target": "0x1d03b56e0",
+          "target_name": "_pthread_self",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243cf0",
+          "target": "0x1884c9e18",
+          "resolved_target": "0x1d03c2424",
+          "target_name": "_pthread_cond_broadcast",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cc8",
+              "label": "__ZN2CA6Render6Server5_condE"
+            }
+          }
+        },
+        {
+          "address": "0x188243cf8",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1d03c24a8",
+          "target_name": "_pthread_mutex_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cf8",
+              "label": "__ZN2CA6Render6Server6_mutexE"
+            }
+          }
+        },
+        {
+          "address": "0x188243d04",
+          "target": "0x18db38f28",
+          "resolved_target": "0x18dbb0428",
+          "target_name": "_getenv",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1884fdeaa",
+              "label": "CA_BENCHMARK"
+            }
+          }
+        },
+        {
+          "address": "0x188243d14",
+          "target": "0x1884c9344",
+          "resolved_target": "0x18dbc410c",
+          "target_name": "_atoi",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243d20",
+          "target": "0x18db39078",
+          "resolved_target": "0x1c0feab3c",
+          "target_name": "_mach_thread_self",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243d34",
+          "target": "0x18db398e8",
+          "resolved_target": "0x1c0ff00d8",
+          "target_name": "_thread_policy_set",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243d40",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243d58",
+          "target": "0x18db38bb0",
+          "resolved_target": "0x1d031d1b0",
+          "target_name": "__platform_bzero",
+          "literal_registers": {
+            "x1": {
+              "value": "0x4000",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243d98",
+          "target": "0x18db3927c",
+          "resolved_target": "0x1800b22e0",
+          "target_name": "_objc_autoreleasePoolPush",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243da8",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243dac",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243db8",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243de8",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243dfc",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243e00",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243e08",
+          "target": "0x18db390f0",
+          "resolved_target": "0x1944b1d0c",
+          "target_name": "_malloc_zone_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243e40",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243e44",
+          "target": "0x18823f85c",
+          "resolved_target": "0x18823f85c",
+          "target_name": "__ZN2CA6Render6Server8port_setEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243e64",
+          "target": "0x18db38fe8",
+          "resolved_target": "0x1c0fe74d0",
+          "target_name": "_mach_msg",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x4000",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243e9c",
+          "target": "0x1884c9398",
+          "resolved_target": "0x1944b003c",
+          "target_name": "_calloc",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243ec8",
+          "target": "0x18db38fe8",
+          "resolved_target": "0x1c0fe74d0",
+          "target_name": "_mach_msg",
+          "literal_registers": {
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188243ed8",
+          "target": "0x1884c96e0",
+          "resolved_target": "0x1944b01b4",
+          "target_name": "_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243f20",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x188243f60",
+          "target": "0x18db39a44",
+          "resolved_target": "0x1c0feaaa8",
+          "target_name": "_voucher_mach_msg_adopt",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243f6c",
+          "target": "0x188239588",
+          "resolved_target": "0x188239588",
+          "target_name": "__ZN2CA6Render6Server11notify_portEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243fbc",
+          "target": "0x1882d4720",
+          "resolved_target": "0x1882d4720",
+          "target_name": "__ZN2CA6Render7Context22context_by_client_portEj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243fc8",
+          "target": "0x1882d0328",
+          "resolved_target": "0x1882d0328",
+          "target_name": "__ZN2CA6Render7Context7destroyEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188243ff0",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244020",
+          "target": "0x188260b24",
+          "resolved_target": "0x188260b24",
+          "target_name": "__ZN2CA6Render7Context22context_by_server_portEj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824402c",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244034",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1058",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882440a4",
+          "target": "0x1883e7830",
+          "resolved_target": "0x1883e7830",
+          "target_name": "__ZN2CA6Render6Server12CmdStreamMsg11_send_replyEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882440bc",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882440fc",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244114",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188244138",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824415c",
+          "target": "0x1882d2ed0",
+          "resolved_target": "0x1882d2ed0",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244170",
+          "target": "0x1882ce354",
+          "resolved_target": "0x1882ce354",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIjPvEEEE",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824418c",
+          "target": "0x188498b58",
+          "resolved_target": "0x188498b58",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence9BatchInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882441ac",
+          "target": "0x1882d2ed0",
+          "resolved_target": "0x1882d2ed0",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEERKT_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882441c0",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882441dc",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882441f4",
+          "target": "0x188497800",
+          "resolved_target": "0x188497800",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16BatchContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18824421c",
+          "target": "0x18db38fe8",
+          "resolved_target": "0x1c0fe74d0",
+          "target_name": "_mach_msg",
+          "literal_registers": {
+            "x1": {
+              "value": "0x2",
+              "label": null
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882442fc",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {
+            "x1": {
+              "value": "0x4",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244304",
+          "target": "0x1884c9a4c",
+          "resolved_target": "0x1800b44b4",
+          "target_name": "_objc_autoreleasePoolPop",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244328",
+          "target": "0x18db38bb0",
+          "resolved_target": "0x1d031d1b0",
+          "target_name": "__platform_bzero",
+          "literal_registers": {
+            "x1": {
+              "value": "0x334",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244394",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882443d0",
+          "target": "0x18db38fe8",
+          "resolved_target": "0x1c0fe74d0",
+          "target_name": "_mach_msg",
+          "literal_registers": {
+            "x1": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            },
+            "x5": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244450",
+          "target": "0x18db3903c",
+          "resolved_target": "0x1c0fe9c28",
+          "target_name": "_mach_port_mod_refs",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18824445c",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244488",
+          "target": "0x18db38ff4",
+          "resolved_target": "0x1c0fe78f0",
+          "target_name": "_mach_msg_destroy",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244494",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882444a8",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x2",
+              "label": null
+            },
+            "x1": {
+              "value": "0x1884fdf29",
+              "label": "dropping CmdStreamMsg due to missing ctx"
+            }
+          }
+        },
+        {
+          "address": "0x1882444c0",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882444dc",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x2",
+              "label": null
+            },
+            "x1": {
+              "value": "0x1884fdf71",
+              "label": "failed to create CmdStreamMsg for %x"
+            }
+          }
+        },
+        {
+          "address": "0x1882444fc",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244538",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18851dda3",
+              "label": "dropping CmdStreamMsg due to missing ctx"
+            },
+            "x5": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244544",
+          "target": "0x1882e8870",
+          "resolved_target": "0x1882e8870",
+          "target_name": "_x_log_hook_p",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244560",
+          "target": "0x188346ddc",
+          "resolved_target": "0x188346ddc",
+          "target_name": "_x_log_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x2",
+              "label": null
+            },
+            "x1": {
+              "value": "0x1884fdf52",
+              "label": "CmdStreamMsg for %x is invalid"
+            }
+          }
+        },
+        {
+          "address": "0x188244580",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc239c4",
+              "label": "__ZN2CA6Render6Server16_checked_in_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x18824459c",
+          "target": "0x18db3903c",
+          "resolved_target": "0x1c0fe9c28",
+          "target_name": "_mach_port_mod_refs",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            },
+            "x3": {
+              "value": "-0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882445b8",
+          "target": "0x1884c96e0",
+          "resolved_target": "0x1944b01b4",
+          "target_name": "_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882445d4",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc239c4",
+              "label": "__ZN2CA6Render6Server16_checked_in_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x1882445ec",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244614",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18824465c",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18851ddeb",
+              "label": "failed to create CmdStreamMsg for %x"
+            },
+            "x5": {
+              "value": "0x8",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244688",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824469c",
+          "target": "0x18db38ff4",
+          "resolved_target": "0x1c0fe78f0",
+          "target_name": "_mach_msg_destroy",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882446a4",
+          "target": "0x18db39a5c",
+          "resolved_target": "0x1c0fe851c",
+          "target_name": "_voucher_mach_msg_revert",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882446b4",
+          "target": "0x18db38bb0",
+          "resolved_target": "0x1d031d1b0",
+          "target_name": "__platform_bzero",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882446c0",
+          "target": "0x1884c96e0",
+          "resolved_target": "0x1944b01b4",
+          "target_name": "_free",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882446c8",
+          "target": "0x1884c9a4c",
+          "resolved_target": "0x1800b44b4",
+          "target_name": "_objc_autoreleasePoolPop",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244750",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188244778",
+          "target": "0x1882b7e48",
+          "resolved_target": "0x1882b7e48",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE4findIyEENS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882447b4",
+          "target": "0x18db39024",
+          "resolved_target": "0x1c0fe855c",
+          "target_name": "_mach_port_get_attributes",
+          "literal_registers": {
+            "x2": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882447ec",
+          "target": "0x1882e0cf4",
+          "resolved_target": "0x1882e0cf4",
+          "target_name": "__ZNSt3__112__hash_tableIyNS_4hashIyEENS_8equal_toIyEENS_9allocatorIyEEE25__emplace_unique_key_argsIyJRKyEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIyPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244808",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244820",
+          "target": "0x18db39510",
+          "resolved_target": "0x19c900f0c",
+          "target_name": "_os_log_type_enabled",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x10",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244860",
+          "target": "0x18db38a84",
+          "resolved_target": "0x19c9067a8",
+          "target_name": "__os_log_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18851ddcc",
+              "label": "CmdStreamMsg for %x is invalid"
+            },
+            "x5": {
+              "value": "0x8",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244870",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244894",
+          "target": "0x18829d99c",
+          "resolved_target": "0x18829d99c",
+          "target_name": "__ZN2CA6Render5FenceL14resolve_fencesEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882448c8",
+          "target": "0x1882d2ed0",
+          "resolved_target": "0x1882d2ed0",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244910",
+          "target": "0x18db39024",
+          "resolved_target": "0x1c0fe855c",
+          "target_name": "_mach_port_get_attributes",
+          "literal_registers": {
+            "x2": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18824494c",
+          "target": "0x188497800",
+          "resolved_target": "0x188497800",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16BatchContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE4findIjEENS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEERKT_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244960",
+          "target": "0x18838b370",
+          "resolved_target": "0x18838b370",
+          "target_name": "__ZN2CA6Render7Context14delay_of_batchEj",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824498c",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244990",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882449b4",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x3",
+              "label": null
+            },
+            "x1": {
+              "value": "0x18849753c",
+              "label": "__ZN2CA6Render5FenceL17btimeout_callbackEdPv"
+            },
+            "x2": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882449e8",
+          "target": "0x1882dff80",
+          "resolved_target": "0x1882dff80",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEE25__emplace_unique_key_argsIjJRKjEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIjPvEEEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244a18",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244a1c",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244a20",
+          "target": "0x188497e30",
+          "resolved_target": "0x188497e30",
+          "target_name": "__ZN2CA6Render5FenceL15resolve_batchesEd",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244a2c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188244ac4",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244acc",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244adc",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244af0",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244b18",
+          "target": "0x1884978b4",
+          "resolved_target": "0x1884978b4",
+          "target_name": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIjPN2CA6Render5Fence16BatchContextInfoEEENS_22__unordered_map_hasherIjS7_NS_4hashIjEENS_8equal_toIjEELb1EEENS_21__unordered_map_equalIjS7_SC_SA_Lb1EEENS_9allocatorIS7_EEE25__emplace_unique_key_argsIjJRKNS_21piecewise_construct_tENS_5tupleIJRKjEEENSN_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS7_PvEEEEbEERKT_DpOT0_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244b38",
+          "target": "0x188498d98",
+          "resolved_target": "0x188498d98",
+          "target_name": "__ZNSt3__113unordered_setIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEEC2ERKS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244ba4",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244c08",
+          "target": "0x188498d98",
+          "resolved_target": "0x188498d98",
+          "target_name": "__ZNSt3__113unordered_setIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEEC2ERKS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244c2c",
+          "target": "0x18838a9b4",
+          "resolved_target": "0x18838a9b4",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEEC2EOS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244c60",
+          "target": "0x18823fadc",
+          "resolved_target": "0x18823fadc",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244c84",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244c90",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20b68",
+              "label": "__ZN2CA6Render5Fence5_lockE"
+            }
+          }
+        },
+        {
+          "address": "0x188244ca4",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244cb8",
+          "target": "0x18db38fac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244cbc",
+          "target": "0x188236490",
+          "resolved_target": "0x188236490",
+          "target_name": "_CATimeWithHostTime",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244d04",
+          "target": "0x18829cfdc",
+          "resolved_target": "0x18829cfdc",
+          "target_name": "__ZN2CA6Render6Server12add_callbackEdNS1_16CallbackBehaviorEPFvdPvES3_",
+          "literal_registers": {
+            "x0": {
+              "value": "0x0",
+              "label": null
+            },
+            "x1": {
+              "value": "0x18838a938",
+              "label": "__ZZN2CA6Render7Context22enqueue_command_streamEPNS1_13CommandStreamEEN3$_58__invokeEdPv"
+            }
+          }
+        },
+        {
+          "address": "0x188244d38",
+          "target": "0x18838aa24",
+          "resolved_target": "0x18838aa24",
+          "target_name": "__ZN2CA6Render7Context13apply_streamsEPPNS1_13CommandStreamEm",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244d48",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244d6c",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244d70",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244d78",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244e58",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x20",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188244edc",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244efc",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188244f10",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188245128",
+          "target": "0x18db388f8",
+          "resolved_target": "0x19466b75c",
+          "target_name": "__ZNSt3__112__next_primeEm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18824514c",
+          "target": "0x1884c917c",
+          "resolved_target": "0x1d02fba74",
+          "target_name": "__ZdlPv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188245168",
+          "target": "0x1884c9194",
+          "resolved_target": "0x1d02fb9c4",
+          "target_name": "__Znwm",
+          "literal_registers": {
+            "x0": {
+              "value": "0x28",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188245174",
+          "target": "0x18838a9b4",
+          "resolved_target": "0x18838a9b4",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEEC2EOS7_",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882451cc",
+          "target": "0x18823fadc",
+          "resolved_target": "0x18823fadc",
+          "target_name": "__ZNSt3__112__hash_tableIjNS_4hashIjEENS_8equal_toIjEENS_9allocatorIjEEED2Ev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882451d4",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188245234",
+          "target": "0x188246b4c",
+          "resolved_target": "0x188246b4c",
+          "target_name": "_x_heap_malloc",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188245258",
+          "target": "0x188236a98",
+          "resolved_target": "0x188236a98",
+          "target_name": "_x_heap_malloc_small_",
+          "literal_registers": {
+            "x1": {
+              "value": "0x30",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882452e8",
+          "target": "0x18db39a2c",
+          "resolved_target": "0x1c0feca6c",
+          "target_name": "_vm_protect",
+          "literal_registers": {
+            "x3": {
+              "value": "0x1",
+              "label": null
+            },
+            "x4": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188245370",
+          "target": "0x188238ad0",
+          "resolved_target": "0x188238ad0",
+          "target_name": "__ZL15get_malloc_zonev",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188245378",
+          "target": "0x18db390fc",
+          "resolved_target": "0x1944b1aec",
+          "target_name": "_malloc_zone_malloc",
+          "literal_registers": {
+            "x1": {
+              "value": "0x58",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x18824538c",
+          "target": "0x18829d340",
+          "resolved_target": "0x18829d340",
+          "target_name": "__ZN2CA6Render7DecoderC1EP13x_heap_structPNS0_7ContextEPKvm",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882453ac",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882453b8",
+          "target": "0x1883e7830",
+          "resolved_target": "0x1883e7830",
+          "target_name": "__ZN2CA6Render6Server12CmdStreamMsg11_send_replyEv",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882453d4",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x1882453ec",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x188245434",
+          "target": "0x1884c9518",
+          "resolved_target": "0x18db147cc",
+          "target_name": "_dispatch_once_f",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc21b88",
+              "label": "__ZN2CA6Render5FenceL15fence_info_onceE"
+            },
+            "x1": {
+              "value": "0x0",
+              "label": null
+            },
+            "x2": {
+              "value": "0x1884971c8",
+              "label": "__ZN2CA6Render5FenceL15fence_info_initEv"
+            }
+          }
+        },
+        {
+          "address": "0x18824544c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x188245464",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x18824547c",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x188245494",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x1882454ac",
+          "target": "0x1884c950c",
+          "resolved_target": "0x18db147c0",
+          "target_name": "_dispatch_once",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1e1b9cd50",
+              "label": "__ZZ24CADeviceHasInternalBuildE4once"
+            },
+            "x1": {
+              "value": "0x1d57fd528",
+              "label": "___block_literal_global.122"
+            }
+          }
+        },
+        {
+          "address": "0x1882454c0",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1d03c2490",
+          "target_name": "_pthread_mutex_lock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cf8",
+              "label": "__ZN2CA6Render6Server6_mutexE"
+            }
+          }
+        },
+        {
+          "address": "0x1882454d0",
+          "target": "0x1884c9e18",
+          "resolved_target": "0x1d03c2424",
+          "target_name": "_pthread_cond_broadcast",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cc8",
+              "label": "__ZN2CA6Render6Server5_condE"
+            }
+          }
+        },
+        {
+          "address": "0x1882454d8",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1d03c24a8",
+          "target_name": "_pthread_mutex_unlock",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1dcc20cf8",
+              "label": "__ZN2CA6Render6Server6_mutexE"
+            }
+          }
+        },
+        {
+          "address": "0x188245560",
+          "target": "0x18db38a78",
+          "resolved_target": "0x19c901fd8",
+          "target_name": "__os_log_error_impl",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1881fb000",
+              "label": null
+            },
+            "x3": {
+              "value": "0x18851ad47",
+              "label": null
+            },
+            "x2": {
+              "value": "0x10",
+              "label": null
+            },
+            "x5": {
+              "value": "0x12",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188245584",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x1884f9885",
+              "label": "enqueue_command_stream"
+            },
+            "x1": {
+              "value": "0x1884f989c",
+              "label": "render-context.cpp"
+            },
+            "x3": {
+              "value": "0x1884f98af",
+              "label": "success && Server::is_running ()"
+            },
+            "x2": {
+              "value": "0x49e",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882455b4",
+          "target": "0x188346e30",
+          "resolved_target": "0x188346e30",
+          "target_name": "_x_log_crash",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882455b8",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882455bc",
+          "target": "0x18832c9d8",
+          "resolved_target": "0x18832c9d8",
+          "target_name": "__ZSt28__throw_bad_array_new_lengthB6v15006v",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882455c0",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882455c4",
+          "target": "0x18db38ab4",
+          "resolved_target": "0x18dbc443c",
+          "target_name": "_abort",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAFenceHandle dealloc]",
+      "address": "0x188220218",
+      "next_local_symbol": "0x1882202ac",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22135320,
+      "bytes": 148,
+      "assembly": "188220218.asm",
+      "calls": [
+        {
+          "address": "0x18822023c",
+          "target": "0x1885420c0",
+          "resolved_target": "0x1885420c0",
+          "target_name": "_objc_msgSend$isInvalidated",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x18822025c",
+          "target": "0x18db39330",
+          "resolved_target": "0x1800b1a40",
+          "target_name": "_objc_msgSendSuper2",
+          "literal_registers": {
+            "x1": {
+              "value": "0x18293e76a",
+              "label": "dealloc"
+            }
+          }
+        },
+        {
+          "address": "0x1882202a4",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850a541",
+              "label": "-[CAFenceHandle dealloc]"
+            },
+            "x1": {
+              "value": "0x18850a4b5",
+              "label": "CAFenceHandle.mm"
+            },
+            "x3": {
+              "value": "0x18850a55a",
+              "label": "[self isInvalidated]"
+            },
+            "x2": {
+              "value": "0x8c",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1882202a8",
+          "target": "0x18db38a60",
+          "resolved_target": "0x18dc05300",
+          "target_name": "___stack_chk_fail",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAFenceHandle invalidate]",
+      "address": "0x1882dc0e0",
+      "next_local_symbol": "0x1882dc19c",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 22905056,
+      "bytes": 188,
+      "assembly": "1882dc0e0.asm",
+      "calls": [
+        {
+          "address": "0x1882dc0fc",
+          "target": "0x1884c9ec0",
+          "resolved_target": "0x1d03c2490",
+          "target_name": "_pthread_mutex_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882dc108",
+          "target": "0x18db39534",
+          "resolved_target": "0x1d03245ec",
+          "target_name": "_os_unfair_lock_lock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882dc118",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882dc13c",
+          "target": "0x18db3954c",
+          "resolved_target": "0x1d032461c",
+          "target_name": "_os_unfair_lock_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882dc144",
+          "target": "0x1884c9ed8",
+          "resolved_target": "0x1d03c24a8",
+          "target_name": "_pthread_mutex_unlock",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1882dc15c",
+          "target": "0x18db3900c",
+          "resolved_target": "0x1c0fe7d78",
+          "target_name": "_mach_port_deallocate",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "-[CAFenceHandle _copyPort]",
+      "address": "0x188421ae8",
+      "next_local_symbol": "0x188421b58",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+      "file_offset": 24238824,
+      "bytes": 112,
+      "assembly": "188421ae8.asm",
+      "calls": [
+        {
+          "address": "0x188421b08",
+          "target": "0x188220bd4",
+          "resolved_target": "0x188220bd4",
+          "target_name": "-[CAFenceHandle _copyUntrackedPort]",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x188421b24",
+          "target": "0x18db38f70",
+          "resolved_target": "0x1c0fe6dd8",
+          "target_name": "_kdebug_trace",
+          "literal_registers": {
+            "x3": {
+              "value": "0x0",
+              "label": null
+            },
+            "x4": {
+              "value": "0x0",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x188421b54",
+          "target": "0x18db389d0",
+          "resolved_target": "0x18dc18c80",
+          "target_name": "___assert_rtn",
+          "literal_registers": {
+            "x0": {
+              "value": "0x18850a5b7",
+              "label": "-[CAFenceHandle _copyPort]"
+            },
+            "x1": {
+              "value": "0x18850a4b5",
+              "label": "CAFenceHandle.mm"
+            },
+            "x3": {
+              "value": "0x18850a5d2",
+              "label": "_handle_name"
+            },
+            "x2": {
+              "value": "0x15a",
+              "label": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Server-thread indirect target outside mapped cache is left unresolved; no guess at runtime pointer."
+  ],
+  "findings": [
+    {
+      "kind": "observed-static",
+      "finding": "The exact timeout string is emitted by CA::Render::Fence::ftimeout_callback(double, void*), not by CA::OGL::MetalContext::test_fence.",
+      "sites": [
+        "0x1884972d4",
+        "0x188497348-0x188497368",
+        "0x1884973c0-0x188497410"
+      ],
+      "string_addresses": [
+        "0x188517325",
+        "0x18852348b"
+      ]
+    },
+    {
+      "kind": "observed-static",
+      "finding": "create_fence_port increments the 32-bit nonzero _name_counter, calls getpid, and inserts that PID as bits32..63. Thus the logged name is (PID<<32)|counter.",
+      "sites": [
+        "0x1884968ec-0x188496908"
+      ],
+      "counter_address": "0x1dcc2040c"
+    },
+    {
+      "kind": "observed-static",
+      "finding": "create_fence_port allocates a Mach receive right, creates a send right, requests MACH_NOTIFY_NO_SENDERS on the render-server notify port, and stores deadline=CATimeWithHostTime(mach_absolute_time())+10 seconds.",
+      "sites": [
+        "0x188496884-0x1884968a8",
+        "0x18849690c-0x18849693c",
+        "0x18849712c-0x188497188"
+      ]
+    },
+    {
+      "kind": "observed-static",
+      "finding": "The render-server Mach thread dispatches message id70 on its notify port, obtains MACH_PORT_RECEIVE_STATUS for outstanding fence ports, and clears a fence on attribute-query failure or when mps_srights is zero; then calls resolve_fences.",
+      "sites": [
+        "0x188243f68-0x188243fac",
+        "0x188244738-0x1882447fc",
+        "0x188244890-0x188244894"
+      ]
+    },
+    {
+      "kind": "observed-static",
+      "finding": "Timeout callback marks expired names in cleared_f_names and calls resolve_fences, which also checks render-context fence dependencies. The timeout log alone is not proof of a GPU hardware timeout.",
+      "sites": [
+        "0x188497384-0x188497448",
+        "0x188281f44-0x188282120"
+      ]
+    },
+    {
+      "kind": "observed-static",
+      "finding": "CAFenceHandle obtains port/name via CASCreateFencePort Mach RPC; the server handler calls create_fence_port. invalidate deallocates the held send right.",
+      "sites": [
+        "0x188421bd0-0x188421be4",
+        "0x188285d0c-0x188285d5c",
+        "0x1882942c4-0x1882942d8",
+        "0x1882dc148-0x1882dc15c"
+      ]
+    },
+    {
+      "kind": "observed-static",
+      "finding": "MetalContext has a separate local fence mechanism: set_fence increments object offset0xa78 and records the atomic value at0xeb0; test_fence compares against completion value0xeb8 through its own map.",
+      "sites": [
+        "0x188268ed0-0x188268ee8",
+        "0x18823e4a0-0x18823e4c0"
+      ]
+    }
+  ],
+  "mach_constant_sources": [
+    {
+      "path": "src/xnu-8796/osfmk/mach/notify.h",
+      "lines": [
+        76,
+        83
+      ],
+      "facts": [
+        "MACH_NOTIFY_FIRST=0100 (octal64)",
+        "MACH_NOTIFY_NO_SENDERS=FIRST+006=70"
+      ]
+    },
+    {
+      "path": "src/xnu-8796/osfmk/mach/message.h",
+      "lines": [
+        327,
+        328
+      ],
+      "facts": [
+        "MAKE_SEND=20",
+        "MAKE_SEND_ONCE=21"
+      ]
+    },
+    {
+      "path": "src/xnu-8796/osfmk/mach/port.h",
+      "lines": [
+        254,
+        323,
+        330,
+        375
+      ],
+      "facts": [
+        "RIGHT_RECEIVE=1",
+        "MACH_PORT_RECEIVE_STATUS=2",
+        "mach_port_status_t.mps_srights at offset0x18"
+      ]
+    }
+  ],
+  "runtime_binding": {
+    "source": "log/host/gpu-v178/backboard-crash-review.json",
+    "fence_ids": [
+      {
+        "pid": 14,
+        "counter": 2,
+        "name": 60129542146
+      },
+      {
+        "pid": 167,
+        "counter": 2,
+        "name": 717259538434
+      },
+      {
+        "pid": 187,
+        "counter": 2,
+        "name": 803158884354
+      },
+      {
+        "pid": 197,
+        "counter": 2,
+        "name": 846108557314
+      },
+      {
+        "pid": 207,
+        "counter": 2,
+        "name": 889058230274
+      }
+    ],
+    "interpretation": "Observed IDs exactly match the original server name-generation formula. The specific caller and send-right holder responsible for counter2 were not captured."
+  },
+  "unknowns": [
+    "Why the second server fence in each process timed out: retained client send rights, notification delivery, pending transaction dependencies, or slower higher-level progress have not been distinguished.",
+    "The relationship to the later backboardd SIGSEGV is unproven; no new crash PC was consumed in this investigation.",
+    "This inspection does not establish GPU command submission, completion, or hardware-fence failure.",
+    "LC_FUNCTION_STARTS establishes bounded instruction ranges; this is original-byte disassembly, not decompiler output. Existing parser annotations of unresolved indirect pointers are not asserted as resolved calls."
+  ],
+  "minimum_interface_requirements": [
+    "Preserve Mach receive/send/send-once ownership, reference counts, port-set routing and authentic no-senders notification delivery; never synthesize fence success from this log alone.",
+    "Preserve valid receive-status results including mps_srights; the original server treats query failure as a clearing case.",
+    "Preserve client CAFenceHandle invalidate/copy ownership and server transaction dependency ordering.",
+    "Diagnose the SIGSEGV separately from its captured PC/LR; do not change the GPU hardware fence path solely because of the QuartzCore timeout message."
+  ]
+}
