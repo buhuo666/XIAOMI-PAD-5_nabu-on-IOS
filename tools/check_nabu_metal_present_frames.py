@@ -29,7 +29,7 @@ def expected_frame(frame, revision=174):
     return bytes(pixels)
 
 
-def verify(folder):
+def verify(folder, require_zero_copy=False):
     result = json.loads((folder / 'metal-present-result.json').read_text(encoding='utf-8'))
     metadata = json.loads((folder / 'metal-present-frames.json').read_text(encoding='utf-8'))
     gpu = (folder / 'metal-present-frames.bgra').read_bytes()
@@ -139,6 +139,19 @@ def verify(folder):
         require(balanced is True, 'Layer removed but surface imports are not balanced')
         require(result.get('resource_release_passed') is True, 'Resource release check not passed')
 
+    counters = result.get('counters_after_gpu', {})
+    delta = {key: counters.get(key, 0) - before.get(key, 0) for key in (
+        'surface_imports_made', 'host_pointer_imports_made', 'host_pointer_import_bytes_made',
+        'copied_host_buffers_made', 'copied_copy_in_bytes', 'copied_merge_back_bytes',
+        'shadowed_textures', 'host_textures_in_place')}
+    zero_copy = (delta['surface_imports_made'] > 0 and delta['host_pointer_imports_made'] > 0 and
+        delta['host_pointer_import_bytes_made'] > 0 and
+        delta['host_textures_in_place'] >= delta['surface_imports_made'] and
+        all(delta[key] == 0 for key in ('copied_host_buffers_made', 'copied_copy_in_bytes',
+                                      'copied_merge_back_bytes', 'shadowed_textures')))
+    if require_zero_copy:
+        require(zero_copy, 'IOSurface path still uses copied buffers or shadow textures, or lacks direct-import evidence')
+
     return {
         'result': 'fail' if issues else 'gpu_pixels_pass', 'run_id': result['run_id'], 'issues': issues,
         'test_revision': result['test_revision'], 'startup_preflight': result.get('startup_preflight'),
@@ -150,6 +163,8 @@ def verify(folder):
         'layer_removed': result.get('layer_removed', False), 'surface_imports_balanced': balanced,
         'source_texture_wrapper_released': result.get('source_texture_wrapper_released'),
         'gpu_copy_counters': result.get('counters_after_gpu'), 'release_counters': after,
+        'zero_copy_required': require_zero_copy, 'iosurface_direct_import_observed': zero_copy,
+        'iosurface_path_delta': delta,
         'visual_confirmation': 'requires user observation', 'hardware_vsync_verified': False,
         'system_wide_gpu_acceleration_verified': False,
     }
@@ -159,9 +174,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True, help='Recovered App Documents directory')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--require-zero-copy', action='store_true',
+                        help='Also require real pointer imports, in-place textures, and no copied/shadow resources')
     args = parser.parse_args()
     try:
-        report = verify(args.input)
+        report = verify(args.input, args.require_zero_copy)
     except (OSError, ValueError, KeyError, TypeError) as error:
         report = {'result': 'fail', 'issues': [str(error)], 'evidence_complete': False}
     args.output.parent.mkdir(parents=True, exist_ok=True)

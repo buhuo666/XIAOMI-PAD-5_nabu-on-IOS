@@ -58,7 +58,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--userland', action='store_true', help='Publish the NativeAdreno IOService/BO transport without Metal or scanout')
     parser.add_argument('--system-metal', action='store_true',
-                        help='Add the system Metal factory service; implies --userland, without scanout or cached imports')
+                        help='Add system Metal and shared cached-page imports; implies --userland, without scanout')
     args = parser.parse_args()
     if args.system_metal:args.userland=True
     args.output.mkdir(parents=True, exist_ok=True)
@@ -101,7 +101,7 @@ def main():
               'mode': 'A640 hardware execution; Metal publication not yet linked',
               'source_map': source_map, 'objects': [], 'commands': {}, 'compiled': False}
     if args.userland:report['mode']='A640 IOService userland transport; no Metal or scanout'
-    if args.system_metal:report['mode']='A640 system Metal factory service; no scanout or cached imports'
+    if args.system_metal:report['mode']='A640 system Metal factory service with shared cached-page imports; no scanout'
     for name in units:
         source = staged/name
         obj = args.output/('NabuGpu'+source.stem+'.o')
