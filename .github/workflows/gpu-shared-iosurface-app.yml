@@ -1,0 +1,44 @@
+name: nabu16 - shared IOSurface Metal App
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-shared-iosurface-app.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  shared-iosurface-app:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch the qualified GPU ABI headers
+        run: >-
+          python3 tools/fetch_sources.py --only nabu
+          --report artifacts/shared-iosurface-app-source.json
+      - name: Reuse the shaders qualified in run172
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42615860281 --name nabu-gpu-iosurface-copy-read-2
+          --dir inputs/qualified-runtime
+      - name: Build the ordinary App with direct default IOSurface input
+        run: >-
+          python3 tools/build_nabu_metal_present_app.py
+          --system-integration --shared-iosurface-source
+          --input inputs/qualified-runtime/nabu-gpu-iosurface-copy-read
+          --output artifacts/nabu-shared-iosurface-app
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-shared-iosurface-app-${{ github.run_number }}
+          path: |
+            artifacts/nabu-shared-iosurface-app/
+            artifacts/shared-iosurface-app-source.json
+          retention-days: 14
