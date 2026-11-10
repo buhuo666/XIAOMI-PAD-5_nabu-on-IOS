@@ -63,6 +63,11 @@ MiniIOSurfaceDrop(MiniIOSurface * s)''')
     if '#include "nabu_display/NabuDpuDisplay.h"' not in text:
         text = replace(text, '#include "MiniIOSurface.h"', '#include "MiniIOSurface.h"\n#include "nabu_display/NabuDpuDisplay.h"')
         text = replace(text, '\tIOLock *        fLock;', '\tNabuDpuDisplay::Binding *fDpu;\n\tIOLock *        fLock;')
+        text = replace(text,
+            'IOLog("MiniIOMobileFramebuffer: IOMFBDisplayRefresh: %u Hz (software pacing: %u; no hardware vblank), an interval of %llu (2^-32 s), %llu ticks\\n",\n'
+            '\t    told, refreshHz(), interval, ticks);',
+            'IOLog("MiniIOMobileFramebuffer: IOMFBDisplayRefresh: %u Hz (%s; configured rate: %u), an interval of %llu (2^-32 s), %llu ticks\\n",\n'
+            '\t    told, fDpu ? "hardware vblank selected" : "software pacing; no hardware vblank", refreshHz(), interval, ticks);')
         text = replace(text, '\tfSwapLock = IOLockAlloc();', '''\tfSwapLock = IOLockAlloc();
 \tif (NabuDpuDisplay::requested()) {
 \t\tfDpu = NabuDpuDisplay::start();

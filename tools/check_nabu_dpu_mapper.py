@@ -24,7 +24,10 @@ constexpr int kIOReturnSuccess=0,kIOReturnNotReady=-1,kIOReturnNoMemory=-2,kIORe
     kIOReturnIOError=-4,kIOReturnBadArgument=-5,kIOReturnNoResources=-6;
 constexpr unsigned kIODirectionOut=1,kIODirectionInOut=3,kIOMemoryMapperNone=0x10,
     kIOMemoryPhysicallyContiguous=0x20,kIOMapWriteCombineCache=0x40,kIOMapInhibitCache=0x80;
-constexpr unsigned VM_WIMG_MASK=255,VM_WIMG_WCOMB=2;
+constexpr unsigned VM_WIMG_MASK=255,VM_WIMG_WCOMB=6,VM_WIMG_IO=7;
+inline unsigned vmPageShift=14;
+inline std::vector<ppnum_t> cacheQueries;
+#define atop(x) (uint64_t(x) >> vmPageShift)
 inline void *kernel_task=nullptr;inline int gIOServicePlane=0;
 inline uint64_t appsMemory[0x100000/8]={};
 inline void *IOMallocZero(size_t n){return std::calloc(1,n);}
@@ -65,7 +68,11 @@ public:
     }
     void *getBytesNoCopy(){return storage;}
 };
-extern "C" inline unsigned int pmap_cache_attributes(ppnum_t){return VM_WIMG_WCOMB;}
+extern "C" inline unsigned int pmap_cache_attributes(ppnum_t pn){
+    cacheQueries.push_back(pn);
+    const uint64_t pa=uint64_t(pn)<<vmPageShift;
+    return pa>=0x180000000ull && pa<0x180000000ull+2053ull*4096 ? VM_WIMG_WCOMB : VM_WIMG_IO;
+}
 '''
 
 HARNESS = r'''
@@ -103,6 +110,20 @@ static void finish(MP::Binding *b){ // Host-only lifetime cleanup after simulate
 }
 static IOMemoryDescriptor *memory(uint64_t pa){auto *m=new IOMemoryDescriptor;m->bytes=8192;m->pages={pa,pa+0x8000};return m;}
 int main(){
+    // GPU187: vm_page=16384 over 4K translation; a 4K-derived pmap page
+    // number decodes to an unmanaged address and reports VM_WIMG_IO (7).
+    for(unsigned shift:{12u,14u}) {
+        vmPageShift=shift;initApps();cacheQueries.clear();
+        MP::Binding *probe=prepared();
+        assert(cacheQueries.size()==PT::TablePages);
+        assert(cacheQueries.front()==(0x180000000ull>>shift));
+        assert(cacheQueries.back()==((0x180000000ull+uint64_t(PT::TablePages-1)*4096)>>shift));
+        if(shift==14) {
+            assert(cacheQueries[0]==cacheQueries[3]&&cacheQueries[4]==cacheQueries[0]+1);
+            assert(pmap_cache_attributes(ppnum_t(0x180000000ull>>12))==VM_WIMG_IO);
+        }
+        finish(probe);
+    }
     initApps();Dpu dpu;SC::State state={};assert(SC::initialize(dpu.io(),state,nullptr)==SC::Ok);state.phase=SC::Quiesced;
     MP::Binding *b=prepared();auto before=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
     dpu.halt=0;assert(MP::preflightSources(b,dpu.io())==0);
@@ -142,7 +163,7 @@ int main(){
     auto *m=memory(0x400000000ull);PT::Mapping mm;assert(MP::mapDescriptor(b,m,0,8192,&mm)==0);
     m->failComplete=true;assert(MP::discardUnsubmitted(b,mm)==kIOReturnIOError&&MP::poisoned(b));
     assert(m->refs==2&&m->prepares==1);finish(b);m->release();
-    std::puts("PASS actual mapper binding: readonly prepare, source/WB gate, CB2-only writes, CFIE0/CFRE1, PA import, retained descriptors, cancellation and lock-free fault read");
+    std::puts("PASS actual mapper binding: 4K/16K VM page-number regression, readonly prepare, source/WB gate, CB2-only writes, CFIE0/CFRE1, PA import, retained descriptors, cancellation and lock-free fault read");
 }
 '''
 

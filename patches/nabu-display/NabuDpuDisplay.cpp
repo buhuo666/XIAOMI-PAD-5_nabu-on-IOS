@@ -269,6 +269,7 @@ static IOReturn flip(Binding *b, Held &h) {
     result = b->failure ? b->failure : Mapper::accept(b->mapper, held.mapping, &old);
     if (!result && old != PT::NoSlot)
         result = Mapper::releaseRetired(b->mapper, old, b->held[old].mapping.token);
+    const uint64_t irqCount = b->sample.irqCount, vblankSequence = b->sample.masterSequence;
     IOLockUnlock(b->stateLock);
     if (result) return result;
     finishRecord(b, held.swap, Swap::Displayed);
@@ -281,9 +282,9 @@ static IOReturn flip(Binding *b, Held &h) {
     ++b->accepted;
     b->lastDisplayTime = mach_absolute_time();
     if (b->accepted <= 8 || !(b->accepted % 120))
-        IOLog("NABU DPU: displayed=%llu swap=%u surface=%u iova=%#x frame=%u/%u retired-slot=%u copied=0\n",
+        IOLog("NABU DPU: displayed=%llu swap=%u surface=%u iova=%#x frame=%u/%u retired-slot=%u irq=%llu vsync=%llu copied=0\n",
             b->accepted, held.swap, s->sid, held.mapping.iova,
-            accepted.observed.frame[0], accepted.observed.frame[1], old);
+            accepted.observed.frame[0], accepted.observed.frame[1], old, irqCount, vblankSequence);
     return kIOReturnSuccess;
 }
 static void worker(void *cookie, wait_result_t) {

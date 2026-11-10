@@ -218,7 +218,11 @@ Binding *prepare(int *error) {
                   physical, contiguous, b->tableMemory->getLength(), bytes); goto bad;
         }
         for (unsigned i = 0; i < PT::TablePages; ++i) {
-            const unsigned attr = pmap_cache_attributes((ppnum_t)((physical >> 12) + i)) & VM_WIMG_MASK;
+            // pmap page numbers use the VM allocation size (16 KiB on nabu),
+            // independently of this pool's 4 KiB SMMU table granule. Passing
+            // physical>>12 queried a different, unmanaged PA and returned IO.
+            const uint64_t pagePhysical = physical + uint64_t(i) * PT::PageBytes;
+            const unsigned attr = pmap_cache_attributes((ppnum_t)atop(pagePhysical)) & VM_WIMG_MASK;
             if (attr != VM_WIMG_WCOMB) {
                 IOLog("NABU DPU MAP table-cache page=%u pa=%#llx attr=%#x need=%#x\n",
                       i, physical + uint64_t(i) * 4096, attr, VM_WIMG_WCOMB); goto bad;
