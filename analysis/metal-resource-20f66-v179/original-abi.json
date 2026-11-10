@@ -1,0 +1,361 @@
+{
+  "image": {
+    "path": "/System/Library/Frameworks/Metal.framework/Metal",
+    "address": "0x181a0a000",
+    "cache_file": "dyld_shared_cache_arm64.01",
+    "file_offset": 26943488,
+    "cpu_subtype": 0,
+    "file_type": 6
+  },
+  "image_uuid": "88922408-fd68-3396-8465-3775ce66ff60",
+  "analysis_type": "Original metadata and bounded ARM64 instructions via existing Capstone cache reader; not target execution or REA decompilation",
+  "rea_availability_reused": "analysis/metal-library-20f66-v178/rea-availability.json",
+  "methods": [
+    {
+      "name": "-[MTLIOAccelTexture makeAliasable]",
+      "address": "0x181aae9b0",
+      "encoding": "v16@0:8",
+      "section": 1,
+      "type": 14,
+      "byte_length": 84,
+      "bytes_hex": "ff8300d1fd7b01a9fd430091088a2d9008f184b9086868f8880100b5088a2d9008d984b9086868f8080100b5e8892df0082d43f9e02300a9686f00d001093c91e00300916c3f4995fd7b41a9ff830091c0035fd6",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27617712,
+      "assembly": [
+        {
+          "address": "0x181aae9b0",
+          "instruction": "sub sp, sp, #0x20"
+        },
+        {
+          "address": "0x181aae9b4",
+          "instruction": "stp x29, x30, [sp, #0x10]"
+        },
+        {
+          "address": "0x181aae9b8",
+          "instruction": "add x29, sp, #0x10"
+        },
+        {
+          "address": "0x181aae9bc",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181aae9c0",
+          "instruction": "ldrsw x8, [x8, #0x4f0]"
+        },
+        {
+          "address": "0x181aae9c4",
+          "instruction": "ldr x8, [x0, x8]"
+        },
+        {
+          "address": "0x181aae9c8",
+          "instruction": "cbnz x8, #0x181aae9f8"
+        },
+        {
+          "address": "0x181aae9cc",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181aae9d0",
+          "instruction": "ldrsw x8, [x8, #0x4d8]"
+        },
+        {
+          "address": "0x181aae9d4",
+          "instruction": "ldr x8, [x0, x8]"
+        },
+        {
+          "address": "0x181aae9d8",
+          "instruction": "cbnz x8, #0x181aae9f8"
+        },
+        {
+          "address": "0x181aae9dc",
+          "instruction": "adrp x8, #0x1dcbed000"
+        },
+        {
+          "address": "0x181aae9e0",
+          "instruction": "ldr x8, [x8, #0x658]"
+        },
+        {
+          "address": "0x181aae9e4",
+          "instruction": "stp x0, x8, [sp]"
+        },
+        {
+          "address": "0x181aae9e8",
+          "instruction": "adrp x8, #0x18289c000"
+        },
+        {
+          "address": "0x181aae9ec",
+          "instruction": "add x1, x8, #0xf02"
+        },
+        {
+          "address": "0x181aae9f0",
+          "instruction": "mov x0, sp"
+        },
+        {
+          "address": "0x181aae9f4",
+          "instruction": "bl #0x186cfe7a4",
+          "branch_target": "_objc_msgSendSuper2"
+        },
+        {
+          "address": "0x181aae9f8",
+          "instruction": "ldp x29, x30, [sp, #0x10]"
+        },
+        {
+          "address": "0x181aae9fc",
+          "instruction": "add sp, sp, #0x20"
+        },
+        {
+          "address": "0x181aaea00",
+          "instruction": "ret "
+        }
+      ]
+    },
+    {
+      "name": "-[MTLIOAccelTexture isAliasable]",
+      "address": "0x181aae968",
+      "encoding": "B16@0:8",
+      "section": 1,
+      "type": 14,
+      "byte_length": 72,
+      "bytes_hex": "088a2d9008f184b9086868f8a80000b5088a2d9008d984b9086868f8680000b4e00308aaa5420414088a2d9008811891080180b90800088b08c143391f010071e0179f1ac0035fd6",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27617640,
+      "assembly": [
+        {
+          "address": "0x181aae968",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181aae96c",
+          "instruction": "ldrsw x8, [x8, #0x4f0]"
+        },
+        {
+          "address": "0x181aae970",
+          "instruction": "ldr x8, [x0, x8]"
+        },
+        {
+          "address": "0x181aae974",
+          "instruction": "cbnz x8, #0x181aae988"
+        },
+        {
+          "address": "0x181aae978",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181aae97c",
+          "instruction": "ldrsw x8, [x8, #0x4d8]"
+        },
+        {
+          "address": "0x181aae980",
+          "instruction": "ldr x8, [x0, x8]"
+        },
+        {
+          "address": "0x181aae984",
+          "instruction": "cbz x8, #0x181aae990"
+        },
+        {
+          "address": "0x181aae988",
+          "instruction": "mov x0, x8"
+        },
+        {
+          "address": "0x181aae98c",
+          "instruction": "b #0x181bbf420",
+          "branch_target": "_objc_msgSend$isAliasable"
+        },
+        {
+          "address": "0x181aae990",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181aae994",
+          "instruction": "add x8, x8, #0x620"
+        },
+        {
+          "address": "0x181aae998",
+          "instruction": "ldrsw x8, [x8]"
+        },
+        {
+          "address": "0x181aae99c",
+          "instruction": "add x8, x0, x8"
+        },
+        {
+          "address": "0x181aae9a0",
+          "instruction": "ldrb w8, [x8, #0xf0]"
+        },
+        {
+          "address": "0x181aae9a4",
+          "instruction": "cmp w8, #0"
+        },
+        {
+          "address": "0x181aae9a8",
+          "instruction": "cset w0, eq"
+        },
+        {
+          "address": "0x181aae9ac",
+          "instruction": "ret "
+        }
+      ]
+    },
+    {
+      "name": "-[MTLIOAccelResource makeAliasable]",
+      "address": "0x181ac7010",
+      "encoding": "v16@0:8",
+      "section": 1,
+      "type": 14,
+      "byte_length": 64,
+      "bytes_hex": "f44fbea9fd7b01a9fd43009128892df0082186b91300088b606a40f9c00000b468c2433988000034620e4ea9310504947fc20339fd7b41a9f44fc2a8c0035fd6",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27717648,
+      "assembly": [
+        {
+          "address": "0x181ac7010",
+          "instruction": "stp x20, x19, [sp, #-0x20]!"
+        },
+        {
+          "address": "0x181ac7014",
+          "instruction": "stp x29, x30, [sp, #0x10]"
+        },
+        {
+          "address": "0x181ac7018",
+          "instruction": "add x29, sp, #0x10"
+        },
+        {
+          "address": "0x181ac701c",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181ac7020",
+          "instruction": "ldrsw x8, [x8, #0x620]"
+        },
+        {
+          "address": "0x181ac7024",
+          "instruction": "add x19, x0, x8"
+        },
+        {
+          "address": "0x181ac7028",
+          "instruction": "ldr x0, [x19, #0xd0]"
+        },
+        {
+          "address": "0x181ac702c",
+          "instruction": "cbz x0, #0x181ac7044"
+        },
+        {
+          "address": "0x181ac7030",
+          "instruction": "ldrb w8, [x19, #0xf0]"
+        },
+        {
+          "address": "0x181ac7034",
+          "instruction": "cbz w8, #0x181ac7044"
+        },
+        {
+          "address": "0x181ac7038",
+          "instruction": "ldp x2, x3, [x19, #0xe0]"
+        },
+        {
+          "address": "0x181ac703c",
+          "instruction": "bl #0x181bc8500",
+          "branch_target": "_objc_msgSend$unpinMemoryAtOffset:withLength:"
+        },
+        {
+          "address": "0x181ac7040",
+          "instruction": "strb wzr, [x19, #0xf0]"
+        },
+        {
+          "address": "0x181ac7044",
+          "instruction": "ldp x29, x30, [sp, #0x10]"
+        },
+        {
+          "address": "0x181ac7048",
+          "instruction": "ldp x20, x19, [sp], #0x20"
+        },
+        {
+          "address": "0x181ac704c",
+          "instruction": "ret "
+        }
+      ]
+    },
+    {
+      "name": "-[MTLIOAccelResource isAliasable]",
+      "address": "0x181ac6ff4",
+      "encoding": "B16@0:8",
+      "section": 1,
+      "type": 14,
+      "byte_length": 28,
+      "bytes_hex": "48892d90082186b90800088b08c143391f010071e0179f1ac0035fd6",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.01",
+      "file_offset": 27717620,
+      "assembly": [
+        {
+          "address": "0x181ac6ff4",
+          "instruction": "adrp x8, #0x1dcbee000"
+        },
+        {
+          "address": "0x181ac6ff8",
+          "instruction": "ldrsw x8, [x8, #0x620]"
+        },
+        {
+          "address": "0x181ac6ffc",
+          "instruction": "add x8, x0, x8"
+        },
+        {
+          "address": "0x181ac7000",
+          "instruction": "ldrb w8, [x8, #0xf0]"
+        },
+        {
+          "address": "0x181ac7004",
+          "instruction": "cmp w8, #0"
+        },
+        {
+          "address": "0x181ac7008",
+          "instruction": "cset w0, eq"
+        },
+        {
+          "address": "0x181ac700c",
+          "instruction": "ret "
+        }
+      ]
+    }
+  ],
+  "ivars": [
+    {
+      "class": "MTLIOAccelTexture",
+      "name": "_parentTexture",
+      "offset_storage": "0x1dcbee4d8",
+      "object_offset": 296
+    },
+    {
+      "class": "MTLIOAccelTexture",
+      "name": "_buffer",
+      "offset_storage": "0x1dcbee4f0",
+      "object_offset": 320
+    },
+    {
+      "class": "MTLIOAccelResource",
+      "name": "_res",
+      "offset_storage": "0x1dcbee620",
+      "object_offset": 24
+    }
+  ],
+  "conclusions": [
+    "Texture makeAliasable returns without forwarding when _buffer or _parentTexture is non-null.",
+    "Texture isAliasable forwards to _buffer first, then _parentTexture; roots read inverse pinned state.",
+    "Resource makeAliasable calls heap unpinMemoryAtOffset:withLength: only while heap exists and pinned is true, then clears pinned.",
+    "Resource initWithDevice sets pinned=1 and heap=nil, so ordinary resources stay nonaliasable; heap buffer constructor clears pinned for placement heap type1."
+  ],
+  "constructor_evidence": {
+    "resource_init": "0x181ac6534",
+    "ordinary_pinned_1": "0x181ac6598 -> 0x181ac65c8",
+    "ordinary_heap_zero": "0x181ac65c4",
+    "heap_buffer_init": "0x181ab1408",
+    "pinned_1": "0x181ab1468 -> 0x181ab146c",
+    "placement_pinned_0": "0x181ab1478 -> 0x181ab1480"
+  },
+  "runtime_mapping": {
+    "buffer": "src/metal2vulkan/crates/metal2vulkan-runtime/src/buffer.rs:3429",
+    "texture": "src/metal2vulkan/crates/metal2vulkan-runtime/src/texture.rs:4910",
+    "heap_free_once": "src/metal2vulkan/crates/metal2vulkan-runtime/src/heap.rs:1156"
+  },
+  "limitations": [
+    "No GPU or Apple runtime executed.",
+    "The generic runtime follows newer observed Metal behavior for texture views; the frontend preserves the exact 20F66 no-release branch for those views."
+  ]
+}

@@ -14,6 +14,11 @@
 #define NABU_METAL_SYSTEM_CLIENTS 0
 #endif
 
+#if NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS
+extern "C" int nabu_metal_fault_trace_install(const char *process);
+extern "C" void nabu_metal_fault_trace_images(void);
+#endif
+
 @interface _MTLDevice : NSObject
 @end
 @interface NativeAdrenoMetalDevice : _MTLDevice <NabuMetalFactoryDiagnostics>
@@ -88,9 +93,15 @@ static id refused(const char *why) {
     if (![[NSFileManager defaultManager] createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:&error])
         return refused(error.localizedDescription.UTF8String);
     cachePath = cache;
+#if NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS
+    nabu_metal_fault_trace_install(process);
+#endif
     // Consumers only link Apple's Metal framework; this factory loads the driver.
     if (!frontend) frontend = dlopen("/redwood/sbin/libnabu-metal-frontend.dylib", RTLD_NOW | RTLD_LOCAL);
     if (!frontend) return refused(dlerror());
+#if NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS
+    nabu_metal_fault_trace_images();
+#endif
     auto openDevice = reinterpret_cast<decltype(&native_bridge_metal_open)>(dlsym(frontend, "native_bridge_metal_open"));
     auto bridgeError = reinterpret_cast<decltype(&nmb_last_error)>(dlsym(frontend, "nmb_last_error"));
     if (!openDevice || !bridgeError) return refused("qualified frontend entry points missing");

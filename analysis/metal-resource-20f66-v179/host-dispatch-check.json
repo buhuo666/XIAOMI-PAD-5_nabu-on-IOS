@@ -1,0 +1,27 @@
+{
+  "result": "pass",
+  "dispatch_cases": 68,
+  "production_staging": "tools/build_nabu_gpu_metal_probe.py:stage_system_resource_aliasing",
+  "production_include": "patches/nabu-metal/NativeMetalResourceAliasing.inc",
+  "production_objc_messages_executed": true,
+  "c_abi_recording_doubles": true,
+  "buffer_queries_and_mutations_forwarded": true,
+  "texture_buffer_precedes_parent": true,
+  "texture_children_preserve_parent_storage": true,
+  "refusal_logging_observed": true,
+  "shader_fixes_preserved": true,
+  "sanitizers": [
+    "address",
+    "undefined"
+  ],
+  "original_20f66_methods": {
+    "texture_makeAliasable": "0x181aae9b0",
+    "texture_isAliasable": "0x181aae968",
+    "resource_makeAliasable": "0x181ac7010",
+    "resource_isAliasable": "0x181ac6ff4"
+  },
+  "rust_executed": false,
+  "apple_runtime_executed": false,
+  "gpu_executed": false,
+  "limitations": "Recording C ABI doubles validate the real Objective-C forwarding only. Rust compilation, heap reuse and GPU execution require the native build and device test."
+}

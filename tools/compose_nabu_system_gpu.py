@@ -26,9 +26,12 @@ def main():
     shutil.copyfile(args.system / 'build-report.json', args.output / 'system-discovery-input-report.json')
     shutil.copyfile(args.frontend / 'build-report.json', args.output / 'system-shader-input-report.json')
     system.update(frontend={**payload, 'source_ci': frontend['ci'], 'copied_without_resigning': True},
-        test_revision=178, frontend_rebuilt=True, system_shader_compatibility=True,
+        test_revision=179 if frontend.get('system_resource_aliasing') else 178,
+        frontend_rebuilt=True, system_shader_compatibility=True,
         system_shader_fixes=frontend['system_shader_fixes'], system_discovery_ci=system['ci'],
         ci=frontend['ci'], system_runtime_verified=False, gpu_exercised=False)
+    if frontend.get('system_resource_aliasing'):
+        system.update(system_resource_aliasing=True, system_resource_fixes=frontend['system_resource_fixes'])
     (args.output / 'build-report.json').write_text(json.dumps(system, indent=2) + '\n')
     print(json.dumps(dict(result='composed_not_run', frontend_ci=frontend['ci']['run_id'],
                          system_discovery_ci=system['system_discovery_ci']['run_id'])))

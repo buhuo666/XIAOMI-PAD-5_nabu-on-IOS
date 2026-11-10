@@ -6,8 +6,12 @@
 硬件启动与桌面进程就绪等待生效。但系统片段着色器使用的uchar3被前端拒绝，媒体服务
 缺少pipelineLibrary函数重载，导致服务反复退出、桌面未完成。3,356,432字节前缀、
 64MiB槽1和9,779,081字节syslog已备份清槽，APFS150，设备已恢复Android。
-第178轮正在编译两项直接修复，见[实测](../analysis/nabu-system-gpu-v177.md)和
-[修复证据](../analysis/nabu-system-shaders-v178.md)；系统加速尚未验收。
+第178轮专项CI42653980143及启动包检查通过后已实测，用户确认黑屏、无法进入桌面。
+旧uchar3与pipelineLibrary错误未再出现，但媒体有9次NBTexture makeAliasable缺失退出，
+backboardd有5次独立SIGSEGV，之前均出现QuartzCore fence超时，因果尚待定位。
+8,972,301字节日志前缀、完整64MiB槽1、21,830,199字节syslog已备份清槽；APFS151，
+Android引导分区未变，设备恢复Android。第179轮补真实资源alias桥接和桌面故障地址记录，
+见[修复与实测](../analysis/nabu-system-shaders-v178.md)及各轮continuation.json；系统加速未通过。
 
 第177轮转入系统GPU接入：系统工厂支持普通进程，缓存使用各进程目录；原版
 backboardd/SpringBoard等GPU就绪后再启动，取消90秒诊断延迟。普通名App不再直接链接

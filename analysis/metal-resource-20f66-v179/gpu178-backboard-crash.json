@@ -1,0 +1,282 @@
+{
+  "scope": "Read-only review of collected GPU178 native runtime prefix and final syslog; no device operations, code changes, binary re-audit or external lookup.",
+  "sources": {
+    "runtime": {
+      "path": "log/device/nabu-boot-20261110-178/runtime-log/runtime.log",
+      "bytes": 8972301,
+      "lines": 116831
+    },
+    "syslog": {
+      "path": "log/host/gpu-v178/syslog-live.log",
+      "bytes": 21830199,
+      "lines": 211043
+    }
+  },
+  "backboard_sigsegv": [
+    {
+      "line": 33385,
+      "text": "com.apple.xpc.launchd|2026-11-10 09:36:07.207352 (user/501/com.apple.backboardd [14]) <Notice>: exited due to SIGSEGV | sent by exc handler[14]"
+    },
+    {
+      "line": 54313,
+      "text": "com.apple.xpc.launchd|2026-11-10 09:36:34.042388 (user/501/com.apple.backboardd [167]) <Notice>: exited due to SIGSEGV | sent by exc handler[167]"
+    },
+    {
+      "line": 74609,
+      "text": "com.apple.xpc.launchd|2026-11-10 09:36:57.489962 (user/501/com.apple.backboardd [187]) <Notice>: exited due to SIGSEGV | sent by exc handler[187]"
+    },
+    {
+      "line": 95294,
+      "text": "com.apple.xpc.launchd|2026-11-10 09:37:21.784894 (user/501/com.apple.backboardd [197]) <Notice>: exited due to SIGSEGV | sent by exc handler[197]"
+    },
+    {
+      "line": 115744,
+      "text": "com.apple.xpc.launchd|2026-11-10 09:37:46.172903 (user/501/com.apple.backboardd [207]) <Notice>: exited due to SIGSEGV | sent by exc handler[207]"
+    }
+  ],
+  "syslog_termination": [
+    {
+      "line": 71951,
+      "text": "Nov 10 09:36:07 iPad runningboardd(RunningBoard)[4] <Notice>: [osservice<com.apple.backboardd>:14] termination reported by launchd (2, 11, 11)"
+    },
+    {
+      "line": 108670,
+      "text": "Nov 10 09:36:34 iPad runningboardd(RunningBoard)[4] <Notice>: [osservice<com.apple.backboardd>:167] termination reported by launchd (2, 11, 11)"
+    },
+    {
+      "line": 140136,
+      "text": "Nov 10 09:36:57 iPad runningboardd(RunningBoard)[4] <Notice>: [osservice<com.apple.backboardd>:187] termination reported by launchd (2, 11, 11)"
+    },
+    {
+      "line": 174480,
+      "text": "Nov 10 09:37:21 iPad runningboardd(RunningBoard)[4] <Notice>: [osservice<com.apple.backboardd>:197] termination reported by launchd (2, 11, 11)"
+    },
+    {
+      "line": 207662,
+      "text": "Nov 10 09:37:46 iPad runningboardd(RunningBoard)[4] <Notice>: [osservice<com.apple.backboardd>:207] termination reported by launchd (2, 11, 11)"
+    }
+  ],
+  "preceding_quartzcore_fence_timeouts": [
+    {
+      "line": 58307,
+      "text": "Nov 10 09:36:00 iPad backboardd(QuartzCore)[14] <Notice>: timed out fence 60129542146",
+      "process_pid": 14,
+      "fence_value": 60129542146,
+      "high32": 14,
+      "low32": 2
+    },
+    {
+      "line": 99894,
+      "text": "Nov 10 09:36:26 iPad backboardd(QuartzCore)[167] <Notice>: timed out fence 717259538434",
+      "process_pid": 167,
+      "fence_value": 717259538434,
+      "high32": 167,
+      "low32": 2
+    },
+    {
+      "line": 134603,
+      "text": "Nov 10 09:36:52 iPad backboardd(QuartzCore)[187] <Notice>: timed out fence 803158884354",
+      "process_pid": 187,
+      "fence_value": 803158884354,
+      "high32": 187,
+      "low32": 2
+    },
+    {
+      "line": 166734,
+      "text": "Nov 10 09:37:16 iPad backboardd(QuartzCore)[197] <Notice>: timed out fence 846108557314",
+      "process_pid": 197,
+      "fence_value": 846108557314,
+      "high32": 197,
+      "low32": 2
+    },
+    {
+      "line": 199950,
+      "text": "Nov 10 09:37:40 iPad backboardd(QuartzCore)[207] <Notice>: timed out fence 889058230274",
+      "process_pid": 207,
+      "fence_value": 889058230274,
+      "high32": 207,
+      "low32": 2
+    }
+  ],
+  "media_missing_aliasable": [
+    {
+      "line": 4211,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=6"
+    },
+    {
+      "line": 4499,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=63"
+    },
+    {
+      "line": 4965,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=68"
+    },
+    {
+      "line": 5133,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=74"
+    },
+    {
+      "line": 10619,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=109"
+    },
+    {
+      "line": 11194,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=144"
+    },
+    {
+      "line": 11962,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=149"
+    },
+    {
+      "line": 21413,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=159"
+    },
+    {
+      "line": 30715,
+      "text": "NABU_METAL_FACTORY missing=NBTexture makeAliasable process=mediaserverd pid=161"
+    }
+  ],
+  "media_abort_count": 9,
+  "factory_consumers": [
+    {
+      "line": 4100,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=6 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 4483,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=63 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 4949,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=68 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 5117,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=74 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 7045,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=14 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    },
+    {
+      "line": 7829,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=109 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 11108,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=144 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 11871,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=149 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 20444,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=159 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 30210,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=mediaserverd pid=161 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/mediaserverd"
+    },
+    {
+      "line": 31784,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=chronod pid=38 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/chronod"
+    },
+    {
+      "line": 34055,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=167 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    },
+    {
+      "line": 54708,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=187 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    },
+    {
+      "line": 75046,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=197 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    },
+    {
+      "line": 95595,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=207 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    },
+    {
+      "line": 116047,
+      "text": "NABU_METAL_FACTORY returned=NativeBridgeMetalDevice registry=4294967634 process=backboardd pid=216 cache=/var/mobile/Library/Caches/NativeAdrenoMetal/backboardd"
+    }
+  ],
+  "later_media_device_refusal": [
+    {
+      "line": 31868,
+      "text": "2026-11-10 09:36:04.228 mediaserverd[165:2497] native-metal: device refused: device: Vulkan(VkResultCode(-3))"
+    }
+  ],
+  "system_shader_refusals": [],
+  "missing_pipeline_library_selector": [],
+  "optional_pipeline_cache_faults": [
+    {
+      "line": 7065,
+      "text": "2026-11-10 09:35:30.743286+0800 backboardd[14:611] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    },
+    {
+      "line": 34057,
+      "text": "2026-11-10 09:36:08.736679+0800 backboardd[167:2652] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    },
+    {
+      "line": 54709,
+      "text": "2026-11-10 09:36:35.474287+0800 backboardd[187:3044] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    },
+    {
+      "line": 75047,
+      "text": "2026-11-10 09:36:58.900599+0800 backboardd[197:3408] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    },
+    {
+      "line": 95596,
+      "text": "2026-11-10 09:37:23.201617+0800 backboardd[207:3723] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    },
+    {
+      "line": 116048,
+      "text": "2026-11-10 09:37:47.576982+0800 backboardd[216:4033] [Metal] Metal failed to load pipeline library: no pipeline library on this GPU: default.pipelinelib"
+    }
+  ],
+  "backboard_corpse_notification_failure": [
+    {
+      "line": 11221,
+      "text": "[   60.971725]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 144"
+    },
+    {
+      "line": 11992,
+      "text": "[   65.938083]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 149"
+    },
+    {
+      "line": 33383,
+      "text": "[   85.856660]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 14"
+    },
+    {
+      "line": 54311,
+      "text": "[  112.689771]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 167"
+    },
+    {
+      "line": 74603,
+      "text": "[  136.131740]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 187"
+    },
+    {
+      "line": 95291,
+      "text": "[  160.429797]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 197"
+    },
+    {
+      "line": 115741,
+      "text": "[  184.821766]: Failed to send exception EXC_CORPSE_NOTIFY. error code: 5 for pid 207"
+    }
+  ],
+  "limitations": [
+    "No backboardd PC/LR/ESR or SIGSEGV stack is present in the examined logs. Signals are explicit but faulting function is unknown.",
+    "QuartzCore timeout IDs have high32=PID and low32=2. Underlying fence object and causal relation to SIGSEGV are not established; they are not proven hardware ring fence failures.",
+    "GPUInventory contains diagnostic readiness counters; it does not establish system Metal submission/completion or zero application GPU work.",
+    "Absence of old uchar3/selector errors does not prove every system shader compiled or rendered.",
+    "Media makeAliasable exceptions and backboard SIGSEGV are distinct observed failures. Causal dependence between them is not established."
+  ],
+  "next_minimum_evidence": [
+    "Check for a retained backboardd crash report if any exists despite failed corpse notification delivery.",
+    "If absent, capture backboardd SIGSEGV address and ucontext PC/LR plus loaded image bases on next already-authorized test, preserving default signal termination; use async-signal-safe writes.",
+    "Also retain the frontend journal/commit status to correlate actual rendering and callback progress with the process-local QuartzCore fence timeout; do not alter waiting semantics from timeout text alone."
+  ]
+}

@@ -52,6 +52,21 @@ def stage_system_shader_compatibility(metal):
     frontend.write_text(text.replace(anchor, extra + anchor), encoding='utf-8')
 
 
+def stage_system_resource_aliasing(root, metal):
+    """Connect run178's missing resource selector to the existing heap runtime."""
+    for name in ('NativeMetalResourceAliasing.h', 'NativeMetalResourceAliasing.inc'):
+        shutil.copyfile(root / 'patches/nabu-metal' / name, metal / name)
+    shutil.copyfile(root / 'patches/nabu-metal/NativeMetalResourceAliasing.rs',
+                    metal / 'bridge/NativeMetalResourceAliasing.rs')
+    objects = metal / 'bridge/NativeMetalObjects.rs'
+    objects.write_text(objects.read_text(encoding='utf-8') +
+                       '\ninclude!("NativeMetalResourceAliasing.rs");\n', encoding='utf-8')
+    frontend = metal / 'NativeBridgeMetalFrontend.mm'
+    replace_once(frontend, '- (BOOL)isAliasable {return NO;} \\\n', '')
+    frontend.write_text(frontend.read_text(encoding='utf-8') +
+                        '\n#include "NativeMetalResourceAliasing.inc"\n', encoding='utf-8')
+
+
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -117,7 +132,8 @@ def reuse_surface_factory(source, output):
                            'replace_previous_trial_job': True, 'standard_factory_required': True}}
 
 
-def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False, system_shaders=False):
+def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=False, system_shaders=False,
+          system_resources=False):
     """Use nabu's relevant frontend patches and UniXNU's bridge build entry."""
     work.mkdir(parents=True, exist_ok=False)
     (work / '.cache').mkdir()
@@ -167,6 +183,8 @@ def stage(root, work, instance_bytes, run, iosurface=False, iosurface_copy_read=
         stage_surface_statistics(root, metal, copy_read=iosurface_copy_read)
     if system_shaders:
         stage_system_shader_compatibility(metal)
+    if system_resources:
+        stage_system_resource_aliasing(root, metal)
     return {'frontend': metal, 'translator': translator, 'bridge_script': bridge,
             'patches': patches, 'rust_toolchain': rust, 'rust_msrv': msrv,
             'source_commits': {name: source_pins[name]['commit'] for name in
@@ -188,11 +206,15 @@ def main():
                         help='Build the default IOSurface probe with the iOS Mach copied-host-pages reader; implies --iosurface')
     parser.add_argument('--iosurface-input', type=Path, help='CI42607114009 artifact, required with --iosurface-copy-read')
     parser.add_argument('--system-shaders', action='store_true', help='Run177 fixes: packed UChar3 and pipelineLibrary function overload')
+    parser.add_argument('--system-resources', action='store_true',
+                        help='Run178 resource aliasing fix through the actual heap runtime; requires --system-shaders')
     args = parser.parse_args()
     if args.iosurface_copy_read:
         args.iosurface = True
     if args.system_shaders and not args.iosurface_copy_read:
         parser.error('--system-shaders requires the qualified iOS copy reader path')
+    if args.system_resources and not args.system_shaders:
+        parser.error('--system-resources requires --system-shaders to retain the run177 fixes')
     if args.iosurface and args.mtl_device_bytes != MTL_DEVICE_BYTES_20F66:
         parser.error('IOSurface mode requires the qualified 528-byte Metal ABI')
     if args.iosurface and not args.iosurface_copy_read and args.system_metal_input is None:
@@ -296,11 +318,18 @@ def main():
         shutil.copyfile(library, output / library.name)
         shutil.copyfile(turnip_input / 'build-report.json', output / 'turnip-input-report.json')
         staged = stage(ROOT, work, args.mtl_device_bytes, run, iosurface=args.iosurface,
-                       iosurface_copy_read=args.iosurface_copy_read, system_shaders=args.system_shaders)
+                       iosurface_copy_read=args.iosurface_copy_read, system_shaders=args.system_shaders,
+                       system_resources=args.system_resources)
         report['system_shader_compatibility'] = args.system_shaders
         if args.system_shaders:
             report['system_shader_fixes'] = ['UChar3 type 51: packed three bytes',
                 'newFunctionWithName:constantValues:pipelineLibrary:error: uses actual runtime specialization']
+        report['system_resource_aliasing'] = args.system_resources
+        if args.system_resources:
+            report['system_resource_fixes'] = [
+                'Buffer and root-texture makeAliasable/isAliasable use the actual runtime heap state',
+                '20F66 buffer textures and texture views preserve parent storage on makeAliasable',
+                'Texture isAliasable queries the backing buffer, then parent texture, then own runtime state']
         report.update(frontend_patches=staged['patches'], rust_toolchain=staged['rust_toolchain'], rust_msrv=staged['rust_msrv'],
                       source_commits=staged['source_commits'],
                       frontend_adaptations=['_MTLDevice instance size 536 -> reviewed 20F66 size 528',
@@ -365,6 +394,12 @@ def main():
             if not required.issubset(symbols):
                 raise ValueError('The built frontend lacks its IOSurface statistics/lifetime exports')
             report['frontend']['surface_statistics_exports'] = sorted(required)
+            if args.system_resources:
+                required = {'_nmb_buffer_make_aliasable', '_nmb_buffer_is_aliasable',
+                            '_nmb_texture_make_aliasable', '_nmb_texture_is_aliasable'}
+                if not required.issubset(symbols):
+                    raise ValueError('The built frontend lacks its resource aliasing bridge exports')
+                report['frontend']['resource_aliasing_exports'] = sorted(required)
         if not args.iosurface_copy_read:
             shader_name = 'gpu_iosurface_smoke.metal' if args.iosurface else 'gpu_metal_smoke.metal'
             library_name = 'nabu-iosurface-smoke' if args.iosurface else 'nabu-metal-smoke'

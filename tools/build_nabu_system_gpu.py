@@ -20,6 +20,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--backboard-fault-diagnostics', action='store_true',
+                        help='Record the observed backboardd SIGSEGV context before default termination')
     args = parser.parse_args()
     if sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('Apple userspace compilation runs in macOS GitHub Actions')
@@ -32,6 +34,7 @@ def main():
         graphics_start_gate=['com.apple.backboardd', 'com.apple.SpringBoard'],
         gate_loads_metal=False, gate_timeout_seconds=180, gpu_boot_delay_seconds=0,
         gpu_exercised=False, system_runtime_verified=False,
+        backboard_fault_diagnostics=args.backboard_fault_diagnostics,
         ci=dict(run_id=os.environ.get('GITHUB_RUN_ID'), head_sha=os.environ.get('GITHUB_SHA')),
         commands=[])
 
@@ -64,11 +67,25 @@ def main():
         bundle = output / 'NativeAdrenoMetal.bundle'
         bundle.mkdir()
         binary = bundle / 'NativeAdrenoMetal'
-        run([*base, '-DNABU_METAL_SYSTEM_CLIENTS=1', '-bundle',
+        diagnostics = []
+        if args.backboard_fault_diagnostics:
+            trace = ROOT / 'userland/nabu/src/gpu_metal_fault_trace.c'
+            test = output / 'fault-trace-host-test'
+            run(['xcrun', '--sdk', 'macosx', 'clang', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                 '-O1', trace, ROOT / 'userland/nabu/tests/gpu_metal_fault_trace_test.c', '-o', test])
+            run([test])
+            obj = output / 'gpu-metal-fault-trace.o'
+            run(['xcrun', '--sdk', 'iphoneos', 'clang', '-target', TARGET, '-isysroot', sdk,
+                 '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-c', trace, '-o', obj])
+            diagnostics = ['-DNABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS=1', obj]
+            report.update(test_revision=179, fault_trace_host_test_passed=True,
+                          fault_trace_scope='backboardd SIGSEGV; original termination preserved')
+        run([*base, '-DNABU_METAL_SYSTEM_CLIENTS=1', *diagnostics, '-bundle',
              ROOT / 'userland/nabu/src/gpu_metal_factory.mm', '-Wl,-dead_strip',
              '-framework', 'Foundation', '-framework', 'Metal', '-o', binary])
         info = plistlib.loads((source / 'NativeAdrenoMetal.bundle/Info.plist').read_bytes())
-        info.update(CFBundleVersion='2', CFBundleShortVersionString='2')
+        version = '3' if args.backboard_fault_diagnostics else '2'
+        info.update(CFBundleVersion=version, CFBundleShortVersionString=version)
         (bundle / 'Info.plist').write_bytes(plistlib.dumps(info))
         run(['codesign', '--force', '--sign', '-', '--timestamp=none', '--pagesize', '4096',
              '--identifier', info['CFBundleIdentifier'], bundle])

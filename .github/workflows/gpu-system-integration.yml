@@ -7,6 +7,8 @@ on:
       - 'tools/build_nabu_system_gpu.py'
       - 'userland/nabu/src/gpu_metal_wait_exec.c'
       - 'userland/nabu/src/gpu_metal_factory.mm'
+      - 'userland/nabu/src/gpu_metal_fault_trace.c'
+      - 'userland/nabu/tests/gpu_metal_fault_trace_test.c'
   workflow_dispatch:
     inputs:
       runner:
@@ -38,6 +40,7 @@ jobs:
           python3 tools/build_nabu_system_gpu.py
           --input inputs/qualified-runtime/nabu-gpu-iosurface-copy-read
           --output artifacts/nabu-system-gpu
+          --backboard-fault-diagnostics
       - name: Build normal-name App with only system framework linkage
         run: >-
           python3 tools/build_nabu_metal_present_app.py --system-integration

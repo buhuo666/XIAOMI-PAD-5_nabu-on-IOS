@@ -32,3 +32,34 @@ type51的3字节支持，并增加原版pipelineLibrary重载。后者保持原�
 
 构建源码638cbd2，专项CI42653980143；构建、产物与后续真机结果以
 log/host/gpu-v178/continuation.json为准。尚未将修复候选当作实机通过。
+
+## 2026-11-10构建与部署准备
+
+专项CI42653980143 attempt1完整成功，产物源码与638cbd2一致。新前端18,109,936字节，
+普通ARM64、iOS16.5目标、4KiB段及签名页验证通过，依赖均存在于本机20F66系统。
+220,101,904字节Rust静态库和派生前端源码已保留，后续前端修改可直接重链。
+
+与CI42650459047已合格的系统工厂/启动等待器组合，生成
+artifacts/nabu-bootstrap-gpu-v178/bootstrap.apfs（67,956,736字节）。APFS检查与12项
+文件读回通过，保留display01内核和原版桌面可执行文件。新日志槽1已准备并读回；
+根据前文设备释放及继续测试授权，开始部署和临时启动，不额外重启Android。
+运行中结果另记，不把构建成功作为系统着色器或桌面加速通过。
+
+## 第178轮实机结果
+
+2026-11-10部署及临时启动完成，用户确认黑屏、进不了桌面。原版消费者通过系统工厂
+取得前端；完整日志内没有再次出现type51拒绝或pipelineLibrary selector异常。媒体进程
+9次因NBTexture makeAliasable缺失abort；backboardd 14/167/187/197/207各发生一次
+SIGSEGV，由异常处理器发送，5次均在QuartzCore fence超时后退出。该fence值是
+(PID << 32) | 2，尚不能归为硬件GPU fence，也不能断言媒体错误造成桌面崩溃。
+原生崩溃通知EXC_CORPSE_NOTIFY返回error5，现有日志没有故障PC/LR或用户栈。
+后续媒体进程165另有Vulkan设备创建失败，原因未闭合。
+
+设备恢复Android后，8,972,301字节连续有效日志前缀和完整64MiB槽1均已回收；捕获未写入
+结束标记，不能将前缀称为完整运行时日志。槽已清空并读回，APFS150→151 fullfsync=ok，
+Android引导分区未变。原生syslog共21,830,199字节；普通测试App未安装或执行。
+证据见log/host/gpu-v178/backboard-crash-review.json、runtime-evidence.json和设备原始日志。
+
+下一轮将资源API接入已有真实Rust实现，同时仅在backboardd设置一次SIGSEGV诊断：
+记录原故障地址、ARM64寄存器和事先枚举的镜像地址，随后保留默认信号终止。此诊断
+不是桌面修复；资源修复与桌面故障分别验证。
