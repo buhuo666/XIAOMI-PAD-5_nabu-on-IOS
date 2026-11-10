@@ -26,6 +26,7 @@ MTL_DEVICE_BYTES_20F66 = 528
 QUALIFIED_FACTORY_RUN = '42603179764'
 SURFACE_STATS_PATCH = '0026-nabu-read-only-surface-counts.patch'
 SURFACE_COPY_READ_PATCH = '0027-nabu-ios-copied-host-read.patch'
+OWNED_COPY_PAGES_PATCH = '0028-nabu-owned-copied-pages.patch'
 
 
 def stage_system_shader_compatibility(metal):
@@ -114,7 +115,7 @@ def stage_owned_copy_pages(root, metal):
     patch += ''.join(difflib.unified_diff([], module.splitlines(keepends=True),
                                         fromfile='/dev/null', tofile='b/' + module_path))
     patch_dir = metal / 'bridge/patches'
-    name = '0028-nabu-owned-copied-pages.patch'
+    name = OWNED_COPY_PAGES_PATCH
     (patch_dir / name).write_text(patch, encoding='utf-8', newline='\n')
     series = patch_dir / 'series'
     series.write_text(series.read_text(encoding='utf-8') + name + '\n', encoding='utf-8')
@@ -401,6 +402,8 @@ def main():
             patches = [line.strip() for line in (staged['frontend'] / 'bridge/patches/series').read_text().splitlines()
                        if line.strip() and not line.lstrip().startswith('#')]
             additions = [SURFACE_STATS_PATCH] + ([SURFACE_COPY_READ_PATCH] if args.iosurface_copy_read else [])
+            if args.owned_copy_pages:
+                additions.append(OWNED_COPY_PAGES_PATCH)
             if len(patches) != 25 + len(additions) or patches[25:] != additions:
                 raise ValueError('IOSurface mode requires the 25 qualified patches followed by its named additions')
             report['runtime_patches'] = patches
@@ -408,6 +411,8 @@ def main():
             report['readonly_statistics_runtime_patch'] = SURFACE_STATS_PATCH
             if args.iosurface_copy_read:
                 report['ios_copied_host_read_patch'] = SURFACE_COPY_READ_PATCH
+            if args.owned_copy_pages:
+                report['owned_copy_pages_runtime_patch'] = OWNED_COPY_PAGES_PATCH
             xcode = run(['xcodebuild', '-version']).stdout.strip()
             if not xcode.startswith('Xcode 16.4\n'):
                 raise ValueError('IOSurface mode requires the qualified Xcode 16.4 compiler')
