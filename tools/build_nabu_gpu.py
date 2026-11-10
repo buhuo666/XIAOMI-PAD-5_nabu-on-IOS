@@ -59,6 +59,8 @@ def main():
     parser.add_argument('--userland', action='store_true', help='Publish the NativeAdreno IOService/BO transport without Metal or scanout')
     parser.add_argument('--system-metal', action='store_true',
                         help='Add system Metal and shared cached-page imports; implies --userland, without scanout')
+    parser.add_argument('--dpu-snapshot', action='store_true',
+                        help='Read inherited display registers once; no display writes or scanout changes')
     args = parser.parse_args()
     if args.system_metal:args.userland=True
     args.output.mkdir(parents=True, exist_ok=True)
@@ -78,6 +80,11 @@ def main():
                 source_map[path.name] = str(path.relative_to(ROOT))
             elif path.name.startswith(('LICENSE', 'COPYING', 'PROVENANCE')):
                 shutil.copyfile(path, licenses/(label.replace('/', '-')+'-'+path.name))
+    if args.dpu_snapshot:
+        for name in ('NabuDpuSnapshot.cpp', 'NabuDpuSnapshot.h'):
+            path = ROOT/'patches/nabu-display'/name
+            shutil.copyfile(path, staged/name)
+            source_map[name] = str(path.relative_to(ROOT))
     reference = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip()
     pinned = next(s for s in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources']
                   if s['name'] == 'nabu')['commit']
@@ -87,6 +94,7 @@ def main():
     flags = json.loads(args.compile_command.read_text())
     if args.userland:flags+=['-DNABU_GPU_USERLAND=1']
     if args.system_metal:flags+=['-DNABU_GPU_SYSTEM_METAL=1']
+    if args.dpu_snapshot:flags+=['-DNABU_DPU_SNAPSHOT=1']
     flags += ['-fno-common', '-I'+host_path(staged), '-include', host_path(staged/'NabuGpuSmmuNamespace.h')]
     cxx_only = {'-std=gnu++17', '-fapple-kext', '-fno-exceptions', '-fno-rtti',
                 '-fno-use-cxa-atexit', '-fno-c++-static-destructors', '-nostdinc++',
@@ -97,6 +105,7 @@ def main():
     c_sources = sorted(p.name for p in (args.source/'gpu/upstream/ArmSmmu4K').glob('*.c'))
     units = [name+'.cpp' for name in CPP + (USERLAND_CPP if args.userland else ()) +
              (SYSTEM_METAL_CPP if args.system_metal else ())] + c_sources + ['AdrenoPM4.c']
+    if args.dpu_snapshot:units+=['NabuDpuSnapshot.cpp']
     report = {'reference_commit': reference, 'target': 'arm64-apple-ios16.5',
               'mode': 'A640 hardware execution; Metal publication not yet linked',
               'source_map': source_map, 'objects': [], 'commands': {}, 'compiled': False}
