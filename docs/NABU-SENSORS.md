@@ -2,6 +2,13 @@
 
 2026-11-09，Asia/Shanghai。**iPadOS 传感器功能尚未完成。**
 
+2026-11-10用户要求持续修复直到iPadOS传感器正常。FastRPC独立GLINK、SLPI 34位
+DMA、并发listener/注册、原机只读文件服务及真实mmap已形成mode3候选，宿主检查、
+内核编译链接与分支检查通过，尚未实测。原生CoreMotion/HID诊断App也已完成CI。
+原机soc0属性已只读补齐，最终r5内核与完整r2启动包通过检查。设备仍由GPU179
+对话使用，下一轮待其交回；未准备日志槽或部署。当前候选和未完成项
+见[FastRPC接续](../analysis/nabu-sensors-fastrpc-20261110.md)；下文保留sensors02结果。
+
 第173轮已统一测试，SLPI PAS加载/认证成功，但ready超时。接续定位到SMP2P
 收发方向写反：本机 `qcom,smem=<481 430>` 是接收481、发送430。修复提交
 `1081ac7`，证据见 [SMP2P修复记录](../analysis/nabu-sensors-smp2p-20261109.md)。
@@ -135,7 +142,7 @@ ADSP 续调卡住记录，首轮 SLPI 仍需通过边界日志定位这一风险
 
 历史的mode1候选只做服务发现；mode2已实测七类查询，但尚无SUID事件或样本。
 FastRPC `sensor_pd`、registry/校准
-文件反向服务和持续采样尚未实现。`userland/nabu/src/sensor_bridge.*` 是未接入
+文件反向服务已形成mode3候选，但尚未实测；持续采样与原生发布仍待接通。`userland/nabu/src/sensor_bridge.*` 是未接入
 运行后端的接口候选，没有随本启动包加载。真实 iPadOS 数据还需要当前启动的
 SSC→Mach 时钟映射、六面坐标/符号验证、HID/CoreMotion 接收验证；自动亮度还需
 真实 IORegistry/AABC 接口。上述步骤完成前，不宣称旋转、自动亮度、指南针或

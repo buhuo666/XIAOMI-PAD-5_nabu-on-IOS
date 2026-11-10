@@ -10,6 +10,8 @@ struct Result {
     bool negotiated,opened,remote_open,local_ack,close_sent,close_ack,broken,timeout,ssc_found;
     uint32_t error,features,lcid,rcid,tx,rx,qrtr_packets,servers,ssc_node,ssc_port,ssc_instance;
     uint32_t ignored_channels,uncached_intents;
+    bool rpc_opened,rpc_close_ack;
+    uint32_t rpc_rcid,rpc_tx,rpc_rx;
 };
 
 template<class IO> class Link {
@@ -28,6 +30,17 @@ template<class IO> class Link {
     using Receiver=void (*)(void *,uint32_t,uint32_t,uint32_t,const uint8_t *,uint32_t);
     Receiver receiver=nullptr;
     void *receiver_context=nullptr;
+    using RpcReceiver=void (*)(void *,const uint8_t *,uint32_t);
+    RpcReceiver rpc_receiver=nullptr;
+    void *rpc_context=nullptr;
+    struct Rpc {
+        bool requested=false,remote_open=false,local_ack=false,offered=false;
+        bool intent_requested=false,close_sent=false;
+        Remote remote[64]{};
+        Local local[64]{};
+        uint8_t storage[6400]{}; // Android DT: 64 receive intents of 100 bytes.
+    } rpc;
+    uint32_t sample_window_ms=9000;
     uint32_t peer_node=0;
     struct Pending {uint32_t command,node,port,from_port,bytes;uint8_t payload[512];};
     Pending pending[16]{};
@@ -64,6 +77,37 @@ template<class IO> class Link {
             p32(pairs+i*8,size);p32(pairs+i*8+4,i+1);
         }
         return send(5,uint16_t(r.lcid),10,pairs,sizeof pairs);
+    }
+    void rpc_progress(){
+        if(!rpc_receiver||!r.negotiated||phase==Closing||phase==Finished)return;
+        if(!rpc.requested){const uint8_t name[]="fastrpcglink-apps-dsp";rpc.requested=send(2,2,sizeof name,name,sizeof name);}
+        if(rpc.remote_open&&rpc.local_ack&&!rpc.offered){
+            uint8_t pairs[512];
+            for(unsigned i=0;i<64;++i){rpc.local[i]={i*100,100,0,0};p32(pairs+i*8,100);p32(pairs+i*8+4,i+1);}
+            rpc.offered=send(5,2,64,pairs,sizeof pairs);r.rpc_opened=rpc.offered;
+        }
+    }
+    void rpc_intents(uint32_t count){
+        for(unsigned i=0;i<count;++i){
+            uint8_t pair[8];peek(pair,8+i*8,8);uint32_t size=u32(pair),id=u32(pair+4);int slot=-1;
+            if(!size){fail(Frame);return;}
+            for(unsigned j=0;j<64;++j)if(rpc.remote[j].present&&rpc.remote[j].id==id){slot=int(j);break;}
+            if(slot>=0&&rpc.remote[slot].used)continue;
+            if(slot<0)for(unsigned j=0;j<64;++j)if(!rpc.remote[j].present){slot=int(j);break;}
+            if(slot<0){++r.uncached_intents;continue;}
+            rpc.remote[slot]={id,size,true,false};rpc.intent_requested=false;
+        }
+    }
+    void rpc_data(uint16_t cmd,uint32_t id,uint32_t chunk,uint32_t left,uint32_t bytes){
+        if(!rpc.offered||!id||id>64){fail(Frame);return;}
+        Local &l=rpc.local[id-1];
+        if((cmd==9&&l.fill)||(cmd==12&&!l.fill)||chunk>l.size-l.fill||left>l.size-l.fill-chunk||
+            (cmd==12&&l.left!=chunk+left)){fail(Fragment);return;}
+        peek(rpc.storage+l.offset+l.fill,16,chunk);l.fill+=chunk;l.left=left;advance(bytes);
+        if(left)return;
+        ++r.rpc_rx;rpc_receiver(rpc_context,rpc.storage+l.offset,l.fill);
+        l.fill=l.left=0;send(r.features&1?14:6,2,id);
+        if(!(r.features&1)){uint8_t pair[8];p32(pair,l.size);p32(pair+4,id);send(5,2,1,pair,sizeof pair);}
     }
     void queue(uint32_t cmd,uint32_t node,uint32_t port,const uint32_t *words=nullptr,uint32_t from=0xfffffffeu){
         if(pending_count==16){fail(Frame);return;}
@@ -127,6 +171,7 @@ template<class IO> class Link {
     void close(){
         if(phase==Closing||phase==Finished)return;
         phase=Closing;phase_start=now;pending_count=0;
+        if(rpc.requested)rpc.close_sent=send(3,2,0);
         if(requested)r.close_sent=send(3,uint16_t(r.lcid),0);else phase=Finished;
     }
     void pump(){
@@ -143,11 +188,23 @@ template<class IO> class Link {
             case 2:{
                 const uint8_t name[]="IPCRTR";uint8_t actual[7]{};bool match=(value&0xffff)==sizeof name;
                 if(match)peek(actual,8,sizeof actual);for(unsigned i=0;i<sizeof name&&match;++i)match=actual[i]==name[i];
+                if(!match&&rpc_receiver){
+                    const uint8_t rpc_name[]="fastrpcglink-apps-dsp";uint8_t rpc_actual[sizeof rpc_name]{};
+                    bool rpc_match=(value&0xffff)==sizeof rpc_name;
+                    if(rpc_match)peek(rpc_actual,8,sizeof rpc_actual);
+                    for(unsigned i=0;i<sizeof rpc_name&&rpc_match;++i)rpc_match=rpc_actual[i]==rpc_name[i];
+                    if(rpc_match){
+                        advance(bytes);
+                        if(!cid||(rpc.remote_open&&r.rpc_rcid!=cid)||(r.remote_open&&r.rcid==cid)){fail(Frame);return;}
+                        r.rpc_rcid=cid;rpc.remote_open=true;send(4,cid,0);break;
+                    }
+                }
                 advance(bytes);if(!match){++r.ignored_channels;break;}
                 if(!cid||(r.remote_open&&r.rcid!=cid)){fail(Frame);return;}r.rcid=cid;r.remote_open=true;send(4,cid,0);break;
             }
-            case 4:advance(bytes);if(cid==r.lcid)r.local_ack=true;break;
+            case 4:advance(bytes);if(cid==r.lcid)r.local_ack=true;else if(cid==2&&rpc.requested)rpc.local_ack=true;break;
             case 5:
+                if(rpc.remote_open&&cid==r.rpc_rcid){rpc_intents(value);advance(bytes);break;}
                 if(cid==r.rcid&&r.remote_open)for(unsigned i=0;i<value;++i){
                     uint8_t pair[8];peek(pair,8+i*8,8);uint32_t size=u32(pair),id=u32(pair+4);int slot=-1;
                     if(!size){fail(Frame);return;}
@@ -157,10 +214,15 @@ template<class IO> class Link {
                     if(slot<0){++r.uncached_intents;continue;}remote[slot]={id,size,true,false};intent_requested=false;
                 }
                 advance(bytes);break;
-            case 6:case 14:advance(bytes);if(cid==r.rcid)for(auto &p:remote)if(p.present&&p.id==value){p.used=false;p.present=cmd==14;}break;
-            case 7:advance(bytes);if(cid==r.rcid)send(8,uint16_t(r.lcid),0);break;
-            case 8:advance(bytes);if(cid==r.rcid&&intent_requested&&!value)close();break;
+            case 6:case 14:
+                advance(bytes);
+                if(rpc.remote_open&&cid==r.rpc_rcid){for(auto &p:rpc.remote)if(p.present&&p.id==value){p.used=false;p.present=cmd==14;}}
+                else if(cid==r.rcid)for(auto &p:remote)if(p.present&&p.id==value){p.used=false;p.present=cmd==14;}
+                break;
+            case 7:advance(bytes);if(cid==r.rcid)send(8,uint16_t(r.lcid),0);else if(rpc.remote_open&&cid==r.rpc_rcid)send(8,2,0);break;
+            case 8:advance(bytes);if((cid==r.rcid&&intent_requested&&!value)||(rpc.remote_open&&cid==r.rpc_rcid&&rpc.intent_requested&&!value))close();break;
             case 9:case 12:{
+                if(rpc.remote_open&&cid==r.rpc_rcid){rpc_data(cmd,value,chunk,left,bytes);break;}
                 if(cid!=r.rcid||!r.remote_open){advance(bytes);break;}
                 if(!offered||!value||value>10){fail(Frame);return;}Local &l=local[value-1];
                 if((cmd==9&&l.fill)||(cmd==12&&!l.fill)||chunk>l.size-l.fill||left>l.size-l.fill-chunk||(cmd==12&&l.left!=chunk+left)){fail(Fragment);return;}
@@ -168,12 +230,13 @@ template<class IO> class Link {
                 if(!left){qrtr(receive_storage+l.offset,l.fill);finish_rx(value);}break;
             }
             case 13:advance(bytes);io.ring();break;
-            case 3:advance(bytes);send(11,cid,0);if(cid==r.rcid)close();break;
-            case 11:advance(bytes);if(cid==r.lcid&&r.close_sent)r.close_ack=true;break;
+            case 3:advance(bytes);send(11,cid,0);if(cid==r.rcid||(rpc.remote_open&&cid==r.rpc_rcid))close();break;
+            case 11:advance(bytes);if(cid==r.lcid&&r.close_sent)r.close_ack=true;else if(cid==2&&rpc.close_sent)r.rpc_close_ack=true;break;
             case 15:advance(bytes);break;
             default:fail(Command);return;
             }
             if(r.broken)return;
+            rpc_progress();
             if(phase==Opening&&r.negotiated&&!requested){const uint8_t name[]="IPCRTR";requested=send(2,uint16_t(r.lcid),sizeof name,name,sizeof name);}
             if(phase==Opening&&r.negotiated&&r.remote_open&&r.local_ack&&!offered){
                 offered=offer_all();if(!offered)return;r.opened=true;phase=Discovering;phase_start=now;
@@ -184,6 +247,17 @@ template<class IO> class Link {
     }
 public:
     constexpr explicit Link(IO &provider):io(provider){}
+    void enable_rpc(RpcReceiver receive,void *context){rpc_receiver=receive;rpc_context=context;}
+    void sampling_window(uint32_t milliseconds){sample_window_ms=milliseconds;}
+    bool send_rpc(const uint8_t *data,uint32_t bytes){
+        if(!r.rpc_opened||r.broken||phase==Closing||phase==Finished||bytes>512)return false;
+        int slot=-1;
+        for(unsigned i=0;i<64;++i)if(rpc.remote[i].present&&!rpc.remote[i].used&&rpc.remote[i].size>=bytes){slot=int(i);break;}
+        if(slot<0){if(!rpc.intent_requested)rpc.intent_requested=send(7,2,bytes);return false;}
+        uint8_t out[520]{};p32(out,bytes);for(unsigned i=0;i<bytes;++i)out[8+i]=data[i];
+        if(!send(9,2,rpc.remote[slot].id,out,8+bytes))return false;
+        rpc.remote[slot].used=true;++r.rpc_tx;return true;
+    }
     bool begin(uint32_t desc,uint32_t tx_at,uint32_t tx_size,uint32_t rx_at,uint32_t rx_size,
                bool samples=false,Receiver receive=nullptr,void *context=nullptr){
         if(phase!=Idle||tx_size<256||rx_size<256||((tx_size|rx_size)&7)){fail(Queues);return false;}
@@ -195,11 +269,12 @@ public:
         if(phase==Idle||phase==Finished)return;now=elapsed_ms;pump();if(r.broken)return;
         if(phase==Discovering||phase==Sampling)flush();
         if((phase==Opening&&now-phase_start>=5000)||(phase==Discovering&&now-phase_start>=10000)||
-           (phase==Sampling&&now-phase_start>=9000)){r.timeout=true;close();}
+           (phase==Sampling&&now-phase_start>=sample_window_ms)){r.timeout=true;close();}
         if(phase==Discovering&&r.ssc_found){
             if(sample_mode){phase=Sampling;phase_start=now;}else close();
         }
-        if(phase==Closing&&(r.close_ack||now-phase_start>=1000)){if(!r.close_ack)r.timeout=true;phase=Finished;}
+        bool closed=r.close_ack&&(!rpc.close_sent||r.rpc_close_ack);
+        if(phase==Closing&&(closed||now-phase_start>=1000)){if(!closed)r.timeout=true;phase=Finished;}
     }
     void abort(){fail(PeerGone);}
     bool send_data(uint32_t node,uint32_t port,uint32_t from_port,const uint8_t *data,uint32_t bytes){

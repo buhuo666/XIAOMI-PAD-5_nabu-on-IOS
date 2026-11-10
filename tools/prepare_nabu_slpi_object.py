@@ -13,8 +13,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--compile-command',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--slpi-mode',type=int,choices=(1,2),default=1,
-                   help='1: service discovery, 2: bounded live SSC sampling')
+    p.add_argument('--slpi-mode',type=int,choices=(1,2,3),default=1,
+                   help='1: service discovery, 2: live census, 3: FastRPC/registry then live census')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
     flags=json.loads(a.compile_command.read_text(encoding='utf-8'))
     source=ROOT/'patches/nabu-sensors/NabuSlpi.cpp';obj=a.output/'NabuSlpi.o'
@@ -25,7 +25,7 @@ def main():
     report=dict(compiled=result.returncode==0,command=command,object=str(obj),entrypoint='nabu_slpi_start',
                 target='arm64-apple-ios16.5',linked=False,device_execution=False,
                 boot_argument=f'nabu-slpi={a.slpi_mode}',delay_seconds=60,
-                limit='Root-PD census only. No FastRPC sensor_pd, registry file server, or native sensor publication. Secure-world SMC duration is outside APPS polling deadlines.')
+                limit='Finite SLPI/SSC trial; mode3 initializes sensor_pd and serves archived original files. No native sensor publication. Secure-world SMC duration is outside APPS polling deadlines.')
     if result.returncode==0:
         frames=[{'function':row.rsplit('\t',2)[0],'bytes':int(row.rsplit('\t',2)[1])}
                 for row in obj.with_suffix('.su').read_text().splitlines()]

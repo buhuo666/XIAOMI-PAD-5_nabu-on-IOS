@@ -25,6 +25,7 @@ public:
     Stream streams[StreamLimit]{};
     unsigned stream_count=0;
     Result result{};
+    using SampleReceiver=void (*)(void *,unsigned,Suid,uint64_t,const Sample &);
     static const char *type(unsigned i){
         const char *names[]={"accel","gyro","mag","ambient_light","pressure","proximity","ambient_light_back"};
         return i<TypeCount?names[i]:"unknown";
@@ -37,6 +38,9 @@ private:
         bool sent=false,responded=false;
     };
     IO &io;
+    SampleReceiver sample_receiver=nullptr;
+    void *sample_context=nullptr;
+    bool continuous=false;
     Request requests[RequestLimit]{};
     unsigned request_count=0;
     uint32_t node=0,port=0;
@@ -131,10 +135,12 @@ private:
             for(unsigned i=0;i<self.stream_count;++i){
                 auto &s=self.streams[i];if(!equal(s.suid,suid)||!s.sent||self.result.stopping)continue;
                 Sample sample;if(!parse_sample(payload,sample)){++self.result.invalid;return;}
-                if(s.samples&&ticks<=s.last)++s.nonmonotonic;
+                bool ordered=!s.samples||ticks>s.last;
+                if(!ordered)++s.nonmonotonic;
                 if(!s.samples)s.first=ticks;
-                ++s.samples;s.last=ticks;s.latest=sample;
+                ++s.samples;if(ordered){s.last=ticks;s.latest=sample;}
                 if(s.samples<=3)self.io.ssc_event(s.type,suid,id,ticks,payload);
+                if(ordered&&self.sample_receiver)self.sample_receiver(self.sample_context,s.type,suid,ticks,sample);
             }
         }else if(id==PhysicalConfig){
             for(unsigned i=0;i<self.stream_count;++i)if(equal(self.streams[i].suid,suid))
@@ -146,6 +152,8 @@ private:
     }
 public:
     constexpr explicit Census(IO &provider):io(provider){}
+    void stream(SampleReceiver receiver,void *context){continuous=true;sample_receiver=receiver;sample_context=context;}
+    void finish(uint64_t now){if(result.started&&!result.stopping)stop(now);}
     void start(uint32_t remote_node,uint32_t remote_port,uint64_t now){
         if(result.started)return;
         node=remote_node;port=remote_port;started_ms=now;result.started=true;
@@ -161,7 +169,7 @@ public:
     void tick(uint64_t now){
         if(!result.started||result.done)return;
         for(auto &d:discovery)d.expire(now);
-        if(!result.stopping&&((now-started_ms>=8000)||(!stream_count&&resolved())))stop(now);
+        if(!result.stopping&&((!continuous&&now-started_ms>=8000)||(!stream_count&&resolved())))stop(now);
         send_pending();
         if(result.stopping){
             bool drained=true;

@@ -24,6 +24,7 @@ using Bytes=std::vector<uint8_t>;
 // Values are extracted from the captured Android DT, not the driver constants.
 // qcom,smp2p consumes qcom,smem cells in inbound, outbound order.
 constexpr uint32_t AndroidIncoming=@@INCOMING@@, AndroidOutgoing=@@OUTGOING@@;
+constexpr uint32_t AndroidRpcIntentBytes=@@RPC_BYTES@@, AndroidRpcIntentCount=@@RPC_COUNT@@;
 static void p16(Bytes &b,size_t at,uint16_t x){b.at(at)=x;b.at(at+1)=x>>8;}
 static void p32(Bytes &b,size_t at,uint32_t x){p16(b,at,x);p16(b,at+2,x>>16);}
 static uint32_t u32(const Bytes &b,size_t at){return NabuSlpi::le32(b.data()+at);}
@@ -86,6 +87,9 @@ struct Wire {
     unsigned rings=0,announcements=0;
     Bytes received;
     unsigned received_count=0;
+    Bytes rpc_received;
+    std::vector<Bytes> rpc_sent;
+    unsigned rpc_offers=0;
     uint32_t read32(uint32_t at){return u32(b,at);}
     void write32(uint32_t at,uint32_t x){p32(b,at,x);}
     uint8_t read8(uint32_t at){return b.at(at);}void write8(uint32_t at,uint8_t x){b.at(at)=x;}
@@ -108,21 +112,35 @@ struct Wire {
         auto &w=*static_cast<Wire *>(context);assert(node==9&&port==12&&local==0x100);
         w.received.assign(p,p+n);++w.received_count;
     }
+    static void receive_rpc(void *context,const uint8_t *p,uint32_t n){static_cast<Wire *>(context)->rpc_received.assign(p,p+n);}
     std::vector<Bytes> drain(){
         std::vector<Bytes> packets;
         uint32_t tail=read32(0),head=read32(4);
         while(tail!=head){
             uint8_t h[16];for(unsigned i=0;i<16;++i)h[i]=read8(0x1000+(tail+i)%0x4000);
-            unsigned cmd=NabuSlpi::le16(h),n=8;
+            unsigned cmd=NabuSlpi::le16(h),cid=NabuSlpi::le16(h+2),n=8;
             if(cmd==2)n+=NabuSlpi::le32(h+4)&0xffff;
-            if(cmd==5)n+=8*NabuSlpi::le32(h+4);
+            if(cmd==5){
+                unsigned count=NabuSlpi::le32(h+4);n+=8*count;
+                if(cid==2){
+                    assert(count==AndroidRpcIntentCount);rpc_offers+=count;
+                    for(unsigned i=0;i<count;++i){
+                        Bytes pair(8);for(unsigned j=0;j<8;++j)pair[j]=read8(0x1000+(tail+8+i*8+j)%0x4000);
+                        assert(u32(pair,0)==AndroidRpcIntentBytes&&u32(pair,4)==i+1);
+                    }
+                }
+            }
             if(cmd==9){
                 assert(NabuSlpi::le32(h+12)==0);
                 uint32_t size=NabuSlpi::le32(h+8);Bytes packet(size);
                 for(unsigned i=0;i<size;++i)packet[i]=read8(0x1000+(tail+16+i)%0x4000);
-                // Linux qrtr_endpoint_post requires header + ALIGN(payload, 4).
-                assert(size==32+((u32(packet,20)+3)&~3u));
-                packets.push_back(packet);n+=8+size;rx(14,6,NabuSlpi::le32(h+4));
+                if(cid==2){rpc_sent.push_back(packet);rx(14,7,NabuSlpi::le32(h+4));}
+                else {
+                    // Linux qrtr_endpoint_post requires header + ALIGN(payload, 4).
+                    assert(size==32+((u32(packet,20)+3)&~3u));
+                    packets.push_back(packet);rx(14,6,NabuSlpi::le32(h+4));
+                }
+                n+=8+size;
             }
             tail=(tail+((n+7)&~7u))%0x4000;
         }
@@ -178,6 +196,29 @@ static void glink_sampling_test(){
     timeout.qrtr(4,400,9,12);stalled.step(20);stalled.step(9020);
     assert(stalled.result().timeout&&stalled.result().close_sent);stalled.step(10020);assert(stalled.done());
 }
+static void glink_rpc_test(){
+    static Wire w;static NabuSlpiGlink::Link<Wire> link(w);
+    link.enable_rpc(Wire::receive_rpc,&w);link.sampling_window(30000);w.opened(link,true);
+    const char name[]="fastrpcglink-apps-dsp";
+    w.rx(2,7,sizeof name,Bytes(name,name+sizeof name));w.rx(4,2,0);
+    Bytes pair(8);p32(pair,0,100);p32(pair,4,0);w.rx(5,7,1,pair);
+    w.qrtr(4,400,9,12);link.step(20);assert(link.result().rpc_opened&&link.result().rpc_rcid==7);
+    w.drain();link.step(30);w.drain();link.step(40);w.drain();link.step(50);
+    assert(w.rpc_offers==64);
+    Bytes call(40,0xa5),qmi{0,1,0,0x20,0,0,0};
+    assert(link.send_rpc(call.data(),call.size()));
+    assert(link.send_data(9,12,0x100,qmi.data(),qmi.size()));link.step(60);
+    auto sent=w.drain();assert(sent.size()==1&&w.rpc_sent.size()==1&&w.rpc_sent[0]==call);
+    // Both channels may use intent ID 1; their fragment state/storage are separate.
+    Bytes reply(12,0x5a),a(13),b(15);p32(a,0,5);p32(a,4,7);memcpy(a.data()+8,reply.data(),5);
+    p32(b,0,7);memcpy(b.data()+8,reply.data()+5,7);
+    w.rx(9,7,1,a);w.data(qmi,true);w.rx(12,7,1,b);link.step(70);
+    assert(w.rpc_received==reply&&w.received==qmi&&link.result().rpc_rx==1&&!link.result().broken);
+    assert(link.send_rpc(call.data(),call.size()));link.step(80);w.drain();assert(w.rpc_sent.size()==2);
+    link.step(9020);assert(!link.result().close_sent); // RPC initialization has its own selected bound.
+    link.finish();w.rx(11,1,0);link.step(9030);assert(!link.done());
+    w.rx(11,2,0);link.step(9040);assert(link.done()&&link.result().rpc_close_ack&&!link.result().timeout);
+}
 int main(int argc,char **argv){
     assert(argc==2);std::ifstream f(argv[1],std::ios::binary);Bytes b((std::istreambuf_iterator<char>(f)),{});
     NabuSlpi::Image image;assert(NabuSlpi::parse_image(b.data(),b.size(),image));
@@ -185,8 +226,8 @@ int main(int argc,char **argv){
     assert(image.segments[0].original==0x97300000&&image.segments[0].physical==0x97b00000);
     auto last=image.segments[image.count-1];assert(last.physical+last.memory_bytes==NabuSlpi::MemoryEnd);
     b.resize(100);assert(!NabuSlpi::parse_image(b.data(),b.size(),image));
-    memory_test();lifecycle_test();glink_test();glink_sampling_test();
-    puts("PASS: Android DT SMP2P direction/ownership, real slpi_nb MDT relocation, host3 isolation, start/unwind failures, GLINK fragmented SSC discovery, QRTR data padding/routing, intent reuse and bounded sampling/close");
+    memory_test();lifecycle_test();glink_test();glink_sampling_test();glink_rpc_test();
+    puts("PASS: Android DT SMP2P direction/ownership, real slpi_nb MDT relocation, host3 isolation, lifecycle, QRTR padding/routing, independent FastRPC channel, interleaved fragmentation, intent reuse and bounded close");
 }
 '''
 
@@ -202,7 +243,9 @@ def main():
     dt_path='base/soc/qcom,smp2p-dsps@1799000c/qcom,smem'
     with tarfile.open(a.device_tree) as tree:
         incoming,outgoing=struct.unpack('>II',tree.extractfile(dt_path).read())
-    source.write_text(HARNESS.replace('@@INCOMING@@',str(incoming)).replace('@@OUTGOING@@',str(outgoing)),encoding='utf-8')
+        rpc_bytes,rpc_count=struct.unpack('>II',tree.extractfile('base/soc/qcom,glink/dsps/qcom,msm_fastrpc_rpmsg/qcom,intents').read())
+    source.write_text(HARNESS.replace('@@INCOMING@@',str(incoming)).replace('@@OUTGOING@@',str(outgoing))
+        .replace('@@RPC_BYTES@@',str(rpc_bytes)).replace('@@RPC_COUNT@@',str(rpc_count)),encoding='utf-8')
     command=host_command(['g++','-std=c++17','-Wall','-Wextra','-Werror','-Wno-misleading-indentation',
                          '-fsanitize=address,undefined','-fno-omit-frame-pointer','-g',
                          '-I'+host_path(ROOT/'patches/nabu-sensors'),host_path(source),'-o',host_path(binary)])

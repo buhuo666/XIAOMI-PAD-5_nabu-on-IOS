@@ -24,8 +24,8 @@ def main():
     ap.add_argument('--baseline-link-command', type=Path, required=True)
     ap.add_argument('--compile-report', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--slpi-mode',type=int,choices=(1,2),default=1,
-                    help='Boot argument recorded for service discovery (1) or live SSC census (2)')
+    ap.add_argument('--slpi-mode',type=int,choices=(1,2,3),default=1,
+                    help='Service discovery (1), live census (2), FastRPC/registry plus census (3)')
     a = ap.parse_args()
     a.output = a.output.resolve()
     a.output.mkdir(parents=True, exist_ok=False)
@@ -66,6 +66,7 @@ def main():
     for relative in ['patches/nabu-storage/NabuDataKmod.cpp', 'tools/link_nabu_data_block.py',
                      'tools/build_nabu_slpi_trial.py', 'tools/prepare_nabu_slpi_object.py',
                      'tools/prepare_nabu_slpi_checks.py', 'tools/check_nabu_ssc_census.py',
+                     'patches/nabu-wireless/NabuWlanDma.h',
                      *[str(p.relative_to(ROOT)) for p in (ROOT/'patches/nabu-sensors').glob('*') if p.is_file()]]:
         target = snapshot/relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -77,8 +78,9 @@ def main():
               'boot_argument': f'nabu-slpi={a.slpi_mode}', 'hardware_start_delay_seconds': 60,
               'device_tested': False, 'native_sensors_published': False,
               'scope': ('SLPI root firmware, SMP2P and GLINK/QRTR endpoint discovery; '
-                        + ('bounded SSC SUID/attribute/configuration/sample census; ' if a.slpi_mode==2 else '')
-                        + 'sensor_pd, registry file service and native sensor publication remain separate.')}
+                        + ('bounded SSC SUID/attribute/configuration/sample census; ' if a.slpi_mode>=2 else '')
+                        + ('independent sensor_pd FastRPC listener, 34-bit DMA and original-file service; ' if a.slpi_mode>=3 else '')
+                        + 'native sensor publication remains separate.')}
     (a.output/'build-report.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
 

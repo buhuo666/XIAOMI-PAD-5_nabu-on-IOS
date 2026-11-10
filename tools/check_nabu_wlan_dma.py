@@ -14,6 +14,7 @@ HARNESS=r'''
 #include <map>
 #include <vector>
 #include "NabuWlanDma.h"
+#include "../nabu-sensors/NabuSlpiDma.h"
 using IOPhysicalAddress=uint64_t;
 using vm_offset_t=uintptr_t;
 static std::map<void *,uint64_t> native_memory;
@@ -123,6 +124,15 @@ template<class Dma> static uint64_t walk(const Dma &d,uint64_t va) {
     abort();
 }
 int main() {
+    {Peer p;NabuSlpiDma slpi;
+        assert(slpi.prepare(p.ops<NabuSlpiDma>()));
+        assert(slpi.mapping.input_bits==34&&slpi.ranges[0].iova==0x180000000ULL);
+        assert(walk(slpi,0x180000000ULL)==slpi.blocks[0].physical);
+        assert(walk(slpi,0x1807fffffULL)==slpi.blocks[0].physical+0x7fffff);
+        assert(slpi.attach(Peer::install,Peer::remove,&p));
+        assert(slpi.routes[0].sid==0x5a1&&slpi.observe());
+        assert(slpi.release_after_stop()&&p.memory.empty()&&p.removed==1);p.foreign_unchanged();
+    }
     // Both owners share a hardware SMMU while keeping separate banks, streams,
     // tables and IRQ ownership. Audio cleanup must leave live WLAN untouched.
     {Peer p; NabuWlanDma wlan; NabuAudioDma audio;

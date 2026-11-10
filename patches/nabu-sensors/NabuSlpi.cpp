@@ -14,11 +14,18 @@
 #include "NabuSlpiProtocol.h"
 #include "NabuSlpiGlink.h"
 #include "NabuSscCensus.h"
+#include "NabuSscRegistry.h"
+#include "NabuFastRpcSession.h"
+#include "NabuFastRpcArchive.h"
+#include "NabuSlpiDma.h"
+#include "../nabu-wireless/NabuWlanController.h"
 extern "C" vm_offset_t ml_io_map_unmappable(vm_offset_t,vm_size_t,unsigned int);
 extern "C" void ml_io_unmap(vm_offset_t,vm_size_t);
 extern "C" const uint8_t *hakios_image_file(const char *,const char *,uint64_t *,int *);
 extern "C" void loader_log_line(const char *);
 extern "C" lck_mtx_t hakios_aop_mailbox_lock,hakios_rsc_lock,hakios_smem_alloc_lock;
+extern "C" lck_mtx_t hakios_smmu_lock;
+extern "C" vm_offset_t ml_vtophys(vm_offset_t);
 namespace {
 static thread_call_t slpi_call;
 static uint32_t slpi_mode;
@@ -123,6 +130,13 @@ struct Trial {
     NabuSmem smem{};
     NabuSlpiGlink::Link<Trial> glink{*this};
     NabuSsc::Census<Trial> census{*this};
+    NabuSsc::Registry<Trial> registry{*this};
+    NabuFastRpc::Session<Trial> rpc{*this};
+    NabuFastRpc::Archive rpc_files{};
+    NabuSlpiDma dma{};
+    NabuWlanFault dma_faults{};
+    vm_offset_t dma_va=0;
+    bool dma_active=false;
     void put(uint32_t offset, uint32_t value) { wr(smem_va + offset, value); }
     uint32_t read32(uint32_t offset) {
         uint32_t value = rd(smem_va + offset);
@@ -136,6 +150,68 @@ struct Trial {
     uint8_t read8(uint32_t offset) { return smem.data[offset]; }
     void write8(uint32_t offset, uint8_t value) { *(volatile uint8_t *)(smem_va + offset) = value; }
     void ring() { wr(ipc, 1u << NabuSlpi::GlinkDoorbell); }
+    void rpc_publish(void *cpu,unsigned bytes){
+        for(uintptr_t at=reinterpret_cast<uintptr_t>(cpu);at<reinterpret_cast<uintptr_t>(cpu)+bytes;at+=64)
+            __asm__ volatile("dc civac, %0" :: "r"(at) : "memory");
+        __asm__ volatile("dsb sy" ::: "memory");
+    }
+    void rpc_consume(void *cpu,unsigned bytes){
+        for(uintptr_t at=reinterpret_cast<uintptr_t>(cpu);at<reinterpret_cast<uintptr_t>(cpu)+bytes;at+=64)
+            __asm__ volatile("dc ivac, %0" :: "r"(at) : "memory");
+        __asm__ volatile("dsb sy" ::: "memory");
+    }
+    bool rpc_send(const uint8_t *data,uint32_t bytes){return glink.send_rpc(data,bytes);}
+    void rpc_call_log(unsigned stage,uint64_t context,int32_t result){
+        if(stage!=NabuFastRpc::Session<Trial>::Next||result)
+            log("NABU FASTRPC: stage=%u context=%#llx result=%d\n",stage,context,result);
+    }
+    void rpc_reverse_log(uint32_t handle,uint32_t sc,uint32_t input,uint32_t output,int32_t result){
+        log("NABU FASTRPC REVERSE: handle=%u sc=%#x input=%u output=%u result=%d\n",handle,sc,input,output,result);
+    }
+    bool rpc_file_open(const char *path,const uint8_t *&data,uint32_t &bytes){return rpc_files.open(path,data,bytes);}
+    int rpc_file_list(const char *path,unsigned index,char *name,unsigned capacity,uint32_t &bytes){
+        return rpc_files.list(path,index,name,capacity,bytes);
+    }
+    const char *rpc_file_env(const char *name){
+        if(!strcmp(name,"ADSP_LIBRARY_PATH"))return "/vendor/dsp/sdsp;/vendor/dsp;/vendor/etc/sensors";
+        if(!strcmp(name,"ADSP_SENSOR_PATH"))return "/vendor/etc/sensors/config";
+        return nullptr;
+    }
+    void rpc_file_log(uint32_t handle,uint32_t method,const char *path,int32_t result){
+        log("NABU FASTRPC FILE: handle=%u method=%u result=%d path=%s\n",handle,method,result,path);
+    }
+    bool prepare_dma(){
+        dma_va=map("SLPI-SMMU",0x15000000,0x100000,VM_WIMG_IO);if(!dma_va)return false;
+        NabuSlpiDma::Platform ops{};ops.cookie=this;
+        ops.allocate=[](void *,unsigned bytes){
+            void *cpu=IOMallocContiguous(bytes,16384,nullptr);if(!cpu)return NabuSlpiDma::Memory{};
+            bzero(cpu,bytes);return NabuSlpiDma::Memory{cpu,ml_vtophys(reinterpret_cast<vm_offset_t>(cpu))};
+        };
+        ops.release=[](void *,NabuSlpiDma::Memory memory,unsigned bytes){IOFreeContiguous(memory.cpu,bytes);};
+        ops.publish=[](void *x,void *cpu,unsigned bytes){static_cast<Trial *>(x)->rpc_publish(cpu,bytes);};
+        ops.lock=[](void *){lck_mtx_lock(&hakios_smmu_lock);};
+        ops.unlock=[](void *){lck_mtx_unlock(&hakios_smmu_lock);};
+        ops.io={this,0x100000,
+            [](void *x,size_t at,uint32_t *v){*v=rd(static_cast<Trial *>(x)->dma_va+at);return 0;},
+            [](void *x,size_t at,uint64_t *v){*v=*reinterpret_cast<volatile uint64_t *>(static_cast<Trial *>(x)->dma_va+at);return 0;},
+            [](void *x,size_t at,uint32_t v){wr(static_cast<Trial *>(x)->dma_va+at,v);return 0;},
+            [](void *x,size_t at,uint64_t v){*reinterpret_cast<volatile uint64_t *>(static_cast<Trial *>(x)->dma_va+at)=v;return 0;},
+            [](void *){__asm__ volatile("dsb sy" ::: "memory");return 0;}};
+        if(!dma.prepare(ops)){log("NABU SLPI DMA: prepare failed phase=%u status=%u\n",dma.prepare_failure,dma.status);return false;}
+        dma_active=dma.attach([](void *x,unsigned bank,const ArmSmmu4KIo *io){
+            return nabu_smmu_fault_install(static_cast<NabuWlanFault *>(x),bank,io,NabuSlpiDma::first_sid)?0:-1;
+        },[](void *x,unsigned){nabu_smmu_fault_remove(static_cast<NabuWlanFault *>(x));},&dma_faults);
+        log("NABU SLPI DMA: active=%u phase=%u status=%u sid=%#x bank=%u iova=%#llx bits=%u pa=%#llx bytes=%u\n",
+            dma_active,dma.attach_phase,dma.status,NabuSlpiDma::first_sid,dma.bank,NabuSlpiDma::iova_base,
+            dma.mapping.input_bits,dma.blocks[0].physical,NabuSlpiDma::block_bytes);
+        return dma_active;
+    }
+    bool dma_healthy(){
+        NabuWlanFault::Record context{},global{};uint32_t flags=dma_faults.snapshot(context,global);
+        if(flags){log("NABU SLPI DMA: fault flags=%u status=%#x address=%#llx sid=%#x global=%#x\n",
+            flags,context.status,context.address,context.sid,global.status);dma.lost();return false;}
+        return dma.observe();
+    }
     bool allocate(uint16_t id, uint32_t bytes, uint32_t &offset) {
         lck_mtx_lock(&hakios_smem_alloc_lock);
         bool held = false;
@@ -148,6 +224,13 @@ struct Trial {
     }
     bool prepare() {
         uint64_t bytes = 0;
+        if(slpi_mode>=3){
+            const uint8_t *archive=hakios_image_file("rpc","files.bin",&bytes,nullptr);
+            if(!archive||bytes>UINT32_MAX||!rpc_files.load(archive,unsigned(bytes))){
+                log("NABU FASTRPC: original-file archive missing/invalid bytes=%llu\n",bytes);return false;
+            }
+            log("NABU FASTRPC: original-file archive entries=%u bytes=%u\n",rpc_files.entries(),rpc_files.size());
+        }
         const uint8_t *header = hakios_image_file("fw", "slpi_nb.mdt", &bytes, nullptr);
         if (!NabuSlpi::parse_image(header, bytes, image)) { log("NABU SLPI: invalid/missing MDT bytes=%llu\n", bytes); return false; }
         uint64_t file_bytes = 0, memory_bytes = 0;
@@ -323,10 +406,21 @@ struct Trial {
         return glink.send_data(node,port,from,data,size);
     }
     static void receive_ssc(void *context,uint32_t node,uint32_t port,uint32_t local_port,const uint8_t *data,uint32_t size){
-        static_cast<Trial *>(context)->census.receive(node,port,local_port,data,size);
+        Trial &trial=*static_cast<Trial *>(context);
+        if(local_port==NabuSsc::Registry<Trial>::ClientPort)trial.registry.receive(node,port,data,size);
+        else trial.census.receive(node,port,local_port,data,size);
     }
+    static void receive_rpc(void *context,const uint8_t *data,uint32_t size){static_cast<Trial *>(context)->rpc.receive(data,size);}
     void ssc_event(unsigned type,NabuSsc::Suid suid,uint32_t id,uint64_t ticks,NabuSsc::Span payload){
         const char *name=NabuSsc::Census<Trial>::type(type);
+        if(id==NabuSsc::SampleEvent){
+            uint64_t mach,virtual_ticks,physical_ticks,frequency;
+            clock_get_uptime(&mach);
+            __asm__ volatile("mrs %0, cntvct_el0\n\tmrs %1, cntpct_el0\n\tmrs %2, cntfrq_el0"
+                : "=r"(virtual_ticks),"=r"(physical_ticks),"=r"(frequency));
+            log("NABU SSC CLOCK: type=%s ssc=%llu mach=%llu virtual=%llu physical=%llu frequency=%llu\n",
+                name,ticks,mach,virtual_ticks,physical_ticks,frequency);
+        }
         log("NABU SSC EVENT: type=%s id=%u suid=%016llx%016llx ticks=%llu bytes=%u\n",
             name,id,suid.high,suid.low,ticks,unsigned(payload.size));
         for(unsigned at=0;at<payload.size;at+=96){
@@ -363,17 +457,30 @@ struct Trial {
         if(!found||!NabuSlpi::find(smem,478,desc)||desc.size!=32||!NabuSlpi::find(smem,479,tx)){
             log("NABU SLPI: GLINK queues unavailable; census ended\n");return;
         }
-        if(!glink.begin(desc.offset,tx.offset,tx.size,rx.offset,rx.size,slpi_mode==2,receive_ssc,this))return;
+        if(slpi_mode>=3){
+            if(!prepare_dma())return;
+            glink.enable_rpc(receive_rpc,this);glink.sampling_window(45000);
+        }
+        if(!glink.begin(desc.offset,tx.offset,tx.size,rx.offset,rx.size,slpi_mode>=2,receive_ssc,this))return;
         uint64_t started;clock_get_uptime(&started);
         while(!glink.done()){
             uint64_t current,nanos;clock_get_uptime(&current);absolutetime_to_nanoseconds(current-started,&nanos);
             unsigned elapsed=unsigned(nanos/1000000);
-            if(elapsed>30000){glink.abort();break;}
+            if(elapsed>60000){glink.abort();break;}
             NabuSlpi::Peer p=state();if(!p.valid||(p.state&3)!=2){glink.abort();break;}
             glink.step(elapsed);
-            if(slpi_mode==2&&!glink.done()){
+            if(slpi_mode>=2&&!glink.done()){
                 const auto &r=glink.result();
-                if(r.ssc_found&&!census.result.started)census.start(r.ssc_node,r.ssc_port,elapsed);
+                if(slpi_mode>=3){
+                    if(!dma_healthy()){glink.abort();break;}
+                    if(r.rpc_opened&&!rpc.result.started)rpc.start(static_cast<uint8_t *>(dma.blocks[0].cpu),NabuSlpiDma::iova_base,elapsed);
+                    rpc.tick(elapsed);
+                    if(rpc.result.failed){glink.finish();IOSleep(10);continue;}
+                    if(rpc.result.ready&&r.ssc_found&&!registry.started)registry.start(r.ssc_node,r.ssc_port,elapsed);
+                    registry.tick(elapsed);
+                    if(registry.timeout||registry.failed){glink.finish();IOSleep(10);continue;}
+                }
+                if(r.ssc_found&&!census.result.started&&(slpi_mode==2||registry.ready))census.start(r.ssc_node,r.ssc_port,elapsed);
                 if(census.result.started&&!r.ssc_found){glink.abort();break;}
                 census.tick(elapsed);
                 if(census.result.done)glink.finish();
@@ -383,8 +490,15 @@ struct Trial {
         const auto &r=glink.result();
         log("NABU SLPI: GLINK negotiated=%u open=%u tx=%u rx=%u QRTR=%u servers=%u SSC=%u node=%u port=%u instance=%#x close=%u timeout=%u error=%u\n",
             r.negotiated,r.opened,r.tx,r.rx,r.qrtr_packets,r.servers,r.ssc_found,r.ssc_node,r.ssc_port,r.ssc_instance,r.close_ack,r.timeout,r.error);
-        if(slpi_mode==2)ssc_summary();
-        log("NABU SLPI: live-census=%u sensor_pd/FastRPC/registry file service not implemented; no native iPadOS sensor published\n",slpi_mode==2);publish();
+        if(slpi_mode>=2)ssc_summary();
+        if(slpi_mode>=3){
+            const auto &f=rpc.result;
+            log("NABU FASTRPC: open=%u rcid=%u tx=%u rx=%u close=%u stage=%u attached=%u registered=%u ready=%u failed=%u status=%d calls=%u replies=%u reverse=%u invalid=%u\n",
+                r.rpc_opened,r.rpc_rcid,r.rpc_tx,r.rpc_rx,r.rpc_close_ack,rpc.stage(),f.attached,f.registered,f.ready,f.failed,f.status,f.calls,f.responses,f.reverse_calls,f.invalid);
+            log("NABU SSC REGISTRY: started=%u sent=%u replies=%u events=%u ready=%u candidates=%u timeout=%u failed=%u invalid=%u\n",
+                registry.started,registry.sent,registry.responses,registry.events,registry.ready,registry.candidates,registry.timeout,registry.failed,registry.invalid);
+        }
+        log("NABU SLPI: live-census=%u FastRPC=%u; no native iPadOS sensor published\n",slpi_mode>=2,slpi_mode>=3);publish();
     }
     bool request_stop(){
         put(our_item+36,1);wr(ipc,1u<<NabuSlpi::Smp2pDoorbell);bool ack=false;
@@ -394,6 +508,10 @@ struct Trial {
     }
     bool shutdown(){return pas(6,1);}
     void release(){
+        if(dma_va){
+            bool freed=dma.release_after_stop();log("NABU SLPI DMA: released=%u status=%u phase=%u\n",freed,dma.status,dma.stop.phase);
+            if(freed){unmap(dma_va,0x100000);dma_va=0;dma_active=false;}
+        }
         if(metadata){IOFreeContiguous(metadata,NabuSlpi::MetadataLimit);metadata=nullptr;}
         if(hwlock){unmap(hwlock,0x1000);hwlock=0;}if(smem_va){unmap(smem_va,NabuSlpi::SmemSize);smem_va=0;}
         if(rsc){unmap(rsc,0x4000);rsc=0;}if(ipc){unmap(ipc,4);ipc=0;}if(aop){unmap(aop,0x1000);aop=0;}
@@ -409,7 +527,7 @@ static void worker(thread_call_param_t,thread_call_param_t){
 }
 }
 extern "C" void nabu_slpi_start(){
-    if(slpi_call||!PE_parse_boot_argn("nabu-slpi",&slpi_mode,sizeof(slpi_mode))||(slpi_mode!=1&&slpi_mode!=2))return;
+    if(slpi_call||!PE_parse_boot_argn("nabu-slpi",&slpi_mode,sizeof(slpi_mode))||slpi_mode<1||slpi_mode>3)return;
     slpi_call=thread_call_allocate(worker,nullptr);if(!slpi_call)return;
     log("NABU SLPI: nabu-slpi=%u scheduled after 60 seconds\n",slpi_mode);publish();
     uint64_t deadline;clock_interval_to_deadline(60,NSEC_PER_SEC,&deadline);thread_call_enter_delayed(slpi_call,deadline);

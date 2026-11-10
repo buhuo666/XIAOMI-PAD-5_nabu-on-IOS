@@ -5,7 +5,7 @@
 
 // Same ownership/cleanup engine for the proven WLAN mapping and one Nabu audio region.
 template<unsigned BlockBytes, unsigned BlockCount, unsigned TableBytes,
-    uint64_t IovaBase, uint16_t FirstSid, unsigned StreamCount>
+    uint64_t IovaBase, uint16_t FirstSid, unsigned StreamCount, unsigned InputBits=32>
 struct NabuSmmuDma {
     static constexpr unsigned block_bytes=BlockBytes, block_count=BlockCount, table_bytes=TableBytes;
     static constexpr unsigned stream_count=StreamCount;
@@ -150,7 +150,7 @@ struct NabuSmmuDma {
         }
         tables=platform.allocate(platform.cookie,table_bytes);
         if(!tables.cpu){prepare_failure=TableAllocation;release_memory();return false;}
-        mapping={32,36,tables.physical,block_count*block_bytes/4096};
+        mapping={InputBits,36,tables.physical,block_count*block_bytes/4096};
         status=ArmSmmu4KBuild(&mapping,ranges,block_count,(uint64_t *)tables.cpu,table_bytes/4096,&built);
         if(status){prepare_failure=TableBuild;release_memory();return false;}
         platform.publish(platform.cookie,tables.cpu,(unsigned)built.table_pages*4096);

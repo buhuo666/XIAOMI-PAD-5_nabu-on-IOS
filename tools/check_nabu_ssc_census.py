@@ -34,10 +34,11 @@ int main(int argc,char **argv){
     static IO io;static NabuSsc::Census<IO> live(io);
     live.start(9,12,100);live.tick(100);assert(io.sent.size()==7);
     std::ifstream f(argv[1]);assert(f.good());
-    std::string line;std::vector<Bytes> expected;Bytes first_response,first_indication;
+    std::string line;std::vector<Bytes> expected,received;Bytes first_response,first_indication;
     while(std::getline(f,line)){
         auto bytes=unhex(line.substr(2));
         if(line[0]=='T'){expected.push_back(bytes);continue;}
+        received.push_back(bytes);
         if(bytes[0]==2&&first_response.empty())first_response=bytes;
         if(bytes[0]==4&&first_indication.empty())first_indication=bytes;
         live.receive(9,12,0x100,bytes.data(),bytes.size());live.tick(100);
@@ -64,6 +65,17 @@ int main(int argc,char **argv){
     live.tick(8100);assert(live.result.stopping&&!live.result.done);
     assert(io.sent==expected); // Exact lookup, attribute, configuration and disable bytes from Android.
     live.tick(8600);assert(live.result.done);
+    static IO continuous_io;static NabuSsc::Census<IO> continuous(continuous_io);
+    unsigned samples[7]{};
+    continuous.stream([](void *ctx,unsigned type,NabuSsc::Suid,uint64_t,const NabuSsc::Sample &sample){
+        assert(type<4&&sample.count);++static_cast<unsigned *>(ctx)[type];
+    },samples);
+    continuous.start(9,12,100);continuous.tick(100);
+    for(const auto &bytes:received){continuous.receive(9,12,0x100,bytes.data(),bytes.size());continuous.tick(100);}
+    for(unsigned i=0;i<live.stream_count;++i)assert(samples[live.streams[i].type]==live.streams[i].samples);
+    continuous.tick(8100);assert(!continuous.result.stopping&&!continuous.result.done);
+    continuous.finish(8100);continuous.tick(8100);assert(continuous_io.sent==expected);
+    continuous.tick(8600);assert(continuous.result.done);
     static IO missing_io;static NabuSsc::Census<IO> missing(missing_io);
     missing.start(9,12,10);missing.tick(10);missing.tick(3010);
     assert(missing.result.done&&missing.stream_count==0);
