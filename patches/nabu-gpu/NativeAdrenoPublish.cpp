@@ -152,17 +152,14 @@ volatile uint32_t native_adreno_mount_fail[4];
 struct NativeAdrenoAskerRecord {char name[20]; uint32_t reads;};
 struct NativeAdrenoAskerRecord native_adreno_metal_askers[12];
 }
-/* GPU address windows inside the board's VA range (GpuPowerProbe gDeviceInfo: 0x20000000..0x80000000 of the 2 GiB aperture). Slot 0 is the
- * render server's (it held the whole 1.5 GiB alone before int-155 and used at most a few hundred MiB); slots 1 and 2 are for other Metal
- * processes. A kernel connection (the board's self-test) maps where it likes and is never scoped. */
-/* Slot 0 is the render server's 1 GiB (it reached 934 MiB in int-196); the rest of the aperture is shared by three more processes (PosterBoard for the
- * wallpaper, iconservicesagent for the icons, WidgetRenderer_Default for the widgets: int-196's screen pictures showed a black wallpaper and white widget
- * boxes, none of which had a native device), 170 MiB each (page aligned). int-198: iconservicesagent reached 128 MiB into its window and then lost its
- * Metal device; whether the window is the cause is what the [gpu windows] log row decides before these sizes change. */
-enum : unsigned {NativeAdrenoMaxClients=4};
+#include "NabuGpuClientSlots.h"
+/* GPU180 exhausted the three ordinary-process slots before SpringBoard and
+ * the presentation App opened. All eight windows share the existing 2 GiB
+ * SMMU aperture; GetDeviceInfo returns each connection's own range. */
+enum : unsigned {NativeAdrenoMaxClients=NabuGpuMaxClients};
 static NativeAdrenoAbiResourceBudget resourceBudgets[NativeAdrenoMaxClients]{};
-static const struct {uint64_t start,bytes;} kClientWindows[NativeAdrenoMaxClients]={
-    {0x20000000ull,0x40000000ull},{0x60000000ull,0x0AAA9000ull},{0x6AAA9000ull,0x0AAA9000ull},{0x75552000ull,0x0AAA9000ull}};
+static constexpr auto &kClientWindows=NabuGpuClientWindows;
+static_assert(NativeAdrenoMaxClients*NativeAdrenoAbiMaxQueues<=256,"scheduler queue capacity");
 
 namespace {
 void shiftName(char names[3][17]) {
@@ -768,10 +765,7 @@ IOReturn AGXDeviceUserClient::mount(bool kernel,unsigned connection_limit)
     /* The render server takes slot 0 (the large window) when free; every other process, or a second render-server connection, the next free one. */
     unsigned slot=NativeAdrenoMaxClients;
     if(kernel)slot=g.kernel_client?NativeAdrenoMaxClients:0;
-    else {
-        if(!strncmp(name_,"backboardd",sizeof name_) && !g.slots[0])slot=0;
-        for(unsigned i=1;slot==NativeAdrenoMaxClients && i<NativeAdrenoMaxClients;++i)if(!g.slots[i])slot=i;
-    }
+    else slot=NabuGpuSelectClientSlot(!strncmp(name_,"backboardd",sizeof name_),g.slots);
     const IOReturn opened=g.failed?kIOReturnNotReady:capped?kIOReturnBusy:
         slot<NativeAdrenoMaxClients?core->open(NativeAdrenoAbiVersion,g.vm,g.submit,g.ring,g.input_bits,g.output_bits):kIOReturnNoSpace;
     IOReturn result=opened;
@@ -826,6 +820,13 @@ IOReturn AGXDeviceUserClient::mount(bool kernel,unsigned connection_limit)
         }
         if(gMailboxOwner)gMailboxOwner->release();
         retain();gMailboxOwner=this;
+    }
+    if(!kernel) {
+        unsigned occupied=0;
+        for(bool used:g.slots)occupied+=used;
+        IOLog("NabuGPU: client_mount process=%s pid=%d slot=%u active=%u capacity=%u status=%08x va_start=%llx va_bytes=%llx\n",
+            name_,proc_selfpid(),slot,occupied,NativeAdrenoMaxClients,uint32_t(result),
+            ok?kClientWindows[slot].start:0ull,ok?kClientWindows[slot].bytes:0ull);
     }
     IOLockUnlock(g.lock);
     if(core)delete core;
@@ -1064,6 +1065,7 @@ IOReturn AGXDeviceUserClient::clientClose()
     }
     IOLockUnlock(legacyCpuLock_);
     IOLockLock(g.lock);
+    const uint64_t clientPeak=live_?core_->windowPeak():0;
     if(!status && live_) {
         const uint64_t peak=core_->windowPeak();
         uint64_t deadline=0;
@@ -1093,6 +1095,11 @@ IOReturn AGXDeviceUserClient::clientClose()
                 if(peak>>20>record->peak_mib)record->peak_mib=uint32_t(peak>>20);
             }
         }
+    }
+    if(!kernel_ && slot_<NativeAdrenoMaxClients) {
+        IOLog("NabuGPU: client_close process=%s slot=%u status=%08x retained=%u peak_mib=%llu\n",
+            name_,slot_,uint32_t(status),unsigned(live_),
+            clientPeak>kClientWindows[slot_].start?(clientPeak-kClientWindows[slot_].start)>>20:0ull);
     }
     IOLockUnlock(g.lock);
     if(mailbox)mailbox->release();

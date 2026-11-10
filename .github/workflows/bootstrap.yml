@@ -153,6 +153,7 @@ jobs:
       - name: Compile A640 system Metal factory transport for 20F66
         run: |
           python3 tools/check_nabu_gpu_clear.py --output log/ci/nabu-gpu-clear
+          python3 tools/check_nabu_gpu_client_slots.py --output log/ci/nabu-gpu-client-slots
           python3 tools/build_nabu_gpu.py --system-metal --compile-command artifacts/nabu-wireless-objects/compile-command.json --output artifacts/nabu-gpu
       - name: Compile Nabu native speaker audio provider
         run: python3 tools/build_nabu_audio_plugin.py --output artifacts/nabu-audio-plugin
