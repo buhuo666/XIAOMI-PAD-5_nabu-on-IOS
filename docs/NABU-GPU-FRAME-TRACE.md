@@ -19,6 +19,8 @@ python tools/nabu_frame_trace.py start --duration-ms 70000 --output log/host/TRI
 python tools/nabu_frame_trace.py snapshot --output log/host/TRIAL/trace-state
 python tools/nabu_frame_trace.py stop --window WINDOW --output log/host/TRIAL/trace-stop
 python tools/nabu_frame_trace.py export --window WINDOW --output log/host/TRIAL/trace-WINDOW
+python tools/analyze_nabu_frame_trace.py --input log/host/TRIAL/trace-WINDOW --output log/host/TRIAL/software-timing.json
+python tools/analyze_nabu_a640_timestamps.py --input log/host/TRIAL/trace-WINDOW --output log/host/TRIAL/hardware-timing.json
 ```
 
 Use the returned numeric window, and select a capture long enough to contain
@@ -29,6 +31,14 @@ validates the record identities/count/time bounds, saves and fsyncs
 `records.csv` is a secondary representation. Failed or interrupted export can
 be repeated. Reading the final chunk alone does not permit overwriting a
 window; a complete contiguous read and explicit acknowledgement are required.
+
+The software analyzer joins job completion IDs, worker sequences, read-lease
+writers and swap IDs. It reports stage distributions and partial boundary
+records separately. Use `--start-us` and `--end-us` to select an App interval
+fully inside the trace. Its accepted-transaction rate is not unique-content
+FPS; overflow makes the complete rate null. The hardware analyzer reports
+SlotBusy and bracket/validity records without a final tick pair, even when
+the recorder dropped no rows. These counts constrain the reported quantiles.
 
 Recording performs no allocation, disk output or formatting. The IRQ-safe lock
 protects one record at a time. Chunk copies happen outside that lock after the

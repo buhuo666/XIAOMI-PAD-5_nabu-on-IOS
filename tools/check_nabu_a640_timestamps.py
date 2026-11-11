@@ -195,6 +195,13 @@ def check_analysis():
     report = analyze(records,metadata)['hardware_epochs'][0]
     assert report['cross_clock_mapping_supported']
     assert report['cp_to_rb_nominal_ms']['mean_ms'] == 4
+    coverage = report['coverage']
+    assert coverage['attempt_identity_count'] == 2
+    assert coverage['complete_matched_duration_identity_count'] == 1
+    assert coverage['duration_fraction_of_attempt_identities'] == .5
+    assert coverage['pre_wptr_bracket_without_ticks'] == [identity+1]
+    assert report['rejected'] == {'missing_ticks_after_issue_bracket': 1}
+    assert not coverage['all_attempt_identities_have_cp_rb_duration']
     sample = report['samples'][0]
     assert sample['cp_cpu_us_interval'][0] <= 1001000 <= sample['cp_cpu_us_interval'][1]
     assert sample['rb_cpu_us_interval'][0] <= 1005000 <= sample['rb_cpu_us_interval'][1]
@@ -209,7 +216,30 @@ def check_analysis():
     assert not bad['cross_clock_mapping_supported'] and bad['cp_minus_gmu_ticks_interval'] is None
     incomplete = [dict(r,a=64) if r['event']==VALIDITY else r for r in records]
     bad = analyze(incomplete,metadata)['hardware_epochs'][0]
-    assert bad['rejected']=={'aborted':1} and bad['cp_to_rb_nominal_ms']['count']==0
+    assert bad['rejected']=={'aborted':1, 'missing_ticks_after_issue_bracket':1} and bad['cp_to_rb_nominal_ms']['count']==0
+    # SlotBusy is a validity-only event and may repeat before a prospective
+    # fence is eventually issued. Count events and unique identities separately.
+    busy = records + [row(VALIDITY,128,0,0,ident=identity+2)] * 2
+    result = analyze(busy,dict(metadata,count=len(busy)))['hardware_epochs'][0]
+    assert result['coverage']['attempt_identity_count'] == 3
+    assert result['coverage']['slot_busy_event_count'] == 2
+    assert result['coverage']['slot_busy_identity_count'] == 1
+    assert result['coverage']['slot_busy_without_ticks'] == [identity+2]
+    assert result['coverage']['validity_without_ticks'] == [identity+2]
+    assert result['rejected'] == {'missing_ticks_after_issue_bracket':1, 'slot_busy_without_ticks':1}
+    assert result['coverage']['duration_fraction_of_attempt_identities'] == 1/3
+    recovered = busy + [row(TICKS,issue,issue+19200+37,issue+96000+37,ident=identity+2),
+                        row(VALIDITY,15,2,0,ident=identity+2)]
+    result = analyze(recovered,dict(metadata,count=len(recovered)))['hardware_epochs'][0]
+    assert result['coverage']['slot_busy_without_ticks'] == []
+    assert result['coverage']['complete_matched_duration_identity_count'] == 2
+    assert result['coverage']['attempt_identity_count'] == 3
+    # Expiry between Ticks and Validity is a retained but unusable sample.
+    unpaired = [r for r in records if r['event'] != VALIDITY]
+    result = analyze(unpaired,dict(metadata,count=len(unpaired)))['hardware_epochs'][0]
+    assert result['coverage']['ticks_without_validity'] == [identity]
+    assert result['coverage']['complete_matched_duration_identity_count'] == 0
+    assert result['rejected']['missing_fence_or_timestamp'] == 1
     assert not analyze([],dict(metadata,count=0))['hardware_epochs']
 
 
@@ -247,6 +277,7 @@ def main():
               'slot_collision_and_epoch_tests': True, 'aborted_samples_checked': True,
               'cpu_gmu_cp_brackets_checked': True, 'native_ring_class_layout_changed': False,
               'clock_interval_analysis_checked': True,
+              'hardware_sample_coverage_checked': True,
               'mocked': ['MMIO', 'GPU execution', 'kernel clock', 'trace sink', 'disabled legacy profiler'],
               'sanitizers': ['address', 'undefined'], 'device_executed': False}
     (out/'report.json').write_text(json.dumps(report, indent=2)+'\n')

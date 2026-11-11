@@ -13,7 +13,7 @@ RECORD = struct.Struct('<QQQQQII')
 HZ, BITS, MASK, HALF = 19200000, 48, (1 << 48) - 1, 1 << 47
 TICK_NS = Fraction(10**9, HZ)
 TICKS, BRACKET, VALIDITY, RELATION, CONTRACT = 9, 10, 11, 13, 14
-ISSUE, FENCE, CP, RB, ABORT = 1, 2, 4, 8, 64
+ISSUE, FENCE, CP, RB, ABORT, SLOT_BUSY = 1, 2, 4, 8, 64, 128
 
 
 def signed_ticks(value):
@@ -80,10 +80,27 @@ def analyze(records, metadata):
                 frequency = (Fraction(delta*10**6, max_elapsed), Fraction(delta*10**6, min_elapsed))
         nominal_supported = bool(contract_ok and frequency and frequency[0] <= HZ <= frequency[1] and cpu_offset)
         mapping_supported = bool(nominal_supported and cp_offset)
-        validity = {r['identity']:r for r in rows if r['event'] == VALIDITY}
+        validity_rows = [r for r in rows if r['event'] == VALIDITY]
+        validity = {r['identity']:r for r in validity_rows}
         captures = [r for r in rows if r['event'] == TICKS]
+        tick_ids = {r['identity'] for r in captures}
+        bracket_ids = {r['identity'] for r in brackets}
+        validity_ids = set(validity)
+        attempt_ids = tick_ids | bracket_ids | validity_ids
+        busy_rows = [r for r in validity_rows if r['a'] & SLOT_BUSY]
+        busy_ids = {r['identity'] for r in busy_rows}
+        missing_ticks = attempt_ids - tick_ids
         samples, durations = [], []
+        duration_ids = set()
         rejected = defaultdict(int)
+        # SlotBusy has no Ticks row. Stop/expiry can also retain a pre-WPTR
+        # bracket but suppress its later completion rows. Neither gap is a
+        # recorder overflow, so trace_dropped alone cannot describe coverage.
+        for identity in missing_ticks:
+            reason = ('slot_busy_without_ticks' if identity in busy_ids else
+                      'missing_ticks_after_issue_bracket' if identity in bracket_ids else
+                      'validity_without_ticks')
+            rejected[reason] += 1
         for row in captures:
             valid = validity.get(row['identity'])
             flags = valid['a'] if valid else 0
@@ -103,6 +120,7 @@ def analyze(records, metadata):
                 ticks = (row['c']-row['b']) & MASK
                 nominal_ms = float(ticks*TICK_NS/10**6)
                 durations.append(nominal_ms)
+                duration_ids.add(row['identity'])
                 sample.update(cp_to_rb_ticks=ticks, cp_to_rb_nominal_ms=nominal_ms)
                 if mapping_supported and flags & ISSUE:
                     cp_delta, rb_delta = signed_ticks(row['b']-row['a']), signed_ticks(row['c']-row['a'])
@@ -118,14 +136,38 @@ def analyze(records, metadata):
                                   rb_to_collect_ms_interval=bounds(observed, 10**6),
                                   rb_precedes_collect_proven=observed[0] >= 0)
             samples.append(sample)
+        coverage = {
+            'attempt_identity_count': len(attempt_ids),
+            'bracket_identity_count': len(bracket_ids),
+            'tick_identity_count': len(tick_ids),
+            'validity_identity_count': len(validity_ids),
+            'matched_tick_validity_identity_count': len(tick_ids & validity_ids),
+            'complete_matched_duration_identity_count': len(duration_ids),
+            'duration_fraction_of_attempt_identities': len(duration_ids)/len(attempt_ids) if attempt_ids else None,
+            'slot_busy_event_count': len(busy_rows),
+            'slot_busy_identity_count': len(busy_ids),
+            'slot_busy_without_ticks': sorted(busy_ids - tick_ids),
+            'pre_wptr_bracket_without_ticks': sorted(bracket_ids - tick_ids),
+            'validity_without_ticks': sorted(validity_ids - tick_ids),
+            'ticks_without_validity': sorted(tick_ids - validity_ids),
+            'ticks_without_bracket': sorted(tick_ids - bracket_ids),
+            'all_attempt_identities_have_cp_rb_duration': bool(attempt_ids and duration_ids == attempt_ids and not metadata['dropped']),
+            'scope': ('Attempt identities are the union of retained Ticks, Validity and pre-WPTR ClockBracket identities. '
+                      'SlotBusy can precede a failed reservation and repeat for the same prospective fence; it is not a submitted-job count. '
+                      'A pre-WPTR bracket without ticks is a missing completion sample, not proof of a failed GPU job. '
+                      'No denominator includes completely lost trace records or GPU jobs outside the capture window.')}
         reports.append({'epoch':epoch, 'nominal_clock_hz':HZ, 'comparison_valid_bits':BITS,
                         'clock_contract_present':contract_ok, 'cpu_gmu_brackets':len(brackets),
                         'gmu_cp_brackets':len(relation_rows), 'observed_frequency_hz_interval':bounds(frequency),
                         'nominal_frequency_supported_by_capture':nominal_supported,
                         'cpu_minus_gmu_ns_interval':bounds(cpu_offset), 'cp_minus_gmu_ticks_interval':bounds(cp_offset),
                         'cross_clock_mapping_supported':mapping_supported,
-                        'cp_to_rb_nominal_ms':distribution(durations), 'rejected':dict(rejected), 'samples':samples})
+                        'cp_to_rb_nominal_ms':distribution(durations),
+                        'quantile_scope':'Retained matched timestamp/validity pairs with a valid CP-to-RB interval only; inspect coverage before comparing full-run tails.',
+                        'coverage':coverage, 'rejected':dict(rejected), 'samples':samples})
     return {'window':metadata['window'], 'trace_records':len(records), 'trace_dropped':metadata['dropped'],
+            'hardware_attempt_identity_count':sum(r['coverage']['attempt_identity_count'] for r in reports),
+            'hardware_complete_matched_duration_count':sum(r['coverage']['complete_matched_duration_identity_count'] for r in reports),
             'hardware_epochs':reports, 'display_fps':None, 'pure_shader_time':False,
             'limits':'CP to RB is a GPU pipeline interval, including waits/backpressure; it ends before CCU/cache-flush/IRQ. Nominal 19.2 MHz is a source contract, checked against CPU/GMU brackets when sufficient samples exist. Cross-clock values are uncertainty intervals only and are withheld unless nominal frequency/offset and CP/GMU intervals agree. RB-to-collect includes trailing GPU flush, notification and CPU work; it is not isolated IRQ latency. Ring jobs do not identify unique displayed frames. Missing boundary jobs and trace overflow remain gaps.'}
 
