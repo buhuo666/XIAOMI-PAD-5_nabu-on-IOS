@@ -86,6 +86,8 @@ def main():
         macho_target(target,6)
         report['frontend']['dependencies']=run(['otool','-L',target]).stdout.strip()
         exported=set(run(['nm','-gj',target]).stdout.splitlines())
+        if args.ca_trace and '_native_bridge_metal_set_ca_trace' not in exported:
+            raise ValueError('CA marker setter export missing')
         for group in ('surface_statistics_exports','resource_aliasing_exports'):
             if not set(prior['frontend'][group]).issubset(exported):
                 raise ValueError('Relink lost qualified frontend exports: '+group)

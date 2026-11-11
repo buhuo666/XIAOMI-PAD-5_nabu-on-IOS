@@ -11,6 +11,14 @@
 
 namespace {
 constexpr uint32_t Width = 1600, Height = 2560, Capacity = 80000;
+using TraceSetter = void (*)(bool);
+TraceSetter presentTraceSetter() {
+    // The system factory loads this frontend RTLD_LOCAL. Resolve only the
+    // already loaded library, after normal MTLCreateSystemDefaultDevice.
+    static void *frontend = dlopen("/redwood/sbin/libnabu-metal-frontend.dylib", RTLD_NOW | RTLD_NOLOAD | RTLD_LOCAL);
+    static TraceSetter setter = frontend ? (TraceSetter)dlsym(frontend, "native_bridge_metal_set_ca_trace") : nullptr;
+    return setter;
+}
 struct Parameters { uint32_t frame, layer, width, height; float seconds; };
 struct Row {
     double callback = 0, target = 0, acquireBegin = 0, acquireEnd = 0;
@@ -142,7 +150,7 @@ NSDictionary *distribution(std::vector<double> values) {
     self.failureEvents = [NSMutableArray array];
     self.runID = [NSString stringWithFormat:@"%.0f-scene%u-repeat%u", NSDate.date.timeIntervalSince1970 * 1e6, scene, repetition];
     sampleStart = CACurrentMediaTime() + 3; sampleEnd = sampleStart + duration;
-    auto setTrace = (void (*)(bool))dlsym(RTLD_DEFAULT, "native_bridge_metal_set_ca_trace");
+    auto setTrace = presentTraceSetter();
     if (setTrace) setTrace(diagnostic);
     if (diagnostic) nabu_ca_trace_marker(88, epoch, uint64_t(duration * 1e6), uint64_t(sampleStart * 1e6), setTrace != nullptr);
     initialThermal = NSProcessInfo.processInfo.thermalState;
@@ -288,7 +296,7 @@ NSDictionary *distribution(std::vector<double> values) {
     draining = false;
     if (diagnostic) {
         nabu_ca_trace_marker(89, epoch, rowCount, failures, nullDrawable);
-        auto setTrace = (void (*)(bool))dlsym(RTLD_DEFAULT, "native_bridge_metal_set_ca_trace");
+        auto setTrace = presentTraceSetter();
         if (setTrace) setTrace(false);
     }
     [self exportRun];

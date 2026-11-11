@@ -1,5 +1,12 @@
 name: nabu16 - short CA frame latency diagnostics
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-ca-trace.yml'
+      - 'userland/nabu/src/ca_frame_trace*'
+      - 'userland/nabu/src/ca_trace_marker.h'
+      - 'patches/nabu-metal/NativeMetalCaPresentTrace.inc'
   workflow_dispatch:
 permissions:
   contents: read
