@@ -1,5 +1,12 @@
 name: nabu16 - surface import cache recovery
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-surface-import-cache.yml'
+      - 'patches/nabu-metal/NativeMetalSurfaceImports.inc'
+      - 'tools/build_nabu_surface_import_cache.py'
+      - 'tools/check_nabu_surface_import_cache.py'
   workflow_dispatch:
 permissions:
   contents: read
