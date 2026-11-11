@@ -616,7 +616,7 @@ int main(int argc, char **argv) {
                             result[@"gpu"] = gpuSnapshot();
                         }
                         else if ([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
-                                 [action isEqual:@"DpuActivateGop"]) {
+                                 [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"]) {
                             result[@"dpu"] = nabuDpuRequest(action, request[@"ID"] ?: @"");
                         }
                         else if ([action isEqual:@"WirelessInventory"]) {

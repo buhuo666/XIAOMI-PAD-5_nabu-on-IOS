@@ -22,6 +22,9 @@ IOReturn activateAfterQuiesce(Binding *, const NabuDpuScanout::Io &, const NabuD
 IOReturn mapDescriptor(Binding *, IOMemoryDescriptor *, uint64_t offset, uint64_t bytes,
                       NabuDpuPageTable::Mapping *);
 IOReturn accept(Binding *, const NabuDpuPageTable::Mapping &, unsigned *retired);
+// Only after the root verifies the flip back to permanent GOP with Scan::poll.
+// Retires this mapping; releaseRetired still owns TLBI and descriptor release.
+IOReturn acceptGop(Binding *, const NabuDpuPageTable::Mapping &);
 IOReturn releaseRetired(Binding *, unsigned slot, uint64_t token);
 // Only after the root determines no DPU submit was attempted for this generation.
 IOReturn discardUnsubmitted(Binding *, const NabuDpuPageTable::Mapping &);
@@ -35,13 +38,14 @@ IOReturn readFault(Binding *);
 bool poisoned(Binding *);
 bool programmingAttempted(Binding *);
 struct ActiveSnapshot {
-    uint64_t tablePhysical, ttbr0, ttbr1;
+    uint64_t tablePhysical, ttbr0, ttbr1, far;
     uint32_t asid, sctlr, cbar, cba2r, tcr, tcr2, mair0, mair1;
-    uint32_t fsr, globalFsr, tlbStatus, identityPages;
-    bool active, contextMatches, routesUnchanged, gopIdentity;
+    uint32_t fsr, globalFsr, fsynr0, streamSyndrome, tlbStatus, identityPages;
+    bool active, contextMatches, routesUnchanged, gopIdentity, poisoned;
 };
 // Read back the active domain and every GOP identity leaf. No register or
-// table writes; the display serializes this with mapper/IRQ fault accesses.
+// table writes; even a poisoned active domain reports its actual fault state
+// and remains failed. The display serializes this with mapper/IRQ fault accesses.
 IOReturn snapshotActive(Binding *, ActiveSnapshot *);
 // Descriptor prepare/retain persists until successful release+TLBI. Table pool,
 // MMIO map and uncertain descriptors remain boot-owned; no implicit teardown.

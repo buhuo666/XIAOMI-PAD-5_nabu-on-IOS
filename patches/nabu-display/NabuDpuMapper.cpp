@@ -16,7 +16,7 @@ extern "C" unsigned int pmap_cache_attributes(ppnum_t);
 namespace NabuDpuMapper {
 namespace PT = NabuDpuPageTable;
 namespace SC = NabuDpuScanout;
-constexpr uint32_t AppsBytes = 0x100000, Cb = 0x82000, Cbar = 0x1008, Cba2r = 0x1808;
+constexpr uint32_t AppsBytes = 0x100000, Cb = 0x82000, Cbar = 0x1008, Cba2r = 0x1808, Cbfrsynra = 0x1408;
 constexpr uint32_t FaultMask = 0xc00001fe, Cfie = 1u << 6;
 struct OwnedDescriptor { IOMemoryDescriptor *memory; bool prepared; };
 struct Binding {
@@ -127,25 +127,29 @@ static bool imageMatches(Binding *b, bool enabled, ArmSmmu4KContextImage *observ
 IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
     if (!out) return kIOReturnBadArgument;
     *out = {};
-    if (!b || !b->active || poisoned(b)) return kIOReturnNotReady;
+    if (!b || !b->active) return kIOReturnNotReady;
     out->active = b->active; out->tablePhysical = b->arena.physical; out->asid = b->asid;
+    out->poisoned = poisoned(b);
+    // Fixed nabu arm-smmu_context_fault registers; GR1 CBFRSYNRA[2] is 0x1408.
+    if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
+        rd64(b, Cb + 0x60, &out->far) || rd32(b, Cb + 0x68, &out->fsynr0) ||
+        rd32(b, Cbfrsynra, &out->streamSyndrome) || rd32(b, Cb + 0x7f4, &out->tlbStatus))
+        return kIOReturnIOError;
     ArmSmmu4KContextImage actual{};
     out->contextMatches = imageMatches(b, true, &actual);
     out->ttbr0 = actual.ttbr0; out->ttbr1 = actual.ttbr1; out->sctlr = actual.sctlr;
     out->cbar = actual.cbar; out->cba2r = actual.cba2r; out->tcr = actual.tcr; out->tcr2 = actual.tcr2;
     out->mair0 = actual.mair0; out->mair1 = actual.mair1;
-    if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
-        rd32(b, Cb + 0x7f4, &out->tlbStatus)) return kIOReturnIOError;
     out->routesUnchanged = PT::verifyRoutesUnchanged({b, routeRead}, b->routes) == PT::Ok;
     out->gopIdentity = true;
     for (uint32_t offset = 0; offset < PT::GopBytes; offset += PT::PageBytes) {
         const uint32_t address = PT::GopStart + offset;
-        if (b->arena.tables[PT::leafIndex(address)] != PT::leafDescriptor(address)) {
+        if (b->arena.tables[PT::leafIndex(address)] != PT::gopLeafDescriptor(address)) {
             out->gopIdentity = false; break;
         }
         ++out->identityPages;
     }
-    return out->contextMatches && out->routesUnchanged && out->gopIdentity &&
+    return !out->poisoned && out->contextMatches && out->routesUnchanged && out->gopIdentity &&
         !(out->fsr & FaultMask) && !out->globalFsr && !(out->tlbStatus & 1) ? kIOReturnSuccess : kIOReturnIOError;
 }
 static bool sync(Binding *b) {
@@ -407,6 +411,11 @@ IOReturn mapDescriptor(Binding *b, IOMemoryDescriptor *memory, uint64_t offset, 
 IOReturn accept(Binding *b, const PT::Mapping &mapping, unsigned *retired) {
     IOReturn result = checkFault(b); if (result != kIOReturnSuccess) return result;
     if (PT::acceptSlot(b->state, mapping.slot, mapping.token, retired) != PT::Ok) return kIOReturnBadArgument;
+    return checkFault(b);
+}
+IOReturn acceptGop(Binding *b, const PT::Mapping &mapping) {
+    IOReturn result = checkFault(b); if (result != kIOReturnSuccess) return result;
+    if (PT::acceptGop(b->state, mapping.slot, mapping.token) != PT::Ok) return kIOReturnBadArgument;
     return checkFault(b);
 }
 IOReturn releaseRetired(Binding *b, unsigned slot, uint64_t token) {

@@ -11,6 +11,8 @@ constexpr uint32_t GopStart = 0x9c000000, GopBytes = 0x00fa0000;
 constexpr uint64_t PhysicalLimit = 1ull << 40, PhysicalMask = (PhysicalLimit - 1) & ~4095ull;
 // ArmSmmu4KRead, writeback=1, outer-shareable=2, unprivileged, PXN/UXN.
 constexpr uint64_t LeafAttributes = (3ull << 53) | 0xec7;
+// Original sde_kms.c splash mapping omits IOMMU_CACHE: MAIR index 0/normal NC.
+constexpr uint64_t GopLeafAttributes = (3ull << 53) | 0xec3;
 constexpr uint64_t Mair = 0xff44;
 enum Status { Ok, Argument, StateError, Occupied, BadPhysicalPage, TableMismatch, VisibilityFailure,
               StaleToken, RouteMismatch, RouteConflict, ReadFailure, Unsupported };
@@ -64,6 +66,10 @@ Status mapSlot(const Arena &, const Visibility &, State &, unsigned slot, const 
 // Atomically retires the previous Active slot (NoSlot means boot GOP) and makes
 // the new Mapped slot Active. It performs no hardware completion of its own.
 Status acceptSlot(State &, unsigned slot, uint64_t token, unsigned *retired_slot);
+// Called ONLY after the root's Scan::poll confirms the permanent GOP was
+// accepted by both INTF boundaries and CTL flush. Retires the named Active
+// generation; its leaves and descriptor remain owned until releaseRetired.
+Status acceptGop(State &, unsigned slot, uint64_t token);
 // For a separately verified stop only. Not a way to cancel an in-flight frame.
 Status markRetiredAfterStop(State &, unsigned slot, uint64_t token);
 // Retired -> invalid leaves -> publication/barrier -> real TLBI -> Free.
@@ -75,6 +81,7 @@ Status discardUnsubmitted(const Arena &, const Visibility &, State &, unsigned s
 uint32_t slotBase(unsigned slot);
 size_t leafIndex(uint32_t iova);
 uint64_t leafDescriptor(uint64_t physical);
+uint64_t gopLeafDescriptor(uint64_t physical);
 
 // Startup-only readonly APPS route audit. Caller must first establish APPS bank
 // access in this boot and serialize global route/context ownership throughout

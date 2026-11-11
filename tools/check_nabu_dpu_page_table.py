@@ -86,7 +86,7 @@ int main() {
     assert(prepareInactive(f.arena,f.vis(),f.state)==StateError);
     for(unsigned i=4;i<512;++i)assert(f.memory[i]==0);
     for(uint64_t va=0;va<(1ull<<32);va+=4096) {
-        uint64_t expected=(va>=GopStart && va<uint64_t(GopStart)+GopBytes)?leafDescriptor(va):0;
+        uint64_t expected=(va>=GopStart && va<uint64_t(GopStart)+GopBytes)?gopLeafDescriptor(va):0;
         assert(f.walk(uint32_t(va))==expected);
     }
     uint64_t pa[]={0x280010000ull,0x340020000ull,0x280030000ull};
@@ -95,6 +95,10 @@ int main() {
     assert(mapSlot(f.arena,f.vis(),f.state,0,pages,first)==Ok);
     assert(first.iova==SlotStart+128 && first.token==1 && f.events==std::vector<char>({'P','B','T','B'}));
     assert(f.published.size()==1 && f.published[0].first==5+(SlotStart>>21) && f.published[0].second==1);
+    const uint64_t gopPte=f.walk(GopStart), slotPte=f.walk(SlotStart);
+    assert(((gopPte>>2)&7)==0 && ((slotPte>>2)&7)==1);
+    assert(((Mair>>(((gopPte>>2)&7)*8))&0xff)==0x44 &&
+           ((Mair>>(((slotPte>>2)&7)*8))&0xff)==0xff);
     for(size_t i=0;i<TableEntries;++i)
         if(i<leafIndex(SlotStart)||i>=leafIndex(SlotStart)+3)assert(before[i]==f.memory[i]);
     // Compare actual descriptors against the existing generic builder, whose
@@ -103,7 +107,7 @@ int main() {
     ArmSmmu4KConfig config={32,40,0x400000000ull,1048576};
     ArmSmmu4KRange ranges[4];
     for(unsigned i=0;i<3;++i)ranges[i]={SlotStart+i*4096ull,pa[i],4096,ArmSmmu4KRead,1,2};
-    ranges[3]={GopStart,GopStart,GopBytes,ArmSmmu4KRead,1,2};ArmSmmu4KResult result;
+    ranges[3]={GopStart,GopStart,GopBytes,ArmSmmu4KRead,0,2};ArmSmmu4KResult result;
     assert(ArmSmmu4KBuild(&config,ranges,4,oracle,TablePages,&result)==ArmSmmu4KSuccess);
     for(unsigned i=0;i<3;++i)assert(f.walk(SlotStart+i*4096)==oracleLeaf(oracle,config.table_physical,SlotStart+i*4096));
     for(uint32_t va=GopStart;va<GopStart+GopBytes;va+=4096)assert(f.walk(va)==oracleLeaf(oracle,config.table_physical,va));
@@ -137,6 +141,40 @@ int main() {
     assert(releaseRetired(f.arena,f.vis(),f.state,31,second.token)==Ok);
     assert(discardUnsubmitted(f.arena,f.vis(),f.state,0,f.state.slots[0].token)==Ok);
     assert(f.state.slots[0].life==Free);
+    { Fixture trip;trip.prepare();Mapping m;State unprepared={};
+      assert(acceptGop(unprepared,0,0)==StateError);
+      assert(acceptGop(trip.state,SlotCount,0)==StateError);
+      assert(acceptGop(trip.state,0,0)==StateError);
+      assert(mapSlot(trip.arena,trip.vis(),trip.state,0,pages,m)==Ok);
+      assert(acceptGop(trip.state,0,m.token)==StateError);
+      assert(trip.state.active_slot==NoSlot && trip.state.slots[0].life==Mapped);
+      assert(acceptSlot(trip.state,0,m.token,&retired)==Ok && retired==NoSlot);
+      assert(releaseRetired(trip.arena,trip.vis(),trip.state,0,m.token)==StateError);
+      trip.events.clear();trip.published.clear();
+      assert(acceptGop(trip.state,0,m.token+1)==StaleToken);
+      assert(trip.state.active_slot==0 && trip.state.slots[0].life==Active);
+      State wrong=trip.state;wrong.active_slot=31;
+      assert(acceptGop(wrong,0,m.token)==StateError && wrong.slots[0].life==Active);
+      wrong=trip.state;wrong.poisoned=true;
+      assert(acceptGop(wrong,0,m.token)==StateError && wrong.slots[0].life==Active);
+      assert(acceptGop(trip.state,0,m.token)==Ok);
+      assert(trip.state.active_slot==NoSlot && trip.state.slots[0].life==Retired);
+      assert(trip.events.empty() && trip.state.mapped_leaf_pages==4003);
+      for(unsigned i=0;i<3;++i)assert(trip.walk(SlotStart+i*4096)==leafDescriptor(pa[i]));
+      assert(acceptGop(trip.state,0,m.token)==StateError);
+      Mapping again;assert(mapSlot(trip.arena,trip.vis(),trip.state,0,pages,again)==Occupied);
+      assert(releaseRetired(trip.arena,trip.vis(),trip.state,0,m.token)==Ok);
+      assert(trip.events==std::vector<char>({'P','B','T','B'}));
+      assert(trip.state.slots[0].life==Free && trip.state.mapped_leaf_pages==4000);
+      for(unsigned i=0;i<3;++i)assert(trip.walk(SlotStart+i*4096)==0);
+      for(uint32_t va=GopStart;va<GopStart+GopBytes;va+=4096)assert(trip.walk(va)==gopLeafDescriptor(va));
+      assert(mapSlot(trip.arena,trip.vis(),trip.state,0,pages,again)==Ok && again.token==m.token+1);
+      assert(acceptSlot(trip.state,0,again.token,&retired)==Ok && retired==NoSlot);
+      assert(acceptGop(trip.state,0,m.token)==StaleToken);
+      assert(trip.state.active_slot==0 && trip.state.slots[0].life==Active);
+      assert(acceptGop(trip.state,0,again.token)==Ok);
+      assert(releaseRetired(trip.arena,trip.vis(),trip.state,0,again.token)==Ok);
+      assert(trip.state.active_slot==NoSlot && trip.state.slots[0].life==Free); }
     { Fixture bad;bad.prepare();uint64_t invalid[]={1};Pages p={invalid,1,0,4096};Mapping m;
       auto saved=std::vector<uint64_t>(bad.memory,bad.memory+TableEntries);
       assert(mapSlot(bad.arena,bad.vis(),bad.state,0,p,m)==BadPhysicalPage);
@@ -148,7 +186,8 @@ int main() {
       assert(acceptSlot(fail.state,0,m.token,&retired)==StateError);
       assert(mapSlot(fail.arena,fail.vis(),fail.state,1,pages,m)==StateError); }
     { Fixture fail;fail.prepare();Mapping m;assert(mapSlot(fail.arena,fail.vis(),fail.state,0,pages,m)==Ok);
-      acceptSlot(fail.state,0,m.token,&retired);markRetiredAfterStop(fail.state,0,m.token);fail.failTlb=true;
+      assert(acceptSlot(fail.state,0,m.token,&retired)==Ok);
+      assert(acceptGop(fail.state,0,m.token)==Ok);fail.failTlb=true;
       assert(releaseRetired(fail.arena,fail.vis(),fail.state,0,m.token)==VisibilityFailure);
       assert(fail.state.poisoned && fail.state.slots[0].life==Retired); }
     { Fixture dirty;dirty.prepare();dirty.memory[leafIndex(SlotStart)]=leafDescriptor(pa[0]);Mapping m;
@@ -164,7 +203,7 @@ int main() {
     routes=Routes();routes.set(3,0x84200800,0x102);assert(captureAndQualifyRoutes(routes.reader(),snapshot)==RouteMismatch);
     routes=Routes();assert(captureAndQualifyRoutes(routes.reader(),snapshot)==Ok);routes.values[0xc10]^=0x100;
     assert(verifyRoutesUnchanged(routes.reader(),snapshot)==RouteMismatch);
-    std::puts("PASS 2053-page topology, 4GiB leaf walk, ArmSmmu4K PTE/context oracle, isolated slots, retirement/TLBI, stale tokens and 94-route ownership");
+    std::puts("PASS 2053-page topology, 4GiB leaf walk with NC GOP and WB slots, ArmSmmu4K PTE/context oracle, isolated slots, slot/GOP return acceptance and reuse, retirement/TLBI, stale tokens and 94-route ownership");
 }
 '''
 

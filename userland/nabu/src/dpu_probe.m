@@ -11,7 +11,8 @@ static NSDictionary *pairedDpuRequest(NSString *action, NSString *identifier) {
     if (![request writeToFile:path atomically:YES])
         return @{@"request_id": identifier, @"error": @"root diagnostic request could not be written"};
     path = [dpuDirectory stringByAppendingPathComponent:@"result.json"];
-    for (unsigned i = 0; i < 200; ++i) {
+    const unsigned waits = [action isEqual:@"DpuFlipGop"] ? 750 : 200;
+    for (unsigned i = 0; i < waits; ++i) {
         NSData *bytes = [NSData dataWithContentsOfFile:path];
         NSDictionary *result = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:NULL] : nil;
         if ([result[@"request_id"] isEqual:identifier]) return result;
@@ -39,12 +40,14 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
         out[@"error"] = @"diagnostic boot option unavailable";
     } else {
         NSString *command = [action isEqual:@"DpuSnapshot"] ? @"Snapshot" :
-            ([action isEqual:@"DpuActivateGop"] ? @"ActivateGop" : @"HaltResume");
+            ([action isEqual:@"DpuActivateGop"] ? @"ActivateGop" :
+             ([action isEqual:@"DpuFlipGop"] ? @"FlipGop" : @"HaltResume"));
         NSDictionary *request = @{@"NabuDpuDiagnostic": command, @"RequestID": identifier};
         int status = setProperties(entry, (__bridge CFTypeRef)request);
         out[@"submit_status"] = @((uint32_t)status);
         if (!status) {
-            for (unsigned i = 0; i < 100; ++i) {
+            const unsigned waits = [action isEqual:@"DpuFlipGop"] ? 600 : 100;
+            for (unsigned i = 0; i < waits; ++i) {
                 id result = CFBridgingRelease(property(entry, CFSTR("NabuDpuDiagnosticResult"), NULL, 0));
                 if ([result isKindOfClass:NSDictionary.class] && [result[@"request_id"] isEqual:identifier]) {
                     out[@"result"] = result;
@@ -86,7 +89,7 @@ int nabuDpuServiceMain(void) {
                     [fm removeItemAtPath:requestPath error:NULL];
                     NSString *action = request[@"Action"], *identifier = request[@"ID"];
                     if (([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
-                         [action isEqual:@"DpuActivateGop"]) &&
+                         [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"]) &&
                         [identifier isKindOfClass:NSString.class] && identifier.length && identifier.length <= 64) {
                         NSDictionary *result = nabuDpuRequest(action, identifier);
                         NSData *bytes = [NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];

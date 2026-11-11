@@ -29,8 +29,8 @@ struct Fake {
     std::map<std::pair<Region,uint32_t>,uint32_t> regs;
     std::vector<std::tuple<Region,uint32_t,uint32_t>> writes;
     uint64_t now=0, nextLatch=0, haltReady=0, period=8333;
-    uint32_t active[2]={GopPhysical,GopPhysical}, frameBase=100;
-    bool flushing=false, clearFlush=true, slaveRuns=true, haltAck=true, partialAck=false;
+    uint32_t active[2]={GopPhysical,GopPhysical}, frameBase=100, stoppedFrames[2]={0,0};
+    bool flushing=false, clearFlush=true, masterRuns=true, slaveRuns=true, haltAck=true, partialAck=false;
     bool haltAckObserved=true;
     unsigned failWrite=0, writeDelay=0;
     Fake() { BASELINE
@@ -52,7 +52,9 @@ struct Fake {
                           (f.regs.at({Mdss,Vig1ForceClock})&1));
         if(r==Mdss && at==Ctl0+CtlFlush) {*out=f.flushing?3:0;return true;}
         if(r==Mdss && (at==Intf1+0xac || at==Intf2+0xac)) {
-            *out=f.frameBase+uint32_t((at==Intf2+0xac && !f.slaveRuns)?0:f.now/f.period);return true;
+            const unsigned pipe=at==Intf2+0xac;
+            const bool running=pipe?f.slaveRuns:f.masterRuns;
+            *out=f.frameBase+uint32_t(running?f.now/f.period:f.stoppedFrames[pipe]);return true;
         }
         if(r==Mdss && (at==Intf1+0xb0 || at==Intf2+0xb0)) {*out=uint32_t(f.now%f.period)*2758/f.period;return true;}
         if(r==Vbif && at==HaltStatus) {
@@ -118,6 +120,52 @@ int main() {
       assert(submit(f.io(),s,frame(0x82000000,2),&d)==Pending);
       assert(waitAccepted(f.io(),s,20000,a,&d)==Ok && a.retired_iova==0x80000000 && a.retired_sequence==1);
       for(auto w:f.writes)assert(std::get<0>(w)==Mdss && std::get<1>(w)!=0x201c); }
+    { Fake f;State s={};assert(initialize(f.io(),s,&d)==Ok);Acceptance a={};
+      const uint32_t first=0x20000000, second=0x22000000;
+      assert(submit(f.io(),s,frame(first,s.current_sequence+1),&d)==Pending);
+      assert(waitAccepted(f.io(),s,20000,a,&d)==Ok && a.accepted);
+      assert(a.current_iova==first && a.sequence==1 && a.retired_iova==GopPhysical && !a.retired_sequence);
+      const auto firstBoundary=s.submitted_after;
+      const auto writesBefore=f.writes.size();
+      assert(submit(f.io(),s,frame(GopPhysical,s.current_sequence),&d)==Argument);
+      assert(f.writes.size()==writesBefore && s.current_iova==first);
+      assert(submit(f.io(),s,frame(GopPhysical,s.current_sequence+1),&d)==Pending);
+      assert(s.submitted_after.frame[0]>firstBoundary.frame[0] &&
+             s.submitted_after.frame[1]>firstBoundary.frame[1]);
+      assert(poll(f.io(),s,a,&d)==Pending && !a.accepted && !a.retired_iova && !a.retired_sequence);
+      // A cleared flush with only the first flip's old boundaries is not a
+      // return-to-GOP acceptance. Both pipes must cross the new submit baseline.
+      f.flushing=false;f.active[0]=f.active[1]=GopPhysical;
+      assert(poll(f.io(),s,a,&d)==Pending && !a.accepted && !a.retired_iova && !a.retired_sequence);
+      assert(s.current_iova==first && s.current_sequence==1);
+      assert(waitAccepted(f.io(),s,20000,a,&d)==Ok && a.accepted);
+      assert(a.current_iova==GopPhysical && a.sequence==2 && a.retired_iova==first && a.retired_sequence==1);
+      assert(s.current_iova==GopPhysical && s.current_sequence==2 && s.phase==Ready);
+      assert(submit(f.io(),s,frame(second,s.current_sequence+1),&d)==Pending);
+      assert(waitAccepted(f.io(),s,20000,a,&d)==Ok && a.accepted);
+      assert(a.current_iova==second && a.sequence==3 && a.retired_iova==GopPhysical && a.retired_sequence==2);
+      assert(f.active[0]==second && f.active[1]==second && f.writes.size()==15);
+      for(unsigned flip=0;flip<3;++flip) {
+          assert(std::get<1>(f.writes[flip*5+4])==Ctl0+CtlFlush &&
+                 std::get<2>(f.writes[flip*5+4])==3);
+          assert(std::get<2>(f.writes[flip*5])==std::get<2>(f.writes[flip*5+1]));
+      }
+      assert(f.regs.at({Mdss,Vig0+8})==0 && f.regs.at({Mdss,Vig1+8})==800); }
+    for(unsigned failure=0;failure<3;++failure) {
+      Fake f;State s={};assert(initialize(f.io(),s,&d)==Ok);Acceptance a={};
+      const uint32_t first=0x20000000;
+      assert(submit(f.io(),s,frame(first,s.current_sequence+1),&d)==Pending);
+      assert(waitAccepted(f.io(),s,20000,a,&d)==Ok && a.accepted);
+      f.stoppedFrames[0]=f.stoppedFrames[1]=uint32_t(f.now/f.period);
+      if(failure==0)f.clearFlush=false;
+      else if(failure==1)f.masterRuns=false;
+      else f.slaveRuns=false;
+      assert(submit(f.io(),s,frame(GopPhysical,s.current_sequence+1),&d)==Pending);
+      assert(waitAccepted(f.io(),s,20000,a,&d)==Timeout && s.phase==Failed && !a.accepted);
+      assert(!a.retired_iova && !a.retired_sequence && s.current_iova==first && s.current_sequence==1);
+      assert(s.pending.display_iova==GopPhysical && s.pending.sequence==2);
+      assert(submit(f.io(),s,frame(0x22000000,3),&d)==StateError);
+      assert(resume(f.io(),s,&d)==StateError); }
     { Fake f;State s={};initialize(f.io(),s,&d);f.writeDelay=2500;
       assert(submit(f.io(),s,frame(),&d)==Pending);
       // One edge occurred while both SSPP shadow registers were being staged.
@@ -156,7 +204,7 @@ int main() {
       assert(f.writes.size()==2 && f.regs.at({Vbif,HaltRequest})==0x21);
       assert(s.current_iova==GopPhysical && f.active[0]==GopPhysical); }
     assert(!writable(Mdss,0x201c) && !writable(Mdss,Intf1) && !writable(Vbif,HaltStatus));
-    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, dual-frame retirement, wrap, failures, clocks before VBIF, hardware halt ACK before completion barrier, busy ownership and resume preservation");
+    std::puts("PASS inherited topology, BGRA layout, shared shadow flush, GOP/slot round-trip and repeated submission, dual-frame retirement, return failures without retirement, wrap, failures, clocks before VBIF, hardware halt ACK before completion barrier, busy ownership and resume preservation");
 }
 '''
 

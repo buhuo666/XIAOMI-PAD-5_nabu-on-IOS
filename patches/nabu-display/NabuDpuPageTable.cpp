@@ -5,6 +5,7 @@ namespace NabuDpuPageTable {
 uint32_t slotBase(unsigned slot) { return SlotStart + slot * SlotBytes; }
 size_t leafIndex(uint32_t iova) { return size_t(5 + (iova >> 21)) * 512 + ((iova >> 12) & 511); }
 uint64_t leafDescriptor(uint64_t physical) { return physical | LeafAttributes; }
+uint64_t gopLeafDescriptor(uint64_t physical) { return physical | GopLeafAttributes; }
 static bool arenaValid(const Arena &a) {
     return a.tables && !((uintptr_t)a.tables & 4095) && !(a.physical & 4095) &&
         a.capacity_pages >= TablePages && a.physical < PhysicalLimit &&
@@ -48,7 +49,7 @@ Status prepareInactive(const Arena &a, const Visibility &v, State &s) {
             a.tables[size_t(1 + i) * 512 + j] = tableDescriptor(a, 5 + i * 512 + j);
     }
     for (uint32_t at = GopStart; at < GopStart + GopBytes; at += PageBytes)
-        a.tables[leafIndex(at)] = leafDescriptor(at);
+        a.tables[leafIndex(at)] = gopLeafDescriptor(at);
     if (!v.publish_pages(v.cookie, 0, TablePages) || !v.barrier(v.cookie))
         return poison(s, VisibilityFailure);
     s.active_slot = NoSlot; s.mapped_leaf_pages = GopBytes / PageBytes; s.prepared = true;
@@ -94,6 +95,13 @@ Status acceptSlot(State &s, unsigned slot, uint64_t token, unsigned *retired_slo
     next.life = Active; s.active_slot = slot;
     if (retired_slot) *retired_slot = old;
     return Ok;
+}
+Status acceptGop(State &s, unsigned slot, uint64_t token) {
+    if (!s.prepared || s.poisoned || slot >= SlotCount) return StateError;
+    Slot &old = s.slots[slot];
+    if (old.token != token) return StaleToken;
+    if (old.life != Active || s.active_slot != slot) return StateError;
+    old.life = Retired; s.active_slot = NoSlot; return Ok;
 }
 Status markRetiredAfterStop(State &s, unsigned slot, uint64_t token) {
     if (!s.prepared || s.poisoned || slot >= SlotCount) return StateError;
