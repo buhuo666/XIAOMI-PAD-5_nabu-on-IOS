@@ -32,6 +32,7 @@
 #include "NativeAdrenoDisplay.h"
 #include "NativeAdrenoScheduler.h"
 #include "NabuGpuProblemLog.h"
+extern "C" void native_adreno_metal_dump_stats(void);
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
 #include "NabuDpuProducer.h"
 #endif
@@ -595,10 +596,29 @@ void dumpBoProfiles()
 class NativeAdrenoGpuPublished : public IOService {
     OSDeclareDefaultStructors(NativeAdrenoGpuPublished)
 public:
+    IOReturn setProperties(OSObject *properties) APPLE_KEXT_OVERRIDE;
     IOReturn newUserClient(task_t owningTask,void *securityID,UInt32 type,
         OSDictionary *properties,IOUserClient **handler) APPLE_KEXT_OVERRIDE;
 };
 OSDefineMetaClassAndStructors(NativeAdrenoGpuPublished,IOService)
+
+IOReturn NativeAdrenoGpuPublished::setProperties(OSObject *properties)
+{
+    OSDictionary *dictionary=OSDynamicCast(OSDictionary,properties);
+    if(!dictionary || dictionary->getCount()!=2 ||
+        dictionary->getObject("DumpStats")!=kOSBooleanTrue) {
+        return kIOReturnBadArgument;
+    }
+    OSString *identifier=OSDynamicCast(OSString,dictionary->getObject("RequestID"));
+    if(!identifier || !identifier->getLength() || identifier->getLength()>64) {
+        return kIOReturnBadArgument;
+    }
+    IOLog("NativeAdrenoStatsRequest: begin id=%s\n",identifier->getCStringNoCopy());
+    native_adreno_metal_dump_stats();
+    IOLog("NativeAdrenoStatsRequest: end id=%s\n",identifier->getCStringNoCopy());
+    setProperty("LastStatsRequestID",identifier);
+    return kIOReturnSuccess;
+}
 
 class AGXDeviceUserClient : public IOUserClient {
     OSDeclareDefaultStructors(AGXDeviceUserClient)

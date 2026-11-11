@@ -31,7 +31,8 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
     int (*setProperties)(uint32_t, CFTypeRef) = dlsym(kit, "IORegistryEntrySetCFProperties");
     int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
     const BOOL gpuStats = [action isEqual:@"GpuPerformance"];
-    uint32_t entry = service(0, matching(gpuStats ? "NativeAdrenoControl" : "IOMobileFramebuffer"));
+    uint32_t entry = service(0, matching(gpuStats ? "NativeAdrenoGpuPublished" : "IOMobileFramebuffer"));
+    if (!entry && gpuStats) entry = service(0, matching("NativeAdrenoControl"));
     if (!entry) { dlclose(kit); return @{@"error": gpuStats ? @"GPU control unavailable" : @"framebuffer unavailable"}; }
     NSMutableDictionary *out = [@{@"request_id": identifier,
         @"post_desktop": @YES, @"uid": @(getuid())} mutableCopy];
