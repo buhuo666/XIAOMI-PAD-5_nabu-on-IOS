@@ -80,7 +80,7 @@ REJECTION = r'''
 #include <vector>
 using IOReturn=uint32_t;
 constexpr IOReturn kIOReturnBadArgument=0xe00002c2, kIOReturnUnsupported=0xe00002c7;
-constexpr unsigned SwapId=0x50, Surface=0x54, Source=0x64, Destination=0xc4, Cleared=0x108;
+constexpr unsigned SwapId=0x50, Surface=0x54, Source=0x64, Enabled=0xa4, Destination=0xc4, LayersSet=0x104, Cleared=0x108;
 struct Trace { uint64_t time,identity,a,b,c; uint32_t event; };
 std::vector<Trace> events;unsigned logs;
 uint64_t nowUs(){return 500;}
@@ -93,17 +93,23 @@ int main(){
     assert(events.size()==1&&events[0].identity==0&&events[0].c==1&&logs==1);
     uint8_t swap[0x46c]{};
     auto put=[&](unsigned at,uint32_t value){memcpy(swap+at,&value,4);};
-    put(SwapId,123);put(Cleared,0xa5);
-    for(unsigned i=0;i<4;++i){put(Surface+i*4,100+i);put(Source+i*4,200+i);put(Destination+i*4,300+i);}
+    put(SwapId,123);put(Cleared,0xa5);put(LayersSet,0x5a);
+    for(unsigned i=0;i<4;++i){put(Surface+i*4,100+i);put(Enabled+i*4,400+i);}
+    for(unsigned layer=0;layer<4;++layer)for(unsigned i=0;i<4;++i){
+        put(Source+layer*16+i*4,200+layer*10+i);put(Destination+layer*16+i*4,300+layer*10+i);}
     for(uint32_t reason=1;reason<=4;++reason){
         events.clear();logs=0;
         for(unsigned i=0;i<120;++i)assert(rejectPresent(swap,sizeof(swap),reason)==kIOReturnUnsupported);
-        assert(logs==6&&events.size()==480);
+        assert(logs==12&&events.size()==1320);
         assert(events[0].event==NabuGpuTrace::PresentRejected&&events[0].identity==123&&events[0].a==reason);
         assert(events[1].a==(uint64_t(101)<<32|100)&&events[1].b==(uint64_t(103)<<32|102)&&events[1].c==0xa5);
-        assert(events[2].a==(uint64_t(201)<<32|200)&&events[2].b==(uint64_t(203)<<32|202));
-        assert(events[3].a==(uint64_t(301)<<32|300)&&events[3].b==(uint64_t(303)<<32|302));
-        assert(events[476].c==120);
+        assert(events[2].a==(uint64_t(401)<<32|400)&&events[2].b==(uint64_t(403)<<32|402)&&events[2].c==0x5a);
+        for(unsigned layer=0;layer<4;++layer){
+            const auto &s=events[3+layer*2], &d=events[4+layer*2];
+            assert(s.a==(uint64_t(201+layer*10)<<32|(200+layer*10))&&s.c==layer);
+            assert(d.b==(uint64_t(303+layer*10)<<32|(302+layer*10))&&d.c==layer);
+        }
+        assert(events[1309].c==120);
     }
 }
 '''

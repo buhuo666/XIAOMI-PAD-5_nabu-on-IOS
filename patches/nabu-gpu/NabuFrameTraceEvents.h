@@ -12,7 +12,7 @@ enum Event : uint32_t {
     Present = 32, Queued, ProducerReady, Mapped, ScanSubmit, Accepted, Retired,
     Vblank, VblankNotify, DisplayWorker, DisplayFailure, ScanAcceptedCounters,
     NativeVblankDelivery, PresentRejected, PresentSurfaceList,
-    PresentSourceRect, PresentDestinationRect
+    PresentSourceRect, PresentDestinationRect, PresentLayerFlags
 };
 enum PresentRejection : uint32_t {
     ShortSwap = 0, ExtraLayers = 1, SourceRect = 2, DestinationRect = 3,

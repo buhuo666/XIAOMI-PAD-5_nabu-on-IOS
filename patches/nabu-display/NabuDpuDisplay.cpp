@@ -25,7 +25,7 @@ extern "C" void FlushPoC_DcacheRegion(vm_offset_t, unsigned);
 namespace {
 const NabuDpuProducerOps *producer;
 constexpr uint32_t SwapBytes = 0x46c, SwapId = 0x50, Surface = 0x54;
-constexpr uint32_t Source = 0x64, Destination = 0xc4, Cleared = 0x108;
+constexpr uint32_t Source = 0x64, Enabled = 0xa4, Destination = 0xc4, LayersSet = 0x104, Cleared = 0x108;
 constexpr uint32_t WaitMs = 500, FlipMs = 100;
 uint32_t word(const uint8_t *p, unsigned offset) {
     uint32_t v; memcpy(&v, p + offset, sizeof(v)); return v;
@@ -531,25 +531,35 @@ static IOReturn rejectPresent(const uint8_t *swap, size_t bytes, uint32_t reason
                 reason, count, uint64_t(bytes), result);
         return result;
     }
-    const uint32_t id = word(swap, SwapId), cleared = word(swap, Cleared);
-    uint32_t sid[4], source[4], destination[4];
+    const uint32_t id = word(swap, SwapId), cleared = word(swap, Cleared), set = word(swap, LayersSet);
+    uint32_t sid[4], enabled[4];
     for (unsigned i = 0; i < 4; ++i) {
         sid[i] = word(swap, Surface + i * 4);
-        source[i] = word(swap, Source + i * 4);
-        destination[i] = word(swap, Destination + i * 4);
+        enabled[i] = word(swap, Enabled + i * 4);
     }
     traceFrame(at, NabuGpuTrace::PresentRejected, id, reason, uint32_t(result), count);
     traceFrame(at, NabuGpuTrace::PresentSurfaceList, id,
         sid[0] | (uint64_t(sid[1]) << 32), sid[2] | (uint64_t(sid[3]) << 32), cleared);
-    traceFrame(at, NabuGpuTrace::PresentSourceRect, id,
-        source[0] | (uint64_t(source[1]) << 32), source[2] | (uint64_t(source[3]) << 32), 0);
-    traceFrame(at, NabuGpuTrace::PresentDestinationRect, id,
-        destination[0] | (uint64_t(destination[1]) << 32), destination[2] | (uint64_t(destination[3]) << 32), 0);
+    traceFrame(at, NabuGpuTrace::PresentLayerFlags, id,
+        enabled[0] | (uint64_t(enabled[1]) << 32), enabled[2] | (uint64_t(enabled[3]) << 32), set);
     if (count == 1 || count % 120 == 0) {
         IOLog("NABU DPU: present-rejected swap=%u reason=%u count=%llu status=%#x\n", id, reason, count, result);
-        IOLog("NABU DPU: rejected-surfaces swap=%u sid=%u,%u,%u,%u cleared=%#x\n", id, sid[0], sid[1], sid[2], sid[3], cleared);
-        IOLog("NABU DPU: rejected-rects swap=%u src=%u,%u,%u,%u dst=%u,%u,%u,%u\n", id,
-            source[0], source[1], source[2], source[3], destination[0], destination[1], destination[2], destination[3]);
+        IOLog("NABU DPU: rejected-surfaces swap=%u sid=%u,%u,%u,%u set=%#x cleared=%#x enabled=%u,%u,%u,%u\n",
+            id, sid[0], sid[1], sid[2], sid[3], set, cleared, enabled[0], enabled[1], enabled[2], enabled[3]);
+    }
+    for (unsigned layer = 0; layer < 4; ++layer) {
+        uint32_t source[4], destination[4];
+        for (unsigned i = 0; i < 4; ++i) {
+            source[i] = word(swap, Source + layer * 16 + i * 4);
+            destination[i] = word(swap, Destination + layer * 16 + i * 4);
+        }
+        traceFrame(at, NabuGpuTrace::PresentSourceRect, id,
+            source[0] | (uint64_t(source[1]) << 32), source[2] | (uint64_t(source[3]) << 32), layer);
+        traceFrame(at, NabuGpuTrace::PresentDestinationRect, id,
+            destination[0] | (uint64_t(destination[1]) << 32), destination[2] | (uint64_t(destination[3]) << 32), layer);
+        if (count == 1 || count % 120 == 0)
+            IOLog("NABU DPU: rejected-rects swap=%u layer=%u src=%u,%u,%u,%u dst=%u,%u,%u,%u\n", id, layer,
+                source[0], source[1], source[2], source[3], destination[0], destination[1], destination[2], destination[3]);
     }
     return result;
 }

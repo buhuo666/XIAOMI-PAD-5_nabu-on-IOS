@@ -1,0 +1,89 @@
+[
+  {
+    "name": "_IOMobileFramebufferVsyncNotifyFunc",
+    "address": "0x1af134850",
+    "next_local_symbol": "0x1af1348f4",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.13",
+    "file_offset": 98191440,
+    "bytes": 164,
+    "assembly": "1af134850.asm",
+    "calls": [
+      {
+        "address": "0x1af13488c",
+        "target": "0x1afaa36a0",
+        "resolved_target": "0x1c0fe9bd0",
+        "target_name": "_kdebug_signpost",
+        "literal_registers": {
+          "x2": {
+            "value": "0x0",
+            "label": null
+          },
+          "x3": {
+            "value": "0x0",
+            "label": null
+          },
+          "x4": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1af134894",
+        "target": "0x1af1348f4",
+        "resolved_target": "0x1af1348f4",
+        "target_name": "_iomfb_GetMachMessageCount",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x1af1348c4",
+        "target": null,
+        "resolved_target": null,
+        "target_name": null,
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "_kern_EnableNotifications",
+    "address": "0x1af130afc",
+    "next_local_symbol": "0x1af130b84",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.13",
+    "file_offset": 98175740,
+    "bytes": 136,
+    "assembly": "1af130afc.asm",
+    "calls": [
+      {
+        "address": "0x1af130b58",
+        "target": "0x1afaa34a8",
+        "resolved_target": "0x18e4b50b8",
+        "target_name": "_IOConnectCallScalarMethod",
+        "literal_registers": {
+          "x1": {
+            "value": "0x48",
+            "label": null
+          },
+          "x3": {
+            "value": "0x4",
+            "label": null
+          },
+          "x4": {
+            "value": "0x0",
+            "label": null
+          },
+          "x5": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1af130b80",
+        "target": "0x1afaa361c",
+        "resolved_target": "0x18dc05300",
+        "target_name": "___stack_chk_fail",
+        "literal_registers": {}
+      }
+    ]
+  }
+]

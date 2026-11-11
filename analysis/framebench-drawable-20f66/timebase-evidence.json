@@ -1,0 +1,154 @@
+{
+  "functions": [
+    {
+      "name": "_kern_egest_timestamp",
+      "address": "0x1af12d514",
+      "next_local_symbol": "0x1af12d5c4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.13",
+      "file_offset": 98161940,
+      "bytes": 176,
+      "assembly": "1af12d514.asm",
+      "calls": [
+        {
+          "address": "0x1af12d538",
+          "target": "0x1afaa36b8",
+          "resolved_target": "0x1c0fe7734",
+          "target_name": "_mach_continuous_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1af12d540",
+          "target": "0x1afaa36ac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "_kern_ingest_timestamp",
+      "address": "0x1af12c864",
+      "next_local_symbol": "0x1af12c8a4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.13",
+      "file_offset": 98158692,
+      "bytes": 64,
+      "assembly": "1af12c864.asm",
+      "calls": [
+        {
+          "address": "0x1af12c880",
+          "target": "0x1afaa36b8",
+          "resolved_target": "0x1c0fe7734",
+          "target_name": "_mach_continuous_time",
+          "literal_registers": {}
+        },
+        {
+          "address": "0x1af12c888",
+          "target": "0x1afaa36ac",
+          "resolved_target": "0x1c0fe7290",
+          "target_name": "_mach_absolute_time",
+          "literal_registers": {}
+        }
+      ]
+    },
+    {
+      "name": "_kern_SetParameter",
+      "address": "0x1af12ce54",
+      "next_local_symbol": "0x1af12cfc4",
+      "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.13",
+      "file_offset": 98160212,
+      "bytes": 368,
+      "assembly": "1af12ce54.asm",
+      "calls": [
+        {
+          "address": "0x1af12cef8",
+          "target": "0x1afaa349c",
+          "resolved_target": "0x18e4b5c28",
+          "target_name": "_IOConnectCallMethod",
+          "literal_registers": {
+            "x1": {
+              "value": "0x44",
+              "label": null
+            },
+            "x3": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1af12cf28",
+          "target": "0x1af134490",
+          "resolved_target": "0x1af134490",
+          "target_name": "_core_analytics_send_data",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1af1376c6",
+              "label": "com.apple.TritiumVSHCompensation.CalibStop"
+            },
+            "x1": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1af12cf4c",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {
+            "x1": {
+              "value": "0x11",
+              "label": null
+            },
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1af12cf60",
+          "target": "0x1af134490",
+          "resolved_target": "0x1af134490",
+          "target_name": "_core_analytics_send_data",
+          "literal_registers": {
+            "x2": {
+              "value": "0x1af137646",
+              "label": "com.apple.TritiumVSHCompensation.CumulativeOnTime"
+            },
+            "x1": {
+              "value": "0x2",
+              "label": null
+            }
+          }
+        },
+        {
+          "address": "0x1af12cf84",
+          "target": null,
+          "resolved_target": null,
+          "target_name": null,
+          "literal_registers": {
+            "x1": {
+              "value": "0x11",
+              "label": null
+            },
+            "x2": {
+              "value": "0x1",
+              "label": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "swap_timestamp_jump_table": [
+    11,
+    0,
+    2,
+    4,
+    6,
+    8,
+    10
+  ]
+}

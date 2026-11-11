@@ -100,8 +100,9 @@ codes are 0 short payload, 1 extra surfaces, 2 source rectangle, 3 destination
 rectangle, 4 no surface and no clear bit. `PresentRejected` stores reason,
 status and per-reason count (payload byte count for short requests).
 `PresentSurfaceList` packs SID0/1 and SID2/3 into low/high32 pairs and records
-the clear bits. Source/destination events pack the first rectangle's four raw
-words into two pairs. Separate logs preserve these fields on the first and
+the clear bits. `PresentLayerFlags` packs four enabled words and the set mask.
+Source/destination events pack each layer's four raw rectangle words into two
+pairs, with the layer index in `c`. Separate logs preserve these fields on the first and
 every 120th rejection of each reason even when capture is off.
 
 The legacy `bo_slot=4` diagnostic bucket aggregates all client slots >=4;

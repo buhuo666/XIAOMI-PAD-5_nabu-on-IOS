@@ -65,6 +65,9 @@ def prepared_framebuffer(tree, temp):
     code = compile(ast.fix_missing_locations(ast.Module(body=selection, type_ignores=[])), str(PREPARE), 'exec')
     environment = {'kernel': kernel, 'replace': module.replace}
     exec(code, environment)
+    installed = path.read_text()
+    exec(code, environment)
+    assert path.read_text() == installed, 'Framebuffer installer must be reentrant'
     folder = kernel / 'nabu_display'
     folder.mkdir()
     for name in ('NabuDpuDisplay.h', 'NabuDpuVBlank.h', 'NabuBacklight.h'):
@@ -93,6 +96,12 @@ using UInt32=uint32_t;
 using io_user_reference_t=uint64_t;
 using mach_vm_address_t=uint64_t;
 using task_t=uintptr_t;
+using boolean_t=bool;
+constexpr bool FALSE=false;
+thread_local bool hostInterruptsEnabled=true;
+boolean_t ml_set_interrupts_enabled(boolean_t enabled){
+    const bool old=hostInterruptsEnabled;hostInterruptsEnabled=enabled;return old;
+}
 constexpr IOReturn kIOReturnSuccess=0, kIOReturnBusy=0xe00002d5, kIOReturnNotFound=0xe00002f0;
 constexpr IOReturn kIOReturnUnsupported=0xe00002c7, kIOReturnBadArgument=0xe00002c2;
 constexpr IOReturn kIOReturnIOError=0xe00002ca, kIOReturnTimeout=0xe00002d6;
@@ -113,7 +122,9 @@ void IOLockFree(IOLock *l){delete l;}
 void IOLockLock(IOLock *l){l->mutex.lock();}
 void IOLockUnlock(IOLock *l){l->mutex.unlock();}
 uint64_t mach_absolute_time(){return std::chrono::steady_clock::now().time_since_epoch().count();}
-void absolutetime_to_nanoseconds(uint64_t in,uint64_t *out){*out=in;}
+uint64_t clockTicksNumer=1,clockTicksDenom=1,sleepOffsetTicks=0;
+void absolutetime_to_nanoseconds(uint64_t in,uint64_t *out){*out=in*clockTicksDenom/clockTicksNumer;}
+uint64_t absolutetime_to_continuoustime(uint64_t in){assert(!hostInterruptsEnabled);return in+sleepOffsetTicks;}
 void clock_interval_to_deadline(uint32_t count,int scale,uint64_t *out){*out=mach_absolute_time()+uint64_t(count)*scale;}
 int IOLockSleepDeadline(IOLock *l,const void *,uint64_t deadline,int){
     std::unique_lock<std::mutex> held(l->mutex,std::adopt_lock);
@@ -130,12 +141,15 @@ void IOLog(const char *,...){}
 void hakios_tl(const char *,...){}
 bool gTouchLat=false;
 std::atomic<unsigned> traceVblankSends{0};
-void traceFrame(uint64_t,uint32_t event,uint64_t,uint64_t=0,uint64_t=0,uint64_t=0){
-    if(event==NabuGpuTrace::NativeVblankDelivery)++traceVblankSends;
+std::atomic<uint64_t> traceVblankSequence{0},traceVblankAbsoluteUs{0};
+void traceFrame(uint64_t,uint32_t event,uint64_t identity,uint64_t a=0,uint64_t=0,uint64_t=0){
+    if(event==NabuGpuTrace::NativeVblankDelivery){
+        ++traceVblankSends;traceVblankSequence=identity;traceVblankAbsoluteUs=a;
+    }
 }
 uint64_t micros(uint64_t x){return x/1000;}
 unsigned refreshHz(){return 120;}
-void nanoseconds_to_absolutetime(uint64_t in,uint64_t *out){*out=in;}
+void nanoseconds_to_absolutetime(uint64_t in,uint64_t *out){*out=in*clockTicksNumer/clockTicksDenom;}
 using thread_call_param_t=void *;
 struct HostCall{};
 using thread_call_t=HostCall *;
@@ -164,6 +178,7 @@ struct Message{Port *port;std::array<uint64_t,6> args;};
 std::vector<Message> messages;
 IOReturn sendAsyncResult64WithOptions(const OSAsyncReference64 &r,IOReturn error,const uint64_t *args,unsigned count,unsigned option){
     assert(!error && count==6 && option==kIOUserNotifyOptionCanDrop);
+    assert(hostInterruptsEnabled); // restored before port delivery or callbacks
     if(sendGate)sendGate->block();
     assert(r.port && !r.port->released);
     Message m{};m.port=r.port;std::copy(args,args+6,m.args.begin());messages.push_back(m);return 0;
@@ -290,13 +305,56 @@ int main(){
         tick(b,1);assert(messages.size()==1 && c.fVSyncCount==1);
         assert(messages[0].args[0]==0x9abcdef0 && messages[0].args[1]==0x12345678);
         assert(messages[0].args[2]==0x9abcdef0 && messages[0].args[3]==0x12345678);
-        assert(messages[0].args[4]==1 && messages[0].args[5]==0);
+        assert(messages[0].args[4]==8333333 && messages[0].args[5]==0);
         tick(b,1);assert(messages.size()==1); // slave/duplicate sample cannot double native vblank
         tick(b,3);assert(messages.size()==2 && c.fVSyncCount==3); // no invented missing tick
         b.powerOn=false;tick(b,4);assert(messages.size()==2);
         b.powerOn=true;tick(b,5);assert(messages.size()==3);
         c.clientClose();c.free();assert(p.released==1 && c.freed==1 && !b.listeners);
         tick(b,6);assert(messages.size()==3);++groups;
+    }
+    {
+        // Real native vsync() and adapter low/high reconstruction, with the
+        // platform's 19.2MHz ticks and a continuous-clock sleep offset.
+        messages.clear();NabuDpuDisplay::Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        clockTicksNumer=12;clockTicksDenom=625;
+        const auto unpack=[](const Message &m,unsigned pair){
+            for(auto half:m.args)assert(half<=UINT32_MAX);
+            return m.args[pair*2] | (m.args[pair*2+1]<<32);
+        };
+        const uint64_t stamp=0x00012345ffffffe0ull;
+        const uint64_t sequences[]={1,120,134000,UINT32_MAX,0x100000000ull,0x200000001ull};
+        unsigned sent=traceVblankSends;
+        for(uint64_t sequence:sequences){
+            tick(b,sequence,stamp);
+            const auto &m=messages.back();
+            assert(unpack(m,0)==stamp && unpack(m,1)==stamp);
+            assert(unpack(m,2)==159999 && c.fVSyncCount==sequence);
+            assert(traceVblankSequence==sequence && traceVblankAbsoluteUs==stamp*625/12/1000);
+        }
+        // An IRQ was captured earlier than delivery. Only the timestamp's
+        // clock domain changes: do not replace it with a fresh current time.
+        sleepOffsetTicks=0x200000050ull;
+        tick(b,0x200000002ull,stamp);
+        const auto &afterSleep=messages.back();
+        assert(unpack(afterSleep,0)==stamp);
+        assert(unpack(afterSleep,1)==stamp+sleepOffsetTicks);
+        assert(unpack(afterSleep,1)-sleepOffsetTicks==stamp); // original egest clock domain
+        assert(unpack(afterSleep,2)==159999);
+        assert(afterSleep.args[2]==0x30 && afterSleep.args[3]==0x12348);
+        assert(traceVblankAbsoluteUs==stamp*625/12/1000);
+        sleepOffsetTicks+=19200000ull*3600; // one more hour asleep, same absolute event
+        tick(b,0x200000003ull,stamp);
+        assert(unpack(messages.back(),1)==stamp+sleepOffsetTicks);
+        assert(unpack(messages.back(),2)==159999 && unpack(messages.back(),0)==stamp);
+        assert(traceVblankAbsoluteUs==stamp*625/12/1000 && traceVblankSends==sent+8);
+        // A wide synthetic timebase exercises the high half of period itself.
+        clockTicksNumer=1000;clockTicksDenom=1;
+        tick(b,0x200000004ull,stamp);
+        assert(unpack(messages.back(),2)==8333333000ull && messages.back().args[5]==1);
+        clockTicksNumer=clockTicksDenom=1;sleepOffsetTicks=0;
+        c.clientClose();c.free();++groups;
     }
     {
         messages.clear();NabuDpuDisplay::Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
@@ -378,7 +436,7 @@ int main(){
         diagnosticStage(&d,"later-snapshot");assert(diagnosticCommits==3);
         ++groups;
     }
-    std::printf("PASS %u actual-code lifecycle, concurrent notification, checkpoint and ledger/wait groups; no software ticks\n",groups);
+    std::printf("PASS %u actual-code lifecycle, VSync ABI/timebase, concurrent notification, checkpoint and ledger/wait groups; no software ticks\n",groups);
 }
 '''
 

@@ -172,6 +172,36 @@ IOMobileFramebuffer::start(IOService * provider)''')
         path.write_text(text)
 
     text = path.read_text()
+    # 20F66's VSync adapter decodes three 64-bit values from low/high halves.
+    # QuartzCore consumes the second as a continuous timestamp and the third
+    # as the refresh duration in mach ticks, not the cumulative IRQ sequence.
+    # Keep this upgrade outside the initial-install guard for prepared trees.
+    if 'const uint64_t wireTime = absolutetime_to_continuoustime(now);' not in text:
+        if '#include <machine/machine_routines.h>' not in text:
+            text = replace(text, '#include <kern/clock.h>',
+                '#include <kern/clock.h>\n#include <machine/machine_routines.h>')
+        text = replace(text,
+            ' * the time of this refresh, the same again (the time it was presented), and a counter.',
+            ' * the existing first value, the refresh timestamp in continuous time, and the period in mach ticks.')
+        text = replace(text,
+            '\t\targs[0] = (uint32_t) now;\n'
+            '\t\targs[1] = now >> 32;\n'
+            '\t\targs[2] = (uint32_t) now;\n'
+            '\t\targs[3] = now >> 32;\n'
+            '\t\targs[4] = (uint32_t) fVSyncCount;\n'
+            '\t\targs[5] = fVSyncCount >> 32;',
+            '\t\t/* XNU requires interrupts disabled while reading its sleep offset. */\n'
+            '\t\tconst boolean_t interrupts = ml_set_interrupts_enabled(FALSE);\n'
+            '\t\tconst uint64_t wireTime = absolutetime_to_continuoustime(now);\n'
+            '\t\tml_set_interrupts_enabled(interrupts);\n'
+            '\t\tuint64_t period;\n'
+            '\t\tnanoseconds_to_absolutetime(NSEC_PER_SEC / refreshHz(), &period);\n'
+            '\t\targs[0] = (uint32_t) now;\n'
+            '\t\targs[1] = now >> 32;\n'
+            '\t\targs[2] = (uint32_t) wireTime;\n'
+            '\t\targs[3] = wireTime >> 32;\n'
+            '\t\targs[4] = (uint32_t) period;\n'
+            '\t\targs[5] = period >> 32;')
     if 'NabuDpuDisplay::traceNativeVblank(' not in text:
         send = '\t\tIOReturn sent = sendAsyncResult64WithOptions(ref, kIOReturnSuccess, args, 6, kIOUserNotifyOptionCanDrop);'
         text = replace(text, send, send + '\n\t\tif (fOwner->fDpu) NabuDpuDisplay::traceNativeVblank(fVSyncCount, now, sent);')
