@@ -78,6 +78,7 @@ python3 tools/prepare_nabu_display_power.py --tree "$XNU_SRC" --output log/ci/na
 python3 tools/check_nabu_dpu_display_lifecycle.py --tree "$XNU_SRC" --output log/ci/nabu-dpu-lifecycle.json
 python3 tools/check_nabu_gpu_surface_read.py --output log/ci/nabu-gpu-surface-read
 python3 tools/check_nabu_gpu_irq.py --output log/ci/nabu-gpu-irq
+python3 tools/check_nabu_gpu_opp.py --output log/ci/nabu-gpu-opp
 python3 tools/check_nabu_gpu_deferred_close.py --output log/ci/nabu-gpu-deferred-close
 python3 tools/check_nabu_display_power.py --tree "$XNU_SRC" --output log/ci/nabu-display-power/checks
 python3 tools/check_nabu_display.py --tree "$XNU_SRC" --output log/ci/nabu-display-host

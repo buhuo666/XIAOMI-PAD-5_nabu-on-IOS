@@ -187,7 +187,7 @@ IOReturn NativeAdrenoA6xxPower::ring()
     return write(NativeAdrenoA6xxAopDoorbell, doorbellOffset_, doorbellValue_);
 }
 
-IOReturn NativeAdrenoA6xxPower::buildTables()
+IOReturn NativeAdrenoA6xxPower::buildTables(const NativeAdrenoA6xxOpp &opp)
 {
     constexpr unsigned ResourceCount = 10;
     static const char *const names[] = {
@@ -319,13 +319,13 @@ IOReturn NativeAdrenoA6xxPower::buildTables()
         return reject("required-resources", kIOReturnNotFound, ResourceCount, 0, seen, (1u << ResourceCount) - 1);
     }
 
-    /* The nabu OPP table gives LOW_SVS+1 for 257 MHz; kgsl_gmu.c subtracts the
-     * RPMh regulator offset of one. gpu_cc_gmu_clk_src runs 200 MHz at VDD_MIN. */
+    /* KGSL subtracts one from the OPP's RPMh regulator level. The selected
+     * stock frequency and DDR request stay together; GMU remains at 200 MHz. */
     uint32_t gpuVote;
     uint32_t gmuVote;
-    if (!arcVote(resources[0], resources[1], 64, &gpuVote)) {
+    if (!arcVote(resources[0], resources[1], opp.arcLevel, &gpuVote)) {
         return reject("gpu-arc-level", kIOReturnUnsupported, 0,
-            resources[0].auxiliaryOffset, little32(resources[0].auxiliary), 64);
+            resources[0].auxiliaryOffset, little32(resources[0].auxiliary), opp.arcLevel);
     }
     if (!arcVote(resources[2], resources[1], 48, &gmuVote)) {
         return reject("gmu-arc-level", kIOReturnUnsupported, 2,
@@ -381,22 +381,21 @@ IOReturn NativeAdrenoA6xxPower::buildTables()
     IOLog("NativeAdrenoA6xx: ARC votes gpu=%08x gmu=%08x gfx=%u mx=%u cx=%u\n",
         gpuVote, gmuVote, tables_.gfxIndex, tables_.mxIndex, tables_.cxIndex);
 
-    /* hfi_dcvstable_cmd: two GPU levels (off, 257 MHz) with the unused ACD
+    /* hfi_dcvstable_cmd: two GPU levels (off, selected OPP) with the unused ACD
      * threshold field at its kgsl_hfi.c value, then two GMU levels. */
     tables_.performance[0] = 2;
     tables_.performance[1] = 2;
     tables_.performance[3] = 0xffffffff;
     tables_.performance[5] = gpuVote;
     tables_.performance[6] = 0xffffffff;
-    tables_.performance[7] = 257000;
+    tables_.performance[7] = opp.gpuKhz;
     tables_.performance[52] = gmuVote;
     tables_.performance[53] = 200000;
 
-    /* The unit's CNOC path is GPU -> SH2 -> SN15 -> SN3. Its 257 MHz
-     * pwrlevel requests DDR usecase 3 (1799000 KB/s). Follow KGSL's live BCM
+    /* The unit's CNOC path is GPU -> SH2 -> SN15 -> SN3. Follow KGSL's live BCM
      * width/unit conversion and VCD grouping, instead of assuming CN0 alone
      * or leaving the GPU's DDR vote at the off entry. */
-    tables_.bandwidth[0] = 2; // off and the fixed 257 MHz bandwidth
+    tables_.bandwidth[0] = 2; // off and the selected stock OPP bandwidth
     tables_.bandwidth[1] = 3;
     tables_.bandwidth[2] = 3;
     auto bandwidthGroup=[&](unsigned indices[3],const uint32_t busWidths[3],
@@ -430,8 +429,10 @@ IOReturn NativeAdrenoA6xxPower::buildTables()
     };
     unsigned ddr[3]={3,4,5},cnoc[3]={6,8,9};
     const uint32_t ddrWidths[3]={16,4,4},cnocWidths[3]={8,8,8};
-    bandwidthGroup(ddr,ddrWidths,1799000,23,31,8,4);
+    bandwidthGroup(ddr,ddrWidths,opp.ddrKbps,23,31,8,4);
     bandwidthGroup(cnoc,cnocWidths,100,5,11,6,3);
+    IOLog("NativeAdrenoA6xx: stock OPP gpu-khz=%u raw-arc=%u ddr-kbps=%u gmu-khz=200000\n",
+        opp.gpuKhz, opp.arcLevel, opp.ddrKbps);
 
     return kIOReturnSuccess;
 }
@@ -786,10 +787,11 @@ IOReturn NativeAdrenoA6xxPower::setSource(uint32_t command, uint32_t configurati
 }
 
 IOReturn NativeAdrenoA6xxPower::enableCx(const NativeAdrenoA6xxIo &io,
-    uint32_t doorbellOffset, uint32_t doorbellValue)
+    uint32_t doorbellOffset, uint32_t doorbellValue, uint32_t gpuKhz)
 {
+    NativeAdrenoA6xxOpp opp{};
     if (cxReady_ || !io.read32 || !io.write32 || !io.delayUs || (doorbellOffset & 3) ||
-        !doorbellValue) {
+        !doorbellValue || !nativeAdrenoA640Opp(gpuKhz, &opp)) {
         return kIOReturnBadArgument;
     }
     io_ = io;
@@ -797,7 +799,7 @@ IOReturn NativeAdrenoA6xxPower::enableCx(const NativeAdrenoA6xxIo &io,
     doorbellValue_ = doorbellValue;
     report_ = {};
     report_.phase = CommandDatabase;
-    IOReturn result = buildTables();
+    IOReturn result = buildTables(opp);
     if (result) {
         return result;
     }

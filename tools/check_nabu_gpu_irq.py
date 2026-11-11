@@ -12,6 +12,7 @@ from check_nabu_dpu_display_lifecycle import body
 ROOT = Path(__file__).resolve().parents[1]
 GPU = ROOT / 'patches/nabu-gpu'
 UPSTREAM = ROOT / 'src/nabu/gpu/upstream/Adreno6xx'
+A640 = ROOT / 'src/nabu/gpu/a640'
 
 TYPES = r'''
 #pragma once
@@ -87,7 +88,11 @@ struct A640State {
         else s.registers[at]=v;return 0;}
     static int barrier(void*c){static_cast<A640State*>(c)->accesses.push_back('b');return 0;}
     A640State(){NativeAdrenoRingIo io{this,write,read,barrier,nullptr,nullptr,nullptr};
-        assert(irq_.attach(&io,NativeAdrenoA640)==0&&irq_.programMask(nullptr)==0);accesses.clear();}
+        uint32_t mask=0;
+        assert(NativeAdrenoIrq::mask(NativeAdrenoA640)==0x13d0e3c2u);
+        assert(NativeAdrenoIrq::cpErrorMask(NativeAdrenoA640)==0xf7u);
+        assert(irq_.attach(&io,NativeAdrenoA640)==0&&irq_.programMask(&mask)==0);
+        assert(mask==0x13d0e3c2u&&registers[0x38]==mask);accesses.clear();}
     static void gpuInterrupt(void*);
 };
 #define NABU_GPU_CLIENT 1
@@ -99,6 +104,19 @@ static void reset(){
     g.interruptFailure=0;kicks=0;
 }
 static void count(void*p){++*static_cast<unsigned*>(p);}
+static void a640_generation_contract(){
+    reset();A640State state;
+    assert(native_adreno_smmu_register_irq(332,A640State::gpuInterrupt,&state)==0);
+    assert(native_adreno_smmu_enable_irq(332)==0);
+    state.registers[0x201]=(1u<<13)|(1u<<14);fire();
+    assert(!state.hardwareIrqFailed_&&kicks==0&&nabu_gpu_irq_stats.faults==0);
+    state.accesses.clear();
+    state.registers[0x201]=1u<<9;state.registers[0x823]=4;state.registers[0x824]=0x12345678;
+    fire();
+    assert(state.accesses==std::vector<char>({'r','c','b','r','r'}));
+    assert(native_adreno_a6xx_stats[12]==4&&native_adreno_a6xx_stats[13]==0x12345678);
+    assert(state.hardwareIrqFailed_&&kicks==1&&nabu_gpu_irq_stats.faults==1&&!gic.enabled);
+}
 static void registration_and_delivery(){
     reset();A640State state;unsigned smmu=0;
     assert(native_adreno_smmu_register_irq(706,count,&smmu)==0);
@@ -155,7 +173,7 @@ static void drain_inflight(){
     assert(!done);context.release=true;irq.join();drain.join();
     assert(done&&gic.detached==1&&!gic.handler);
 }
-int main(){registration_and_delivery();faults_mask_without_self_drain();admission_errors();drain_inflight();reset();
+int main(){a640_generation_contract();registration_and_delivery();faults_mask_without_self_drain();admission_errors();drain_inflight();reset();
     puts("GPU SPI: real callback before polling, source-clear barrier, no synthetic GPU poll, fault mask, and in-flight drain passed");}
 '''
 
@@ -171,9 +189,9 @@ def main():
     (include / 'IOKit/IOLib.h').write_text('#include <IOKit/IOTypes.h>\n')
     for name in ('NativeAdrenoIrq.h', 'NativeAdrenoRing.h'):
         shutil.copyfile(UPSTREAM / name, include / name)
-    shutil.copyfile(ROOT / 'src/nabu/gpu/a640/NativeAdrenoGeneration.h', include / 'NativeAdrenoGeneration.h')
+    shutil.copyfile(A640 / 'NativeAdrenoGeneration.h', include / 'NativeAdrenoGeneration.h')
     shutil.copyfile(GPU / 'NabuGpuPort.h', include / 'NabuGpuPort.h')
-    shutil.copyfile(UPSTREAM / 'NativeAdrenoIrq.cpp', output / 'NativeAdrenoIrq.cpp')
+    shutil.copyfile(A640 / 'NativeAdrenoIrq.cpp', output / 'NativeAdrenoIrq.cpp')
     resources = (GPU / 'NabuGpuResources.cpp').read_text()
     start = resources.index('struct IrqSource ')
     end = resources.index('static void gpuIrqArrived', start)
@@ -196,6 +214,9 @@ def main():
         if result.returncode:
             raise RuntimeError(name + ': ' + (result.stdout + result.stderr).decode(errors='replace')[-7000:])
     report = {'passed': True, 'production_binding_and_irq_decoder': True,
+              'decoder_source': 'src/nabu/gpu/a640/NativeAdrenoIrq.cpp',
+              'a640_mask': '0x13d0e3c2', 'a640_cp_error_mask': '0xf7',
+              'a640_ib_status_and_cp_protect_checked': True,
               'gpu_spi': 332, 'level_triggered': True, 'synthetic_gpu_poll_calls': 0,
               'source_clear_before_eoi': True, 'fault_masks_without_self_drain': True,
               'thread_teardown_drains_handler': True, 'smmu_poll_preserved': True,

@@ -14,7 +14,8 @@ The original sources and their license/provenance files stay in the pinned
 checkout. The upstream Adreno6xx source is recorded there as
 `RigoLigoRLC/unixnu-adreno6xx` commit
 `83a0453e981567a30cecd6486bdb8b3b33d64683`. Files retain their SPDX declarations;
-`NativeAdrenoA6xxPower.cpp` is GPL-2.0-only and preserves its Qualcomm copyright.
+`NativeAdrenoA6xxPower.cpp`, its header and `NativeAdrenoA6xxGmu.cpp` are
+GPL-2.0-only and preserve their Qualcomm copyright.
 The service, CPU adapter, resource glue and new port/compatibility headers are
 MIT; the namespace header is BSD-2-Clause-Patent.
 `LICENSE-MIT` and `COPYING-GPL-2.0` reproduce the corresponding upstream texts.
@@ -43,7 +44,10 @@ and 20F66 system:
   A TCS must be available and have no enabled commands before selection.
   Host CX/MX votes preserve the current modem/audio baseline's retained CX
   raw-level 384 floor and its command-db MX dependency. Separate TCS slots
-  share the same APPS DRV2 voter. GPU/GMU HFI performance tables stay unchanged.
+  share the same APPS DRV2 voter. The Power header and GMU source derive from
+  the pinned `gpu/a640` versions. They select this unit's stock OPPs with
+  matching ARC/DDR requirements and default to675MHz; GMU/CNOC levels, table
+  dimensions and firmware acknowledgement ordering remain unchanged.
 - `NabuGpuResources.cpp` keeps the A640 board/firmware input contract and
   replaces the reference ESP logger dependency with the current append-only
   runtime capture. Firmware inputs are reviewed when acquired by the host;

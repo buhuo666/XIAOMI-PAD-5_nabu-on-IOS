@@ -43,6 +43,7 @@ extern "C" void native_adreno_fault(void);
 extern "C" void native_adreno_dma_stopped(void);
 extern "C" void native_adreno_gpu_interrupt(bool failed);
 extern "C" int native_adreno_progress(uint32_t *,uint32_t *);
+extern "C" IOService *native_adreno_published_service();
 #endif
 #if defined(NABU_GPU_METAL) && NABU_GPU_METAL
 extern "C" IOReturn nabu_gpu_scanout_display_call(uint32_t,task_t,const void *,const void *,size_t,void *,size_t);
@@ -1256,7 +1257,9 @@ IOReturn A640State::start()
     if(native_adreno_checkpoint("power-cx"))return fail(kIOReturnNotReady);
     IOLog("NativeAdrenoA6xx: enabling CX clocks and parent votes\n");
     const NativeAdrenoA6xxIo io{this,read,write,delay};
-    status=power_.enableCx(io,resources_.aopDoorbellOffset,resources_.aopDoorbellValue);
+    uint32_t gpuKhz=675000;
+    PE_parse_boot_argn("nabu-gpu-khz",&gpuKhz,sizeof(gpuKhz));
+    status=power_.enableCx(io,resources_.aopDoorbellOffset,resources_.aopDoorbellValue,gpuKhz);
     if(status) {
         return fail(status);
     }
@@ -1292,7 +1295,7 @@ IOReturn A640State::start()
     native_adreno_a6xx_stats[0]=5;
     nabuGpuState(5,0,"starting");
     if(native_adreno_checkpoint("gx"))return fail(kIOReturnNotReady);
-    IOLog("NativeAdrenoA6xx: requesting GX at 257 MHz\n");
+    IOLog("NativeAdrenoA6xx: requesting GX at stock OPP gpu-khz=%u\n",gpuKhz);
     status=power_.enableGx();
     if(!status) {
         status=gmu_.keepAlive(true);
@@ -1335,6 +1338,14 @@ IOReturn A640State::start()
 #endif
     native_adreno_a6xx_stats[0]=7;
     nabuGpuState(7,0,"ready");
+#if NABU_GPU_CLIENT
+    NativeAdrenoA6xxOpp selectedOpp{};
+    nativeAdrenoA640Opp(gpuKhz,&selectedOpp);
+    IOService *published=native_adreno_published_service();
+    published->setProperty("RequestedGpuKHz",selectedOpp.gpuKhz,32);
+    published->setProperty("RequestedDdrKBps",selectedOpp.ddrKbps,32);
+    published->setProperty("StockOppAcknowledged",true);
+#endif
     dump();
     native_adreno_checkpoint("ready");
     return kIOReturnSuccess;
