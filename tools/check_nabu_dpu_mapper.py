@@ -40,7 +40,8 @@ inline uint64_t appsMemory[0x100000/8]={};
 inline void *IOMallocZero(size_t n){return std::calloc(1,n);}
 inline void IOFree(void *p,size_t){std::free(p);}
 inline void IODelay(unsigned){}
-inline void IOLog(const char *,...){}
+inline bool forbidLogs=false;
+inline void IOLog(const char *,...){assert(!forbidLogs);}
 inline bool PE_parse_boot_argn(const char *,void *,int){return false;}
 extern "C" inline int nabu_log_checkpoint(){assert(false);return 0;}
 class OSObject {public:virtual ~OSObject()=default;virtual void release(){delete this;}
@@ -144,7 +145,9 @@ int main(){
     dpu.regs[0x9014]=0x90000000;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);
     assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0&&!b->programAttempted);dpu.regs[0x9014]=0;
     dpu.regs[0x22ec]=1;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);dpu.regs[0x22ec]=0;
+    forbidLogs=true;
     assert(MP::activateAfterQuiesce(b,dpu.io(),state)==0&&b->active);
+    forbidLogs=false;
     assert(!(reg(0x82000)&(1u<<6))&&(reg(0x82000)&(1u<<5))&&(reg(0x82000)&1));
     for(unsigned i=0;i<sizeof(appsMemory)/4;++i){
         uint32_t at=i*4;const uint32_t old=reinterpret_cast<uint32_t *>(before.data())[i];

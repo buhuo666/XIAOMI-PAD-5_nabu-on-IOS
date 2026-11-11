@@ -352,8 +352,9 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
     // CFRE remains set to record faults in FSR; no stalls or implicit retries.
     b->expected.sctlr &= ~Cfie;
     const auto &e = b->expected;
-    IOLog("NABU DPU MAP programming root=%#llx asid=%u SCTLR=%#x TCR=%#x TCR2=%#x MAIR=%#x/%#x ACTLR=%#x->%#x; table-WB-PoC upstream-walk\n",
-          b->arena.physical, b->asid, e.sctlr, e.tcr, e.tcr2, e.mair0, e.mair1, b->inheritedActlr, DpuActlr);
+    // XIN0/4 are halted here. Even with trace disabled, IOLog also drains the
+    // console and can extend this interval across many panel frames. The caller
+    // records timing and the full context only after scanout has resumed.
     NabuDpuCheckpoint::record("cb2-disable-enter");
     if (wr32(b, Cb, 0) || barrier(b)) return fail(b, kIOReturnIOError);
     NabuDpuCheckpoint::record("cb2-disable-returned");
@@ -372,8 +373,6 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
     if (PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok ||
         rd32(b, Cb + 0x58, &fsr) || (fsr & FaultMask)) return fail(b, kIOReturnIOError);
     b->active = true;
-    IOLog("NABU DPU MAP CB2 active root=%#llx asid=%u SCTLR=%#x CFIE=0 CFRE=1; routes preserved\n",
-          b->arena.physical, b->asid, e.sctlr);
     return kIOReturnSuccess;
 }
 static IOReturn releaseDescriptor(Binding *b, unsigned slot) {

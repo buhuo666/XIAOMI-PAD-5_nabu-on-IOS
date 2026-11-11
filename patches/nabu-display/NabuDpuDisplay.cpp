@@ -75,6 +75,7 @@ struct Binding {
     unsigned queueFirst, queueCount;
     MiniIOSurface *blank;
     uint64_t accepted, producerWaitUs, lastDisplayTime, eventGeneration;
+    uint64_t handoverQuiesceUs, handoverProgramUs, handoverResumeUs, handoverHaltedUs;
     IOReturn failure;
     bool powerOn;
     bool firstWorkerTraced;
@@ -257,20 +258,33 @@ static IOReturn initializeMapper(Binding *b, bool rearmIrq = true) {
     Scan::Diagnostic d{};
     NabuDpuCheckpoint::record("xin-quiesce-enter");
     b->traceQuiesce = NabuDpuCheckpoint::enabled();
+    const auto haltBegan = nowUs();
     auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
+    const auto haltedAt = nowUs();
+    b->handoverQuiesceUs = haltedAt - haltBegan;
     b->traceQuiesce = false;
     b->traceVbifPending = false;
-    IOLog("NABU DPU: quiesce status=%u region=%u offset=%#x want=%#x got=%#x\n",
-        status, d.region, d.offset, d.expected, d.observed);
     NabuDpuCheckpoint::record("xin-quiesce-returned", status);
-    if (status != Scan::Ok) return kIOReturnIOError;
+    if (status != Scan::Ok) {
+        IOLog("NABU DPU: quiesce failed status=%u region=%u offset=%#x want=%#x got=%#x\n",
+            status, d.region, d.offset, d.expected, d.observed);
+        return kIOReturnIOError;
+    }
     NabuDpuCheckpoint::record("cb2-activate-enter");
+    const auto programBegan = nowUs();
     result = Mapper::activateAfterQuiesce(b->mapper, b->io, b->scan);
+    b->handoverProgramUs = nowUs() - programBegan;
     NabuDpuCheckpoint::record("cb2-activate-returned", result);
     if (result != kIOReturnSuccess) return result;
     NabuDpuCheckpoint::record("xin-resume-enter");
+    const auto resumeBegan = nowUs();
     status = Scan::resume(b->io, b->scan, &d);
+    const auto resumedAt = nowUs();
+    b->handoverResumeUs = resumedAt - resumeBegan;
+    b->handoverHaltedUs = resumedAt - haltedAt;
     NabuDpuCheckpoint::record("xin-resume-returned", status);
+    IOLog("NABU DPU: handover timing quiesce-us=%llu program-us=%llu resume-us=%llu halted-us=%llu resume-status=%u; table-WB-PoC upstream-walk\n",
+        b->handoverQuiesceUs, b->handoverProgramUs, b->handoverResumeUs, b->handoverHaltedUs, status);
     if (status != Scan::Ok) return kIOReturnIOError;
     IOLockLock(b->stateLock); b->activeMapper = b->mapper; IOLockUnlock(b->stateLock);
     if (!rearmIrq) {
@@ -783,6 +797,10 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticStage(d, "diagnostic-identity-takeover-enter");
         const auto activated = initializeMapper(b, !d->polledActivate);
         diagnosticNumber(out, "activate_status", activated);
+        diagnosticNumber(out, "handover_quiesce_us", b->handoverQuiesceUs);
+        diagnosticNumber(out, "handover_program_us", b->handoverProgramUs);
+        diagnosticNumber(out, "handover_resume_us", b->handoverResumeUs);
+        diagnosticNumber(out, "handover_halted_us", b->handoverHaltedUs);
         if (!activated) {
             status = diagnosticMapper(d, b, out);
             if (status != Scan::Ok) return status;

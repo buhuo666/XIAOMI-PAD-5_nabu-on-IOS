@@ -49,6 +49,7 @@ IOReturn activateAfterQuiesce(Binding *b, const NabuDpuScanout::Io &, const Nabu
     assert(s.phase==NabuDpuScanout::Quiesced);
     assert(!(hardware->mdss[NabuDpuVBlank::TopEnable/4]&NabuDpuVBlank::Owned));
     b->active=true; b->programAttempted=true;
+    hardware->now+=75;
     hardware->events.push_back("mapper-activated");
     if (hardware->mapperFault) hardware->app(0x82058)=2;
     return 0;
@@ -117,6 +118,9 @@ int main() {
         const auto &polled=execute(f,"ActivateGopPolled","DpuActivateGopPolled");
         assert(number(polled,"status")==0 && !f.diagnostic.frozen && f.clock.paused);
         assert(f.diagnostic.mapperActivated && !f.diagnostic.irqVerified);
+        assert(number(polled,"handover_program_us")==75);
+        assert(number(polled,"handover_halted_us")>=75);
+        assert(number(polled,"handover_halted_us")>=number(polled,"handover_resume_us"));
         assert(!f.h.irqSnapshots && !f.h.irqRearms && !f.h.submissions);
         assert(number(dictionary(polled,"after"),"irq_enable")==0);
         assert(!polled.getObject("irq_count_delta"));
@@ -176,6 +180,11 @@ def harness():
     old = base.MAPPER_SUBSTITUTES
     setup = old[:old.index('// One-time hardware handover')] + SETUP
     source = source.replace(old, setup).replace(base.IRQ_SUBSTITUTES, IRQ)
+    # The actual handover succeeds with trace disabled and must not call IOLog
+    # between its real XIN request/ACK and resume, including inside the mapper.
+    source = source.replace('static void IOLog(const char *, ...) {}', '''static void IOLog(const char *, ...) {
+        assert(!(hardware->vbif[SC::HaltRequest/4]&SC::XinMask));
+    }''')
     source = source.replace('    Hardware();', '''    NabuDpuVBlank::Binding *irqBinding=nullptr;
     unsigned irqSnapshots=0, irqRearms=0;
     bool mapperFault=false, irqRearmFails=false, polledMaskLost=false, corruptGop=false;

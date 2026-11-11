@@ -77,4 +77,35 @@ ACTLR/TCR读回、4000个GOP页、TLBI退休和失败资源保留。
 
 本地旧头文件环境下的完整Framebuffer编译未通过（TUNABLE/typed allocation
 宏配置问题）；Display和Mapper独立ARM64通过不替代完整内核CI。
-后续必须等完整内核编译、链接/加载器通过后再部署。复用已检查的GPU201助手和启动包。
+随后完整内核CI42953709914成功，64对象链接、分支、加载器检查通过，已完成部署实测。
+复用已检查的GPU201助手和启动包；上述本地旧头文件限制不是当前阻塞。
+
+## GPU202 实机结果与回收
+
+提交 `a5975221b296d2c0771240d51172e4a9cc360a74`。初始桌面/触摸正常，GPU ready、
+Snapshot及HaltResume通过：halt14µs、resume10µs，新IRQ/双vsync各6，无新增underrun。
+
+轮询接管请求 `76b94ff47b3d4021a00d9cf626435303` 完整走到
+`status=0 programmed=1 frozen=0`，完成checkpoint也返回；用户仍确认背光亮但画面纯黑。
+没有发起ResumeIrq或FlipGop。实际读回如下：
+
+```text
+root=0x1c9d68000
+TTBR=0xfffe0001c9d68000 / 0xfffe000000000000
+ACTLR=0x103 old=0x3 TCR=0x80800420 SCTLR=0x27
+FSR=0x400 GFSR=0 TLB=0
+active=1 poisoned=0 context=1 routes=1 identity=1 pages=4000
+irq-enable=0 irq-status=0x28000300
+gop sampled_words=8000 nonzero_rgb_words=8000
+before_hash=after_hash=0x4272d56bc9fdb3cf
+```
+
+这次样本未被清黑，GOP写入冻结也已解除；样本仅覆盖各页首尾，既不等同完整画面校验，
+也不证明DPU实际取到了这些像素。FSR0x400不含当前有效fault mask位，不能把FAR/FSYNR/
+STREAM残值当作有效故障。IRQ状态当次读值没有owned underrun位。
+AFC超时后部分系统服务/触摸记录仍继续，随后原生USB断开；没有可靠故障PC。
+
+用户恢复Android后，`log/device/nabu-boot-20261111-202/runtime-log/` 已保存完整
+67,108,864字节槽与4,071,234字节有效连续前缀。流没有结束记录，`stream_complete=false`；
+不能称运行流完整。清槽并读回通过，引导分区未变；Data boot previous179/current180。
+当前Android/USB在线，四阶段目标active，尚未准备GPU203日志槽或镜像。
