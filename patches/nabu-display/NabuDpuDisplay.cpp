@@ -767,6 +767,7 @@ static void diagnosticTestMapping(Binding *b, const Held &held, OSDictionary *ou
         s.lastCpuPhysical, s.lastDescriptorPhysical, s.lastLeaf);
 }
 static Scan::Status diagnosticFlipGop(DiagnosticSession *d, Binding *b, OSDictionary *out) {
+    diagnosticNumber(out, "test_leaf_attributes", PT::LeafAttributes);
     auto status = diagnosticRegisters(b, out, "before", true);
     if (status != Scan::Ok) return status;
     NabuDpuVBlank::Sample before{}, after{};

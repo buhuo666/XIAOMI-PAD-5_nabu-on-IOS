@@ -96,9 +96,9 @@ int main() {
     assert(first.iova==SlotStart+128 && first.token==1 && f.events==std::vector<char>({'P','B','T','B'}));
     assert(f.published.size()==1 && f.published[0].first==5+(SlotStart>>21) && f.published[0].second==1);
     const uint64_t gopPte=f.walk(GopStart), slotPte=f.walk(SlotStart);
-    assert(((gopPte>>2)&7)==0 && ((slotPte>>2)&7)==1);
+    assert(((gopPte>>2)&7)==0 && ((slotPte>>2)&7)==0);
     assert(((Mair>>(((gopPte>>2)&7)*8))&0xff)==0x44 &&
-           ((Mair>>(((slotPte>>2)&7)*8))&0xff)==0xff);
+           ((Mair>>(((slotPte>>2)&7)*8))&0xff)==0x44);
     for(size_t i=0;i<TableEntries;++i)
         if(i<leafIndex(SlotStart)||i>=leafIndex(SlotStart)+3)assert(before[i]==f.memory[i]);
     // Compare actual descriptors against the existing generic builder, whose
@@ -106,7 +106,7 @@ int main() {
     uint64_t *oracle=static_cast<uint64_t *>(std::aligned_alloc(4096,TablePages*4096ull));assert(oracle);
     ArmSmmu4KConfig config={32,40,0x400000000ull,1048576};
     ArmSmmu4KRange ranges[4];
-    for(unsigned i=0;i<3;++i)ranges[i]={SlotStart+i*4096ull,pa[i],4096,ArmSmmu4KRead,1,2};
+    for(unsigned i=0;i<3;++i)ranges[i]={SlotStart+i*4096ull,pa[i],4096,ArmSmmu4KRead,0,2};
     ranges[3]={GopStart,GopStart,GopBytes,ArmSmmu4KRead,0,2};ArmSmmu4KResult result;
     assert(ArmSmmu4KBuild(&config,ranges,4,oracle,TablePages,&result)==ArmSmmu4KSuccess);
     for(unsigned i=0;i<3;++i)assert(f.walk(SlotStart+i*4096)==oracleLeaf(oracle,config.table_physical,SlotStart+i*4096));
@@ -203,7 +203,7 @@ int main() {
     routes=Routes();routes.set(3,0x84200800,0x102);assert(captureAndQualifyRoutes(routes.reader(),snapshot)==RouteMismatch);
     routes=Routes();assert(captureAndQualifyRoutes(routes.reader(),snapshot)==Ok);routes.values[0xc10]^=0x100;
     assert(verifyRoutesUnchanged(routes.reader(),snapshot)==RouteMismatch);
-    std::puts("PASS 2053-page topology, 4GiB leaf walk with NC GOP and WB slots, ArmSmmu4K PTE/context oracle, isolated slots, slot/GOP return acceptance and reuse, retirement/TLBI, stale tokens and 94-route ownership");
+    std::puts("PASS 2053-page topology, 4GiB leaf walk with NC GOP and NC slots, ArmSmmu4K PTE/context oracle, isolated slots, slot/GOP return acceptance and reuse, retirement/TLBI, stale tokens and 94-route ownership");
 }
 '''
 

@@ -117,6 +117,9 @@ def verify(data):
         require(result.get("test_surface_released") is True, "Test surface/lease not released after retirement")
         # GPU207 adds direct storage evidence; retain parsing of older saved runs.
         if "test_pixels_before" in result:
+            attributes = result.get("test_leaf_attributes", (3 << 53) | 0xec7)
+            if "test_leaf_attributes" in result:
+                require(attributes == ((3 << 53) | 0xec3), "DPU imported pages are not normal NC")
             require(result.get("test_hold_us", 0) >= 10000000, "Extended visual hold interval missing")
             hashes = []
             for name in ("test_pixels_before", "test_pixels_after"):
@@ -135,7 +138,7 @@ def verify(data):
                     descriptor = mapping.get(edge + "_descriptor_physical", 0)
                     leaf = mapping.get(edge + "_leaf", 0) & ((1 << 64) - 1)
                     require(0 < cpu < (1 << 40) and cpu == descriptor and
-                            leaf == ((descriptor & ~4095) | (3 << 53) | 0xec7),
+                            leaf == ((descriptor & ~4095) | attributes),
                             f"{name}/{edge}: sampled physical page or attributes differ")
             for phase in ("before", "after"):
                 require(result.get("test_scanout_" + phase + "_status") == 0,

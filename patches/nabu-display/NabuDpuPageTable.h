@@ -9,8 +9,10 @@ constexpr uint32_t SlotCount = 32, SlotBytes = 32u * 1024 * 1024, SlotPages = Sl
 constexpr uint32_t SlotStart = 0x20000000, SlotEnd = 0x60000000, NoSlot = UINT32_MAX;
 constexpr uint32_t GopStart = 0x9c000000, GopBytes = 0x00fa0000;
 constexpr uint64_t PhysicalLimit = 1ull << 40, PhysicalMask = (PhysicalLimit - 1) & ~4095ull;
-// ArmSmmu4KRead, writeback=1, outer-shareable=2, unprivileged, PXN/UXN.
-constexpr uint64_t LeafAttributes = (3ull << 53) | 0xec7;
+// Noncoherent display DMA: MAIR index 0 / normal NC, read-only,
+// outer-shareable=2, unprivileged, PXN/UXN. CPU allocation cacheability does
+// not imply IOMMU_CACHE; the producer completes cache publication separately.
+constexpr uint64_t LeafAttributes = (3ull << 53) | 0xec3;
 // Original sde_kms.c splash mapping omits IOMMU_CACHE: MAIR index 0/normal NC.
 constexpr uint64_t GopLeafAttributes = (3ull << 53) | 0xec3;
 constexpr uint64_t Mair = 0xff44;

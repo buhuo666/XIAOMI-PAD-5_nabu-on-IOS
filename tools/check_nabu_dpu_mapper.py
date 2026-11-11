@@ -209,7 +209,7 @@ int main(){
     const uint64_t oldLeaf=b->arena.tables[gopLeaf];
     assert(oldLeaf==PT::gopLeafDescriptor(PT::GopStart));
     assert(((oldLeaf>>2)&7)==0&&((snapshot.mair0>>(((oldLeaf>>2)&7)*8))&255)==0x44);
-    b->arena.tables[gopLeaf]=PT::leafDescriptor(PT::GopStart);
+    b->arena.tables[gopLeaf]=oldLeaf ^ 4; // Reject a WB leaf in the NC GOP range.
     assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.gopIdentity);
     b->arena.tables[gopLeaf]=0;
     assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.gopIdentity);
@@ -236,7 +236,7 @@ int main(){
     assert(MP::mapDescriptor(b,a,64,8128,&ma)==0&&a->refs==2&&a->prepares==1&&ma.iova==PT::SlotStart+64);
     assert(cacheCleans.back().first==reinterpret_cast<uintptr_t>(b->arena.tables)+(5+(ma.iova>>21))*4096);
     assert(cacheCleans.back().second==4096);
-    assert(((b->arena.tables[PT::leafIndex(ma.iova)]>>2)&7)==1);
+    assert(((b->arena.tables[PT::leafIndex(ma.iova)]>>2)&7)==0);
     assert(MP::accept(b,ma,&retired)==0&&retired==PT::NoSlot);
     assert(MP::mapDescriptor(b,c,0,8192,&mc)==0);
     assert(MP::accept(b,mc,&retired)==0&&retired==ma.slot);
@@ -310,7 +310,7 @@ int main(){
         assert(MP::acceptGop(b,mh)==kIOReturnIOError&&held->refs==2&&held->prepares==1);
         finish(b);held->release();
     }
-    std::puts("PASS actual mapper binding: 4K/16K VM page-number regression, readonly prepare, source/WB gate, CB2-only writes, CFIE0/CFRE1, GOP NC/slot WB attributes, actual FSR/GFSR/FAR/FSYNR/stream readback including poisoned state, PA import, retained descriptors, GOP roundtrip retirement/reuse, stale/state refusal, FSR-held resources, cancellation and lock-free fault read");
+    std::puts("PASS actual mapper binding: 4K/16K VM page-number regression, readonly prepare, source/WB gate, CB2-only writes, CFIE0/CFRE1, GOP and imported-slot NC attributes, actual FSR/GFSR/FAR/FSYNR/stream readback including poisoned state, PA import, retained descriptors, GOP roundtrip retirement/reuse, stale/state refusal, FSR-held resources, cancellation and lock-free fault read");
 }
 '''
 
