@@ -37,12 +37,19 @@ IOReturn checkFault(Binding *);
 IOReturn readFault(Binding *);
 bool poisoned(Binding *);
 bool programmingAttempted(Binding *);
+// Cumulative wall-clock microseconds from activation entry, stored while halted
+// and read only after resume. These include scheduling; they are not bus latency.
+struct ActivationTiming {
+    uint64_t halt, sources, inherited, encoded, disabled, registers;
+    uint64_t disabledReadback, tlbi, enabled, enabledReadback, routes;
+};
 struct ActiveSnapshot {
     uint64_t tablePhysical, ttbr0, ttbr1, far;
     uint32_t asid, sctlr, cbar, cba2r, tcr, tcr2, mair0, mair1;
     uint32_t fsr, globalFsr, fsynr0, streamSyndrome, tlbStatus, identityPages;
     uint32_t actlr, inheritedActlr;
     bool active, contextMatches, routesUnchanged, gopIdentity, poisoned;
+    ActivationTiming timing;
 };
 // Read back the active domain and every GOP identity leaf. No register or
 // table writes; even a poisoned active domain reports its actual fault state

@@ -40,4 +40,32 @@ CB2 active的日志间隔约800,611µs；这不是精确测量的纯硬件耗时
   模拟75µs编程时间准确进入结果字典；消费者7成功/6失败与21个错误声明判断保持通过。
 - 等待完整内核CI及链接/加载器检查，之后复用GPU201助手/启动包并临时启动。
 
-上述均为本地验证，尚无GPU203实机画面或高刷新结论。
+## GPU203 实机结果
+
+完整内核CI42957733910全部通过，64对象链接/分支/加载器检查通过，随后部署读回并
+临时启动。用户确认初始桌面与触摸正常；GPU ready、Snapshot、HaltResume通过，
+halt14µs/resume11µs，新IRQ/双vsync各6，无新增underrun。
+
+`DpuActivateGopPolled` 请求 `63fbac8574e34bc38d2270f564ec6bd9` 的配对AFC传输超时，
+独立IORegistry读取也超时，之后USB消失。用户确认仍背光亮但纯黑，未恢复IRQ/翻帧。
+在线日志568,932字节没有带回接管结果，不能据它的末行定位故障。
+
+恢复Android后取得的持久化日志确认：
+
+```text
+quiesce-us=14 program-us=777392 resume-us=6034 halted-us=789326 resume-status=0
+root=0x1d1edc000 TTBR=0xfffe0001d1edc000/0xfffe000000000000
+SCTLR=0x27 ACTLR=0x103 old=0x3 TCR=0x80800420
+status=0 active=1 poisoned=0 context=1 routes=1 identity=1 pages=4000
+FSR=0x400 GFSR=0 TLB=0 irq-enable=0 irq-status=0x28000300
+GOP before_hash=after_hash=0x3551cbc21ea7e2bd sampled=8000 nonzero-rgb=8000
+final status=0 programmed=1 frozen=0
+```
+
+对照没有消除黑屏。普通成功日志不是黑屏必要条件；无普通日志的接管函数本身耗时
+约777ms，但现有测量尚不能归到单条MMIO、TLBI或某个读回。下一步细分该函数的时间，
+仍只存时间戳，恢复后再输出。不能把接管函数总时间称为纯硬件延迟或已定位根因。
+
+3,362,247字节有效连续前缀和完整64MiB槽已保存在
+`log/device/nabu-boot-20261111-203/runtime-log/`，运行流未正常封口；清槽读回通过，
+Android引导分区未变，Data181。当前Android/USB在线；目标active，GPU204尚未准备/部署。

@@ -101,7 +101,9 @@ struct Dpu {
         *out=static_cast<Dpu *>(p)->regs[at];return true;
     }
     static bool write(void *,SC::Region,uint32_t,uint32_t){assert(false);return false;}
-    static bool barrier(void *){return true;}static uint64_t clock(void *){return 0;}static void wait(void *,unsigned){assert(false);}
+    uint64_t ticks=0;
+    static bool barrier(void *){return true;}static uint64_t clock(void *p){return static_cast<Dpu *>(p)->ticks+=10;}
+    static void wait(void *,unsigned){assert(false);}
     SC::Io io(){return {this,read,write,barrier,clock,wait};}
 };
 static uint32_t &reg(uint32_t at){return reinterpret_cast<uint32_t *>(appsMemory)[at/4];}
@@ -160,6 +162,10 @@ int main(){
     assert(MP::programmingAttempted(b)&&MP::snapshotActive(b,&snapshot)==0);
     assert(snapshot.active&&snapshot.contextMatches&&snapshot.routesUnchanged&&snapshot.gopIdentity);
     assert(snapshot.identityPages==4000&&snapshot.tablePhysical==b->arena.physical);
+    const auto &timing=snapshot.timing;
+    assert(timing.halt==10&&timing.sources==20&&timing.inherited==30&&timing.encoded==40);
+    assert(timing.disabled==50&&timing.registers==60&&timing.disabledReadback==70);
+    assert(timing.tlbi==80&&timing.enabled==90&&timing.enabledReadback==100&&timing.routes==110);
     assert(snapshot.actlr==0x103&&snapshot.inheritedActlr==0&&(snapshot.tcr&0x3f00)==0x400);
     reg(0x82004)^=0x100;
     assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.contextMatches);

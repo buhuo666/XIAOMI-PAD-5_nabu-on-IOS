@@ -846,6 +846,7 @@ def harness():
     result += '\nnamespace NabuDpuMapper {\nnamespace PT=NabuDpuPageTable;\n'
     result += mapper[mapper.index('constexpr uint32_t AppsBytes'):mapper.index('struct OwnedDescriptor')]
     result += body(mapper, 'struct OwnedDescriptor', ';') + '\n'
+    result += body(mapper_header, 'struct ActivationTiming', ';') + '\n'
     result += body(mapper, 'struct Binding', ';') + '\n'
     result += body(mapper_header, 'struct ActiveSnapshot', ';') + '\n'
     # Hardware readOrdering() retains the source's explicit host-test switch.

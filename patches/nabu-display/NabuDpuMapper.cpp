@@ -35,6 +35,7 @@ struct Binding {
     PT::RouteSnapshot routes;
     ArmSmmu4KIo smmuIo;
     ArmSmmu4KContextImage expected;
+    ActivationTiming timing;
     OwnedDescriptor slots[PT::SlotCount];
     uint64_t pages[PT::SlotPages]; // Bounded reusable PA metadata, never pixel storage.
 };
@@ -139,6 +140,7 @@ IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
     out->active = b->active; out->tablePhysical = b->arena.physical; out->asid = b->asid;
     out->inheritedActlr = b->inheritedActlr;
     out->poisoned = poisoned(b);
+    out->timing = b->timing;
     // Fixed nabu arm-smmu_context_fault registers; GR1 CBFRSYNRA[2] is 0x1408.
     if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
         rd64(b, Cb + 0x60, &out->far) || rd32(b, Cb + 0x68, &out->fsynr0) ||
@@ -325,6 +327,8 @@ IOReturn preflightSources(Binding *b, const SC::Io &io) {
 IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &state) {
     if (!b || poisoned(b) || b->active || b->programAttempted) return kIOReturnNotReady;
     if (state.phase != SC::Quiesced || state.current_iova != SC::GopPhysical) return kIOReturnNotReady;
+    const uint64_t began = io.now_us(io.cookie);
+    auto &t = b->timing;
     uint32_t request = 0, status = 0;
     if (!io.read32(io.cookie, SC::Vbif, SC::HaltRequest, &request) ||
         !io.read32(io.cookie, SC::Vbif, SC::HaltStatus, &status) ||
@@ -332,14 +336,17 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
         IOLog("NABU DPU MAP halt-gate request=%#x ack=%#x need=%#x\n", request, status, SC::XinMask);
         return kIOReturnUnsupported;
     }
+    t.halt = io.now_us(io.cookie) - began;
     IOReturn preflight = preflightSources(b, io);
     if (preflight != kIOReturnSuccess) return preflight;
+    t.sources = io.now_us(io.cookie) - began;
     ArmSmmu4KContextImage old = {};
     uint32_t fsr, gfsr;
     if (!readImage(b, old) || old.sctlr != 0xe0 || old.cbar != 0x1f000 || old.cba2r != 1 ||
         rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr) ||
         rd32(b, Cb + 4, &b->inheritedActlr) || (fsr & FaultMask) || gfsr)
         return kIOReturnUnsupported;
+    t.inherited = io.now_us(io.cookie) - began;
     ArmSmmu4KConfig lower = {32, 40, b->arena.physical, 1048576};
     ArmSmmu4KResult tables = {b->arena.physical, PT::Mair, PT::TablePages, b->state.mapped_leaf_pages, 1, 0};
     ArmSmmu4KContextConfig config = {&lower, nullptr, &tables, nullptr,
@@ -352,26 +359,35 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
     // CFRE remains set to record faults in FSR; no stalls or implicit retries.
     b->expected.sctlr &= ~Cfie;
     const auto &e = b->expected;
+    t.encoded = io.now_us(io.cookie) - began;
     // XIN0/4 are halted here. Even with trace disabled, IOLog also drains the
     // console and can extend this interval across many panel frames. The caller
     // records timing and the full context only after scanout has resumed.
     NabuDpuCheckpoint::record("cb2-disable-enter");
     if (wr32(b, Cb, 0) || barrier(b)) return fail(b, kIOReturnIOError);
+    t.disabled = io.now_us(io.cookie) - began;
     NabuDpuCheckpoint::record("cb2-disable-returned");
     if (wr32(b, Cba2r, e.cba2r) || wr32(b, Cbar, e.cbar) ||
         wr32(b, Cb + 0x10, e.tcr2) || wr32(b, Cb + 0x30, e.tcr) ||
         wr64(b, Cb + 0x20, e.ttbr0) || wr64(b, Cb + 0x28, e.ttbr1) ||
         wr32(b, Cb + 0x38, e.mair0) || wr32(b, Cb + 0x3c, e.mair1) ||
-        wr32(b, Cb + 4, DpuActlr) || barrier(b) ||
-        !imageMatches(b, false))
+        wr32(b, Cb + 4, DpuActlr) || barrier(b))
         return fail(b, kIOReturnIOError);
+    t.registers = io.now_us(io.cookie) - began;
+    if (!imageMatches(b, false)) return fail(b, kIOReturnIOError);
+    t.disabledReadback = io.now_us(io.cookie) - began;
     NabuDpuCheckpoint::record("cb2-registers-returned");
     if (!sync(b)) return fail(b, kIOReturnIOError);
+    t.tlbi = io.now_us(io.cookie) - began;
     NabuDpuCheckpoint::record("cb2-tlbsync-returned");
-    if (wr32(b, Cb, e.sctlr) || barrier(b) || !imageMatches(b, true)) return fail(b, kIOReturnIOError);
+    if (wr32(b, Cb, e.sctlr) || barrier(b)) return fail(b, kIOReturnIOError);
+    t.enabled = io.now_us(io.cookie) - began;
+    if (!imageMatches(b, true)) return fail(b, kIOReturnIOError);
+    t.enabledReadback = io.now_us(io.cookie) - began;
     NabuDpuCheckpoint::record("cb2-enable-returned");
     if (PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok ||
         rd32(b, Cb + 0x58, &fsr) || (fsr & FaultMask)) return fail(b, kIOReturnIOError);
+    t.routes = io.now_us(io.cookie) - began;
     b->active = true;
     return kIOReturnSuccess;
 }

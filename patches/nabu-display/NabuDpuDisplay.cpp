@@ -650,6 +650,12 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
           status, s.active, s.poisoned, s.contextMatches, s.routesUnchanged, s.gopIdentity,
           s.identityPages, s.sctlr, s.fsr, s.globalFsr, s.far, s.fsynr0, s.streamSyndrome, s.tlbStatus,
           s.tablePhysical, s.ttbr0, s.ttbr1, s.actlr, s.inheritedActlr, s.tcr);
+    const auto &t = s.timing;
+    IOLog("NABU DPU DIAGNOSTIC activation-stage-us: halt=%llu sources=%llu inherited=%llu encode=%llu disable=%llu registers=%llu disabled-readback=%llu tlbi=%llu enable=%llu enabled-readback=%llu routes=%llu total=%llu\n",
+          t.halt, t.sources - t.halt, t.inherited - t.sources, t.encoded - t.inherited,
+          t.disabled - t.encoded, t.registers - t.disabled, t.disabledReadback - t.registers,
+          t.tlbi - t.disabledReadback, t.enabled - t.tlbi, t.enabledReadback - t.enabled,
+          t.routes - t.enabledReadback, t.routes);
     diagnosticStage(d, "diagnostic-mapper-read-returned", status);
     auto values = OSDictionary::withCapacity(20);
     if (!values) return Scan::IoError;
@@ -665,6 +671,15 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     diagnosticNumber(values, "far", s.far); diagnosticNumber(values, "fsynr0", s.fsynr0);
     diagnosticNumber(values, "stream_syndrome", s.streamSyndrome);
     diagnosticNumber(values, "tlb_status", s.tlbStatus); diagnosticNumber(values, "identity_pages", s.identityPages);
+    auto timing = OSDictionary::withCapacity(11);
+    if (!timing) { values->release(); return Scan::IoError; }
+    diagnosticNumber(timing, "halt", t.halt); diagnosticNumber(timing, "sources", t.sources);
+    diagnosticNumber(timing, "inherited", t.inherited); diagnosticNumber(timing, "encoded", t.encoded);
+    diagnosticNumber(timing, "disabled", t.disabled); diagnosticNumber(timing, "registers", t.registers);
+    diagnosticNumber(timing, "disabled_readback", t.disabledReadback); diagnosticNumber(timing, "tlbi", t.tlbi);
+    diagnosticNumber(timing, "enabled", t.enabled); diagnosticNumber(timing, "enabled_readback", t.enabledReadback);
+    diagnosticNumber(timing, "routes", t.routes);
+    values->setObject("activation_elapsed_us", timing); timing->release();
     values->setObject("active", s.active ? kOSBooleanTrue : kOSBooleanFalse);
     values->setObject("poisoned", s.poisoned ? kOSBooleanTrue : kOSBooleanFalse);
     values->setObject("context_matches", s.contextMatches ? kOSBooleanTrue : kOSBooleanFalse);
