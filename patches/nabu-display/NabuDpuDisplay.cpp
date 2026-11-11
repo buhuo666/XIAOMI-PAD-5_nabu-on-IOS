@@ -42,6 +42,17 @@ bool fullscreen(const uint8_t *p, unsigned offset) {
     return !word(p, offset) && !word(p, offset + 4) &&
         word(p, offset + 8) == 1600 && word(p, offset + 12) == 2560;
 }
+bool clearsInactiveLayer1(const uint8_t *p) {
+    // 20F66 SwapSetLayer(1, NULL) sets both masks. SwapBegin zeroes
+    // untouched layers: layer0's zero surface here does not replace it.
+    if (word(p, LayersSet) != 2 || word(p, Cleared) != 2) return false;
+    for (unsigned layer = 0; layer < 4; ++layer) {
+        if (word(p, Surface + layer * 4) || word(p, Enabled + layer * 4)) return false;
+        for (unsigned i = 0; i < 4; ++i)
+            if (word(p, Source + layer * 16 + i * 4) || word(p, Destination + layer * 16 + i * 4)) return false;
+    }
+    return true;
+}
 }
 
 extern "C" IOReturn nabu_dpu_register_producer_v2(const NabuDpuProducerOps *ops) {
@@ -66,6 +77,8 @@ struct WaitTiming {
     uint64_t calls, sleeps, timeouts, errors;
 };
 struct Held {
+    enum Kind { Pixels, ClearInactiveLayer1 };
+    Kind kind;
     MiniIOSurface *surface;
     void *read;
     const NabuDpuProducerOps *ops;
@@ -89,7 +102,7 @@ struct Binding {
     Held queue[2];
     unsigned queueFirst, queueCount;
     MiniIOSurface *blank;
-    uint64_t accepted, producerWaitUs, lastDisplayTime, eventGeneration;
+    uint64_t accepted, inactiveLayer1Clears, producerWaitUs, lastDisplayTime, eventGeneration;
     uint64_t lastPresentAt, timingFrames;
     Duration frameTiming[10];
     WaitTiming waitTiming[4];
@@ -479,6 +492,23 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
             accepted.observed.frame[0], accepted.observed.frame[1], old, irqCount, vblankSequence);
     return kIOReturnSuccess;
 }
+static void completeInactiveLayer1Clear(Binding *b, uint32_t id) {
+    // The single FIFO worker has finished all preceding work. Logical layer1
+    // is never enabled by this backend (VIG1 is the right half of layer0).
+    // This transaction owns no pixel resources; retiring it must not retire
+    // or touch the existing layer0 transaction, mapping or producer read lease.
+    IOLockLock(b->stateLock);
+    auto r = b->ledger.find(id); // Queued entries cannot be evicted.
+    const IOReturn result = b->failure ? b->failure : b->ledger.failedThrough(r->order);
+    r->phase = result ? Swap::Failed : Swap::Retired;
+    r->error = result;
+    const uint64_t count = result ? b->inactiveLayer1Clears : ++b->inactiveLayer1Clears;
+    IOLockWakeup(b->stateLock, b, false);
+    IOLockUnlock(b->stateLock);
+    traceFrame(nowUs(), NabuGpuTrace::InactiveLayerClearComplete, id, 2, uint32_t(result), count);
+    if (result || count == 1 || !(count % 120))
+        IOLog("NABU DPU: inactive-layer1-clear swap=%u completed=%llu status=%#x; layer0 retained\n", id, count, result);
+}
 static void worker(void *cookie, wait_result_t) {
     auto b = static_cast<Binding *>(cookie);
     for (;;) {
@@ -491,7 +521,12 @@ static void worker(void *cookie, wait_result_t) {
         IOLockWakeup(b->stateLock, &b->queueCount, false);
         IOReturn result = b->failure;
         IOLockUnlock(b->stateLock);
-        const uint32_t id = held.swap, sid = held.surface->sid;
+        const uint32_t id = held.swap;
+        if (held.kind == Held::ClearInactiveLayer1) {
+            completeInactiveLayer1Clear(b, id);
+            continue;
+        }
+        const uint32_t sid = held.surface->sid;
         traceFrame(nowUs(), NabuGpuTrace::DisplayWorker, id, sid, held.queueDepth, held.leaseIdentity);
         const bool trace = !b->firstWorkerTraced && NabuDpuCheckpoint::enabled();
         b->firstWorkerTraced = true;
@@ -571,16 +606,18 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
         __sync_bool_compare_and_swap(&firstPresentTraced, 0, 1);
     if (trace) NabuDpuCheckpoint::record("present-enter");
     const uint32_t id = word(swap, SwapId), sid = word(swap, Surface);
-    traceFrame(presentAt, NabuGpuTrace::Present, id, sid, 0, 0);
+    const bool inactiveClear = clearsInactiveLayer1(swap);
+    if (!inactiveClear) traceFrame(presentAt, NabuGpuTrace::Present, id, sid, 0, 0);
     for (unsigned layer = 1; layer < 4; ++layer)
         if (word(swap, Surface + layer * 4)) return rejectPresent(swap, bytes, NabuGpuTrace::ExtraLayers);
     if (sid && !fullscreen(swap, Source)) return rejectPresent(swap, bytes, NabuGpuTrace::SourceRect);
     if (sid && !fullscreen(swap, Destination)) return rejectPresent(swap, bytes, NabuGpuTrace::DestinationRect);
-    if (!sid && !(word(swap, Cleared) & 1)) return rejectPresent(swap, bytes, NabuGpuTrace::MissingSurfaceAndClear);
+    if (!sid && !(word(swap, Cleared) & 1) && !inactiveClear)
+        return rejectPresent(swap, bytes, NabuGpuTrace::MissingSurfaceAndClear);
     IOLockLock(b->submitLock);
     const uint64_t serializedAt = nowUs();
-    const uint64_t presentGapUs = b->lastPresentAt ? serializedAt - b->lastPresentAt : 0;
-    b->lastPresentAt = serializedAt;
+    const uint64_t presentGapUs = !inactiveClear && b->lastPresentAt ? serializedAt - b->lastPresentAt : 0;
+    if (!inactiveClear) b->lastPresentAt = serializedAt;
     IOLockLock(b->stateLock);
     IOReturn result = b->failure;
     uint64_t deadline; clock_interval_to_deadline(WaitMs, kMillisecondScale, &deadline);
@@ -593,48 +630,52 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     IOLockUnlock(b->stateLock);
     if (result) { IOLockUnlock(b->submitLock); return result; }
     const uint64_t admittedAt = nowUs();
-    MiniIOSurface *s = nullptr;
-    if (sid) s = MiniIOSurfaceCopy(sid);
-    else {
-        if (!b->blank) {
-            b->blank = MiniIOSurfaceCreateSimple(1600, 2560, Scan::BgraFourcc);
-            // This surface is owned only by the driver. Initialize once even
-            // when surf_clear=0 permits reused allocations to retain old bytes.
-            if (b->blank) {
-                bzero(b->blank->pixels(), b->blank->info.allocSize);
-                FlushPoC_DcacheRegion(reinterpret_cast<vm_offset_t>(b->blank->pixels()), b->blank->info.allocSize);
-                barrier(nullptr);
-            }
-        }
-        if (b->blank) s = MiniIOSurfaceCopy(b->blank->sid);
-    }
     Held held{};
-    if (!s) result = kIOReturnNotFound;
-    else if (s->info.width != 1600 || s->info.height != 2560 || s->info.pixelFormat != Scan::BgraFourcc ||
+    if (inactiveClear) held.kind = Held::ClearInactiveLayer1;
+    else {
+        MiniIOSurface *s = nullptr;
+        if (sid) s = MiniIOSurfaceCopy(sid);
+        else {
+            if (!b->blank) {
+                b->blank = MiniIOSurfaceCreateSimple(1600, 2560, Scan::BgraFourcc);
+                // This surface is owned only by the driver. Initialize once even
+                // when surf_clear=0 permits reused allocations to retain old bytes.
+                if (b->blank) {
+                    bzero(b->blank->pixels(), b->blank->info.allocSize);
+                    FlushPoC_DcacheRegion(reinterpret_cast<vm_offset_t>(b->blank->pixels()), b->blank->info.allocSize);
+                    barrier(nullptr);
+                }
+            }
+            if (b->blank) s = MiniIOSurfaceCopy(b->blank->sid);
+        }
+        if (!s) result = kIOReturnNotFound;
+        else if (s->info.width != 1600 || s->info.height != 2560 || s->info.pixelFormat != Scan::BgraFourcc ||
              s->info.planeCount || s->info.bytesPerElement != 4 || s->shared()->tiled ||
              s->info.bytesPerRow < 6400 || s->info.bytesPerRow > 65535 ||
              uint64_t(s->info.offset) + uint64_t(s->info.bytesPerRow) * 2559 + 6400 > s->info.allocSize) {
-        MiniIOSurfaceDrop(s); result = kIOReturnUnsupported;
-    } else {
-        result = acquire(b, s, held); held.swap = id;
-        held.presentAt = presentAt; held.presentGapUs = presentGapUs;
-        held.admissionUs = admittedAt - presentAt;
-        held.acquireUs = nowUs() - admittedAt;
-        if (!result) {
-            IOLockLock(b->stateLock);
-            result = b->failure;
-            if (!result) {
-                held.queuedAt = nowUs(); held.queueDepth = b->queueCount + 1;
-                traceFrame(held.queuedAt, NabuGpuTrace::Queued, id,
-                    s->sid, held.queueDepth, held.leaseIdentity);
-                b->queue[(b->queueFirst + b->queueCount) % 2] = held;
-                held = {}; ++b->queueCount;
-                IOLockWakeup(b->stateLock, b->queue, true);
-            }
-            IOLockUnlock(b->stateLock);
-        }
-        if (held.surface) drop(held); // never queued or accessed by the DPU
+            MiniIOSurfaceDrop(s); result = kIOReturnUnsupported;
+        } else result = acquire(b, s, held);
     }
+    held.swap = id;
+    held.presentAt = presentAt; held.presentGapUs = presentGapUs;
+    held.admissionUs = admittedAt - presentAt;
+    held.acquireUs = nowUs() - admittedAt;
+    if (!result) {
+        IOLockLock(b->stateLock);
+        result = b->failure;
+        if (!result) {
+            held.queuedAt = nowUs(); held.queueDepth = b->queueCount + 1;
+            if (inactiveClear)
+                traceFrame(held.queuedAt, NabuGpuTrace::InactiveLayerClearQueued, id, 2, held.queueDepth, 0);
+            else traceFrame(held.queuedAt, NabuGpuTrace::Queued, id,
+                held.surface->sid, held.queueDepth, held.leaseIdentity);
+            b->queue[(b->queueFirst + b->queueCount) % 2] = held;
+            held = {}; ++b->queueCount;
+            IOLockWakeup(b->stateLock, b->queue, true);
+        }
+        IOLockUnlock(b->stateLock);
+    }
+    if (held.surface) drop(held); // never queued or accessed by the DPU
     if (result) {
         traceFrame(nowUs(), NabuGpuTrace::DisplayFailure, id, sid, uint32_t(result), 0);
         finishRecord(b, id, Swap::Failed, result);

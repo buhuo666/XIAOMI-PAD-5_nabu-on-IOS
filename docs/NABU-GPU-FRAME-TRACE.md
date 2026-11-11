@@ -105,6 +105,13 @@ Source/destination events pack each layer's four raw rectangle words into two
 pairs, with the layer index in `c`. Separate logs preserve these fields on the first and
 every 120th rejection of each reason even when capture is off.
 
+`InactiveLayerClearQueued` (50) and `InactiveLayerClearComplete` (51) describe
+ordered transactions that clear an already inactive logical layer1. Their
+identity is the swap ID and `a` is the clear mask (2); queued `b` is queue depth,
+while completion `b` is the IOReturn and `c` is the successful-clear counter.
+They do not replace layer0 or retire its surface. The analyzer reports these
+transactions separately and never includes them in pixel acceptance counts.
+
 The legacy `bo_slot=4` diagnostic bucket aggregates all client slots >=4;
 the ABI array is still 5x6. It must not be interpreted as process slot4 or
 expanded by changing only the publisher's print loop. Resource budgets are

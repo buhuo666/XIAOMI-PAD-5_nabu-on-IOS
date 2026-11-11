@@ -154,6 +154,7 @@ jobs:
         run: |
           python3 tools/check_nabu_frame_trace.py --output log/ci/nabu-frame-trace
           python3 tools/check_nabu_frame_trace_analysis.py
+          python3 tools/check_nabu_dpu_inactive_layer_clear.py --output log/ci/nabu-dpu-inactive-layer-clear
           python3 tools/check_nabu_a640_timestamps.py --output log/ci/nabu-a640-timestamps
           python3 tools/check_nabu_gpu_clear.py --output log/ci/nabu-gpu-clear
           python3 tools/check_nabu_gpu_client_slots.py --output log/ci/nabu-gpu-client-slots

@@ -42,11 +42,23 @@ def main():
     wrong_fence = analyze([dict(r,b=78) if r['event']==3 else r for r in rows],metadata)
     assert wrong_fence['diagnostics']['gpu_queue_fence_mismatch'] == 1
     assert wrong_fence['gpu']['metrics']['issued_to_completion_observed_ms']['count'] == 0
+    clear_rows = [row(50,30000,51,2,1), row(51,31000,51,2,0,1),
+                  row(50,32000,52,2,1), row(51,33000,52,2,0xe00002bc,1),
+                  row(50,99000,53,2,1)]
+    clears = analyze(rows + clear_rows, metadata)
+    assert clears['display']['accepted_transactions'] == display['accepted_transactions']
+    assert clears['display']['accepted_transaction_rate'] == display['accepted_transaction_rate']
+    assert clears['display']['transactions'] == display['transactions']
+    non_pixels = clears['display']['inactive_layer_clears']
+    assert non_pixels['recorded_queued'] == 3 and non_pixels['recorded_completed'] == 2
+    assert non_pixels['completion_status_counts'] == {0:1, 0xe00002bc:1}
+    assert not non_pixels['included_in_pixel_acceptances']
     try: analyze(rows,metadata,-1,100)
     except ValueError: pass
     else: raise AssertionError('Out-of-capture interval accepted')
     print(json.dumps(dict(passed=True, cases=['stage joins','window tails','repeated surface',
-        'duplicate identity','fence mismatch','overflow','notification multiplicity','deduplicated writer relation'])))
+        'duplicate identity','fence mismatch','overflow','notification multiplicity','deduplicated writer relation',
+        'inactive layer transactions excluded from pixel acceptance'])))
 
 
 if __name__ == '__main__': main()

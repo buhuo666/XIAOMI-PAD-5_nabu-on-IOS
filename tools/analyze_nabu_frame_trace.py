@@ -12,6 +12,7 @@ GPU_ACCEPT, GPU_ISSUE, GPU_COMPLETE, IRQ = 1, 2, 3, 4
 WORK_BEGIN, WORK_LOCKED, WORK_END, PRODUCER_CALLBACK, PRODUCER_WRITER = 5, 6, 7, 8, 12
 PRESENT, QUEUED, READY, MAPPED, SCAN, ACCEPT, RETIRE = range(32, 39)
 VBLANK, NOTIFY, DISPLAY_WORK, FAILURE, COUNTERS, NATIVE_NOTIFY, REJECT = range(39, 46)
+INACTIVE_CLEAR_QUEUED, INACTIVE_CLEAR_COMPLETE = 50, 51
 
 
 def analyze(rows, metadata, start=None, end=None):
@@ -122,6 +123,8 @@ def analyze(rows, metadata, start=None, end=None):
                  'mapped_to_scan_ms', 'scan_to_accept_observed_ms', 'present_to_accept_observed_ms', 'accepted_scan_lifetime_ms')
     interval_seconds = (end - start)/1e6
     acceptance_ids_unique = len({r['identity'] for r in accepted}) == len(accepted)
+    clear_queued = [r for r in rows if r['event'] == INACTIVE_CLEAR_QUEUED and in_interval(r)]
+    clear_complete = [r for r in rows if r['event'] == INACTIVE_CLEAR_COMPLETE and in_interval(r)]
     return {'window': metadata['window'], 'interval_start_us': start, 'interval_end_us': end,
             'duration_s': interval_seconds, 'trace_dropped': metadata['dropped'],
             'complete_record_stream': metadata['dropped'] == 0,
@@ -142,6 +145,11 @@ def analyze(rows, metadata, start=None, end=None):
                         'native_notification_metrics': metrics(notifications, ('irq_to_native_notification_ms',)),
                         'native_send_status_counts': dict(Counter(r['status'] for r in notifications)),
                         'rejections_by_reason': dict(Counter(r['a'] for r in rows if r['event'] == REJECT and in_interval(r))),
+                        'inactive_layer_clears': {
+                            'recorded_queued': len(clear_queued), 'recorded_completed': len(clear_complete),
+                            'completion_status_counts': dict(Counter(r['b'] for r in clear_complete)),
+                            'included_in_pixel_acceptances': False,
+                            'scope': 'Counts use each event time; boundary transactions can be queued or completed outside this interval.'},
                         'unique_content_fps': None},
             'diagnostics': dict(diagnostics), 'event_counts': dict(Counter(r['event'] for r in rows if in_interval(r))),
             'limits': 'GPU issued/completed are CPU observations; use the A640 hardware analyzer for clock-calibrated intervals. Latest IRQ seen by a worker is a counter snapshot, not one-to-one causality. DPU transactions can repeat content. A scan lifetime ends when an old surface retires and is not retirement processing cost. Native notification includes every subscribed client send. App/CA content correlation, out-of-window boundaries, and overflow must be considered before FPS qualification.'}
