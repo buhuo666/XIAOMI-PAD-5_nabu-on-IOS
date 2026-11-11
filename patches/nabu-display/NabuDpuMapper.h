@@ -12,6 +12,11 @@ struct Binding;
 // complete route snapshot and ASID selection; no SMMU register writes.
 Binding *prepare(int *error);
 IOReturn preflightSources(Binding *, const NabuDpuScanout::Io &);
+// Diagnostic control: reproduce the halted read-only checks without touching
+// any context, route or translation register. Release the unused pool afterward.
+IOReturn auditInactiveAfterQuiesce(Binding *, const NabuDpuScanout::Io &,
+                                 const NabuDpuScanout::State &, uint32_t *sctlr);
+void discardPrepared(Binding *);
 // Requires the core's Quiesced state AND hardware HALT request/ACK for XIN0/4.
 // Revalidates observed topology, inactive non-VIG sources and every CTL WB/CWB
 // output. Route mask covers 0x800,0x820,0xc00,0xc20; offline rotator SID0x1040

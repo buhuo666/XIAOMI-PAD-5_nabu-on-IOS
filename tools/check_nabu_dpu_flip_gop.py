@@ -133,6 +133,7 @@ static uint64_t nowUs() { return hardware->now; }
 static void IOSleep(unsigned ms) { hardware->sleeps.push_back(ms); hardware->advance(uint64_t(ms)*1000); }
 static void IODelay(unsigned us) { hardware->advance(us); }
 static void IOLog(const char *, ...) {}
+static bool PE_parse_boot_argn(const char *, void *, int) { return false; }
 class OSObject {
     unsigned references=1;
 public:
@@ -300,6 +301,10 @@ static PT::Visibility visibility(Binding *b) { return {b,hostPublish,hostVisible
 // One-time hardware handover is covered by check_nabu_dpu_mapper.py. These
 // unavailable setup entry points cannot synthesize success in this fixture.
 Binding *prepare(int *) { assert(false); return nullptr; }
+void discardPrepared(Binding *) { assert(false); }
+IOReturn auditInactiveAfterQuiesce(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &, uint32_t *) {
+    assert(false); return kIOReturnUnsupported;
+}
 IOReturn preflightSources(Binding *, const NabuDpuScanout::Io &) { assert(false); return kIOReturnUnsupported; }
 IOReturn activateAfterQuiesce(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &) {
     assert(false); return kIOReturnUnsupported;

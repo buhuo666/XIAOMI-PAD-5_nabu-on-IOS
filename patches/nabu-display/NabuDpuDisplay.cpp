@@ -842,14 +842,24 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticStage(d, "diagnostic-gop-drain-enter");
         freezeDiagnosticGop(d);
         diagnosticStage(d, "diagnostic-gop-drained");
+        uint32_t auditMode = 0;
+        PE_parse_boot_argn("nabu-dpu-halt-audit", &auditMode, sizeof(auditMode));
+        Mapper::Binding *audit = nullptr;
+        if (auditMode == 1) {
+            int prepared = 0;
+            audit = Mapper::prepare(&prepared);
+            diagnosticNumber(out, "halt_audit_prepare_status", uint32_t(prepared));
+            if (!audit) return Scan::IoError;
+        }
+        out->setObject("halt_audit_requested", audit ? kOSBooleanTrue : kOSBooleanFalse);
         int irqError = 0;
         b->clock = NabuDpuVBlank::start(vblank, b, &irqError);
         diagnosticNumber(out, "irq_start_status", uint32_t(irqError));
-        if (!b->clock) return Scan::IoError;
+        if (!b->clock) { Mapper::discardPrepared(audit); return Scan::IoError; }
         NabuDpuVBlank::Sample irq{};
         auto fault = NabuDpuVBlank::pauseForHandover(b->clock, &irq);
         diagnosticNumber(out, "irq_pause_fault", fault);
-        if (fault) return Scan::IoError;
+        if (fault) { Mapper::discardPrepared(audit); return Scan::IoError; }
         diagnosticStage(d, "diagnostic-halt-enter");
         b->traceQuiesce = NabuDpuCheckpoint::enabled();
         b->quiesceReads = b->quiesceWrites = 0;
@@ -860,15 +870,33 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         const auto haltStatus = status;
         uint32_t haltedRequest = 0, haltedAck = 0;
         uint64_t resumeUs = 0;
-        // Resume immediately after capturing the real ACK. No allocation,
-        // logging or synchronous checkpoint extends the halted interval.
+        uint64_t auditUs = 0;
+        uint32_t auditSctlr = 0;
+        IOReturn auditStatus = kIOReturnNotReady;
+        // The explicit read-only control may inspect the inherited SMMU while
+        // halted. It never programs the prepared pool; always resume afterward.
+        // No allocation, logging or checkpoint is added to the success interval.
         if (status == Scan::Ok) {
             read32(b, Scan::Vbif, Scan::HaltRequest, &haltedRequest);
             read32(b, Scan::Vbif, Scan::HaltStatus, &haltedAck);
+            if (audit) {
+                const auto auditBegan = nowUs();
+                auditStatus = Mapper::auditInactiveAfterQuiesce(audit, b->io, b->scan, &auditSctlr);
+                auditUs = nowUs() - auditBegan;
+            }
             const auto resumeBegan = nowUs();
             status = Scan::resume(b->io, b->scan, &error);
             b->traceVbifPending = false;
             resumeUs = nowUs() - resumeBegan;
+        }
+        const bool audited = audit != nullptr;
+        Mapper::discardPrepared(audit);
+        if (audited) {
+            IOLog("NABU DPU DIAGNOSTIC halted-readonly-audit: status=%#x audit-us=%llu SCTLR=%#x halt-us=%llu resume-us=%llu resume-status=%u; no SMMU writes\n",
+                auditStatus, auditUs, auditSctlr, haltUs, resumeUs, status);
+            diagnosticNumber(out, "halt_audit_status", auditStatus);
+            diagnosticNumber(out, "halt_audit_us", auditUs);
+            diagnosticNumber(out, "halt_audit_sctlr", auditSctlr);
         }
         diagnosticNumber(out, "halt_us", haltUs);
         diagnosticNumber(out, "halt_status", haltStatus);
@@ -882,6 +910,7 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticNumber(out, "error_observed", error.observed);
         diagnosticStage(d, "diagnostic-halt-resume-returned");
         if (status != Scan::Ok) return status;
+        if (audited && auditStatus != kIOReturnSuccess) return Scan::IoError;
         fault = NabuDpuVBlank::resumeAfterHandover(b->clock, &irq);
         diagnosticNumber(out, "irq_resume_fault", fault);
         diagnosticNumber(out, "masked_top_status_at_resume", irq.topStatus);

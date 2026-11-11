@@ -68,6 +68,12 @@ def verify(data):
         for name in ("master_underrun_delta", "slave_underrun_delta"):
             require(result.get(name) == 0, f"{name}: scanout underrun observed")
     if halt:
+        if result.get("halt_audit_requested"):
+            require(result.get("halt_audit_prepare_status") == 0 and result.get("halt_audit_status") == 0,
+                    "Read-only halted audit failed")
+            require(result.get("halt_audit_sctlr") == 0xE0 and result.get("smmu_programmed") is False,
+                    "Read-only control did not retain inherited bypass")
+            require(result.get("halt_audit_us", 0) > 0, "Read-only audit timing is missing")
         for name in ("irq_start_status", "irq_pause_fault", "halt_status", "resume_status", "irq_resume_fault"):
             require(result.get(name) == 0, f"{name}: missing or nonzero")
         for name in ("halted_request", "halted_ack"):

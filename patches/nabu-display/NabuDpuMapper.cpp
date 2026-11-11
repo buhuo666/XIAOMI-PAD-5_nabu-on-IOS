@@ -285,6 +285,7 @@ bad:
     if (error) *error = result;
     destroyBeforeProgram(b); return nullptr;
 }
+void discardPrepared(Binding *b) { destroyBeforeProgram(b); }
 static bool readExpected(const SC::Io &io, SC::Region region, uint32_t at, uint32_t expected) {
     uint32_t got = 0;
     const bool read = io.read32(io.cookie, region, at, &got);
@@ -322,6 +323,26 @@ IOReturn preflightSources(Binding *b, const SC::Io &io) {
     if (PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok || !asidUnused(b, b->asid)) {
         IOLog("NABU DPU MAP preflight route/ASID changed; no context writes\n"); return kIOReturnUnsupported;
     }
+    return kIOReturnSuccess;
+}
+IOReturn auditInactiveAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &state, uint32_t *sctlr) {
+    if (!b || poisoned(b) || b->active || b->programAttempted || !sctlr ||
+        state.phase != SC::Quiesced || state.current_iova != SC::GopPhysical) return kIOReturnNotReady;
+    uint32_t request = 0, ack = 0;
+    if (!io.read32(io.cookie, SC::Vbif, SC::HaltRequest, &request) ||
+        !io.read32(io.cookie, SC::Vbif, SC::HaltStatus, &ack) ||
+        (request & SC::XinMask) != SC::XinMask || (ack & SC::XinMask) != SC::XinMask)
+        return kIOReturnUnsupported;
+    const auto preflight = preflightSources(b, io);
+    if (preflight) return preflight;
+    ArmSmmu4KContextImage old{};
+    uint32_t fsr = 0, gfsr = 0;
+    if (!readImage(b, old) || rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr))
+        return kIOReturnIOError;
+    *sctlr = old.sctlr;
+    if (old.sctlr != 0xe0 || old.cbar != 0x1f000 || old.cba2r != 1 ||
+        (fsr & FaultMask) || gfsr || PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok)
+        return kIOReturnUnsupported;
     return kIOReturnSuccess;
 }
 IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &state) {

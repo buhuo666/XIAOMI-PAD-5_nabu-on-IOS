@@ -144,6 +144,11 @@ int main(){
     dpu.halt=0;assert(MP::preflightSources(b,dpu.io())==0);
     assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported&&!b->programAttempted&&!MP::poisoned(b));
     dpu.halt=0x11;
+    uint32_t auditSctlr=0;
+    forbidLogs=true;
+    assert(MP::auditInactiveAfterQuiesce(b,dpu.io(),state,&auditSctlr)==0&&auditSctlr==0xe0);
+    forbidLogs=false;
+    assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0&&!b->programAttempted&&!b->active);
     dpu.regs[0x9014]=0x90000000;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);
     assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0&&!b->programAttempted);dpu.regs[0x9014]=0;
     dpu.regs[0x22ec]=1;assert(MP::activateAfterQuiesce(b,dpu.io(),state)==kIOReturnUnsupported);dpu.regs[0x22ec]=0;
