@@ -3,6 +3,8 @@
 import argparse
 from collections import Counter, defaultdict
 import json
+import math
+import struct
 from pathlib import Path
 from analyze_nabu_a640_timestamps import distribution
 from nabu_frame_trace import FIELDS, WIRE, validate_export
@@ -39,6 +41,23 @@ def analyze(rows, metadata):
                           a=p['b'],b=p['c'],c=c['c'],pid=c['a'],thread=c['b'],
                           transport_us=c['time_us']-p['time_us']))
     users.sort(key=lambda r:r['time_us'])
+    def lo(value):return value&0xffffffff
+    def hi(value):return value>>32
+    def floating(value):
+        result=struct.unpack('<d',struct.pack('<Q',value))[0]
+        return result if math.isfinite(result) else None
+    for r in users:
+        e=r['event'];a,b,c=r['a'],r['b'],r['c']
+        if e==102:r['decoded']=dict(page=lo(a)&255,phase=lo(a)>>8,frame=hi(a),swap_id=lo(b),flags=hi(b),surface_pointer=c)
+        elif e==103:r['decoded']=dict(update48_seconds=floating(a),update68_seconds=floating(b),update70_seconds=floating(c))
+        elif e==104:r['decoded']=dict(shared=a,update_frame=lo(b),processed_frame=hi(b),shared_flags=lo(c),sample_count=hi(c))
+        elif e==105:r['decoded']=dict(word08=lo(a),word20=hi(a),queue_id=lo(b),collectable_seed=hi(b),word28=lo(c),client_port=hi(c))
+        elif e==106:r['decoded']=dict(index=lo(a),surface_id=hi(a),state=lo(b),seed=hi(b),display_frame=lo(c),first_use_frame=hi(c))
+        elif e==107:r['decoded']=dict(index=a,sample_seconds=floating(b),sample28_ticks=c)
+        elif e==115:r['decoded']=dict(index=lo(a),valid=hi(a),use_count=lo(b),word60=hi(b),word64=lo(c),word48=hi(c))
+        elif e in (108,109):r['decoded']=dict(swap_id=lo(a),flags=hi(a),status=b if e==109 else None)
+        elif e==110:r['decoded']=dict(swap_id=a,requested_timestamp=b,caller=c)
+        elif e==112:r['decoded']=dict(surface_ids=[lo(a),hi(a),lo(b),hi(b)],set=lo(c),clear=hi(c))
     wrappers=[];stacks=defaultdict(list)
     pairs={81:82,96:97,98:99,100:101,108:109,110:111};reverse={v:k for k,v in pairs.items()}
     for r in users:
@@ -51,6 +70,21 @@ def analyze(rows, metadata):
         wrappers.append(dict(event=entry,pid=r['pid'],thread=r['thread'],identity=r['identity'],
                              begin=first,end=r,duration_ms=delta(first,r)))
     diagnostics['wrapper_missing_leave']=sum(len(s) for s in stacks.values())
+    updates=[]
+    begin_calls=[p for p in wrappers if p['event']==98]
+    finish_calls=[p for p in wrappers if p['event']==100]
+    for finish in finish_calls:
+        first=finish['begin'];frame=lo(first['b'])
+        starts=[p for p in begin_calls if p['pid']==finish['pid'] and p['identity']==finish['identity'] and
+                p['begin']['b']==frame and p['begin']['a']==first['a'] and p['end']['time_us']<=first['time_us']]
+        start=starts[0] if len(starts)==1 else None
+        if len(starts)!=1:diagnostics['ca_update_begin_unmatched_or_ambiguous']+=1
+        snapshots=[r for r in users if r['pid']==finish['pid'] and r['thread']==finish['thread'] and
+                   first['time_us']<=r['time_us']<=finish['end']['time_us'] and r['event'] in (104,105,106,107,114,115)]
+        updates.append(dict(pid=finish['pid'],update=finish['identity'],frame=frame,display=first['a'],
+                            begin_return_to_finish_enter_ms=delta(start['end'] if start else None,first),
+                            begin_enter_to_finish_leave_ms=delta(start['begin'] if start else None,finish['end']),
+                            finish_enter_us=first['time_us'],finish_leave_us=finish['end']['time_us'],snapshots=snapshots))
 
     # A kmsg address is reused. Only SendBegin owns a new cookie lifetime;
     # send/receive result pairs are joined by unique tokens, never that address.
@@ -145,7 +179,11 @@ def analyze(rows, metadata):
                 marker_pair_transport_ms=distribution([r['transport_us']/1000 for r in users]),
                 ipc=dict(messages=sends,by_message={msg:metrics([s for s in sends if s['message_id']==msg],names) for msg in (40205,40402)}),
                 ca=dict(calls=wrappers,call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
-                        can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96))),
+                        updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms')),
+                        can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96)),
+                        wait_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==108)),
+                        swap_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==110)),
+                        selected_snapshots=[r for r in users if r['event'] in (102,103,104,105,106,107,114,115)]),
                 app=dict(frames=frames,metrics=metrics(frames,frame_names)),
                 unique_content_fps=None,
                 limits='Diagnostic short window. Native pointers are scoped to PID/lifetime; no fabricated seed in IPC. '
