@@ -10,11 +10,32 @@
 #include <libkern/c++/OSData.h>
 #include <string.h>
 
+extern "C" kern_return_t gic_v3_spi_attach(uint32_t, bool, void (*)(void *, uint32_t), void *);
+extern "C" void gic_v3_spi_mask(uint32_t);
+extern "C" void gic_v3_spi_unmask(uint32_t);
+extern "C" void gic_v3_spi_detach(uint32_t);
+extern "C" { NabuGpuIrqStats nabu_gpu_irq_stats{}; }
+
 namespace {
 IORegistryEntry *firmwareNode=nullptr;
-struct PollSource {uint32_t number;void (*callback)(void *);void *context;bool enabled;};
-PollSource sources[4]{};
+struct IrqSource {uint32_t number;void (*callback)(void *);void *context;bool enabled,attached;};
+IrqSource sources[4]{};
 unsigned sourceCount=0;
+
+static void gpuIrqArrived(void *cookie,uint32_t number)
+{
+    auto *source=static_cast<IrqSource *>(cookie);
+    __atomic_fetch_add(&nabu_gpu_irq_stats.entries,1,__ATOMIC_RELAXED);
+    if(!__atomic_load_n(&source->enabled,__ATOMIC_ACQUIRE)) {
+        __atomic_fetch_add(&nabu_gpu_irq_stats.disabled,1,__ATOMIC_RELAXED);
+        gic_v3_spi_mask(number);
+        return;
+    }
+    __atomic_fetch_add(&nabu_gpu_irq_stats.callbacks,1,__ATOMIC_RELAXED);
+    // NativeAdrenoIrq clears RBBM status and completes its barrier before EOI.
+    // The GPU callback only schedules the existing completion worker.
+    source->callback(source->context);
+}
 
 OSData *property(IORegistryEntry *node,const char *name)
 {
@@ -122,7 +143,7 @@ extern "C" int native_adreno_a6xx_resources(NativeAdrenoA6xxResources *out)
         &r.zapShader,&r.zapShaderBytes) && ok;
     if(!ok) {node->release();IOLog("NabuGPU: ADT/firmware validation failed; MMIO not started\n");return 1;}
     firmwareNode=node;*out=r;
-    IOLog("NabuGPU: source=%s profile=nabu16 mode=cp-proof firmware=adt irq=poll\n",NABU_GPU_SOURCE_ID);
+    IOLog("NabuGPU: source=%s profile=nabu16 mode=cp-proof firmware=adt gpu-irq=gic332 smmu-irq=poll\n",NABU_GPU_SOURCE_ID);
     return 0;
 }
 
@@ -131,24 +152,68 @@ extern "C" IOReturn native_adreno_smmu_register_irq(uint32_t number,void (*callb
     if(!callback || !context || sourceCount>=4 ||
         (number!=332 && number!=706 && (number<713 || number>720)))return kIOReturnBadArgument;
     for(unsigned i=0;i<sourceCount;++i)if(sources[i].number==number)return kIOReturnBusy;
-    sources[sourceCount++]={number,callback,context,false};
+    auto &source=sources[sourceCount];
+    source={number,callback,context,false,false};
+    if(number==332) {
+        // attach routes to this CPU and enables before returning. The complete
+        // immutable callback/context is already visible; enabled stays false
+        // until the service explicitly enables the initialized GPU source.
+        const kern_return_t status=gic_v3_spi_attach(number,false,gpuIrqArrived,&source);
+        if(status) {
+            source={};
+            IOLog("NabuGPU: completion IRQ attach failed intid=%u kern=%d\n",number,status);
+            return kIOReturnNoResources;
+        }
+        gic_v3_spi_mask(number);
+        source.attached=true;
+    }
+    ++sourceCount;
     return kIOReturnSuccess;
 }
 extern "C" IOReturn native_adreno_smmu_enable_irq(uint32_t number)
 {
-    for(auto &s:sources)if(s.number==number && s.callback) {s.enabled=true;return kIOReturnSuccess;}
+    for(auto &s:sources)if(s.number==number && s.callback) {
+        if(number==332 && !s.attached)return kIOReturnNotReady;
+        __atomic_store_n(&s.enabled,true,__ATOMIC_RELEASE);
+        if(s.attached)gic_v3_spi_unmask(number);
+        return kIOReturnSuccess;
+    }
     return kIOReturnNotFound;
 }
 extern "C" IOReturn native_adreno_smmu_disable_irq(uint32_t number)
 {
-    for(auto &s:sources)if(s.number==number && s.callback) {s.enabled=false;return kIOReturnSuccess;}
+    for(auto &s:sources)if(s.number==number && s.callback) {
+        __atomic_store_n(&s.enabled,false,__ATOMIC_RELEASE);
+        if(s.attached)gic_v3_spi_mask(number);
+        return kIOReturnSuccess;
+    }
     return kIOReturnNotFound;
 }
 extern "C" void native_adreno_poll_irqs(void)
 {
-    /* Only the hardware worker calls this; ECATS temporarily disables its bank's
-     * source on that same worker. No concurrent callback races a translation. */
-    for(auto &s:sources)if(s.enabled && s.callback)s.callback(s.context);
+    /* SMMU remains on its existing worker: ECATS temporarily disables a bank
+     * there. GPU completion is delivered only by its real level-triggered SPI. */
+    for(auto &s:sources)if(s.number!=332 && __atomic_load_n(&s.enabled,__ATOMIC_ACQUIRE) && s.callback) {
+        __atomic_fetch_add(&nabu_gpu_irq_stats.smmuPolls,1,__ATOMIC_RELAXED);
+        s.callback(s.context);
+    }
+}
+extern "C" void nabu_gpu_detach_completion_irq(void)
+{
+    for(auto &s:sources)if(s.number==332 && s.attached) {
+        __atomic_store_n(&s.enabled,false,__ATOMIC_RELEASE);
+        gic_v3_spi_detach(s.number); // Thread context: masks and drains handlers.
+        s.attached=false;
+    }
+}
+extern "C" void nabu_gpu_irq_snapshot(NabuGpuIrqStats *out)
+{
+    out->entries=__atomic_load_n(&nabu_gpu_irq_stats.entries,__ATOMIC_RELAXED);
+    out->callbacks=__atomic_load_n(&nabu_gpu_irq_stats.callbacks,__ATOMIC_RELAXED);
+    out->disabled=__atomic_load_n(&nabu_gpu_irq_stats.disabled,__ATOMIC_RELAXED);
+    out->smmuPolls=__atomic_load_n(&nabu_gpu_irq_stats.smmuPolls,__ATOMIC_RELAXED);
+    out->fences=__atomic_load_n(&nabu_gpu_irq_stats.fences,__ATOMIC_RELAXED);
+    out->faults=__atomic_load_n(&nabu_gpu_irq_stats.faults,__ATOMIC_RELAXED);
 }
 extern "C" int native_adreno_checkpoint(const char *phase)
 {

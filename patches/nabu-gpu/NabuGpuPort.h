@@ -19,6 +19,15 @@ extern "C" {
 void nabu_gpu_start(void);
 void native_adreno_a6xx_dump_stats(void);
 
+/* The completion SPI is drained from thread context before stopping GPU DMA.
+ * Fault callbacks only mask it; they must never wait for their own handler. */
+void nabu_gpu_detach_completion_irq(void);
+struct NabuGpuIrqStats {
+    uint64_t entries, callbacks, disabled, smmuPolls, fences, faults;
+};
+extern struct NabuGpuIrqStats nabu_gpu_irq_stats;
+void nabu_gpu_irq_snapshot(struct NabuGpuIrqStats *);
+
 /* Current append-only capture interfaces. The status function is implemented
  * beside the storage log pump and takes its existing reader/writer lock. Zero
  * means live capture; a nonzero result means unavailable, finished or failed.

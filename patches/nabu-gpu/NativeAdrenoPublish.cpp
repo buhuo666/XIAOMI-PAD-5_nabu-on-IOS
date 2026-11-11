@@ -32,6 +32,7 @@
 #include "NativeAdrenoDisplay.h"
 #include "NativeAdrenoScheduler.h"
 #include "NabuGpuProblemLog.h"
+#include "NabuGpuPort.h"
 extern "C" void native_adreno_metal_dump_stats(void);
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
 #include "NabuDpuProducer.h"
@@ -2093,8 +2094,12 @@ extern volatile uint64_t native_adreno_backing_cache_stats[12];
 extern "C" void native_adreno_metal_dump_stats(void)
 {
     const NativeAdrenoMetalDiag diag=native_adreno_metal_diag;
+    NabuGpuIrqStats irq{};
+    nabu_gpu_irq_snapshot(&irq);
     IOLog("NativeAdrenoMetal: begin published=%u trace=%u rows_seq=%u\n",
         unsigned(g.published),native_adreno_trace_stage,native_adreno_metal_rows_seq);
+    IOLog("NativeAdrenoMetal: gpu_irq entries=%llu callbacks=%llu disabled=%llu smmu_polls=%llu fences=%llu faults=%llu\n",
+        irq.entries,irq.callbacks,irq.disabled,irq.smmuPolls,irq.fences,irq.faults);
     IOLog("NativeAdrenoMetal: opens=%u busy=%u bad=%u closes=%u grants=%u reports=%u property_reads=%u name_reads=%u foreign_opens=%u foreign_type=%08x\n",
         diag.opens,diag.busy,diag.bad,diag.closes,diag.grants,diag.reports,
         diag.property_reads,diag.name_reads,diag.foreign_opens,diag.foreign_type);
@@ -2302,6 +2307,7 @@ extern "C" void native_adreno_gpu_interrupt(bool failed)
     if(!g.published || !g.completionCall) {
         return;
     }
+    __atomic_fetch_add(failed?&nabu_gpu_irq_stats.faults:&nabu_gpu_irq_stats.fences,1,__ATOMIC_RELAXED);
     if(failed) {
         __atomic_store_n(&g.interruptFailure,1,__ATOMIC_RELEASE);
     }

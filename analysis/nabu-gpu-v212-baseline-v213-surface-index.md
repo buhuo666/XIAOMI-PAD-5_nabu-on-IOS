@@ -84,3 +84,36 @@ GPU187 objects with the GPU213 objects while preserving the other 62 objects.
 Full CI and GPU213 device comparison are pending. This optimization targets
 demonstrated CPU map work; the longer issue-to-completion duration and the final
 continuous-frame target remain unresolved.
+
+## GPU213 device result
+
+Commit `55e1f07`, full CI 43005319897, both revised objects in the 64-object link,
+and the unchanged GPU212 bootstrap passed the device run. Desktop and touch
+remained normal; the user still reported obvious lag during the same gestures.
+
+Paired persistent snapshots:
+`6be194dbc95e405eb9fff94b7bd3c8b8` and `770ddac8ca584ab18712674488d74191`.
+
+| Per-map measurement | GPU212 | GPU213 |
+| --- | ---: | ---: |
+| Samples | 449 | 123 |
+| Mean BO map CPU time | 1.425 ms | 0.436 ms |
+| Mean VM index phase | 1.211 ms | 0.062 ms |
+| Mean VM table phase | 0.050 ms | 0.192 ms |
+| Mean VM preflight | 0.144 ms | 0.136 ms |
+
+GPU213 recorded 369 backing checks, all nonoverlapping, 8280 new-span tests,
+and zero full alias-tree queries during this interval. Index time dropped
+94.86% per map and total map time dropped 69.36% in these observed samples.
+The scene mixes and allocation sizes differ; this is not a controlled FPS
+benchmark or a claim of equivalent improvement to total frame time.
+
+Queue 1 had 37 new jobs, mean accepted-to-issued 0.076 ms and
+issued-to-observed-completion 19.417 ms, with no DPU-reader dependencies.
+4,657,952 contiguous log bytes and the full 64MiB slot were recovered and
+cleared/read back. Android boot partitions were unchanged; Data count 191.
+
+The next investigation found the GPU completion source was still a software
+callback invoked by the 10ms hardware worker, despite the DPU using real IRQs.
+GPU214 connects that source to GIC332 before testing higher OPPs. Android
+scheduling/OPP evidence is retained under `log/host/gpu-v213/`.

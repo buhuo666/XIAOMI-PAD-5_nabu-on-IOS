@@ -1155,6 +1155,7 @@ IOReturn A640State::fail(IOReturn status)
         native_adreno_smmu_disable_irq(resources_.gpuInterrupt);
         hardwareIrqEnabled_=false;
     }
+    nabu_gpu_detach_completion_irq();
     smmuProvider_.observe();
     smmuProvider_.disableInterrupts();
     native_adreno_a6xx_stats[1]=uint32_t(status);
@@ -1414,6 +1415,7 @@ IOReturn A640State::finishDiagnostic()
         native_adreno_smmu_disable_irq(resources_.gpuInterrupt);
         hardwareIrqEnabled_=false;
     }
+    nabu_gpu_detach_completion_irq();
     smmuProvider_.disableInterrupts();
     const IOReturn cpStatus=cpTouched_?
         NativeAdrenoA6xxHwInit::stop(&ringIo_,1000):kIOReturnSuccess;
