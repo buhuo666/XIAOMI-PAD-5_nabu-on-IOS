@@ -13,6 +13,7 @@
 #include <vm/memory_types.h>
 extern "C" unsigned int pmap_cache_attributes(ppnum_t);
 extern "C" void FlushPoC_DcacheRegion(vm_offset_t, unsigned);
+extern "C" vm_offset_t ml_vtophys(vm_offset_t);
 
 namespace NabuDpuMapper {
 namespace PT = NabuDpuPageTable;
@@ -143,7 +144,7 @@ IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
     out->poisoned = poisoned(b);
     out->timing = b->timing;
     // Fixed nabu arm-smmu_context_fault registers; GR1 CBFRSYNRA[2] is 0x1408.
-    if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
+    if (rd32(b, 0, &out->scr0) || rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
         rd64(b, Cb + 0x60, &out->far) || rd32(b, Cb + 0x68, &out->fsynr0) ||
         rd32(b, Cbfrsynra, &out->streamSyndrome) || rd32(b, Cb + 0x7f4, &out->tlbStatus) ||
         rd32(b, Cb + 4, &out->actlr))
@@ -458,6 +459,43 @@ static IOReturn releaseDescriptor(Binding *b, unsigned slot) {
     }
     if (owned.memory) owned.memory->release();
     owned = {}; return kIOReturnSuccess;
+}
+void snapshotMapping(Binding *b, const PT::Mapping &mapping, IOMemoryDescriptor *memory,
+                     uint64_t offset, const void *pixels, MappingSnapshot *out) {
+    *out = {};
+    out->status = kIOReturnBadArgument;
+    if (!b || mapping.slot >= PT::SlotCount || b->slots[mapping.slot].memory != memory ||
+        !b->slots[mapping.slot].prepared || b->state.slots[mapping.slot].token != mapping.token ||
+        b->state.slots[mapping.slot].life != PT::Active) return;
+    out->status = kIOReturnSuccess;
+    for (uint64_t consumed = 0; consumed < mapping.bytes;) {
+        const uint32_t iova = mapping.iova + consumed;
+        const uint64_t remaining = mapping.bytes - consumed;
+        const uint64_t pageBytes = PT::PageBytes - (iova & (PT::PageBytes - 1));
+        const uint64_t needed = remaining < pageBytes ? remaining : pageBytes;
+        IOByteCount length = 0;
+        const uint64_t descriptor = memory->getPhysicalSegment(offset + consumed, &length, kIOMemoryMapperNone);
+        const uint64_t cpu = ml_vtophys(reinterpret_cast<vm_offset_t>(pixels) + consumed);
+        const uint64_t leaf = b->arena.tables[PT::leafIndex(iova)];
+        const uint32_t l1 = iova >> 30, block = iova >> 21;
+        const uint64_t upper1 = b->arena.tables[l1];
+        const uint64_t upper2 = b->arena.tables[size_t(1 + l1) * 512 + (block & 511)];
+        const bool matches = cpu && cpu == descriptor && length >= needed &&
+            (cpu & (PT::PageBytes - 1)) == (iova & (PT::PageBytes - 1)) &&
+            leaf == PT::leafDescriptor(descriptor & ~(uint64_t(PT::PageBytes) - 1)) &&
+            upper1 == ((b->arena.physical + uint64_t(1 + l1) * PT::PageBytes) | 3) &&
+            upper2 == ((b->arena.physical + uint64_t(5 + block) * PT::PageBytes) | 3);
+        if (!out->checkedPages) {
+            out->firstCpuPhysical = cpu; out->firstDescriptorPhysical = descriptor; out->firstLeaf = leaf;
+        }
+        out->lastCpuPhysical = cpu; out->lastDescriptorPhysical = descriptor; out->lastLeaf = leaf;
+        ++out->checkedPages;
+        if (!matches) {
+            if (!out->mismatchedPages) out->firstMismatchIova = iova;
+            ++out->mismatchedPages; out->status = kIOReturnIOError;
+        }
+        consumed += needed;
+    }
 }
 IOReturn mapDescriptor(Binding *b, IOMemoryDescriptor *memory, uint64_t offset, uint64_t bytes, PT::Mapping *out) {
     if (!b || !memory || !out || !bytes || bytes > PT::SlotBytes ||

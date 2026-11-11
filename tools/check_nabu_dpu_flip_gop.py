@@ -80,6 +80,8 @@ struct Hardware {
     MP::Binding *mapper=nullptr;
     MiniIOSurface *surface=nullptr;
     std::function<void()> sleepingWriter;
+    std::function<void()> afterHold;
+    uint64_t cpuTranslationDelta=0;
     uint64_t now=1000, period=8333, latchAt=0, producerReadyAt=0;
     uint64_t pixelsChecked=0, pixelsPublished=0, nextPhysical=0x280000000ull;
     uint32_t frame[2]={100,200}, active[2]={SC::GopPhysical,SC::GopPhysical};
@@ -130,7 +132,10 @@ static void clock_interval_to_deadline(uint32_t count, int scale, uint64_t *out)
     *out=mach_absolute_time()+uint64_t(count)*scale;
 }
 static uint64_t nowUs() { return hardware->now; }
-static void IOSleep(unsigned ms) { hardware->sleeps.push_back(ms); hardware->advance(uint64_t(ms)*1000); }
+static void IOSleep(unsigned ms) {
+    hardware->sleeps.push_back(ms); hardware->advance(uint64_t(ms)*1000);
+    if (hardware->afterHold) hardware->afterHold();
+}
 static void IODelay(unsigned us) { hardware->advance(us); }
 static void IOLog(const char *, ...) {}
 static bool PE_parse_boot_argn(const char *, void *, int) { return false; }
@@ -243,6 +248,12 @@ static void MiniIOSurfaceDrop(MiniIOSurface *s) {
     assert(s && !s->displayUse && s==hardware->surface);
     ++hardware->surfaceDrops; hardware->events.push_back("surface-dropped");
     hardware->surface=nullptr; s->memory->release(); delete s;
+}
+extern "C" vm_offset_t ml_vtophys(vm_offset_t address) {
+    auto *memory=hardware->surface->memory;
+    const auto offset=address-reinterpret_cast<uintptr_t>(memory->storage.data());
+    assert(offset<memory->bytes);
+    return memory->pages.at(offset/4096)+(offset&4095)+hardware->cpuTranslationDelta;
 }
 static void FlushPoC_DcacheRegion(vm_offset_t start, unsigned bytes) {
     auto *s=hardware->surface;
@@ -380,6 +391,7 @@ Hardware::Hardware() {
     BASELINE
     vbif[SC::HaltRequest/4]=0; vbif[SC::HaltStatus/4]=0;
     mdss[SC::Vig0ForceClock/4]=0xa0; mdss[SC::Vig1ForceClock/4]=0xb1;
+    app(0)=0x406;
     app(0x20)=0x4c017e5e; app(0x24)=0x60000038; app(0x28)=0x5555;
     for (unsigned i=0; i<94; ++i) app(0xc00+i*4)=2u<<16;
     app(0x80c)=0x84200800; app(0xc0c)=2;
@@ -656,7 +668,17 @@ int main() {
             assert(number(out,"test_mapping_token")==round+1 && number(out,"test_slot")==0);
             assert(number(out,"test_scan_sequence")==round*2+1);
             assert(number(out,"test_surface_id")==700+round);
-            assert(number(out,"test_hold_us")==3000000 && f.h.sleeps.back()==3000);
+            assert(number(out,"test_hold_us")==10000000 && f.h.sleeps.back()==10000);
+            for (const char *name:{"test_pixels_before","test_pixels_after"}) {
+                const auto &pixels=dictionary(out,name);
+                assert(number(pixels,"red_words")==5120 && number(pixels,"blue_words")==5120);
+                assert(!number(pixels,"mismatched_words"));
+            }
+            for (const char *name:{"test_mapping_before","test_mapping_after"}) {
+                const auto &mapping=dictionary(out,name);
+                assert(number(mapping,"checked_pages")==4000 && !number(mapping,"mismatched_pages"));
+                assert(!number(mapping,"status"));
+            }
             assert(boolean(out,"test_uses_original_surface_pages") && !boolean(out,"gpu_rendered"));
             assert(boolean(out,"test_surface_released") && !number(out,"retire_status"));
             assert(!number(out,"irq_fault") && number(out,"irq_count_delta") &&
@@ -814,6 +836,43 @@ int main() {
                !f.display.clock && !f.clock.active && f.h.irqStops==1);
         ++groups;
     }
+    {
+        Fixture f; OSDictionary out; beginReport(out);
+        f.h.afterHold=[&] {
+            const auto &held=f.display.held[0]; auto *surface=held.surface;
+            MP::MappingSnapshot checked{};
+            auto inspect=[&](uint64_t offset=PAGE_SIZE) {
+                MP::snapshotMapping(&f.mapper,held.mapping,surface->memory,offset,surface->pixels(),&checked);
+            };
+            inspect(); assert(!checked.status && checked.checkedPages==4000 && !checked.mismatchedPages);
+            f.h.cpuTranslationDelta=4096; inspect();
+            assert(checked.status && checked.mismatchedPages==4000);
+            f.h.cpuTranslationDelta=0;
+            inspect(0); assert(checked.status && checked.mismatchedPages==4000);
+            const auto leafAt=PT::leafIndex(held.mapping.iova+123*4096);
+            f.mapper.arena.tables[leafAt]^=0x1000; inspect();
+            assert(checked.status && checked.mismatchedPages==1 &&
+                   checked.firstMismatchIova==held.mapping.iova+123*4096);
+            f.mapper.arena.tables[leafAt]^=0x1000;
+            f.mapper.arena.tables[0]^=0x1000; inspect();
+            assert(checked.status && checked.mismatchedPages==4000);
+            f.mapper.arena.tables[0]^=0x1000;
+            auto stale=held.mapping; ++stale.token;
+            MP::snapshotMapping(&f.mapper,stale,surface->memory,PAGE_SIZE,surface->pixels(),&checked);
+            assert(checked.status && !checked.checkedPages);
+            // Pixel evidence must catch actual byte corruption independently of
+            // the intact descriptor/page tables, then leave the original restored.
+            auto *pixels=reinterpret_cast<uint32_t *>(surface->pixels());
+            const auto saved=pixels[799]; pixels[799]=0;
+            OSDictionary evidence; NabuDpuDisplay::diagnosticPattern(surface,&evidence,"corrupt");
+            assert(number(dictionary(evidence,"corrupt"),"mismatched_words")==1);
+            pixels[799]=saved;
+        };
+        const auto status=NabuDpuDisplay::diagnosticFlipGop(&f.diagnostic,&f.display,&out);
+        assert(status==SC::Ok && boolean(out,"test_surface_released"));
+        assert(!NabuDpuDisplay::finishDiagnostic(&f.diagnostic,status));
+        checkedPixels+=f.h.pixelsChecked; ++groups;
+    }
     std::printf("PASS %u actual Display/ScanoutCore/PageTable/Mapper groups; %llu original pixels checked; no hardware acceptance qualification\n",
                 groups,static_cast<unsigned long long>(checkedPixels));
 }
@@ -825,7 +884,7 @@ MAPPER_FUNCTIONS = (
     'IOReturn checkFault(', 'static void readOrdering(', 'static int rd32(',
     'static int rd64(', 'static bool routeRead(', 'static bool readImage(',
     'static bool imageMatches(', 'IOReturn snapshotActive(',
-    'static IOReturn releaseDescriptor(', 'IOReturn mapDescriptor(',
+    'static IOReturn releaseDescriptor(', 'void snapshotMapping(', 'IOReturn mapDescriptor(',
     'IOReturn accept(', 'IOReturn acceptGop(', 'IOReturn releaseRetired(',
 )
 DISPLAY_FUNCTIONS = (
@@ -836,7 +895,8 @@ DISPLAY_FUNCTIONS = (
     'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop(',
     'static void diagnosticNumber(', 'static void diagnosticStage(',
     'static Scan::Status diagnosticRegisters(', 'static Scan::Status diagnosticMapper(',
-    'static void diagnosticAcceptance(', 'static Scan::Status diagnosticFlipGop(',
+    'static void diagnosticAcceptance(', 'static void diagnosticPattern(',
+    'static void diagnosticTestMapping(', 'static Scan::Status diagnosticFlipGop(',
     'static bool finishDiagnostic(',
 )
 
@@ -857,6 +917,7 @@ def harness():
     result += body(mapper_header, 'struct ActivationTiming', ';') + '\n'
     result += body(mapper, 'struct Binding', ';') + '\n'
     result += body(mapper_header, 'struct ActiveSnapshot', ';') + '\n'
+    result += body(mapper_header, 'struct MappingSnapshot', ';') + '\n'
     # Hardware readOrdering() retains the source's explicit host-test switch.
     # Forward declarations only resolve extraction order; bodies stay intact.
     result += 'static void readOrdering();\nstatic bool imageMatches(Binding *,bool,ArmSmmu4KContextImage *,uint32_t);\n'

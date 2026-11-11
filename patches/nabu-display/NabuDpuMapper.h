@@ -56,7 +56,7 @@ struct ActiveSnapshot {
     uint64_t tablePhysical, ttbr0, ttbr1, far;
     uint32_t asid, sctlr, cbar, cba2r, tcr, tcr2, mair0, mair1;
     uint32_t fsr, globalFsr, fsynr0, streamSyndrome, tlbStatus, identityPages;
-    uint32_t actlr, inheritedActlr;
+    uint32_t actlr, inheritedActlr, scr0;
     bool active, contextMatches, routesUnchanged, gopIdentity, poisoned;
     ActivationTiming timing;
 };
@@ -64,6 +64,16 @@ struct ActiveSnapshot {
 // table writes; even a poisoned active domain reports its actual fault state
 // and remains failed. The display serializes this with mapper/IRQ fault accesses.
 IOReturn snapshotActive(Binding *, ActiveSnapshot *);
+struct MappingSnapshot {
+    uint64_t firstCpuPhysical, firstDescriptorPhysical, firstLeaf;
+    uint64_t lastCpuPhysical, lastDescriptorPhysical, lastLeaf;
+    uint32_t checkedPages, mismatchedPages, firstMismatchIova;
+    IOReturn status;
+};
+// Diagnostic readback of the pinned descriptor, CPU translation and every
+// active table path. Does not change mapping state or issue hardware writes.
+void snapshotMapping(Binding *, const NabuDpuPageTable::Mapping &, IOMemoryDescriptor *,
+                     uint64_t descriptorOffset, const void *pixels, MappingSnapshot *);
 // Descriptor prepare/retain persists until successful release+TLBI. Table pool,
 // MMIO map and uncertain descriptors remain boot-owned; no implicit teardown.
 }

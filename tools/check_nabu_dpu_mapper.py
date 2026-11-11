@@ -20,6 +20,7 @@ STUB = r'''
 #include <cassert>
 #include <vector>
 using IOReturn=int;using IOByteCount=uint64_t;using IOOptionBits=uint32_t;using ppnum_t=uint32_t;using vm_offset_t=uintptr_t;
+extern "C" inline vm_offset_t ml_vtophys(vm_offset_t address){return address;}
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=-1,kIOReturnNoMemory=-2,kIOReturnUnsupported=-3,
     kIOReturnIOError=-4,kIOReturnBadArgument=-5,kIOReturnNoResources=-6;
 constexpr unsigned kIODirectionOut=1,kIODirectionInOut=3,kIOMemoryMapperNone=0x10,

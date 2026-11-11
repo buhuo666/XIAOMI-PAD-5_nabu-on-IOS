@@ -633,6 +633,9 @@ static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const cha
         {"halt_request", Scan::Vbif, Scan::HaltRequest}, {"halt_ack", Scan::Vbif, Scan::HaltStatus},
         {"vig0_address", Scan::Mdss, Scan::Vig0 + Scan::SrcAddress},
         {"vig1_address", Scan::Mdss, Scan::Vig1 + Scan::SrcAddress},
+        {"vig0_stride", Scan::Mdss, Scan::Vig0 + Scan::SrcStride},
+        {"vig1_stride", Scan::Mdss, Scan::Vig1 + Scan::SrcStride},
+        {"ctl_flush", Scan::Mdss, Scan::Ctl0 + Scan::CtlFlush},
         {"vig0_clock", Scan::Mdss, Scan::Vig0ForceClock},
         {"vig1_clock", Scan::Mdss, Scan::Vig1ForceClock},
         {"irq_enable", Scan::Mdss, NabuDpuVBlank::TopEnable},
@@ -659,10 +662,10 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     IOLockLock(b->stateLock);
     const auto status = Mapper::snapshotActive(b->mapper, &s);
     IOLockUnlock(b->stateLock);
-    IOLog("NABU DPU DIAGNOSTIC mapper: status=%#x active=%u poisoned=%u context=%u routes=%u identity=%u pages=%u SCTLR=%#x FSR=%#x GFSR=%#x FAR=%#llx FSYNR0=%#x STREAM=%#x TLB=%#x root=%#llx TTBR=%#llx/%#llx ACTLR=%#x old=%#x TCR=%#x\n",
+    IOLog("NABU DPU DIAGNOSTIC mapper: status=%#x active=%u poisoned=%u context=%u routes=%u identity=%u pages=%u SCTLR=%#x FSR=%#x GFSR=%#x FAR=%#llx FSYNR0=%#x STREAM=%#x TLB=%#x root=%#llx TTBR=%#llx/%#llx ACTLR=%#x old=%#x TCR=%#x SCR0=%#x\n",
           status, s.active, s.poisoned, s.contextMatches, s.routesUnchanged, s.gopIdentity,
           s.identityPages, s.sctlr, s.fsr, s.globalFsr, s.far, s.fsynr0, s.streamSyndrome, s.tlbStatus,
-          s.tablePhysical, s.ttbr0, s.ttbr1, s.actlr, s.inheritedActlr, s.tcr);
+          s.tablePhysical, s.ttbr0, s.ttbr1, s.actlr, s.inheritedActlr, s.tcr, s.scr0);
     const auto &t = s.timing;
     if (!b->liveIdentity) IOLog("NABU DPU DIAGNOSTIC activation-stage-us: halt=%llu sources=%llu inherited=%llu encode=%llu disable=%llu registers=%llu disabled-readback=%llu tlbi=%llu enable=%llu enabled-readback=%llu routes=%llu total=%llu\n",
           t.halt, t.sources - t.halt, t.inherited - t.sources, t.encoded - t.inherited,
@@ -679,6 +682,7 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     diagnosticNumber(values, "cbar", s.cbar); diagnosticNumber(values, "cba2r", s.cba2r);
     diagnosticNumber(values, "tcr", s.tcr); diagnosticNumber(values, "tcr2", s.tcr2);
     diagnosticNumber(values, "actlr", s.actlr); diagnosticNumber(values, "inherited_actlr", s.inheritedActlr);
+    diagnosticNumber(values, "scr0", s.scr0);
     diagnosticNumber(values, "mair0", s.mair0); diagnosticNumber(values, "mair1", s.mair1);
     diagnosticNumber(values, "fsr", s.fsr); diagnosticNumber(values, "global_fsr", s.globalFsr);
     diagnosticNumber(values, "far", s.far); diagnosticNumber(values, "fsynr0", s.fsynr0);
@@ -716,6 +720,52 @@ static void diagnosticAcceptance(OSDictionary *out, const char *name, const Scan
     diagnosticNumber(values, "observed_us", a.observed.end_us);
     out->setObject(name, values); values->release();
 }
+static void diagnosticPattern(MiniIOSurface *surface, OSDictionary *out, const char *name) {
+    auto values = OSDictionary::withCapacity(5);
+    if (!values) return;
+    uint32_t red = 0, blue = 0, mismatches = 0;
+    uint64_t hash = 1469598103934665603ull;
+    const unsigned columns[] = {0, 799, 800, 1599};
+    for (unsigned y = 0; y < 2560; ++y) {
+        auto row = reinterpret_cast<const volatile uint32_t *>(surface->pixels() + y * surface->info.bytesPerRow);
+        for (unsigned x : columns) {
+            const uint32_t pixel = row[x], expected = x < 800 ? 0xffff0000u : 0xff0000ffu;
+            if (pixel == 0xffff0000u) ++red;
+            if (pixel == 0xff0000ffu) ++blue;
+            if (pixel != expected) ++mismatches;
+            hash = (hash ^ pixel) * 1099511628211ull;
+        }
+    }
+    diagnosticNumber(values, "sampled_words", 10240);
+    diagnosticNumber(values, "red_words", red); diagnosticNumber(values, "blue_words", blue);
+    diagnosticNumber(values, "mismatched_words", mismatches); diagnosticNumber(values, "hash", hash);
+    out->setObject(name, values); values->release();
+    IOLog("NABU DPU DIAGNOSTIC %s: red=%u blue=%u mismatch=%u hash=%#llx\n", name, red, blue, mismatches, hash);
+}
+static void diagnosticTestMapping(Binding *b, const Held &held, OSDictionary *out, const char *name) {
+    auto values = OSDictionary::withCapacity(10);
+    if (!values) return;
+    auto surface = held.surface;
+    Mapper::MappingSnapshot s{};
+    IOLockLock(b->stateLock);
+    Mapper::snapshotMapping(b->mapper, held.mapping, surface->client ? surface->client : surface->memory,
+        (surface->client ? 0 : PAGE_SIZE) + uint64_t(surface->info.offset), surface->pixels(), &s);
+    IOLockUnlock(b->stateLock);
+    diagnosticNumber(values, "status", s.status); diagnosticNumber(values, "checked_pages", s.checkedPages);
+    diagnosticNumber(values, "mismatched_pages", s.mismatchedPages);
+    diagnosticNumber(values, "first_mismatch_iova", s.firstMismatchIova);
+    diagnosticNumber(values, "first_cpu_physical", s.firstCpuPhysical);
+    diagnosticNumber(values, "first_descriptor_physical", s.firstDescriptorPhysical);
+    diagnosticNumber(values, "first_leaf", s.firstLeaf);
+    diagnosticNumber(values, "last_cpu_physical", s.lastCpuPhysical);
+    diagnosticNumber(values, "last_descriptor_physical", s.lastDescriptorPhysical);
+    diagnosticNumber(values, "last_leaf", s.lastLeaf);
+    out->setObject(name, values); values->release();
+    IOLog("NABU DPU DIAGNOSTIC %s: status=%#x pages=%u mismatch=%u at=%#x first=%#llx/%#llx/%#llx last=%#llx/%#llx/%#llx\n",
+        name, s.status, s.checkedPages, s.mismatchedPages, s.firstMismatchIova,
+        s.firstCpuPhysical, s.firstDescriptorPhysical, s.firstLeaf,
+        s.lastCpuPhysical, s.lastDescriptorPhysical, s.lastLeaf);
+}
 static Scan::Status diagnosticFlipGop(DiagnosticSession *d, Binding *b, OSDictionary *out) {
     auto status = diagnosticRegisters(b, out, "before", true);
     if (status != Scan::Ok) return status;
@@ -731,6 +781,7 @@ static Scan::Status diagnosticFlipGop(DiagnosticSession *d, Binding *b, OSDictio
             row[x] = x < 800 ? 0xffff0000u : 0xff0000ffu;
     }
     FlushPoC_DcacheRegion((vm_offset_t)surface->pixels(), surface->info.allocSize);
+    diagnosticPattern(surface, out, "test_pixels_before");
     Held test{};
     auto result = acquire(b, surface, test);
     if (!result) result = waitProducer(b, test);
@@ -760,9 +811,18 @@ static Scan::Status diagnosticFlipGop(DiagnosticSession *d, Binding *b, OSDictio
     diagnosticNumber(out, "test_slot", mapping.slot);
     diagnosticNumber(out, "test_mapping_token", mapping.token);
     diagnosticNumber(out, "test_scan_sequence", first.sequence);
+    diagnosticTestMapping(b, b->held[slot], out, "test_mapping_before");
+    status = diagnosticRegisters(b, out, "test_scanout_before_hold", false);
+    // These are read-only observations; always perform the existing GOP return
+    // and retirement even if an observation fails. Host qualification checks them.
+    diagnosticNumber(out, "test_scanout_before_status", status);
     const uint64_t holdBegan = nowUs();
-    IOSleep(3000);
+    IOSleep(10000);
     diagnosticNumber(out, "test_hold_us", nowUs() - holdBegan);
+    diagnosticPattern(b->held[slot].surface, out, "test_pixels_after");
+    diagnosticTestMapping(b, b->held[slot], out, "test_mapping_after");
+    status = diagnosticRegisters(b, out, "test_scanout_after_hold", false);
+    diagnosticNumber(out, "test_scanout_after_status", status);
     diagnosticStage(d, "diagnostic-flip-return-gop-enter");
     Scan::Frame frame{Scan::GopPhysical, Scan::GopStride, PT::GopBytes, b->scan.current_sequence + 1,
         1600, 2560, Scan::BgraFourcc, 4, 0, true};

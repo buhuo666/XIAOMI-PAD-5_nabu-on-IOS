@@ -601,7 +601,9 @@ int main(int argc, char **argv) {
         LSApplicationWorkspace *workspace = [NSClassFromString(@"LSApplicationWorkspace") defaultWorkspace];
         if (!workspace) { saveReport(@{@"error": @"LSApplicationWorkspace unavailable"}, @"baseline.json"); return 1; }
         saveReport(snapshot(workspace), @"baseline.json");
-        for (unsigned i = 0; i < 240; i++) {
+        // GPU206's second visual check arrived after the former 20-minute
+        // window. The paired request file must remain serviced for this boot.
+        for (;;) {
             @autoreleasepool {
                 NSDictionary *request = [NSDictionary dictionaryWithContentsOfFile:requestPath];
                 if (request) {
@@ -678,7 +680,6 @@ int main(int argc, char **argv) {
             }
             sleep(5);
         }
-        NSLog(@"NABU SERVICES: diagnostic request window ended");
     }
     return 0;
 }

@@ -40,8 +40,8 @@ def main():
     assert signed_entitlements == plistlib.loads(entitlements.read_bytes())
     report = {'target': 'arm64-ios16.5', 'source': str(source.relative_to(ROOT)),
               'bytes': binary.stat().st_size, 'command': command, 'default_action': 'inventory',
-              'repair_requires_live_paired_host_request': True, 'request_window_seconds': 1200,
-              'dpu_root_mode': '--dpu-only: fixed Snapshot/HaltResume/ActivateGop requests; ordinary probe stays mobile',
+              'repair_requires_live_paired_host_request': True, 'request_window': 'current boot until service shutdown',
+              'dpu_root_mode': '--dpu-only: named DPU requests for this boot; ordinary probe stays mobile',
               'network_calls': False, 'runtime_verified': False,
               'wireless_software_inventory': ['wifid job files and device-tree requirements',
                   'IO80211Controller/IO80211Interface/IONetworkInterface matching counts',

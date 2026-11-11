@@ -115,6 +115,36 @@ def verify(data):
         require(result.get("test_uses_original_surface_pages") is True and result.get("gpu_rendered") is False,
                 "Wrong test surface provenance")
         require(result.get("test_surface_released") is True, "Test surface/lease not released after retirement")
+        # GPU207 adds direct storage evidence; retain parsing of older saved runs.
+        if "test_pixels_before" in result:
+            require(result.get("test_hold_us", 0) >= 10000000, "Extended visual hold interval missing")
+            hashes = []
+            for name in ("test_pixels_before", "test_pixels_after"):
+                pixels = result.get(name, {})
+                require(pixels.get("sampled_words") == 10240 and pixels.get("red_words") == 5120 and
+                        pixels.get("blue_words") == 5120 and pixels.get("mismatched_words") == 0,
+                        f"{name}: CPU test pattern differs")
+                hashes.append(pixels.get("hash"))
+            require(hashes[0] is not None and hashes[0] == hashes[1], "Test pixels changed during scanout")
+            for name in ("test_mapping_before", "test_mapping_after"):
+                mapping = result.get(name, {})
+                require(mapping.get("status") == 0 and mapping.get("checked_pages") == 4000 and
+                        mapping.get("mismatched_pages") == 0, f"{name}: CPU/descriptor/table mapping differs")
+                for edge in ("first", "last"):
+                    cpu = mapping.get(edge + "_cpu_physical", 0)
+                    descriptor = mapping.get(edge + "_descriptor_physical", 0)
+                    leaf = mapping.get(edge + "_leaf", 0) & ((1 << 64) - 1)
+                    require(0 < cpu < (1 << 40) and cpu == descriptor and
+                            leaf == ((descriptor & ~4095) | (3 << 53) | 0xec7),
+                            f"{name}/{edge}: sampled physical page or attributes differ")
+            for phase in ("before", "after"):
+                require(result.get("test_scanout_" + phase + "_status") == 0,
+                        f"{phase}: scanout register read failed")
+                scanout = result.get("test_scanout_" + phase + "_hold", {})
+                for pipe in ("vig0", "vig1"):
+                    require(scanout.get(pipe + "_address") == iova and scanout.get(pipe + "_stride") == 6400,
+                            f"{phase}/{pipe}: test storage did not persist")
+                require(scanout.get("ctl_flush") == 0, f"{phase}: CTL flush remains pending")
     mapper = result.get("mapper")
     if activate or flip or resume_irq or mapper is not None:
         m = mapper or {}
@@ -139,6 +169,8 @@ def verify(data):
         require(m.get("global_fsr") == 0 and m.get("fsr", 0xC00001FE) & 0xC00001FE == 0,
                 "Actual SMMU fault observed")
         require(m.get("tlb_status", 1) & 1 == 0, "TLB synchronization still busy")
+        if "scr0" in m:
+            require(m["scr0"] & 0x407 == 0x406, "Global SMMU client translation is not enabled")
     return {"passed": not issues, "issues": issues, "action": action, "request_id": identifier,
             "hardware_result": result, "cb2_takeover_verified": activate and not polled and not issues,
             "polled_takeover_verified": polled and not issues,

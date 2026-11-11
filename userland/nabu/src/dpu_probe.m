@@ -84,7 +84,9 @@ int nabuDpuServiceMain(void) {
         NSString *resultPath = [dpuDirectory stringByAppendingPathComponent:@"result.json"];
         [fm removeItemAtPath:requestPath error:NULL]; // Never replay a previous boot's request.
         [fm removeItemAtPath:resultPath error:NULL];
-        for (unsigned i = 0; i < 2400; ++i) {
+        // Requests can arrive after a long visual inspection in the same boot.
+        // Keep the explicitly requested diagnostic service alive until shutdown.
+        for (;;) {
             @autoreleasepool {
                 NSDictionary *request = [NSDictionary dictionaryWithContentsOfFile:requestPath];
                 if (request) {
