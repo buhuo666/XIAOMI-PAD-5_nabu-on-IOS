@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+#include "FrameCompletion.h"
 
 namespace {
 constexpr uint32_t Width = 1600, Height = 2560, Capacity = 80000;
@@ -197,7 +198,7 @@ NSDictionary *distribution(std::vector<double> values) {
                 const double completedAt = CACurrentMediaTime();
                 const uint32_t status = uint32_t(finished.status);
                 self->rows[index].completed = completedAt; self->rows[index].status = status;
-                __atomic_fetch_or(&self->rows[index].ready, 2u, __ATOMIC_RELEASE);
+                NabuFrameCompletion::publish(self->rows[index].ready, NabuFrameCompletion::CommandCompleted);
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self finishRow:index generation:generation];
                 });
@@ -207,7 +208,7 @@ NSDictionary *distribution(std::vector<double> values) {
             r.commitReturn = CACurrentMediaTime();
             // Completion may race commit's return. Join the two publications
             // on main without putting completion behind another nextDrawable.
-            __atomic_fetch_or(&r.ready, 1u, __ATOMIC_RELEASE);
+            NabuFrameCompletion::publish(r.ready, NabuFrameCompletion::CommitReturned);
             dispatch_async(dispatch_get_main_queue(), ^{ [self finishRow:index generation:generation]; });
         }
     });
@@ -215,8 +216,7 @@ NSDictionary *distribution(std::vector<double> values) {
 - (void)finishRow:(uint32_t)index generation:(uint32_t)generation {
     if (generation != epoch) return;
     Row &r = rows[index];
-    if (__atomic_load_n(&r.ready, __ATOMIC_ACQUIRE) != 3) return;
-    __atomic_store_n(&r.ready, 7u, __ATOMIC_RELEASE);
+    if (!NabuFrameCompletion::claim(r.ready)) return;
     if (r.status != MTLCommandBufferStatusCompleted) {
         ++failures; self.failureReason = @"GPU command failed";
     }
