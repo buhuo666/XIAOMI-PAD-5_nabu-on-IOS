@@ -13,7 +13,7 @@ struct Row {
     double callback = 0, target = 0, acquireBegin = 0, acquireEnd = 0;
     double submit = 0, commitReturn = 0, completed = 0, presentedCallback = 0, presentedTime = 0;
     uint64_t drawable = 0;
-    uint32_t frame = 0, surface = 0, status = 0, pending = 0;
+    uint32_t frame = 0, surface = 0, status = 0, pending = 0, ready = 0;
     bool measured = false;
 };
 NSDictionary *distribution(std::vector<double> values) {
@@ -196,24 +196,32 @@ NSDictionary *distribution(std::vector<double> values) {
             [command addCompletedHandler:^(id<MTLCommandBuffer> finished) {
                 const double completedAt = CACurrentMediaTime();
                 const uint32_t status = uint32_t(finished.status);
-                NSString *message = finished.error.localizedDescription;
-                // Serialize behind commit's return before releasing the row for export.
-                dispatch_async(self.renderQueue, ^{
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        self->rows[index].completed = completedAt; self->rows[index].status = status;
-                        if (status != MTLCommandBufferStatusCompleted) {
-                            ++self->failures; self.failureReason = message ?: @"GPU command failed";
-                        }
-                        --self->pending;
-                        if (self->failures) [self endRun]; else [self checkDeadline];
-                    });
+                self->rows[index].completed = completedAt; self->rows[index].status = status;
+                __atomic_fetch_or(&self->rows[index].ready, 2u, __ATOMIC_RELEASE);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self finishRow:index generation:generation];
                 });
             }];
             r.submit = CACurrentMediaTime();
             [command commit];
             r.commitReturn = CACurrentMediaTime();
+            // Completion may race commit's return. Join the two publications
+            // on main without putting completion behind another nextDrawable.
+            __atomic_fetch_or(&r.ready, 1u, __ATOMIC_RELEASE);
+            dispatch_async(dispatch_get_main_queue(), ^{ [self finishRow:index generation:generation]; });
         }
     });
+}
+- (void)finishRow:(uint32_t)index generation:(uint32_t)generation {
+    if (generation != epoch) return;
+    Row &r = rows[index];
+    if (__atomic_load_n(&r.ready, __ATOMIC_ACQUIRE) != 3) return;
+    __atomic_store_n(&r.ready, 7u, __ATOMIC_RELEASE);
+    if (r.status != MTLCommandBufferStatusCompleted) {
+        ++failures; self.failureReason = @"GPU command failed";
+    }
+    --pending;
+    if (failures) [self endRun]; else [self checkDeadline];
 }
 - (void)endRun {
     if (!running) return;
@@ -277,7 +285,8 @@ NSDictionary *distribution(std::vector<double> values) {
     const int closeStatus = fclose(file);
     if (writeFailed || closeStatus) { ++failures; self.failureReason = @"Frame CSV write incomplete"; }
     NSDictionary *report = @{
-        @"run_id": self.runID, @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
+        @"run_id": self.runID, @"benchmark_revision": @2,
+        @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
         @"repetition": @(repetition), @"target_hz": @(rate), @"width": @(Width), @"height": @(Height),
         @"sample_start_s": @(sampleStart), @"sample_end_s": @(sampleEnd), @"stopped_s": @(stoppedAt),

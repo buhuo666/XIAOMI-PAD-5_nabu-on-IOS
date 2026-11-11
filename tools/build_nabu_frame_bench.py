@@ -53,7 +53,7 @@ def main():
              ROOT / 'userland/nabu/apps/LocalTest/LaunchScreen.storyboard'])
         info = {'CFBundleIdentifier': BUNDLE, 'CFBundleName': 'FrameBench', 'CFBundleExecutable': 'FrameBench',
                 'CFBundleDisplayName': 'GPU帧率基准', 'CFBundlePackageType': 'APPL',
-                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '1', 'CFBundleShortVersionString': '1.0',
+                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '2', 'CFBundleShortVersionString': '1.1',
                 'MinimumOSVersion': '16.5', 'CFBundleSupportedPlatforms': ['iPhoneOS'],
                 'LSRequiresIPhoneOS': True, 'UIDeviceFamily': [2], 'UIRequiresFullScreen': True,
                 'UILaunchStoryboardName': 'LaunchScreen', 'UIFileSharingEnabled': True,
