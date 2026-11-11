@@ -7,6 +7,8 @@ on:
       - 'tools/build_nabu_frame_bench.py'
       - 'tools/check_nabu_frame_bench.py'
       - 'tools/analyze_nabu_frame_bench.py'
+      - 'tools/analyze_nabu_gpu_stats.py'
+      - 'tools/check_nabu_gpu_stats.py'
       - 'userland/nabu/apps/FrameBench/**'
   workflow_dispatch:
 permissions:
@@ -25,6 +27,8 @@ jobs:
         run: python3 tools/build_nabu_frame_bench.py --output artifacts/nabu-frame-bench
       - name: Check concurrent completion and analysis scope
         run: python3 tools/check_nabu_frame_bench.py --output artifacts/nabu-frame-bench/host-check
+      - name: Check interleaved kernel snapshot parsing
+        run: python3 tools/check_nabu_gpu_stats.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

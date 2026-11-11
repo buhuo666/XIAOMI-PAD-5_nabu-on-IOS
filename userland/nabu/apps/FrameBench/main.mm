@@ -49,6 +49,7 @@ NSDictionary *distribution(std::vector<double> values) {
 @property(nonatomic, strong) NSURL *documents;
 @property(nonatomic, copy) NSString *runID;
 @property(nonatomic, copy) NSString *failureReason;
+@property(nonatomic, strong) NSMutableArray<NSDictionary *> *failureEvents;
 - (void)stopForBackground;
 @end
 
@@ -129,6 +130,7 @@ NSDictionary *distribution(std::vector<double> values) {
     scene = duration == 600 ? 1 : sequenceIndex / 3;
     repetition = duration == 600 ? 1 : sequenceIndex % 3 + 1;
     self.failureReason = nil;
+    self.failureEvents = [NSMutableArray array];
     self.runID = [NSString stringWithFormat:@"%.0f-scene%u-repeat%u", NSDate.date.timeIntervalSince1970 * 1e6, scene, repetition];
     sampleStart = CACurrentMediaTime() + 3; sampleEnd = sampleStart + duration;
     initialThermal = NSProcessInfo.processInfo.thermalState;
@@ -163,18 +165,32 @@ NSDictionary *distribution(std::vector<double> values) {
                 return;
             }
             r.drawable = drawable.drawableID;
-            IOSurfaceRef surface = drawable.texture.iosurface;
+            id<MTLTexture> texture = drawable.texture;
+            IOSurfaceRef surface = texture.iosurface;
             r.surface = surface ? IOSurfaceGetID(surface) : 0;
+            const NSUInteger textureWidth = texture.width, textureHeight = texture.height;
             id<MTLCommandBuffer> command = [self.queue commandBuffer];
             MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-            pass.colorAttachments[0].texture = drawable.texture;
+            pass.colorAttachments[0].texture = texture;
             pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
             pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-            id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
-            if (!command || !encoder || drawable.texture.width != Width || drawable.texture.height != Height) {
+            const bool nativeTexture = texture && textureWidth == Width && textureHeight == Height;
+            id<MTLRenderCommandEncoder> encoder = nativeTexture ? [command renderCommandEncoderWithDescriptor:pass] : nil;
+            if (!command || !encoder || !nativeTexture) {
+                NSString *stage = !texture ? @"drawable_texture_nil" : !nativeTexture ? @"drawable_size_mismatch" :
+                    !command ? @"command_buffer_nil" : @"render_encoder_nil";
+                NSError *error = command.error;
+                NSDictionary *event = @{@"stage": stage, @"frame": @(index), @"time_s": @(CACurrentMediaTime()),
+                    @"drawable_id": @(r.drawable), @"surface_id": @(r.surface),
+                    @"texture_present": @(texture != nil), @"texture_width": @(textureWidth), @"texture_height": @(textureHeight),
+                    @"command_present": @(command != nil), @"command_status": @(command.status),
+                    @"encoder_present": @(encoder != nil), @"error_domain": error.domain ?: @"",
+                    @"error_code": @(error.code), @"error_description": error.localizedDescription ?: @""};
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    ++self->failures; --self->pending; self.failureReason = @"Encoder creation or native drawable size failed";
-                    [self endRun];
+                    ++self->failures; --self->pending;
+                    [self.failureEvents addObject:event];
+                    if (!self.failureReason) self.failureReason = stage;
+                    [self endRun]; [self checkDeadline];
                 }); return;
             }
             for (unsigned layer = 0; layer < layers; ++layer) {
@@ -197,9 +213,15 @@ NSDictionary *distribution(std::vector<double> values) {
             [command addCompletedHandler:^(id<MTLCommandBuffer> finished) {
                 const double completedAt = CACurrentMediaTime();
                 const uint32_t status = uint32_t(finished.status);
+                NSError *error = finished.error;
+                NSDictionary *event = status == MTLCommandBufferStatusCompleted ? nil :
+                    @{@"stage": @"command_completion_failed", @"frame": @(index), @"time_s": @(completedAt),
+                      @"command_status": @(status), @"error_domain": error.domain ?: @"",
+                      @"error_code": @(error.code), @"error_description": error.localizedDescription ?: @""};
                 self->rows[index].completed = completedAt; self->rows[index].status = status;
-                NabuFrameCompletion::publish(self->rows[index].ready, NabuFrameCompletion::CommandCompleted);
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (event && generation == self->epoch) [self.failureEvents addObject:event];
+                    NabuFrameCompletion::publish(self->rows[index].ready, NabuFrameCompletion::CommandCompleted);
                     [self finishRow:index generation:generation];
                 });
             }];
@@ -218,7 +240,7 @@ NSDictionary *distribution(std::vector<double> values) {
     Row &r = rows[index];
     if (!NabuFrameCompletion::claim(r.ready)) return;
     if (r.status != MTLCommandBufferStatusCompleted) {
-        ++failures; self.failureReason = @"GPU command failed";
+        ++failures; if (!self.failureReason) self.failureReason = @"GPU command failed";
     }
     --pending;
     if (failures) [self endRun]; else [self checkDeadline];
@@ -284,16 +306,23 @@ NSDictionary *distribution(std::vector<double> values) {
     const bool writeFailed = ferror(file) != 0;
     const int closeStatus = fclose(file);
     if (writeFailed || closeStatus) { ++failures; self.failureReason = @"Frame CSV write incomplete"; }
+    const double observedDuration = std::max(0.0, std::min(stoppedAt, sampleEnd) - sampleStart);
+    const bool completeInterval = stoppedAt >= sampleEnd;
+    const bool validPerformance = completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @2,
+        @"run_id": self.runID, @"benchmark_revision": @3,
         @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
         @"repetition": @(repetition), @"target_hz": @(rate), @"width": @(Width), @"height": @(Height),
         @"sample_start_s": @(sampleStart), @"sample_end_s": @(sampleEnd), @"stopped_s": @(stoppedAt),
+        @"observed_duration_s": @(observedDuration), @"complete_interval": @(completeInterval),
+        @"valid_performance_run": @(validPerformance), @"failure_events": self.failureEvents,
         @"requested_duration_s": @(duration), @"warmup_s": @3, @"frames_submitted": @(generated),
         @"display_link_callbacks": @(displayLinkCallbacks),
         @"commands_completed": @(complete), @"presented_callbacks": @(presented), @"positive_presented_times": @(realPresentedTime),
-        @"app_submit_rate": @(generated / duration), @"admission_skips": @(missedAdmission), @"nil_drawables": @(nullDrawable),
+        @"app_submit_rate": validPerformance ? @(generated / duration) : NSNull.null,
+        @"diagnostic_observed_submit_rate": observedDuration > 0 ? @(generated / observedDuration) : NSNull.null,
+        @"admission_skips": @(missedAdmission), @"nil_drawables": @(nullDrawable),
         @"command_failures": @(failures), @"record_capacity": @(Capacity), @"recorded_rows": @(rowCount),
         @"capacity_reached": @(rowCount == Capacity), @"maximum_in_flight": @3,
         @"thermal_state_begin": @(initialThermal), @"thermal_state_end": @(NSProcessInfo.processInfo.thermalState),

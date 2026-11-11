@@ -24,9 +24,21 @@ def analyze(metadata, rows):
         raise ValueError('Invalid sampling interval')
     if (metadata['width'], metadata['height']) != (1600, 2560):
         raise ValueError('Not the requested native resolution')
+    stopped = metadata.get('stopped_s')
+    if stopped is not None and not math.isfinite(stopped):
+        raise ValueError('Invalid stop time')
+    observed_end = min(end, stopped) if stopped is not None else end
+    observed_duration = max(0, observed_end - start)
+    complete_interval = stopped is not None and stopped >= end
+    revision = metadata.get('benchmark_revision', 1)
+    valid_performance_run = (revision >= 2 and complete_interval
+                            and metadata['result'] == 'captured_not_display_qualified'
+                            and not metadata.get('command_failures', 0)
+                            and not metadata.get('nil_drawables', 0)
+                            and not metadata.get('capacity_reached', False))
     identities = [row['frame'] for row in rows]
     if len(set(identities)) != len(identities): raise ValueError('Duplicate frame records')
-    selected = [r for r in rows if start <= r['callback_s'] < end]
+    selected = [r for r in rows if start <= r['callback_s'] < observed_end]
     submitted = [r for r in selected if r['submit_s'] > 0]
     completed = [r for r in submitted if r['status'] == 4 and r['completed_s'] >= r['submit_s']]
     measured_submits = sum(bool(r['measured']) and r['submit_s'] > 0 for r in rows)
@@ -47,16 +59,21 @@ def analyze(metadata, rows):
         metrics[name] = distribution(values)
     times = sorted(r['callback_s'] for r in selected)
     metrics['admitted_callback_interval'] = distribution([(b-a)*1000 for a, b in zip(times, times[1:])])
-    buckets = [0] * math.ceil(end - start)
+    buckets = [0] * math.ceil(observed_duration)
     for r in submitted: buckets[min(len(buckets)-1, int(r['callback_s']-start))] += 1
-    return {'run_id': metadata['run_id'], 'benchmark_revision': metadata.get('benchmark_revision', 1),
+    return {'run_id': metadata['run_id'], 'benchmark_revision': revision,
             'scene': metadata['scene'], 'repetition': metadata['repetition'],
-            'target_hz': metadata['target_hz'], 'result': metadata['result'], 'duration_s': end-start,
+            'target_hz': metadata['target_hz'], 'result': metadata['result'],
+            'error': metadata.get('error', ''), 'duration_s': observed_duration,
+            'requested_duration_s': end-start, 'complete_interval': complete_interval,
+            'valid_performance_run': valid_performance_run,
             'frames_submitted': len(submitted), 'commands_completed': len(completed),
-            'app_submit_rate': len(submitted)/(end-start), 'submissions_per_second': buckets,
+            'app_submit_rate': len(submitted)/(end-start) if valid_performance_run else None,
+            'diagnostic_observed_submit_rate': len(submitted)/observed_duration if observed_duration else None,
+            'submissions_per_second': buckets,
             'admission_skips': metadata['admission_skips'], 'display_link_callbacks': metadata['display_link_callbacks'],
             'metrics': metrics, 'display_fps': None, 'pure_gpu_ms': None,
-            'limits': 'App-generated/submitted frames only; presented callbacks do not prove DPU acceptance. GPU and display correlation remain required. Revision1 has completion bookkeeping behind the drawable queue and is diagnostic only.'}
+            'limits': 'App-generated/submitted frames only; presented callbacks do not prove DPU acceptance. GPU and display correlation remain required. Failed, incomplete, or revision1 runs are excluded from performance results; their timings and observed throughput remain diagnostic. Final per-second bucket can be partial.'}
 
 
 def main():
@@ -68,7 +85,9 @@ def main():
         with (path.parent / metadata['frame_csv']).open(newline='') as stream:
             rows = [{key: float(value) for key, value in row.items()} for row in csv.DictReader(stream)]
         reports.append(analyze(metadata, rows))
-    report = {'runs': reports, 'run_count': len(reports), 'display_qualified': False}
+    report = {'runs': reports, 'run_count': len(reports),
+              'valid_performance_run_count': sum(r['valid_performance_run'] for r in reports),
+              'display_qualified': False}
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'run_count': len(reports), 'runs': [{k:r[k] for k in ('scene','repetition','app_submit_rate','display_link_callbacks','admission_skips')} for r in reports]}))
 

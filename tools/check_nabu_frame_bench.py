@@ -36,6 +36,7 @@ int main() {
 def check_analysis():
     for fps in (10, 120):
         metadata = {'sample_start_s': 10, 'sample_end_s': 11, 'width': 1600, 'height': 2560,
+                    'stopped_s': 11.001, 'benchmark_revision': 3,
                     'run_id': 'synthetic', 'scene': 'opaque_motion', 'repetition': 1, 'target_hz': 120,
                     'result': 'captured_not_display_qualified', 'frames_submitted': fps, 'commands_completed': fps,
                     'admission_skips': 120-fps, 'display_link_callbacks': 120}
@@ -48,6 +49,19 @@ def check_analysis():
         result = analyze(metadata, rows)
         assert result['app_submit_rate'] == fps and result['display_fps'] is None and result['pure_gpu_ms'] is None
         assert result['metrics']['submit_to_completion_observed']['p95_ms'] < 2.001
+        assert result['valid_performance_run'] and result['complete_interval']
+        historical = analyze(dict(metadata, benchmark_revision=1), rows)
+        assert historical['app_submit_rate'] is None and not historical['valid_performance_run']
+        partial_rows = [r for r in rows if r['callback_s'] < 10.25]
+        partial = analyze(dict(metadata, stopped_s=10.25, result='failed',
+                               frames_submitted=len(partial_rows), commands_completed=len(partial_rows)), partial_rows)
+        assert partial['app_submit_rate'] is None and not partial['complete_interval']
+        assert partial['duration_s'] == .25 and partial['requested_duration_s'] == 1
+        assert partial['diagnostic_observed_submit_rate'] == len(partial_rows) / .25
+        warmup_failure = analyze(dict(metadata, stopped_s=9.8, result='failed',
+                                      frames_submitted=0, commands_completed=0), [])
+        assert warmup_failure['duration_s'] == 0 and warmup_failure['app_submit_rate'] is None
+        assert warmup_failure['diagnostic_observed_submit_rate'] is None
         for bad in (rows + [rows[0]], [dict(row, submit_s=0) if i == 0 else row for i, row in enumerate(rows)]):
             try: analyze(metadata, bad)
             except ValueError: pass

@@ -1,5 +1,7 @@
 # nabu GPU 输出延时与 120fps 任务框架
 
+> 2026-11-11后续执行更新：P0的GPU215配对统计已回收；P2的GPU216修正版完成4个60秒窗口，回调120Hz但仅35.83–41.02应用提交/秒，nextDrawable均值23–27ms。第5轮11.19秒失败已单独保留，非完整性能成绩。设备Android/USB、Data194、216日志槽已回收清空。当前继续P1的A640时间戳/逐帧trace和P3/P5的drawable回收、SwapEnd拒绝排查；P4与P6尚未验收。详见 `analysis/nabu-gpu-v215-runtime-120fps-baseline.md`、`analysis/nabu-gpu-v216-framebench-runtime.md`、`analysis/nabu-framebench-drawable-investigation.md`。下文为实施开始前的框架快照，其“本轮未修改/未操作”与GPU215待回收状态仅描述初始时点。
+
 日期：2026-11-11，Asia/Shanghai。范围：读取项目、两份最近 GPU 对话、当前源码、实际链接输入和已有实测日志，制定后续实施框架。本轮没有修改驱动、部署镜像或操作设备。
 
 ## 1. 当前结论
