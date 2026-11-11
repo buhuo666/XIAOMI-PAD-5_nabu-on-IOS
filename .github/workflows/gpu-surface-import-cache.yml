@@ -1,0 +1,41 @@
+name: nabu16 - surface import cache recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  surface-import-cache:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Retrieve qualified GPU216 frontend and Rust archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 42757503932 --name nabu-owned-copy-pages-2
+          --dir inputs/qualified
+      - name: Exercise actual ARC cache with concurrent and failed imports
+        run: >-
+          python3 tools/check_nabu_surface_import_cache.py
+          --source-input inputs/qualified/nabu-owned-copy-pages/frontend-source
+          --output artifacts/surface-cache-host-check
+      - name: Relink only the Objective-C cache change
+        run: >-
+          python3 tools/build_nabu_surface_import_cache.py
+          --input inputs/qualified/nabu-owned-copy-pages
+          --output artifacts/nabu-surface-import-cache
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-surface-import-cache-${{ github.run_number }}
+          path: |
+            artifacts/nabu-surface-import-cache/
+            artifacts/surface-cache-host-check/
+          retention-days: 14
