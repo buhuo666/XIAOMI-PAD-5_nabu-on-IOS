@@ -19,14 +19,21 @@ STUB = r'''
 #include <cstring>
 #include <cassert>
 #include <vector>
-using IOReturn=int;using IOByteCount=uint64_t;using IOOptionBits=uint32_t;using ppnum_t=uint32_t;
+using IOReturn=int;using IOByteCount=uint64_t;using IOOptionBits=uint32_t;using ppnum_t=uint32_t;using vm_offset_t=uintptr_t;
 constexpr int kIOReturnSuccess=0,kIOReturnNotReady=-1,kIOReturnNoMemory=-2,kIOReturnUnsupported=-3,
     kIOReturnIOError=-4,kIOReturnBadArgument=-5,kIOReturnNoResources=-6;
 constexpr unsigned kIODirectionOut=1,kIODirectionInOut=3,kIOMemoryMapperNone=0x10,
-    kIOMemoryPhysicallyContiguous=0x20,kIOMapWriteCombineCache=0x40,kIOMapInhibitCache=0x80;
-constexpr unsigned VM_WIMG_MASK=255,VM_WIMG_WCOMB=6,VM_WIMG_IO=7;
+    kIOMemoryPhysicallyContiguous=0x20,kIOMapCopybackCache=0x40,kIOMapInhibitCache=0x80;
+constexpr unsigned VM_WIMG_MASK=255,VM_WIMG_COPYBACK=0,VM_WIMG_IO=7;
 inline unsigned vmPageShift=14;
 inline std::vector<ppnum_t> cacheQueries;
+inline std::vector<std::pair<uintptr_t,unsigned>> cacheCleans;
+inline uintptr_t tableStart;
+inline unsigned tableBytes;
+extern "C" inline void FlushPoC_DcacheRegion(vm_offset_t at,unsigned bytes){
+    assert(at>=tableStart&&bytes&&at+bytes<=tableStart+tableBytes);
+    assert(!(at&4095)&&!(bytes&4095));cacheCleans.emplace_back(at,bytes);
+}
 #define atop(x) (uint64_t(x) >> vmPageShift)
 inline void *kernel_task=nullptr;inline int gIOServicePlane=0;
 inline uint64_t appsMemory[0x100000/8]={};
@@ -64,16 +71,17 @@ class IOBufferMemoryDescriptor:public IOMemoryDescriptor {
 public:
     ~IOBufferMemoryDescriptor(){std::free(storage);}
     static IOBufferMemoryDescriptor *inTaskWithPhysicalMask(void *,unsigned opts,uint64_t n,uint64_t mask){
-        assert((opts&kIOMapWriteCombineCache)&&(opts&kIOMemoryPhysicallyContiguous));
+        assert((opts&kIOMapCopybackCache)&&(opts&kIOMemoryPhysicallyContiguous));
         assert(mask==0xfffffff000ull);auto *p=new IOBufferMemoryDescriptor;p->physical=0x180000000ull;p->bytes=n;
-        p->storage=std::aligned_alloc(4096,n);assert(p->storage);return p;
+        p->storage=std::aligned_alloc(4096,n);assert(p->storage);
+        tableStart=reinterpret_cast<uintptr_t>(p->storage);tableBytes=n;return p;
     }
     void *getBytesNoCopy(){return storage;}
 };
 extern "C" inline unsigned int pmap_cache_attributes(ppnum_t pn){
     cacheQueries.push_back(pn);
     const uint64_t pa=uint64_t(pn)<<vmPageShift;
-    return pa>=0x180000000ull && pa<0x180000000ull+2053ull*4096 ? VM_WIMG_WCOMB : VM_WIMG_IO;
+    return pa>=0x180000000ull && pa<0x180000000ull+2053ull*4096 ? VM_WIMG_COPYBACK : VM_WIMG_IO;
 }
 '''
 
@@ -105,6 +113,8 @@ static void initApps(){
 }
 static MP::Binding *prepared(){int error=99;auto before=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
     MP::Binding *b=MP::prepare(&error);assert(b&&error==0&&!b->active&&!b->programAttempted);
+    assert(!cacheCleans.empty()&&cacheCleans.back().first==reinterpret_cast<uintptr_t>(b->arena.tables));
+    assert(cacheCleans.back().second==PT::TablePages*PT::PageBytes);
     assert(std::memcmp(before.data(),appsMemory,sizeof(appsMemory))==0);return b;}
 static void finish(MP::Binding *b){ // Host-only lifetime cleanup after simulated hardware removal.
     for(unsigned i=0;i<32;++i)if(b->slots[i].memory){b->slots[i].memory->failComplete=false;MP::releaseDescriptor(b,i);}
@@ -139,7 +149,7 @@ int main(){
     for(unsigned i=0;i<sizeof(appsMemory)/4;++i){
         uint32_t at=i*4;const uint32_t old=reinterpret_cast<uint32_t *>(before.data())[i];
         if(old==reg(at))continue;
-        assert(at==0x1008||at==0x1808||at==0x82000||at==0x82010||at==0x82020||at==0x82024||
+        assert(at==0x1008||at==0x1808||at==0x82000||at==0x82004||at==0x82010||at==0x82020||at==0x82024||
             at==0x82028||at==0x8202c||at==0x82030||at==0x82038||at==0x8203c||at==0x82610||at==0x827f0);
     }
     assert(reg(0x80c)==0x84200800&&reg(0xc0c)==2&&reg(0x810)==0x80000140&&reg(0xc10)==3);
@@ -147,6 +157,11 @@ int main(){
     assert(MP::programmingAttempted(b)&&MP::snapshotActive(b,&snapshot)==0);
     assert(snapshot.active&&snapshot.contextMatches&&snapshot.routesUnchanged&&snapshot.gopIdentity);
     assert(snapshot.identityPages==4000&&snapshot.tablePhysical==b->arena.physical);
+    assert(snapshot.actlr==0x103&&snapshot.inheritedActlr==0&&(snapshot.tcr&0x3f00)==0x400);
+    reg(0x82004)^=0x100;
+    assert(MP::snapshotActive(b,&snapshot)==kIOReturnIOError&&!snapshot.contextMatches);
+    reg(0x82004)^=0x100;
+    assert(MP::snapshotActive(b,&snapshot)==0);
     assert(!snapshot.poisoned&&snapshot.fsr==0x400&&snapshot.globalFsr==0);
     assert(snapshot.far==0&&snapshot.fsynr0==0&&snapshot.streamSyndrome==0);
     const auto gopLeaf=PT::leafIndex(PT::GopStart);
@@ -178,11 +193,15 @@ int main(){
     auto *a=memory(0x280000000ull),*c=memory(0x340000000ull),*unused=memory(0x380000000ull);
     PT::Mapping ma,mc,mu;unsigned retired;
     assert(MP::mapDescriptor(b,a,64,8128,&ma)==0&&a->refs==2&&a->prepares==1&&ma.iova==PT::SlotStart+64);
+    assert(cacheCleans.back().first==reinterpret_cast<uintptr_t>(b->arena.tables)+(5+(ma.iova>>21))*4096);
+    assert(cacheCleans.back().second==4096);
     assert(((b->arena.tables[PT::leafIndex(ma.iova)]>>2)&7)==1);
     assert(MP::accept(b,ma,&retired)==0&&retired==PT::NoSlot);
     assert(MP::mapDescriptor(b,c,0,8192,&mc)==0);
     assert(MP::accept(b,mc,&retired)==0&&retired==ma.slot);
     assert(MP::releaseRetired(b,ma.slot,ma.token)==0&&a->refs==1&&a->prepares==0);
+    assert(cacheCleans.back().first==reinterpret_cast<uintptr_t>(b->arena.tables)+(5+(ma.iova>>21))*4096);
+    assert(cacheCleans.back().second==4096);
     assert(MP::mapDescriptor(b,unused,0,8192,&mu)==0);
     assert(MP::discardUnsubmitted(b,mu)==0&&unused->refs==1&&unused->prepares==0);
     assert(MP::mapDescriptor(b,unused,0,8192,&mu)==0);

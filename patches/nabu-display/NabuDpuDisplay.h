@@ -27,7 +27,7 @@ bool snapshot(Binding *, NabuDpuVBlank::Sample *);
 // Post-desktop diagnostics keep fDpu unset and the GOP presenter selected.
 // Publication allocates only software state; MMIO begins on a paired request.
 bool diagnosticsRequested();
-void publishDiagnostics(IOService *);
+void publishDiagnostics(IOService *, const volatile uint8_t *gop, uint64_t bytes);
 IOReturn diagnosticRequest(OSObject *, bool desktopStarted);
 // Wrap the presenter's complete show/settle operations, including row helpers.
 void diagnosticDrawBegin();

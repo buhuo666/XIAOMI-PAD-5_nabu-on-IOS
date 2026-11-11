@@ -512,18 +512,21 @@ struct DiagnosticSession {
     OSString *requestId;
     bool busy, drawing, frozen, snapshotPassed, haltResume, haltPassed, activateGop, mapperActivated, flipGop;
     bool polledActivate, resumeIrq, irqVerified;
+    const volatile uint8_t *gop;
+    uint64_t gopBytes, gopHash;
 };
 static DiagnosticSession *diagnostics;
 bool diagnosticsRequested() {
     uint32_t on = 0;
     return !requested() && PE_parse_boot_argn("nabu-dpu-diag", &on, sizeof(on)) && on == 1;
 }
-void publishDiagnostics(IOService *owner) {
+void publishDiagnostics(IOService *owner, const volatile uint8_t *gop, uint64_t bytes) {
     auto d = IONewZero(DiagnosticSession, 1);
     if (!d) return;
     d->lock = IOLockAlloc();
     if (!d->lock) { IODelete(d, DiagnosticSession, 1); return; }
     d->owner = owner; owner->retain();
+    d->gop = gop; d->gopBytes = bytes;
     __atomic_store_n(&diagnostics, d, __ATOMIC_RELEASE);
     owner->setProperty("NabuDpuDiagnosticAvailable", kOSBooleanTrue);
     owner->setProperty("NabuDpuDiagnosticState", "waiting-for-post-desktop-request");
@@ -554,6 +557,28 @@ static void thawDiagnosticGop(DiagnosticSession *d) {
 static void diagnosticNumber(OSDictionary *out, const char *key, uint64_t value) {
     auto number = OSNumber::withNumber(value, 64);
     if (number) { out->setObject(key, number); number->release(); }
+}
+static Scan::Status diagnosticGopPixels(DiagnosticSession *d, OSDictionary *out, const char *key, uint64_t *hash) {
+    if (!d->frozen || !d->gop || d->gopBytes != PT::GopBytes) return Scan::StateError;
+    uint64_t value = 14695981039346656037ull;
+    unsigned words = 0, nonzero = 0;
+    // Sample both ends of each original 4K GOP page while its real writer is
+    // drained. This records CPU-visible contents, not the pixels DPU fetched.
+    for (uint32_t at = 0; at < PT::GopBytes; at += PT::PageBytes) {
+        for (unsigned edge = 0; edge < 2; ++edge) {
+            const uint32_t offset = edge ? PT::PageBytes - 4 : 0;
+            const uint32_t pixel = *reinterpret_cast<const volatile uint32_t *>(d->gop + at + offset);
+            value = (value ^ pixel) * 1099511628211ull;
+            ++words; if (pixel & 0xffffff) ++nonzero;
+        }
+    }
+    auto values = OSDictionary::withCapacity(3);
+    if (!values) return Scan::IoError;
+    diagnosticNumber(values, "sampled_words", words); diagnosticNumber(values, "nonzero_rgb_words", nonzero);
+    diagnosticNumber(values, "hash", value); out->setObject(key, values); values->release();
+    *hash = value;
+    IOLog("NABU DPU DIAGNOSTIC pixels %s: sampled=%u nonzero-rgb=%u hash=%#llx\n", key, words, nonzero, value);
+    return Scan::Ok;
 }
 static void diagnosticStage(DiagnosticSession *d, const char *stage, uint32_t result = 0) {
     d->owner->setProperty("NabuDpuDiagnosticState", stage);
@@ -586,12 +611,16 @@ static Scan::Status diagnosticRegisters(Binding *b, OSDictionary *out, const cha
         {"irq_enable", Scan::Mdss, NabuDpuVBlank::TopEnable},
         {"irq_status", Scan::Mdss, NabuDpuVBlank::TopStatus},
     };
+    uint32_t irqEnable = 0, irqStatus = 0;
     for (const auto &reg : registers) {
         if (reg.region == Scan::Vbif && !readVbif) continue;
         uint32_t value;
         if (!read32(b, reg.region, reg.offset, &value)) { values->release(); return Scan::IoError; }
         diagnosticNumber(values, reg.name, value);
+        if (reg.region == Scan::Mdss && reg.offset == NabuDpuVBlank::TopEnable) irqEnable = value;
+        if (reg.region == Scan::Mdss && reg.offset == NabuDpuVBlank::TopStatus) irqStatus = value;
     }
+    IOLog("NABU DPU DIAGNOSTIC registers %s: irq-enable=%#x irq-status=%#x\n", name, irqEnable, irqStatus);
     out->setObject(name, values); values->release(); return Scan::Ok;
 }
 static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDictionary *out) {
@@ -603,10 +632,10 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     IOLockLock(b->stateLock);
     const auto status = Mapper::snapshotActive(b->mapper, &s);
     IOLockUnlock(b->stateLock);
-    IOLog("NABU DPU DIAGNOSTIC mapper: status=%#x active=%u poisoned=%u context=%u routes=%u identity=%u pages=%u SCTLR=%#x FSR=%#x GFSR=%#x FAR=%#llx FSYNR0=%#x STREAM=%#x TLB=%#x root=%#llx TTBR=%#llx/%#llx\n",
+    IOLog("NABU DPU DIAGNOSTIC mapper: status=%#x active=%u poisoned=%u context=%u routes=%u identity=%u pages=%u SCTLR=%#x FSR=%#x GFSR=%#x FAR=%#llx FSYNR0=%#x STREAM=%#x TLB=%#x root=%#llx TTBR=%#llx/%#llx ACTLR=%#x old=%#x TCR=%#x\n",
           status, s.active, s.poisoned, s.contextMatches, s.routesUnchanged, s.gopIdentity,
           s.identityPages, s.sctlr, s.fsr, s.globalFsr, s.far, s.fsynr0, s.streamSyndrome, s.tlbStatus,
-          s.tablePhysical, s.ttbr0, s.ttbr1);
+          s.tablePhysical, s.ttbr0, s.ttbr1, s.actlr, s.inheritedActlr, s.tcr);
     diagnosticStage(d, "diagnostic-mapper-read-returned", status);
     auto values = OSDictionary::withCapacity(20);
     if (!values) return Scan::IoError;
@@ -616,6 +645,7 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     diagnosticNumber(values, "asid", s.asid); diagnosticNumber(values, "sctlr", s.sctlr);
     diagnosticNumber(values, "cbar", s.cbar); diagnosticNumber(values, "cba2r", s.cba2r);
     diagnosticNumber(values, "tcr", s.tcr); diagnosticNumber(values, "tcr2", s.tcr2);
+    diagnosticNumber(values, "actlr", s.actlr); diagnosticNumber(values, "inherited_actlr", s.inheritedActlr);
     diagnosticNumber(values, "mair0", s.mair0); diagnosticNumber(values, "mair1", s.mair1);
     diagnosticNumber(values, "fsr", s.fsr); diagnosticNumber(values, "global_fsr", s.globalFsr);
     diagnosticNumber(values, "far", s.far); diagnosticNumber(values, "fsynr0", s.fsynr0);
@@ -744,6 +774,8 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticStage(d, "diagnostic-gop-drain-enter");
         freezeDiagnosticGop(d);
         diagnosticStage(d, "diagnostic-gop-drained");
+        status = diagnosticGopPixels(d, out, "gop_pixels_before", &d->gopHash);
+        if (status != Scan::Ok) return status;
         int irqError = 0;
         b->clock = NabuDpuVBlank::start(vblank, b, &irqError);
         diagnosticNumber(out, "irq_start_status", uint32_t(irqError));
@@ -903,7 +935,16 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
     }
     // Keep the observer alive after takeover so idle scanout faults are still
     // noticed while the normal GOP presenter continues writing the desktop.
-    if (b->mapper) return diagnosticMapper(d, b, out);
+    if (b->mapper) {
+        status = diagnosticMapper(d, b, out);
+        if (status != Scan::Ok) return status;
+    }
+    if (d->activateGop) {
+        uint64_t hash = 0;
+        status = diagnosticGopPixels(d, out, "gop_pixels_after", &hash);
+        if (status != Scan::Ok) return status;
+        if (hash != d->gopHash) return Scan::ReadbackMismatch;
+    }
     return Scan::Ok;
 }
 static bool finishDiagnostic(DiagnosticSession *d, Scan::Status status) {

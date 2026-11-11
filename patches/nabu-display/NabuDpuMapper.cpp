@@ -12,12 +12,16 @@
 #include <mach/vm_param.h>
 #include <vm/memory_types.h>
 extern "C" unsigned int pmap_cache_attributes(ppnum_t);
+extern "C" void FlushPoC_DcacheRegion(vm_offset_t, unsigned);
 
 namespace NabuDpuMapper {
 namespace PT = NabuDpuPageTable;
 namespace SC = NabuDpuScanout;
 constexpr uint32_t AppsBytes = 0x100000, Cb = 0x82000, Cbar = 0x1008, Cba2r = 0x1808, Cbfrsynra = 0x1408;
 constexpr uint32_t FaultMask = 0xc00001fe, Cfie = 1u << 6;
+// nabu's live Android DT: qcom,qsmmu-v500, display SID0x800/mask0x7ff ACTLR0x103.
+// msm_smmu enables upstream LLC hints; noncoherent QSMMUv500 uses NS/inner-NC/outer-WBWA walks.
+constexpr uint32_t DpuActlr = 0x103, WalkTcrMask = 0x3f00, DpuWalkTcr = 0x400;
 struct OwnedDescriptor { IOMemoryDescriptor *memory; bool prepared; };
 struct Binding {
     IODeviceMemory *appsMemory;
@@ -25,7 +29,7 @@ struct Binding {
     volatile uint8_t *apps;
     IOBufferMemoryDescriptor *tableMemory;
     bool tablePrepared, active, failed, programAttempted;
-    uint32_t asid;
+    uint32_t asid, inheritedActlr;
     PT::Arena arena;
     PT::State state;
     PT::RouteSnapshot routes;
@@ -62,7 +66,7 @@ static int rd64(void *cookie, size_t at, uint64_t *out) {
 static int wr32(void *cookie, size_t at, uint32_t value) {
     auto *b = static_cast<Binding *>(cookie);
     // No SMR/S2CR/global/other-CB writes, including through the TLBI library.
-    const bool allowed = at == Cbar || at == Cba2r || at == Cb || at == Cb + 0x10 ||
+    const bool allowed = at == Cbar || at == Cba2r || at == Cb || at == Cb + 0x4 || at == Cb + 0x10 ||
         at == Cb + 0x30 || at == Cb + 0x38 || at == Cb + 0x3c ||
         at == Cb + 0x610 || at == Cb + 0x618 || at == Cb + 0x7f0;
     if (!allowed || (at == Cb && (value & Cfie))) return 1;
@@ -96,8 +100,10 @@ IOReturn checkFault(Binding *b) {
 static bool publish(void *cookie, uint32_t first, uint32_t count) {
     auto *b = static_cast<Binding *>(cookie);
     if (!count || first >= PT::TablePages || count > PT::TablePages - first || b->failed) return false;
-    // Every pool page was verified VM_WIMG_WCOMB (normal noncacheable). No dirty
-    // CPU cache lines exist here; completion/order is nevertheless mandatory.
+    // Match Android's ordinary cacheable table allocation plus DMA_TO_DEVICE
+    // publication. Clean the actual changed table bytes to PoC before TLBI.
+    FlushPoC_DcacheRegion(reinterpret_cast<vm_offset_t>(b->arena.tables) + uint64_t(first) * PT::PageBytes,
+                         count * PT::PageBytes);
     return barrier(b) == 0;
 }
 static bool visibleBarrier(void *cookie) { return barrier(cookie) == 0; }
@@ -112,6 +118,8 @@ static bool readImage(Binding *b, ArmSmmu4KContextImage &image) {
 static bool imageMatches(Binding *b, bool enabled, ArmSmmu4KContextImage *observed = nullptr) {
     ArmSmmu4KContextImage actual;
     if (!readImage(b, actual)) return false;
+    uint32_t actlr = 0;
+    if (rd32(b, Cb + 4, &actlr) || actlr != DpuActlr) return false;
     if (observed) *observed = actual;
     const auto &e = b->expected;
     const uint32_t expectedSctlr = enabled ? e.sctlr : 0;
@@ -129,11 +137,13 @@ IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
     *out = {};
     if (!b || !b->active) return kIOReturnNotReady;
     out->active = b->active; out->tablePhysical = b->arena.physical; out->asid = b->asid;
+    out->inheritedActlr = b->inheritedActlr;
     out->poisoned = poisoned(b);
     // Fixed nabu arm-smmu_context_fault registers; GR1 CBFRSYNRA[2] is 0x1408.
     if (rd32(b, Cb + 0x58, &out->fsr) || rd32(b, 0x48, &out->globalFsr) ||
         rd64(b, Cb + 0x60, &out->far) || rd32(b, Cb + 0x68, &out->fsynr0) ||
-        rd32(b, Cbfrsynra, &out->streamSyndrome) || rd32(b, Cb + 0x7f4, &out->tlbStatus))
+        rd32(b, Cbfrsynra, &out->streamSyndrome) || rd32(b, Cb + 0x7f4, &out->tlbStatus) ||
+        rd32(b, Cb + 4, &out->actlr))
         return kIOReturnIOError;
     ArmSmmu4KContextImage actual{};
     out->contextMatches = imageMatches(b, true, &actual);
@@ -234,7 +244,7 @@ Binding *prepare(int *error) {
     result = kIOReturnNoMemory;
     b->tableMemory = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
         static_cast<IOOptionBits>(kIODirectionInOut) | static_cast<IOOptionBits>(kIOMemoryMapperNone) |
-        kIOMemoryPhysicallyContiguous | kIOMapWriteCombineCache,
+        kIOMemoryPhysicallyContiguous | kIOMapCopybackCache,
         uint64_t(PT::TablePages) * PT::PageBytes, PT::PhysicalMask);
     if (!b->tableMemory) goto bad;
     result = b->tableMemory->prepare();
@@ -255,9 +265,9 @@ Binding *prepare(int *error) {
             // physical>>12 queried a different, unmanaged PA and returned IO.
             const uint64_t pagePhysical = physical + uint64_t(i) * PT::PageBytes;
             const unsigned attr = pmap_cache_attributes((ppnum_t)atop(pagePhysical)) & VM_WIMG_MASK;
-            if (attr != VM_WIMG_WCOMB) {
+            if (attr != VM_WIMG_COPYBACK) {
                 IOLog("NABU DPU MAP table-cache page=%u pa=%#llx attr=%#x need=%#x\n",
-                      i, physical + uint64_t(i) * 4096, attr, VM_WIMG_WCOMB); goto bad;
+                      i, physical + uint64_t(i) * 4096, attr, VM_WIMG_COPYBACK); goto bad;
             }
         }
         NabuDpuCheckpoint::record("table-cache-checked");
@@ -327,7 +337,8 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
     ArmSmmu4KContextImage old = {};
     uint32_t fsr, gfsr;
     if (!readImage(b, old) || old.sctlr != 0xe0 || old.cbar != 0x1f000 || old.cba2r != 1 ||
-        rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr) || (fsr & FaultMask) || gfsr)
+        rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr) ||
+        rd32(b, Cb + 4, &b->inheritedActlr) || (fsr & FaultMask) || gfsr)
         return kIOReturnUnsupported;
     ArmSmmu4KConfig lower = {32, 40, b->arena.physical, 1048576};
     ArmSmmu4KResult tables = {b->arena.physical, PT::Mair, PT::TablePages, b->state.mapped_leaf_pages, 1, 0};
@@ -335,20 +346,22 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
         b->routes.idr0, b->routes.idr2, b->asid, 0, 0, 0,
         ArmSmmu4KShareabilityFromTransaction, ArmSmmu4KShareabilityFromTransaction};
     if (ArmSmmu4KEncodeContext(&config, &b->expected) != ArmSmmu4KSuccess) return kIOReturnUnsupported;
+    b->expected.tcr = (b->expected.tcr & ~WalkTcrMask) | DpuWalkTcr;
     // Explicit POLLED fault variant. Do not invoke ProgramDisabledContext,
     // whose IRQ-handler precondition and default CFIE=1 are inapplicable here.
     // CFRE remains set to record faults in FSR; no stalls or implicit retries.
     b->expected.sctlr &= ~Cfie;
     const auto &e = b->expected;
-    IOLog("NABU DPU MAP programming root=%#llx asid=%u SCTLR=%#x TCR=%#x TCR2=%#x MAIR=%#x/%#x\n",
-          b->arena.physical, b->asid, e.sctlr, e.tcr, e.tcr2, e.mair0, e.mair1);
+    IOLog("NABU DPU MAP programming root=%#llx asid=%u SCTLR=%#x TCR=%#x TCR2=%#x MAIR=%#x/%#x ACTLR=%#x->%#x; table-WB-PoC upstream-walk\n",
+          b->arena.physical, b->asid, e.sctlr, e.tcr, e.tcr2, e.mair0, e.mair1, b->inheritedActlr, DpuActlr);
     NabuDpuCheckpoint::record("cb2-disable-enter");
     if (wr32(b, Cb, 0) || barrier(b)) return fail(b, kIOReturnIOError);
     NabuDpuCheckpoint::record("cb2-disable-returned");
     if (wr32(b, Cba2r, e.cba2r) || wr32(b, Cbar, e.cbar) ||
         wr32(b, Cb + 0x10, e.tcr2) || wr32(b, Cb + 0x30, e.tcr) ||
         wr64(b, Cb + 0x20, e.ttbr0) || wr64(b, Cb + 0x28, e.ttbr1) ||
-        wr32(b, Cb + 0x38, e.mair0) || wr32(b, Cb + 0x3c, e.mair1) || barrier(b) ||
+        wr32(b, Cb + 0x38, e.mair0) || wr32(b, Cb + 0x3c, e.mair1) ||
+        wr32(b, Cb + 4, DpuActlr) || barrier(b) ||
         !imageMatches(b, false))
         return fail(b, kIOReturnIOError);
     NabuDpuCheckpoint::record("cb2-registers-returned");

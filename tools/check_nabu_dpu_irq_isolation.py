@@ -85,6 +85,8 @@ static void resetForAdmission(Fixture &f) {
     f.display.mapper=nullptr; f.display.activeMapper=nullptr; f.display.clock=nullptr;
     f.mapper.active=false; f.mapper.programAttempted=false;
     f.h.irqBinding=&f.clock;
+    f.diagnostic.gop=reinterpret_cast<const volatile uint8_t *>(f.h.gopPixels.data());
+    f.diagnostic.gopBytes=PT::GopBytes;
 }
 static IOReturn request(const char *command, bool desktop=true) {
     OSDictionary request;
@@ -118,6 +120,9 @@ int main() {
         assert(!f.h.irqSnapshots && !f.h.irqRearms && !f.h.submissions);
         assert(number(dictionary(polled,"after"),"irq_enable")==0);
         assert(!polled.getObject("irq_count_delta"));
+        const auto &pixels=dictionary(polled,"gop_pixels_before");
+        assert(number(pixels,"sampled_words")==8000&&number(pixels,"nonzero_rgb_words")==8000);
+        assert(number(pixels,"hash")==number(dictionary(polled,"gop_pixels_after"),"hash"));
         assert(event(f.h,"irq-paused")<event(f.h,"mapper-activated"));
         assert(request("ActivateGop")==kIOReturnUnsupported);
         assert(request("HaltResume")==kIOReturnUnsupported);
@@ -139,11 +144,12 @@ int main() {
         assert(number(out,"status")==0 && f.diagnostic.irqVerified);
         assert(f.h.irqRearms==1 && f.h.irqSnapshots==2 && !f.clock.paused); ++groups;
     }
-    for (unsigned failed=0;failed<3;++failed) {
+    for (unsigned failed=0;failed<4;++failed) {
         Fixture f; resetForAdmission(f);
         if (failed==0) f.h.running[1]=false;
         if (failed==1) f.h.mapperFault=true;
         if (failed==2) f.h.polledMaskLost=true;
+        if (failed==3) f.h.corruptGop=true;
         const auto &out=execute(f,"ActivateGopPolled","DpuActivateGopPolled");
         assert(number(out,"status")!=0 && f.diagnostic.frozen && !f.diagnostic.mapperActivated);
         assert(!f.h.irqSnapshots && !f.h.irqRearms && f.clock.paused);
@@ -172,7 +178,8 @@ def harness():
     source = source.replace(old, setup).replace(base.IRQ_SUBSTITUTES, IRQ)
     source = source.replace('    Hardware();', '''    NabuDpuVBlank::Binding *irqBinding=nullptr;
     unsigned irqSnapshots=0, irqRearms=0;
-    bool mapperFault=false, irqRearmFails=false, polledMaskLost=false;
+    bool mapperFault=false, irqRearmFails=false, polledMaskLost=false, corruptGop=false;
+    std::vector<uint32_t> gopPixels=std::vector<uint32_t>(PT::GopBytes/4,0xff00aa55);
     Hardware();''')
     source = source.replace('    const char *getCStringNoCopy()', '''    bool isEqualTo(const char *value) const { return text==value; }
     size_t getLength() const { return text.size(); }
@@ -184,6 +191,7 @@ public:
     OSDictionary properties;
     void setProperty(const char *key, OSObject *value) { properties.setObject(key,value); }''')
     source = source.replace('    now+=us;', '''    now+=us;
+    if (corruptGop && diagnostic->polledActivate) { gopPixels[0]^=1; corruptGop=false; }
     if (polledMaskLost && diagnostic->polledActivate)
         mdss[NabuDpuVBlank::TopEnable/4]|=NabuDpuVBlank::Owned;''')
     source = source.replace('display->clock->active && edges', 'display->clock->active && !display->clock->paused && edges')
@@ -193,7 +201,8 @@ public:
     display = (base.DIR / 'NabuDpuDisplay.cpp').read_text(encoding='utf-8')
     source += THREADS + '\nnamespace NabuDpuDisplay {\n'
     source += 'static Binding *allocateBinding() { assert(false); return nullptr; }\n'
-    for signature in ('static Scan::Status runDiagnostic(', 'static void diagnosticWorker(', 'IOReturn diagnosticRequest('):
+    for signature in ('static Scan::Status diagnosticGopPixels(', 'static Scan::Status runDiagnostic(',
+                      'static void diagnosticWorker(', 'IOReturn diagnosticRequest('):
         source += body(display, signature) + '\n'
     source += '}\n'
     fixture = base.TESTS[:base.TESTS.index('static void report(')]
@@ -216,7 +225,7 @@ def main():
                   host_path(base.DIR / 'NabuDpuScanoutCore.cpp'),
                   host_path(base.DIR / 'NabuDpuPageTable.cpp'), '-o', host_path(binary)])
         output = base.run([host_path(binary)])
-    counts = {'success': 0, 'failure': 0, 'false_qualification_rejected': 0}
+    counts = {'success': 0, 'failure': 0, 'false_qualification_rejected': 0, 'profile_or_pixels_rejected': 0}
     for line in output.splitlines():
         if not line.startswith('CONTROL '):
             continue
@@ -240,7 +249,14 @@ def main():
             changed['dpu']['result']['after']['irq_enable'] |= 0x3c000000
             assert not verify(changed)['passed']
             counts['false_qualification_rejected'] += 1
-    assert counts == {'success': 7, 'failure': 5, 'false_qualification_rejected': 9}, counts
+            for section, key in (('mapper', 'actlr'), ('mapper', 'tcr'),
+                                 ('gop_pixels_after', 'hash'), ('gop_pixels_before', 'sampled_words')):
+                changed = json.loads(json.dumps(data))
+                changed['dpu']['result'][section][key] ^= 0x400 if key == 'tcr' else 1
+                assert not verify(changed)['passed']
+                counts['profile_or_pixels_rejected'] += 1
+    assert counts == {'success': 7, 'failure': 6, 'false_qualification_rejected': 9,
+                      'profile_or_pixels_rejected': 12}, counts
     report = {'passed': True, 'host_result': output.splitlines()[-1], 'consumer': counts,
               'sanitizers': ['address', 'undefined'], 'device_accessed': False,
               'scope': 'Actual Display admission, worker, handover sequencing, counters, mapper readback and finish code; modeled IRQ binding and initial SMMU programming; no physical acceptance'}

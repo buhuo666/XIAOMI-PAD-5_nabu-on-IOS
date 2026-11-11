@@ -557,12 +557,13 @@ struct Fixture {
         mapper.active=true; mapper.programAttempted=true; mapper.asid=65534;
         assert(PT::captureAndQualifyRoutes({&mapper,MP::routeRead},mapper.routes)==PT::Ok);
         mapper.expected.cbar=0x1f000; mapper.expected.cba2r=1;
-        mapper.expected.sctlr=0x21; mapper.expected.tcr=0x80000020;
+        mapper.expected.sctlr=0x21; mapper.expected.tcr=0x80000420;
+        assert(MP::WalkTcrMask==0x3f00 && MP::DpuWalkTcr==0x400);
         mapper.expected.tcr2=0x4001c027; mapper.expected.mair0=0xff44;
         mapper.expected.ttbr0=mapper.arena.physical|(uint64_t(mapper.asid)<<48);
         mapper.expected.ttbr1=uint64_t(mapper.asid)<<48;
         h.app(0x1008)=mapper.expected.cbar; h.app(0x1808)=mapper.expected.cba2r;
-        h.app(0x82000)=mapper.expected.sctlr; h.app(0x82010)=mapper.expected.tcr2;
+        h.app(0x82000)=mapper.expected.sctlr; h.app(0x82004)=0x103; h.app(0x82010)=mapper.expected.tcr2;
         h.app(0x82030)=mapper.expected.tcr; h.app(0x82038)=mapper.expected.mair0;
         h.apps[0x82020/8]=mapper.expected.ttbr0;
         h.apps[0x82028/8]=mapper.expected.ttbr1;

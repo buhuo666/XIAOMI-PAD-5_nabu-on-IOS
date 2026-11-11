@@ -73,7 +73,13 @@ def main():
             streams.append(stream)
             return stream
 
-        afc = AFC(service('com.apple.afc'))
+        afc_stream = service('com.apple.afc')
+        # GPU201 completed the kernel operation after 7 seconds, while the
+        # paired transfer timed out during the same handover. Retain a longer
+        # transport window for these explicitly disruptive diagnostics.
+        if args.action and args.action.startswith('Dpu'):
+            afc_stream.settimeout(45)
+        afc = AFC(afc_stream)
         try:
             data = afc_read(afc, '/NabuServices/baseline.json')
             (args.output / 'baseline.json').write_bytes(data)

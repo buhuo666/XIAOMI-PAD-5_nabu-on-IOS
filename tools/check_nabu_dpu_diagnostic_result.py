@@ -75,6 +75,11 @@ def verify(data):
     if activate:
         require(result.get("activate_status") == 0 and result.get("irq_start_status") == 0,
                 "Identity activation or IRQ start failed")
+        pixels_before, pixels_after = result.get("gop_pixels_before", {}), result.get("gop_pixels_after", {})
+        require(pixels_before.get("sampled_words") == 8000 and pixels_after.get("sampled_words") == 8000,
+                "Missing original GOP page content samples")
+        require(pixels_before.get("hash") is not None and pixels_before.get("hash") == pixels_after.get("hash"),
+                "CPU-visible GOP contents changed while the writer was frozen")
     if resume_irq:
         require(result.get("irq_resume_fault") == 0, "Independent IRQ rearm failed")
     if flip:
@@ -118,6 +123,8 @@ def verify(data):
         require(ttbr1 == m.get("asid", 0) << 48, "Unexpected TTBR1")
         require(m.get("sctlr", 0) & 0x61 == 0x21, "MMU/CFRE/CFIE readback differs")
         require(m.get("mair0") == 0xFF44 and m.get("mair1") == 0, "Memory attributes differ")
+        require(m.get("actlr") == 0x103 and m.get("tcr", 0) & 0x3f00 == 0x400,
+                "Nabu display upstream table-walk profile differs")
         require(m.get("global_fsr") == 0 and m.get("fsr", 0xC00001FE) & 0xC00001FE == 0,
                 "Actual SMMU fault observed")
         require(m.get("tlb_status", 1) & 1 == 0, "TLB synchronization still busy")

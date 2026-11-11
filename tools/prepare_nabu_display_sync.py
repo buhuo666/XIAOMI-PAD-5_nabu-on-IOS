@@ -170,6 +170,11 @@ IOMobileFramebuffer::start(IOService * provider)''')
             '\t\tNabuDpuDisplay::diagnosticDrawEnd();')
         path.write_text(text)
 
+    text = path.read_text()
+    text = text.replace('NabuDpuDisplay::publishDiagnostics(this);',
+                        'NabuDpuDisplay::publishDiagnostics(this, fBase, uint64_t(fRowBytes) * fPanelHeight);')
+    path.write_text(text)
+
     path = folder / 'NabuBacklight.cpp'
     text = path.read_text()
     if 'nabu_dpu_power_changed' not in text:

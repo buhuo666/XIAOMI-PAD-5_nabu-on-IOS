@@ -41,6 +41,7 @@ struct ActiveSnapshot {
     uint64_t tablePhysical, ttbr0, ttbr1, far;
     uint32_t asid, sctlr, cbar, cba2r, tcr, tcr2, mair0, mair1;
     uint32_t fsr, globalFsr, fsynr0, streamSyndrome, tlbStatus, identityPages;
+    uint32_t actlr, inheritedActlr;
     bool active, contextMatches, routesUnchanged, gopIdentity, poisoned;
 };
 // Read back the active domain and every GOP identity leaf. No register or
