@@ -9,6 +9,7 @@
 #include "NativeAdrenoA6xxSmmu.h"
 #include "NativeAdrenoGpuContext.h"
 #include "NativeAdrenoGpuProfile.h"
+#include "NabuA640Timestamps.h"
 #include "NativeAdrenoCpInit.h"
 #include "NativeAdrenoIrq.h"
 #include "NativeAdrenoKernelTime.h"
@@ -1011,6 +1012,7 @@ IOReturn A640State::startCp()
         return status;
     }
     native_adreno_fence_phys=gpuContext_.buffer(2).spans()[0].physical;
+    NabuA640Timestamps::configureAccess(&ring_, this, profileAccessible);
     NativeAdrenoCpInit cp;
     NativeAdrenoCpInitConfig config{GpuSqeIova,GpuPwrupIova,0,NativeAdrenoA640};
     uint32_t bootstrapWptr=0;

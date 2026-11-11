@@ -24,7 +24,9 @@ revision1的六轮仅作诊断，完成记账当时排在阻塞 nextDrawable 的
 
 失败文件为 `log/host/gpu-v216/frame-bench-documents/1794404849141235-scene1-repeat2.json`：319提交/完成、1343回调、2次失败增量，错误仅为 `Encoder creation or native drawable size failed`。原记录不能区分command buffer为空、encoder为空、texture为空或尺寸变化。
 
-revision3已将这几类错误分别记录，保存frame、surface/drawable ID、实际尺寸、command状态及NSError域/代码/说明；保留第一个失败原因，并在所有已接纳帧结束后导出。失败/提前终止不再输出完整窗口帧率。主机完成join的1000次并发测试、提前终止/预热失败/旧版本排除回归通过；App仍需macOS CI编译与实机验证。
+进一步核对syslog已找到失败链：`syslog-live-3.log`字节25358268（第200486行，21:47:43）记录IOSurface40、1600×2560 BGRA、导入0xfa0000字节时报 `no-copy buffer: OutOfMemory(Device)`；紧随两条encoder拒绝为 `RenderPass(NoTargets)`。CSV最后两个失败行surface_id均为0；此前的三个常用表面33/34/35之后出现38/39，且frame414的nextDrawable等待1.023434秒。App始终配置maximumDrawableCount=3，四个完整窗口各仅3个surface ID；失败轮的历史ID数5不表示同时有5个drawable。证据提取在 `log/host/gpu-v216/import-failure-evidence.json`。现在已确认导入失败导致无渲染目标，具体是GPU虚拟地址空间、缓存持有还是其他分配限制仍在定位。
+
+revision3已将这几类错误分别记录，保存frame、surface/drawable ID、实际尺寸、command状态及NSError域/代码/说明；保留第一个失败原因，并在所有已接纳帧结束后导出。失败/提前终止不再输出完整窗口帧率。主机完成join的1000次并发测试、提前终止/预热失败/旧版本排除回归通过；macOS CI43037955642编译和检查通过，版本1.2尚未安装实机。
 
 持久化日志及syslog另出现持续的 `display 1 swap_end returned error e00002c7`。DPU present的额外图层、非全屏矩形、无surface且未clear等早期分支会返回Unsupported，但当前版本没有记录各次拒绝的结构。正在核对错误发生区间及原版调用链；尚不能把它认定为第五轮失败或drawable等待的确定根因。
 

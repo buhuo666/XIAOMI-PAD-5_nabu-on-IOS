@@ -24,6 +24,7 @@ def install(tree):
             shutil.copyfile(ROOT / 'patches/nabu-display' / (unit + suffix), folder / (unit + suffix))
     for name in ('NabuDpuSwapLedger.h', 'NabuDpuProducer.h', 'NabuDpuSmmuNamespace.h', 'NabuDpuCheckpoint.h'):
         shutil.copyfile(ROOT / 'patches/nabu-display' / name, folder / name)
+    shutil.copyfile(ROOT / 'patches/nabu-gpu/NabuFrameTraceEvents.h', folder / 'NabuFrameTraceEvents.h')
     smmu = ROOT / 'src/nabu/gpu/upstream/ArmSmmu4K'
     for path in smmu.glob('*.h'):
         shutil.copyfile(path, folder / path.name)
@@ -171,6 +172,9 @@ IOMobileFramebuffer::start(IOService * provider)''')
         path.write_text(text)
 
     text = path.read_text()
+    if 'NabuDpuDisplay::traceNativeVblank(' not in text:
+        send = '\t\tIOReturn sent = sendAsyncResult64WithOptions(ref, kIOReturnSuccess, args, 6, kIOUserNotifyOptionCanDrop);'
+        text = replace(text, send, send + '\n\t\tif (fOwner->fDpu) NabuDpuDisplay::traceNativeVblank(fVSyncCount, now, sent);')
     text = text.replace('NabuDpuDisplay::publishDiagnostics(this);',
                         'NabuDpuDisplay::publishDiagnostics(this, fBase, uint64_t(fRowBytes) * fPanelHeight);')
     path.write_text(text)

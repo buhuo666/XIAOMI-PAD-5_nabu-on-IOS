@@ -206,7 +206,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     production = (ROOT / 'patches/nabu-gpu/NativeAdrenoPublish.cpp').read_text()
-    unit = PRELUDE + '\n'
+    unit = '#include "NabuGpuTrace.h"\nstruct { uint64_t entries = 0; } nabu_gpu_irq_stats;\n' + PRELUDE + '\n'
     for signature in [
         'IOReturn AGXDeviceUserClient::clientClose()',
         'void AGXDeviceUserClient::finishCloseLocked(',
@@ -226,7 +226,8 @@ def main():
     source, binary = output / 'deferred-close.cpp', output / 'deferred-close'
     source.write_text(unit, encoding='utf-8', newline='\n')
     command = ['clang++', '-std=c++17', '-O1', '-g', '-pthread', '-Wall', '-Wextra', '-Werror',
-               '-fsanitize=address,undefined', '-fno-omit-frame-pointer', host_path(source), '-o', host_path(binary)]
+               '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
+               '-I'+host_path(ROOT/'tools/fixtures/nabu_gpu_trace'), host_path(source), '-o', host_path(binary)]
     for name, arguments in [('compile', command), ('run', [host_path(binary)])]:
         result = subprocess.run(host_command(arguments), capture_output=True, timeout=90)
         (output / (name + '.log')).write_bytes(result.stdout + result.stderr)

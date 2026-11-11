@@ -128,6 +128,7 @@ static void IOLockSleep(IOLock *l, const void *, int) {
     IOLockLock(l);
 }
 static uint64_t mach_absolute_time() { return hardware->now*1000; }
+static void absolutetime_to_nanoseconds(uint64_t in, uint64_t *out) { *out = in; }
 static void clock_interval_to_deadline(uint32_t count, int scale, uint64_t *out) {
     *out=mach_absolute_time()+uint64_t(count)*scale;
 }
@@ -911,7 +912,7 @@ def harness():
     values = {v['offset']: v['value'] for name, block in registers.items()
               if name.startswith(('MDSS', 'CTL', 'LM', 'SSPP', 'INTF')) for v in block.values()}
     baseline = '\n'.join(f'mdss[0x{at:x}/4]=0x{value:x};' for at, value in values.items())
-    result = PRELUDE + '\n' + body(producer_header, 'struct NabuDpuProducerOps', ';') + '\n'
+    result = '#include "../nabu-gpu/NabuFrameTraceEvents.h"\n' + PRELUDE + '\n' + body(producer_header, 'struct NabuDpuProducerOps', ';') + '\n'
     result += '\nnamespace NabuDpuMapper {\nnamespace PT=NabuDpuPageTable;\n'
     result += mapper[mapper.index('constexpr uint32_t AppsBytes'):mapper.index('struct OwnedDescriptor')]
     result += body(mapper, 'struct OwnedDescriptor', ';') + '\n'
@@ -925,7 +926,7 @@ def harness():
     result += MAPPER_SUBSTITUTES
     for signature in MAPPER_FUNCTIONS:
         result += body(mapper, signature) + '\n'
-    result += '}\n' + PRODUCER + IRQ_SUBSTITUTES
+    result += '}\n' + PRODUCER + IRQ_SUBSTITUTES + '\n' + body(display, 'void traceFrame(') + '\n'
     result += '\nnamespace NabuDpuDisplay {\nnamespace Scan=NabuDpuScanout; namespace PT=NabuDpuPageTable;\n'
     result += 'namespace Mapper=NabuDpuMapper; namespace Swap=NabuDpuSwap;\n'
     result += 'struct Listener { Listener *next; void *cookie; void (*notify)(void *,const NabuDpuVBlank::Sample &); };\n'

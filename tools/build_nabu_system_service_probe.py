@@ -43,6 +43,7 @@ def main():
               'repair_requires_live_paired_host_request': True, 'request_window': 'current boot until service shutdown',
               'dpu_root_mode': '--dpu-only: named DPU requests and GpuPerformance statistics for this boot; ordinary probe stays mobile',
               'gpu_performance': 'Explicit paired GpuPerformance request; administrator DumpStats with request ID; no GPU start or render-state change',
+              'gpu_frame_trace': 'Paired Start/Snapshot/Stop/Export/Acknowledge; binary stopped-window export, host durable-save acknowledgement before reuse',
               'network_calls': False, 'runtime_verified': False,
               'wireless_software_inventory': ['wifid job files and device-tree requirements',
                   'IO80211Controller/IO80211Interface/IONetworkInterface matching counts',

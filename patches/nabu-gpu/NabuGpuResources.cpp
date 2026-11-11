@@ -4,6 +4,7 @@
 #include "NativeAdrenoA6xxService.h"
 #include "NabuGpuBuild.h"
 #include "NabuGpuPort.h"
+#include "NabuGpuTrace.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IORegistryEntry.h>
 #include <IOKit/IODeviceTreeSupport.h>
@@ -25,7 +26,8 @@ unsigned sourceCount=0;
 static void gpuIrqArrived(void *cookie,uint32_t number)
 {
     auto *source=static_cast<IrqSource *>(cookie);
-    __atomic_fetch_add(&nabu_gpu_irq_stats.entries,1,__ATOMIC_RELAXED);
+    const uint64_t traceIrq = __atomic_add_fetch(&nabu_gpu_irq_stats.entries,1,__ATOMIC_RELAXED);
+    NabuGpuTrace::record(NabuGpuTrace::GpuIrq, traceIrq, number);
     if(!__atomic_load_n(&source->enabled,__ATOMIC_ACQUIRE)) {
         __atomic_fetch_add(&nabu_gpu_irq_stats.disabled,1,__ATOMIC_RELAXED);
         gic_v3_spi_mask(number);

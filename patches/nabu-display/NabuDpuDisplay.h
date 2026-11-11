@@ -24,6 +24,8 @@ IOReturn wait(Binding *, uint32_t id, uint32_t flags, uint64_t timeoutMs);
 void subscribe(Binding *, Listener *);
 void unsubscribe(Binding *, Listener *);
 bool snapshot(Binding *, NabuDpuVBlank::Sample *);
+// Timestamp is the original master IRQ time. Status is the native async-send result.
+void traceNativeVblank(uint64_t sequence, uint64_t timestamp, IOReturn status);
 // Post-desktop diagnostics keep fDpu unset and the GOP presenter selected.
 // Publication allocates only software state; MMIO begins on a paired request.
 bool diagnosticsRequested();

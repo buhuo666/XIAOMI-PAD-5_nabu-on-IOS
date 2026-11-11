@@ -4,6 +4,7 @@
  * Reject unrelated new mappings through the retained surface interval index. */
 #include "NativeAdrenoScheduler.h"
 #include "NativeAdrenoVmAlias.h"
+#include "NabuGpuTrace.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 extern "C" uint64_t (*native_adreno_vm_now_us)(void);
@@ -26,6 +27,7 @@ struct NativeAdrenoSurfaceRead {
     NativeAdrenoScheduler::Reservation *storage = nullptr;
     uint32_t storageCount=0,storageUsed=0;
     uint64_t writers = 0;
+    uint64_t traceIdentity = 0;
     uint32_t slot = 0, latestHardware = 0, accessCount = 0;
     IOReturn status = kIOReturnNotReady;
     void (*callback)(void *, IOReturn) = nullptr;
@@ -472,6 +474,8 @@ IOReturn NativeAdrenoScheduler::accept(uint32_t owner, uint32_t queue,
     sample.gpuDependencies=uint32_t(__builtin_popcountll(job->producers));
     sample.dpuReaders=uint32_t(__builtin_popcountll(job->readers));
     job->accepted = true;
+    NabuGpuTrace::record(NabuGpuTrace::GpuAccepted, job->completion, queue, resourceCount,
+        (uint64_t(sample.gpuDependencies) << 32) | sample.dpuReaders);
     ++liveJobs_;
     for (uint32_t at = 0; at < job->signalCount; ++at) {
         Point &signal = job->signals[at];
@@ -550,6 +554,7 @@ void NativeAdrenoScheduler::destroyJob(Job &job, bool completed)
 
 void NativeAdrenoScheduler::finishJob(Job &job)
 {
+    NabuGpuTrace::record(NabuGpuTrace::GpuCompleted, job.completion, job.queue, job.hardware, NabuGpuTrace::worker());
     NativeAdrenoSchedulerSample &sample=samples_[(job.completion-1)%256];
     if(sample.completion==job.completion) {
         sample.completedUs=schedulerNow();
@@ -563,6 +568,8 @@ void NativeAdrenoScheduler::finishJob(Job &job)
             continue;
         }
         read->writers &= ~bit;
+        NabuGpuTrace::record(NabuGpuTrace::ProducerWriter, read->traceIdentity,
+            job.completion, job.hardware, job.queue);
         if (job.hardware > read->latestHardware) {
             read->latestHardware = job.hardware;
         }
@@ -620,6 +627,7 @@ IOReturn NativeAdrenoScheduler::advance()
                 tails_[job.queue] = nullptr;
             }
             job.next = nullptr;
+            NabuGpuTrace::record(NabuGpuTrace::GpuIssued, job.completion, job.queue, job.hardware, job.resourceCount);
             NativeAdrenoSchedulerSample &sample=samples_[(job.completion-1)%256];
             if(sample.completion==job.completion) {
                 sample.hardware=job.hardware;
@@ -957,6 +965,8 @@ IOReturn NativeAdrenoScheduler::acquireRead(IOMemoryDescriptor *memory,
         return kIOReturnNoMemory;
     }
     *read = {};
+    static uint64_t nextTraceIdentity;
+    read->traceIdentity = ++nextTraceIdentity; // acquisition holds the scheduler lock
     read->scheduler = this;
     read->slot = slot;
     read->backing = backing;
@@ -979,6 +989,11 @@ IOReturn NativeAdrenoScheduler::acquireRead(IOMemoryDescriptor *memory,
         return status;
     }
     read->status = read->writers ? kIOReturnNotReady : kIOReturnSuccess;
+    for (uint64_t writers = read->writers; writers; writers &= writers - 1) {
+        const Job &job = jobs_[__builtin_ctzll(writers)];
+        NabuGpuTrace::record(NabuGpuTrace::ProducerWriter, read->traceIdentity,
+            job.completion, job.hardware, job.queue);
+    }
     *out = read;
     return read->status;
 }
@@ -1136,8 +1151,15 @@ NativeAdrenoSurfaceRead *NativeAdrenoScheduler::takeCallback()
 void NativeAdrenoScheduler::invokeCallback(NativeAdrenoSurfaceRead *read)
 {
     if (read->callback) {
+        NabuGpuTrace::record(NabuGpuTrace::ProducerCallback, read->traceIdentity,
+            read->latestHardware, uint32_t(read->status), read->slot);
         read->callback(read->context, read->status);
     }
+}
+
+extern "C" uint64_t native_adreno_surface_trace_identity(const void *read)
+{
+    return read ? static_cast<const NativeAdrenoSurfaceRead *>(read)->traceIdentity : 0;
 }
 
 void NativeAdrenoScheduler::finishCallback(NativeAdrenoSurfaceRead *read)

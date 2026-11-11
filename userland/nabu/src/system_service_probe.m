@@ -51,6 +51,7 @@ extern NSDictionary *nabuBluetoothSocketTrial(void);
 extern NSDictionary *nabuWiFiControlTrial(NSString *action);
 extern NSDictionary *nabuAudioRequest(NSString *action, NSString *identifier);
 extern NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier);
+extern NSDictionary *nabuGpuTraceRequest(NSString *identifier, NSDictionary *parameters);
 extern int nabuDpuServiceMain(void);
 
 static void saveReport(NSDictionary *report, NSString *name);
@@ -609,7 +610,9 @@ int main(int argc, char **argv) {
                 if (request) {
                     [fm removeItemAtPath:requestPath error:NULL];
                     NSString *action = request[@"Action"];
-                    NSMutableDictionary *result = [@{@"request": request, @"before": snapshot(workspace)} mutableCopy];
+                    const BOOL gpuTrace = [action isEqual:@"GpuTrace"];
+                    NSMutableDictionary *result = [@{@"request": request} mutableCopy];
+                    if (!gpuTrace) result[@"before"] = snapshot(workspace);
                     saveReport(result, @"request-before.json");
                     @try {
                         if ([action isEqual:@"Inventory"]) result[@"read_only"] = @YES;
@@ -619,6 +622,9 @@ int main(int argc, char **argv) {
                         }
                         else if ([action isEqual:@"GpuPerformance"]) {
                             result[@"gpu_performance"] = nabuDpuRequest(action, request[@"ID"] ?: @"");
+                        }
+                        else if (gpuTrace) {
+                            result[@"gpu_trace"] = nabuGpuTraceRequest(request[@"ID"] ?: @"", request[@"TraceRequest"]);
                         }
                         else if ([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
                                  [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"] ||
@@ -677,7 +683,7 @@ int main(int argc, char **argv) {
                             result[@"registration"] = registerMissing(workspace, request[@"BundleIDs"], YES);
                         else result[@"error"] = @"unsupported action";
                     } @catch (NSException *error) { result[@"exception"] = error.reason ?: error.name; }
-                    result[@"after"] = snapshot(workspace);
+                    if (!gpuTrace) result[@"after"] = snapshot(workspace);
                     saveReport(result, @"request-result.json");
                 }
             }

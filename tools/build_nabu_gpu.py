@@ -16,7 +16,7 @@ CPP = (
     'NativeAdrenoSmmuContext', 'NativeAdrenoGmuMemory', 'NativeAdrenoGmuContext',
     'NativeAdrenoGpuContext', 'NativeAdrenoA6xxPower', 'NativeAdrenoA6xxGmu',
     'NativeAdrenoA6xxHwInit', 'NativeAdrenoA6xxSmmu', 'NativeAdrenoA6xxZap',
-    'NativeAdrenoService', 'NativeAdrenoSha256', 'NativeAdrenoGpuProfile', 'NabuGpuResources',
+    'NativeAdrenoService', 'NativeAdrenoSha256', 'NativeAdrenoGpuProfile', 'NabuGpuResources', 'NabuGpuTrace',
 )
 USERLAND_CPP = ('NativeAdrenoSubmit', 'NativeAdrenoTimer', 'NativeAdrenoUserClient',
                 'NativeAdrenoClient', 'NativeAdrenoPublish', 'NativeAdrenoScheduler')

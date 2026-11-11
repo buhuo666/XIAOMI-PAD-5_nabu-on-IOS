@@ -202,11 +202,11 @@ def main():
         '__BINDING__', resources[first:last]).replace('__NOTIFY__', body(
             (GPU / 'NativeAdrenoPublish.cpp').read_text(), 'extern "C" void native_adreno_gpu_interrupt(bool failed)')).replace(
         '__CALLBACK__', body((GPU / 'NativeAdrenoService.cpp').read_text(), 'void A640State::gpuInterrupt(void *cookie)'))
-    (output / 'irq.cpp').write_text(source)
+    (output / 'irq.cpp').write_text('#include "NabuGpuTrace.h"\n' + source)
     binary = output / 'irq'
     command = ['clang++', '-std=c++17', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
                '-Wno-macro-redefined', '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-pthread',
-               '-I' + host_path(include), host_path(output / 'irq.cpp'),
+               '-I' + host_path(include), '-I' + host_path(ROOT/'tools/fixtures/nabu_gpu_trace'), host_path(output / 'irq.cpp'),
                host_path(output / 'NativeAdrenoIrq.cpp'), '-o', host_path(binary)]
     for name, argv in [('compile', command), ('run', [host_path(binary)])]:
         result = subprocess.run(host_command(argv), capture_output=True, timeout=120)

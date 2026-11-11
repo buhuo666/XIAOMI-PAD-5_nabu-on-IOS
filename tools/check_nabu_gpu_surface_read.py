@@ -366,7 +366,8 @@ def main():
     binary = output / 'surface-read'
     command = host_command(['clang++', '-std=c++17', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
         '-Wno-missing-field-initializers', '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
-        '-I' + host_path(include), host_path(staged), host_path(output / 'surface-read.cpp'), '-o', host_path(binary)])
+        '-I' + host_path(include), '-I' + host_path(ROOT/'tools/fixtures/nabu_gpu_trace'),
+        host_path(staged), host_path(output / 'surface-read.cpp'), '-o', host_path(binary)])
     for label, argv in [('compile', command), ('run', host_command([host_path(binary)]))]:
         result = subprocess.run(argv, capture_output=True, timeout=120)
         (output / (label + '.log')).write_bytes(result.stdout + result.stderr)
@@ -377,11 +378,14 @@ def main():
     begin = publication.index('static IOReturn dpuAcquireProducer(')
     end = publication.index('\n#endif', begin)
     adapter = output / 'producer-adapter.cpp'
-    adapter.write_text(ADAPTER_HARNESS.replace('__ADAPTER__', publication[begin:end]), encoding='utf-8')
+    adapter.write_text('#include "NabuGpuTrace.h"\nextern "C" uint64_t native_adreno_surface_trace_identity(const void *) { return 1; }\n' +
+                       ADAPTER_HARNESS.replace('__ADAPTER__', publication[begin:end]), encoding='utf-8')
     shutil.copyfile(ROOT / 'patches/nabu-display/NabuDpuProducer.h', include / 'NabuDpuProducer.h')
+    shutil.copyfile(ROOT / 'patches/nabu-gpu/NabuFrameTraceEvents.h', include / 'NabuFrameTraceEvents.h')
     adapter_binary = output / 'producer-adapter'
     adapter_command = host_command(['clang++', '-std=c++17', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
         '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-I' + host_path(include),
+        '-I' + host_path(ROOT/'tools/fixtures/nabu_gpu_trace'),
         host_path(adapter), '-o', host_path(adapter_binary)])
     for label, argv in [('adapter-compile', adapter_command), ('adapter-run', host_command([host_path(adapter_binary)]))]:
         result = subprocess.run(argv, capture_output=True, timeout=120)

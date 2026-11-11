@@ -1,0 +1,909 @@
+{
+  "source": "Matching DPU PERF at-us per (displayed frame count, swap ID); do not use potentially interleaved bracket printk timestamps.",
+  "runs": [
+    {
+      "run": "1794404588552645-scene0-repeat1",
+      "start": 869.7004827604168,
+      "end": 929.7084032291668,
+      "app_submit_intervals_ms": {
+        "mean": 24.4002377017901,
+        "median": 24.990520500011826,
+        "min": 16.52140600003804,
+        "max": 25.52890699996624
+      },
+      "app_interval_rounded_120hz_ticks": {
+        "3": 2281,
+        "2": 177
+      },
+      "kernel_windows": [
+        {
+          "seconds": 2.925028999999995,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.9988102682061,
+          "accepted_hz": 41.02523427972858
+        },
+        {
+          "seconds": 2.925044000000071,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.99819489894563,
+          "accepted_hz": 41.02502389707543
+        },
+        {
+          "seconds": 2.9083839999999554,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99790949200839,
+          "accepted_hz": 41.260026186363916
+        },
+        {
+          "seconds": 2.9500249999999824,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99898305946631,
+          "accepted_hz": 40.67762137609028
+        },
+        {
+          "seconds": 2.925063000000023,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.99741544028188,
+          "accepted_hz": 41.024757415480984
+        },
+        {
+          "seconds": 2.941693999999984,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 353,
+          "vsync_per_accepted": 2.941666666666667,
+          "hardware_hz": 119.99888499619672,
+          "accepted_hz": 40.792822095024384
+        },
+        {
+          "seconds": 2.908362000000011,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99881720363513,
+          "accepted_hz": 41.26033829351351
+        },
+        {
+          "seconds": 2.9250560000000405,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.99770260808516,
+          "accepted_hz": 41.02485559250775
+        },
+        {
+          "seconds": 2.9250359999999773,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.9985230951013,
+          "accepted_hz": 41.025136100889334
+        },
+        {
+          "seconds": 2.9333820000000514,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 352,
+          "vsync_per_accepted": 2.933333333333333,
+          "hardware_hz": 119.99800912393744,
+          "accepted_hz": 40.90841220134231
+        },
+        {
+          "seconds": 2.950030999999967,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.9987389963034,
+          "accepted_hz": 40.67753864281472
+        },
+        {
+          "seconds": 2.9417009999999664,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 353,
+          "vsync_per_accepted": 2.941666666666667,
+          "hardware_hz": 119.9985994497755,
+          "accepted_hz": 40.792725025419436
+        },
+        {
+          "seconds": 2.950040000000058,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.9983729034159,
+          "accepted_hz": 40.67741454353081
+        },
+        {
+          "seconds": 2.9000429999999824,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 348,
+          "vsync_per_accepted": 2.9,
+          "hardware_hz": 119.99822071603839,
+          "accepted_hz": 41.378696798633925
+        },
+        {
+          "seconds": 2.9417079999999487,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 353,
+          "vsync_per_accepted": 2.941666666666667,
+          "hardware_hz": 119.99831390471323,
+          "accepted_hz": 40.792627956276455
+        },
+        {
+          "seconds": 2.9333760000000666,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 352,
+          "vsync_per_accepted": 2.933333333333333,
+          "hardware_hz": 119.99825457083988,
+          "accepted_hz": 40.908495876422684
+        },
+        {
+          "seconds": 2.891707999999994,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 347,
+          "vsync_per_accepted": 2.8916666666666666,
+          "hardware_hz": 119.99828475074271,
+          "accepted_hz": 41.49796590803783
+        },
+        {
+          "seconds": 2.9500379999999495,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99845425720144,
+          "accepted_hz": 40.677442121085235
+        },
+        {
+          "seconds": 2.941707000000065,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 353,
+          "vsync_per_accepted": 2.941666666666667,
+          "hardware_hz": 119.99835469677714,
+          "accepted_hz": 40.79264182326702
+        },
+        {
+          "seconds": 2.9083739999999807,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99832208649998,
+          "accepted_hz": 41.26016805266475
+        }
+      ],
+      "record_first": {
+        "t": 869.892126,
+        "displayed": 13320,
+        "swap": 58579,
+        "surface": 33,
+        "frame0": 104155,
+        "frame1": 104155,
+        "irq": 101694,
+        "vsync": 101694,
+        "line": 110242,
+        "timestamp_line": 110240
+      },
+      "record_last": {
+        "t": 928.467927,
+        "displayed": 15720,
+        "swap": 60979,
+        "surface": 33,
+        "frame0": 111184,
+        "frame1": 111184,
+        "irq": 108723,
+        "vsync": 108723,
+        "line": 112820,
+        "timestamp_line": 112818
+      }
+    },
+    {
+      "run": "1794404653741243-scene0-repeat2",
+      "start": 934.8890963541668,
+      "end": 994.8917430729168,
+      "app_submit_intervals_ms": {
+        "mean": 27.904510818985557,
+        "median": 40.358072999993055,
+        "min": 0.6736980000141557,
+        "max": 58.38369800005694
+      },
+      "app_interval_rounded_120hz_ticks": {
+        "7": 806,
+        "0": 1074,
+        "6": 209,
+        "5": 60
+      },
+      "kernel_windows": [
+        {
+          "seconds": 3.2500440000000026,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 390,
+          "vsync_per_accepted": 3.25,
+          "hardware_hz": 119.99837540660978,
+          "accepted_hz": 36.92257704818763
+        },
+        {
+          "seconds": 3.266705999999999,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 392,
+          "vsync_per_accepted": 3.2666666666666666,
+          "hardware_hz": 119.9985551194384,
+          "accepted_hz": 36.734251567175015
+        },
+        {
+          "seconds": 3.3833849999999757,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 406,
+          "vsync_per_accepted": 3.3833333333333333,
+          "hardware_hz": 119.99816751566934,
+          "accepted_hz": 35.46743867458207
+        },
+        {
+          "seconds": 3.3500649999999723,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 402,
+          "vsync_per_accepted": 3.35,
+          "hardware_hz": 119.99767168696826,
+          "accepted_hz": 35.820200503572615
+        },
+        {
+          "seconds": 3.3833700000000135,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 406,
+          "vsync_per_accepted": 3.3833333333333333,
+          "hardware_hz": 119.99869952148254,
+          "accepted_hz": 35.46759591767957
+        },
+        {
+          "seconds": 3.3000389999999697,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 396,
+          "vsync_per_accepted": 3.3,
+          "hardware_hz": 119.99858183494305,
+          "accepted_hz": 36.36320661664941
+        },
+        {
+          "seconds": 3.3833779999999933,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 406,
+          "vsync_per_accepted": 3.3833333333333333,
+          "hardware_hz": 119.9984157844618,
+          "accepted_hz": 35.46751205452073
+        },
+        {
+          "seconds": 3.2833790000000818,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 394,
+          "vsync_per_accepted": 3.283333333333333,
+          "hardware_hz": 119.99833098767769,
+          "accepted_hz": 36.547715021627724
+        },
+        {
+          "seconds": 3.391719999999964,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 407,
+          "vsync_per_accepted": 3.3916666666666666,
+          "hardware_hz": 119.99811305178622,
+          "accepted_hz": 35.380279032467676
+        },
+        {
+          "seconds": 3.3417080000000396,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 401,
+          "vsync_per_accepted": 3.341666666666667,
+          "hardware_hz": 119.99851572908084,
+          "accepted_hz": 35.909780268054114
+        },
+        {
+          "seconds": 3.4333879999999226,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 412,
+          "vsync_per_accepted": 3.433333333333333,
+          "hardware_hz": 119.99808935081305,
+          "accepted_hz": 34.95089981091642
+        },
+        {
+          "seconds": 3.308371000000079,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 397,
+          "vsync_per_accepted": 3.308333333333333,
+          "hardware_hz": 119.99863376870081,
+          "accepted_hz": 36.27162733562745
+        },
+        {
+          "seconds": 3.3833849999999757,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 406,
+          "vsync_per_accepted": 3.3833333333333333,
+          "hardware_hz": 119.99816751566934,
+          "accepted_hz": 35.46743867458207
+        },
+        {
+          "seconds": 3.3917069999999967,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 407,
+          "vsync_per_accepted": 3.3916666666666666,
+          "hardware_hz": 119.99857298994294,
+          "accepted_hz": 35.380414640769416
+        },
+        {
+          "seconds": 3.35005000000001,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 402,
+          "vsync_per_accepted": 3.35,
+          "hardware_hz": 119.99820898195513,
+          "accepted_hz": 35.82036089013586
+        },
+        {
+          "seconds": 3.3333860000000186,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 400,
+          "vsync_per_accepted": 3.3333333333333335,
+          "hardware_hz": 119.99810402995566,
+          "accepted_hz": 35.9994312089867
+        },
+        {
+          "seconds": 3.375043000000005,
+          "accepted": 120,
+          "swap_delta": 180,
+          "vsync_delta": 405,
+          "vsync_per_accepted": 3.375,
+          "hardware_hz": 119.99847113058986,
+          "accepted_hz": 35.55510255721181
+        }
+      ],
+      "record_first": {
+        "t": 937.126386,
+        "displayed": 15960,
+        "swap": 61555,
+        "surface": 33,
+        "frame0": 112223,
+        "frame1": 112223,
+        "irq": 109762,
+        "vsync": 109762,
+        "line": 113536,
+        "timestamp_line": 113534
+      },
+      "record_last": {
+        "t": 994.03551,
+        "displayed": 18000,
+        "swap": 64615,
+        "surface": 33,
+        "frame0": 119052,
+        "frame1": 119052,
+        "irq": 116591,
+        "vsync": 116591,
+        "line": 117071,
+        "timestamp_line": 117069
+      }
+    },
+    {
+      "run": "1794404718847723-scene0-repeat3",
+      "start": 999.9955788020834,
+      "end": 1059.9984592708336,
+      "app_submit_intervals_ms": {
+        "mean": 24.509936465876567,
+        "median": 24.99119799995242,
+        "min": 16.53661499994996,
+        "max": 25.464427000088108
+      },
+      "app_interval_rounded_120hz_ticks": {
+        "3": 2303,
+        "2": 144
+      },
+      "kernel_windows": [
+        {
+          "seconds": 2.958376000000044,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 355,
+          "vsync_per_accepted": 2.9583333333333335,
+          "hardware_hz": 119.99826932073366,
+          "accepted_hz": 40.56279526334659
+        },
+        {
+          "seconds": 2.966705999999931,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 356,
+          "vsync_per_accepted": 2.966666666666667,
+          "hardware_hz": 119.99840900986086,
+          "accepted_hz": 40.448901913436245
+        },
+        {
+          "seconds": 2.966709000000037,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 356,
+          "vsync_per_accepted": 2.966666666666667,
+          "hardware_hz": 119.99828766488238,
+          "accepted_hz": 40.44886101063451
+        },
+        {
+          "seconds": 2.9500479999999243,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99804748939987,
+          "accepted_hz": 40.67730423369487
+        },
+        {
+          "seconds": 2.9583750000000464,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 355,
+          "vsync_per_accepted": 2.9583333333333335,
+          "hardware_hz": 119.99830988295751,
+          "accepted_hz": 40.56280897452085
+        },
+        {
+          "seconds": 2.8666990000000396,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 344,
+          "vsync_per_accepted": 2.8666666666666667,
+          "hardware_hz": 119.99864652689216,
+          "accepted_hz": 41.85999297449727
+        },
+        {
+          "seconds": 2.933379999999943,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 352,
+          "vsync_per_accepted": 2.933333333333333,
+          "hardware_hz": 119.99809093946466,
+          "accepted_hz": 40.90844009299932
+        },
+        {
+          "seconds": 2.966707000000042,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 356,
+          "vsync_per_accepted": 2.966666666666667,
+          "hardware_hz": 119.99836856150436,
+          "accepted_hz": 40.44888827915877
+        },
+        {
+          "seconds": 2.9167130000000725,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 350,
+          "vsync_per_accepted": 2.9166666666666665,
+          "hardware_hz": 119.99809374456495,
+          "accepted_hz": 41.142203569565126
+        },
+        {
+          "seconds": 2.90003200000001,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 348,
+          "vsync_per_accepted": 2.9,
+          "hardware_hz": 119.99867587667956,
+          "accepted_hz": 41.37885375057916
+        },
+        {
+          "seconds": 2.9500399999999445,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99837290342052,
+          "accepted_hz": 40.67741454353238
+        },
+        {
+          "seconds": 2.9167479999998704,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 350,
+          "vsync_per_accepted": 2.9166666666666665,
+          "hardware_hz": 119.99665380760202,
+          "accepted_hz": 41.141709876892115
+        },
+        {
+          "seconds": 2.9500020000000404,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99991864412131,
+          "accepted_hz": 40.67793852343095
+        },
+        {
+          "seconds": 2.9500439999999344,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99821019618958,
+          "accepted_hz": 40.67735938853884
+        },
+        {
+          "seconds": 2.950038000000177,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99845425719221,
+          "accepted_hz": 40.6774421210821
+        },
+        {
+          "seconds": 2.908369999999877,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99848712509576,
+          "accepted_hz": 41.260224799459856
+        },
+        {
+          "seconds": 2.958385000000135,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 355,
+          "vsync_per_accepted": 2.9583333333333335,
+          "hardware_hz": 119.99790426194826,
+          "accepted_hz": 40.56267186319378
+        },
+        {
+          "seconds": 2.9500319999999647,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99869831920611,
+          "accepted_hz": 40.67752485396817
+        },
+        {
+          "seconds": 2.966707999999926,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 356,
+          "vsync_per_accepted": 2.966666666666667,
+          "hardware_hz": 119.99832811318434,
+          "accepted_hz": 40.4488746448936
+        }
+      ],
+      "record_first": {
+        "t": 1002.035613,
+        "displayed": 18240,
+        "swap": 65108,
+        "surface": 34,
+        "frame0": 120012,
+        "frame1": 120012,
+        "irq": 117551,
+        "vsync": 117551,
+        "line": 117710,
+        "timestamp_line": 117708
+      },
+      "record_last": {
+        "t": 1057.919725,
+        "displayed": 20520,
+        "swap": 67388,
+        "surface": 34,
+        "frame0": 126718,
+        "frame1": 126718,
+        "irq": 124257,
+        "vsync": 124257,
+        "line": 120179,
+        "timestamp_line": 120177
+      }
+    },
+    {
+      "run": "1794404783993381-scene1-repeat1",
+      "start": 1065.1412380208335,
+      "end": 1125.1417710416667,
+      "app_submit_intervals_ms": {
+        "mean": 24.377048801626017,
+        "median": 24.98604149991479,
+        "min": 16.4232820000052,
+        "max": 25.789530999873023
+      },
+      "app_interval_rounded_120hz_ticks": {
+        "3": 2276,
+        "2": 184
+      },
+      "kernel_windows": [
+        {
+          "seconds": 2.9750329999999394,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 357,
+          "vsync_per_accepted": 2.975,
+          "hardware_hz": 119.99866892233037,
+          "accepted_hz": 40.33568703271609
+        },
+        {
+          "seconds": 2.908380999999963,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99803327005796,
+          "accepted_hz": 41.26006874615173
+        },
+        {
+          "seconds": 2.9083760000000893,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99823956736999,
+          "accepted_hz": 41.26013967932493
+        },
+        {
+          "seconds": 2.9167030000000977,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 350,
+          "vsync_per_accepted": 2.9166666666666665,
+          "hardware_hz": 119.99850516147454,
+          "accepted_hz": 41.14234462679127
+        },
+        {
+          "seconds": 2.9917059999997946,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 359,
+          "vsync_per_accepted": 2.9916666666666667,
+          "hardware_hz": 119.99842230487376,
+          "accepted_hz": 40.11089324953998
+        },
+        {
+          "seconds": 2.950040000000172,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99837290341127,
+          "accepted_hz": 40.677414543529245
+        },
+        {
+          "seconds": 2.9250409999999647,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.99831797229653,
+          "accepted_hz": 41.025065973434714
+        },
+        {
+          "seconds": 2.850044999999909,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 342,
+          "vsync_per_accepted": 2.85,
+          "hardware_hz": 119.99810529307814,
+          "accepted_hz": 42.10459834844847
+        },
+        {
+          "seconds": 2.925034000000096,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.9986051444149,
+          "accepted_hz": 41.025164151936714
+        },
+        {
+          "seconds": 2.991706000000022,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 359,
+          "vsync_per_accepted": 2.9916666666666667,
+          "hardware_hz": 119.99842230486463,
+          "accepted_hz": 40.11089324953693
+        },
+        {
+          "seconds": 2.9833849999999984,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 358,
+          "vsync_per_accepted": 2.9833333333333334,
+          "hardware_hz": 119.99792182370032,
+          "accepted_hz": 40.22276709174312
+        },
+        {
+          "seconds": 2.933364999999867,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 352,
+          "vsync_per_accepted": 2.933333333333333,
+          "hardware_hz": 119.99870455944486,
+          "accepted_hz": 40.908649281628925
+        },
+        {
+          "seconds": 2.8167070000001786,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 338,
+          "vsync_per_accepted": 2.816666666666667,
+          "hardware_hz": 119.99828168140263,
+          "accepted_hz": 42.6029402419181
+        },
+        {
+          "seconds": 2.908377999999857,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99815704836757,
+          "accepted_hz": 41.26011130602896
+        },
+        {
+          "seconds": 2.966707000000042,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 356,
+          "vsync_per_accepted": 2.966666666666667,
+          "hardware_hz": 119.99836856150436,
+          "accepted_hz": 40.44888827915877
+        },
+        {
+          "seconds": 2.925040000000081,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 351,
+          "vsync_per_accepted": 2.925,
+          "hardware_hz": 119.99835899679672,
+          "accepted_hz": 41.025079998904864
+        },
+        {
+          "seconds": 2.9500399999999445,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 354,
+          "vsync_per_accepted": 2.95,
+          "hardware_hz": 119.99837290342052,
+          "accepted_hz": 40.67741454353238
+        },
+        {
+          "seconds": 2.908375999999862,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99823956737937,
+          "accepted_hz": 41.260139679328155
+        },
+        {
+          "seconds": 2.866706000000022,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 344,
+          "vsync_per_accepted": 2.8666666666666667,
+          "hardware_hz": 119.99835351096253,
+          "accepted_hz": 41.85989075963809
+        },
+        {
+          "seconds": 2.9083680000001095,
+          "accepted": 120,
+          "swap_delta": 120,
+          "vsync_delta": 349,
+          "vsync_per_accepted": 2.908333333333333,
+          "hardware_hz": 119.99856964455215,
+          "accepted_hz": 41.260253172911916
+        }
+      ],
+      "record_first": {
+        "t": 1065.803173,
+        "displayed": 20760,
+        "swap": 67866,
+        "surface": 33,
+        "frame0": 127664,
+        "frame1": 127664,
+        "irq": 125203,
+        "vsync": 125203,
+        "line": 120659,
+        "timestamp_line": 120657
+      },
+      "record_last": {
+        "t": 1124.31231,
+        "displayed": 23160,
+        "swap": 70266,
+        "surface": 33,
+        "frame0": 134685,
+        "frame1": 134685,
+        "irq": 132224,
+        "vsync": 132224,
+        "line": 123264,
+        "timestamp_line": 123262
+      }
+    },
+    {
+      "run": "1794404849141235-scene1-repeat2",
+      "start": 1130.2890947395836,
+      "end": 1141.4815905208334,
+      "app_submit_intervals_ms": {
+        "mean": 34.84834381446541,
+        "median": 36.15786450006908,
+        "min": 0.9258860000045388,
+        "max": 1024.7063019999132
+      },
+      "app_interval_rounded_120hz_ticks": {
+        "8": 108,
+        "0": 158,
+        "7": 40,
+        "6": 10,
+        "123": 1,
+        "3": 1
+      },
+      "kernel_windows": [
+        {
+          "seconds": 3.816716999999926,
+          "accepted": 120,
+          "swap_delta": 240,
+          "vsync_delta": 458,
+          "vsync_per_accepted": 3.816666666666667,
+          "hardware_hz": 119.99841748812105,
+          "accepted_hz": 31.440633403001147
+        }
+      ],
+      "record_first": {
+        "t": 1133.72079,
+        "displayed": 23400,
+        "swap": 70948,
+        "surface": 34,
+        "frame0": 135814,
+        "frame1": 135814,
+        "irq": 133353,
+        "vsync": 133353,
+        "line": 124143,
+        "timestamp_line": 124141
+      },
+      "record_last": {
+        "t": 1137.537507,
+        "displayed": 23520,
+        "swap": 71188,
+        "surface": 34,
+        "frame0": 136272,
+        "frame1": 136272,
+        "irq": 133811,
+        "vsync": 133811,
+        "line": 124517,
+        "timestamp_line": 124515
+      }
+    }
+  ]
+}

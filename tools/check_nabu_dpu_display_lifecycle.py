@@ -87,6 +87,7 @@ PRELUDE = r'''
 #include "NabuDpuVBlank.h"
 #include "NabuDpuSwapLedger.h"
 #include "NabuDpuScanoutCore.h"
+#include "../nabu-gpu/NabuFrameTraceEvents.h"
 using IOReturn=uint32_t;
 using UInt32=uint32_t;
 using io_user_reference_t=uint64_t;
@@ -128,6 +129,10 @@ void IOLockSleep(IOLock *l,const void *,int){
 void IOLog(const char *,...){}
 void hakios_tl(const char *,...){}
 bool gTouchLat=false;
+std::atomic<unsigned> traceVblankSends{0};
+void traceFrame(uint64_t,uint32_t event,uint64_t,uint64_t=0,uint64_t=0,uint64_t=0){
+    if(event==NabuGpuTrace::NativeVblankDelivery)++traceVblankSends;
+}
 uint64_t micros(uint64_t x){return x/1000;}
 unsigned refreshHz(){return 120;}
 void nanoseconds_to_absolutetime(uint64_t in,uint64_t *out){*out=in;}
@@ -393,7 +398,7 @@ def harness(framebuffer):
                       'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop(',
                       'static void diagnosticStage('):
         result += body(display, signature) + '\n'
-    for signature in ('static void vblank(', 'void subscribe(', 'void unsubscribe(', 'bool snapshot(', 'IOReturn wait('):
+    for signature in ('static void vblank(', 'void traceNativeVblank(', 'void subscribe(', 'void unsubscribe(', 'bool snapshot(', 'IOReturn wait('):
         result += body(display, signature) + '\n'
     result += '}\n' + client + '\n'
     for signature in (

@@ -33,8 +33,11 @@
 #include "NativeAdrenoScheduler.h"
 #include "NabuGpuProblemLog.h"
 #include "NabuGpuPort.h"
+#include "NabuGpuTrace.h"
+#include <libkern/c++/OSData.h>
 extern "C" void native_adreno_metal_dump_stats(void);
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
+extern "C" uint64_t native_adreno_surface_trace_identity(const void *);
 #include "NabuDpuProducer.h"
 #endif
 
@@ -203,8 +206,14 @@ void destroyClosedClients(AGXDeviceUserClient **,unsigned);
 
 void completionWorker(thread_call_param_t,thread_call_param_t)
 {
+    static uint64_t workerSequence;
+    const uint64_t traceWorker = __atomic_add_fetch(&workerSequence, 1, __ATOMIC_RELAXED);
+    NabuGpuTrace::record(NabuGpuTrace::WorkerBegin, traceWorker,
+        __atomic_load_n(&nabu_gpu_irq_stats.entries, __ATOMIC_RELAXED));
     AGXDeviceUserClient *closed[NativeAdrenoMaxClients+1];
     IOLockLock(g.lock);
+    NabuGpuTrace::record(NabuGpuTrace::WorkerLocked, traceWorker);
+    NabuGpuTrace::setWorker(traceWorker);
     if(__atomic_exchange_n(&g.interruptFailure,0,__ATOMIC_ACQ_REL)) {
         g.failed=true;
         g.status.noteFault();
@@ -219,6 +228,7 @@ void completionWorker(thread_call_param_t,thread_call_param_t)
             g.submit->scheduler()->fault(status,false);
         }
     }
+    NabuGpuTrace::setWorker(0);
     ++g.completionEvent;
     IOLockWakeup(g.lock,&g.completionEvent,false);
     const unsigned closedCount=collectClosedClientsLocked(closed);
@@ -236,6 +246,7 @@ void completionWorker(thread_call_param_t,thread_call_param_t)
     IOLockUnlock(g.lock);
     // Termination may release IOKit objects and enter their free paths.
     destroyClosedClients(closed,closedCount);
+    NabuGpuTrace::record(NabuGpuTrace::WorkerEnd, traceWorker);
 }
 
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
@@ -281,7 +292,8 @@ static void dpuReleaseProducer(void *read)
 }
 
 static const NabuDpuProducerOps dpuProducerOps={
-    dpuAcquireProducer,dpuProducerStatus,dpuReleaseProducer
+    dpuAcquireProducer,dpuProducerStatus,dpuReleaseProducer,NabuGpuTrace::recordAt,
+    native_adreno_surface_trace_identity
 };
 #endif
 
@@ -595,6 +607,74 @@ void dumpBoProfiles()
 }
 }
 
+
+static void traceNumber(OSDictionary *out, const char *name, uint64_t value) {
+    OSNumber *number = OSNumber::withNumber(value, 64);
+    if (number) { out->setObject(name, number); number->release(); }
+}
+static IOReturn traceProperties(IOService *service, OSDictionary *request) {
+    const IOReturn privilege = IOUserClient::clientHasPrivilege(current_task(), kIOClientPrivilegeAdministrator);
+    if (privilege) return privilege;
+    if (!g.published || !g.export_lock) return kIOReturnNotReady;
+    OSString *command = OSDynamicCast(OSString, request->getObject("TraceCommand"));
+    OSString *identifier = OSDynamicCast(OSString, request->getObject("RequestID"));
+    if (!command || !identifier || !identifier->getLength() || identifier->getLength() > 64)
+        return kIOReturnBadArgument;
+    const bool start = command->isEqualTo("Start"), stop = command->isEqualTo("Stop"), read = command->isEqualTo("Read");
+    const bool snapshot = command->isEqualTo("Snapshot"), ack = command->isEqualTo("Acknowledge");
+    OSNumber *duration = OSDynamicCast(OSNumber, request->getObject("DurationMs"));
+    OSNumber *window = OSDynamicCast(OSNumber, request->getObject("Window"));
+    OSNumber *offset = OSDynamicCast(OSNumber, request->getObject("Offset"));
+    OSNumber *count = OSDynamicCast(OSNumber, request->getObject("Count"));
+    if ((!start && !stop && !read && !snapshot && !ack) || (start && (request->getCount()!=3 || !duration ||
+        !duration->unsigned64BitValue() || duration->unsigned64BitValue()>600000)) ||
+        ((stop || read || ack) && (!window || !window->unsigned64BitValue() || window->unsigned64BitValue()>UINT32_MAX)) ||
+        (snapshot && request->getCount()!=2) || (stop && request->getCount()!=3) ||
+        (read && (request->getCount()!=4 || !offset || offset->unsigned64BitValue()>UINT32_MAX)) ||
+        (ack && (request->getCount()!=4 || !count || count->unsigned64BitValue()>UINT32_MAX)))
+        return kIOReturnBadArgument;
+    OSDictionary *result = OSDictionary::withCapacity(20);
+    if (!result) return kIOReturnNoMemory;
+    NabuFrameTrace::Record *records = read ? IONewData(NabuFrameTrace::Record, 4096) : nullptr;
+    if (read && !records) { result->release(); return kIOReturnNoMemory; }
+    NabuFrameTrace::Metadata metadata{};
+    uint32_t copied = 0;
+    IOLockLock(g.export_lock);
+    IOReturn status = start ? NabuGpuTrace::initialize() : NabuGpuTrace::snapshot(&metadata);
+    if (!status && start) status = NabuGpuTrace::start(uint32_t(duration->unsigned64BitValue()));
+    if (!status && stop) {
+        if (metadata.window != window->unsigned32BitValue()) status = kIOReturnBadArgument;
+        else NabuGpuTrace::stop();
+    }
+    if (!status && read) status = NabuGpuTrace::read(window->unsigned32BitValue(), offset->unsigned32BitValue(),
+        records, 4096, &copied, &metadata);
+    if (!status && ack) status = NabuGpuTrace::acknowledge(window->unsigned32BitValue(), count->unsigned32BitValue());
+    if (!read) NabuGpuTrace::snapshot(&metadata);
+    result->setObject("RequestID", identifier);
+    traceNumber(result, "status", uint32_t(status)); traceNumber(result, "schema_version", NabuFrameTrace::SchemaVersion);
+    traceNumber(result, "record_bytes", sizeof(NabuFrameTrace::Record));
+    traceNumber(result, "window", metadata.window); traceNumber(result, "count", metadata.count);
+    traceNumber(result, "capacity", metadata.capacity); traceNumber(result, "dropped", metadata.dropped);
+    traceNumber(result, "start_us", metadata.startUs); traceNumber(result, "end_us", metadata.endUs);
+    traceNumber(result, "deadline_us", metadata.deadlineUs); traceNumber(result, "exported_through", metadata.exportedThrough);
+    traceNumber(result, "offset", read ? offset->unsigned32BitValue() : 0); traceNumber(result, "copied", copied);
+    result->setObject("active", metadata.active ? kOSBooleanTrue : kOSBooleanFalse);
+    result->setObject("acknowledged", metadata.acknowledged ? kOSBooleanTrue : kOSBooleanFalse);
+    OSString *clock = OSString::withCString("mach_absolute_time_us");
+    if (clock) { result->setObject("clock", clock); clock->release(); }
+    if (!status && read) {
+        OSData *data = OSData::withBytes(records, copied * sizeof(*records));
+        if (!data) status = kIOReturnNoMemory;
+        else { result->setObject("records", data); data->release(); }
+    }
+    traceNumber(result, "status", uint32_t(status));
+    if (!service->setProperty("LastTraceResult", result) && !status) status = kIOReturnNoMemory;
+    IOLockUnlock(g.export_lock);
+    if (records) IODeleteData(records, NabuFrameTrace::Record, 4096);
+    result->release();
+    return status;
+}
+
 class NativeAdrenoGpuPublished : public IOService {
     OSDeclareDefaultStructors(NativeAdrenoGpuPublished)
 public:
@@ -607,6 +687,7 @@ OSDefineMetaClassAndStructors(NativeAdrenoGpuPublished,IOService)
 IOReturn NativeAdrenoGpuPublished::setProperties(OSObject *properties)
 {
     OSDictionary *dictionary=OSDynamicCast(OSDictionary,properties);
+    if (dictionary && dictionary->getObject("TraceCommand")) return traceProperties(this, dictionary);
     if(!dictionary || dictionary->getCount()!=2 ||
         dictionary->getObject("DumpStats")!=kOSBooleanTrue) {
         return kIOReturnBadArgument;
@@ -700,6 +781,7 @@ IOReturn NativeAdrenoControl::setProperties(OSObject *properties)
     if(!dictionary) {
         return kIOReturnBadArgument;
     }
+    if (dictionary->getObject("TraceCommand")) return traceProperties(this, dictionary);
     if(dictionary->getCount()==1 && dictionary->getObject("Start")==kOSBooleanTrue) {
         return native_adreno_a6xx_request_start();
     }
@@ -2049,7 +2131,7 @@ extern "C" IOReturn native_adreno_publish(NativeAdrenoVm *vm,NativeAdrenoSubmit 
     nabu_gpu_problem_log_initialize();
     g.service=service;g.published=true;
 #if defined(NABU_DPU_PRODUCER) && NABU_DPU_PRODUCER
-    const IOReturn producerStatus=nabu_dpu_register_producer(&dpuProducerOps);
+    const IOReturn producerStatus=nabu_dpu_register_producer_v2(&dpuProducerOps);
     service->setProperty("DisplayProducerStatus",uint32_t(producerStatus),32);
     IOLog("NabuGPU: DPU producer registration status=%08x per_surface=1 accepted_writers=1\n",
         uint32_t(producerStatus));
@@ -2162,6 +2244,9 @@ extern "C" void native_adreno_metal_dump_stats(void)
         native_adreno_mount_fail[0],native_adreno_mount_fail[1],native_adreno_mount_fail[2],native_adreno_mount_fail[3],
         native_adreno_view_diag[0],native_adreno_view_diag[1],native_adreno_view_diag[2],native_adreno_view_diag[3],
         native_adreno_view_diag[4],native_adreno_view_diag[5],native_adreno_view_kept);
+    // The ABI's fifth counter bucket aggregates all client slots >= 4.
+    // NativeAdrenoMaxClients is larger, but the exported array remains 5x6.
+    IOLog("NativeAdrenoMetal: bo_slot_layout buckets=5 individual_slots=0-3 aggregate_bucket=4 aggregate_from_slot=4\n");
     for(unsigned index=0;index<5;++index) {
         const volatile uint32_t *counts=native_adreno_client_stats[index];
         IOLog("NativeAdrenoMetal: bo_slot=%u live=%u peak=%u refused=%u status=%08x refused_bytes=%u mapped_mib=%u\n",

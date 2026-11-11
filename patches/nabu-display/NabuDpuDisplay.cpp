@@ -33,13 +33,18 @@ uint32_t word(const uint8_t *p, unsigned offset) {
 uint64_t nowUs() {
     uint64_t ns; absolutetime_to_nanoseconds(mach_absolute_time(), &ns); return ns / 1000;
 }
+void traceFrame(uint64_t timeUs, uint32_t event, uint64_t identity,
+                uint64_t a = 0, uint64_t b = 0, uint64_t c = 0) {
+    const auto ops = __atomic_load_n(&producer, __ATOMIC_ACQUIRE);
+    if (ops && ops->trace) ops->trace(timeUs, event, identity, a, b, c);
+}
 bool fullscreen(const uint8_t *p, unsigned offset) {
     return !word(p, offset) && !word(p, offset + 4) &&
         word(p, offset + 8) == 1600 && word(p, offset + 12) == 2560;
 }
 }
 
-extern "C" IOReturn nabu_dpu_register_producer(const NabuDpuProducerOps *ops) {
+extern "C" IOReturn nabu_dpu_register_producer_v2(const NabuDpuProducerOps *ops) {
     if (!ops || !ops->acquire || !ops->status || !ops->release) return kIOReturnBadArgument;
     const NabuDpuProducerOps *expected = nullptr;
     if (!__atomic_compare_exchange_n(&producer, &expected, ops, false, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE))
@@ -66,6 +71,7 @@ struct Held {
     const NabuDpuProducerOps *ops;
     PT::Mapping mapping;
     uint32_t swap;
+    uint64_t leaseIdentity;
     uint64_t presentAt, presentGapUs, admissionUs, acquireUs, queuedAt, queueUs, producerUs, acceptedAt;
     uint32_t producerFence, producerChecks, queueDepth;
 };
@@ -175,6 +181,7 @@ static void wake(void *cookie, IOReturn) {
 }
 static void vblank(void *cookie, const NabuDpuVBlank::Sample &sample) {
     auto b = static_cast<Binding *>(cookie);
+    uint64_t irqNs; absolutetime_to_nanoseconds(sample.masterTimestamp, &irqNs);
     IOLockLock(b->stateLock);
     const bool advanced = sample.masterSequence != b->sample.masterSequence;
     b->sample = sample;
@@ -184,10 +191,19 @@ static void vblank(void *cookie, const NabuDpuVBlank::Sample &sample) {
     const bool notify = advanced && !b->failure && b->powerOn;
     IOLockWakeup(b->stateLock, b, false);
     IOLockUnlock(b->stateLock);
+    if (advanced) traceFrame(irqNs / 1000, NabuGpuTrace::Vblank, sample.masterSequence,
+        sample.irqCount, sample.frame[0], sample.frame[1]);
     if (!notify) return;
     IOLockLock(b->listenerLock);
+    traceFrame(nowUs(), NabuGpuTrace::VblankNotify, sample.masterSequence,
+        irqNs / 1000, sample.irqCount, 0);
     for (Listener *l = b->listeners; l; l = l->next) l->notify(l->cookie, sample);
     IOLockUnlock(b->listenerLock);
+}
+void traceNativeVblank(uint64_t sequence, uint64_t timestamp, IOReturn status) {
+    uint64_t ns; absolutetime_to_nanoseconds(timestamp, &ns);
+    traceFrame(nowUs(), NabuGpuTrace::NativeVblankDelivery, sequence, ns / 1000,
+        uint32_t(status), 0);
 }
 bool requested() {
     uint32_t on = 0;
@@ -259,6 +275,7 @@ static IOReturn acquire(Binding *b, MiniIOSurface *s, Held &h) {
     IOReturn result = h.ops->acquire(s->client ? s->client : s->memory, wake, b, &h.read);
     if (result != kIOReturnSuccess && result != kIOReturnNotReady) return result;
     if (!h.read) return kIOReturnNotReady;
+    h.leaseIdentity = h.ops->traceIdentity ? h.ops->traceIdentity(h.read) : 0;
     return kIOReturnSuccess; // lease captured; the worker waits for its writers
 }
 static IOReturn waitProducer(Binding *b, Held &h) {
@@ -410,6 +427,7 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     if (trace) NabuDpuCheckpoint::record("surface-dpu-map-returned", result);
     if (result) return result;
     const unsigned slot = h.mapping.slot;
+    traceFrame(nowUs(), NabuGpuTrace::Mapped, h.swap, s->sid, h.mapping.token, h.mapping.iova);
     b->held[slot] = h; h = {}; // transfer before the first possible DPU access
     auto &held = b->held[slot];
     // The NativeAdreno lease completes the producer's GPU cache-flush fence.
@@ -422,10 +440,14 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
         1600, 2560, s->info.pixelFormat, s->info.bytesPerElement, s->info.planeCount, true};
     Scan::Acceptance accepted{};
     const uint64_t scanAt = nowUs();
+    traceFrame(scanAt, NabuGpuTrace::ScanSubmit, held.swap, s->sid, held.mapping.token, frame.sequence);
     result = submitFrame(b, frame, accepted, trace);
     const uint64_t acceptedAt = nowUs(), scanUs = acceptedAt - scanAt;
     if (result) return result;
     held.acceptedAt = acceptedAt;
+    traceFrame(acceptedAt, NabuGpuTrace::Accepted, held.swap, s->sid, held.mapping.token, frame.sequence);
+    traceFrame(acceptedAt, NabuGpuTrace::ScanAcceptedCounters, held.swap,
+        frame.sequence, accepted.observed.frame[0], accepted.observed.frame[1]);
     if (evidence) *evidence = accepted;
     unsigned old = PT::NoSlot;
     uint64_t oldActiveUs = 0;
@@ -442,8 +464,10 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
         Held &previous = b->held[old];
         oldActiveUs = previous.acceptedAt ? acceptedAt - previous.acceptedAt : 0;
         const auto oldSwap = previous.swap;
+        const uint64_t oldSid = previous.surface->sid, oldToken = previous.mapping.token;
         drop(previous);
         finishRecord(b, oldSwap, Swap::Retired);
+        traceFrame(nowUs(), NabuGpuTrace::Retired, oldSwap, oldSid, oldToken, held.swap);
     }
     ++b->accepted;
     b->lastDisplayTime = mach_absolute_time();
@@ -468,12 +492,15 @@ static void worker(void *cookie, wait_result_t) {
         IOReturn result = b->failure;
         IOLockUnlock(b->stateLock);
         const uint32_t id = held.swap, sid = held.surface->sid;
+        traceFrame(nowUs(), NabuGpuTrace::DisplayWorker, id, sid, held.queueDepth, held.leaseIdentity);
         const bool trace = !b->firstWorkerTraced && NabuDpuCheckpoint::enabled();
         b->firstWorkerTraced = true;
         if (trace) NabuDpuCheckpoint::record("producer-wait-enter");
         const uint64_t began = nowUs();
         if (!result) result = waitProducer(b, held);
         held.producerUs = nowUs() - began;
+        traceFrame(nowUs(), NabuGpuTrace::ProducerReady, id,
+            held.leaseIdentity, held.producerFence, uint32_t(result));
         b->producerWaitUs += held.producerUs;
         if (trace) NabuDpuCheckpoint::record("producer-wait-returned", result);
         if (!result) {
@@ -484,6 +511,7 @@ static void worker(void *cookie, wait_result_t) {
         }
         if (held.surface) drop(held); // not transferred to an armed/active slot
         if (result) {
+            traceFrame(nowUs(), NabuGpuTrace::DisplayFailure, id, sid, uint32_t(result), b->scan.phase);
             finishRecord(b, id, Swap::Failed, result);
             IOLog("NABU DPU: swap=%u surface=%u failed=%#x scan-phase=%u; no completion fabricated\n",
                 id, sid, result, b->scan.phase);
@@ -491,18 +519,54 @@ static void worker(void *cookie, wait_result_t) {
         if (trace) NabuDpuCheckpoint::record("first-frame-worker-returned", result);
     }
 }
+static IOReturn rejectPresent(const uint8_t *swap, size_t bytes, uint32_t reason) {
+    static uint64_t rejected[5];
+    const uint64_t count = __atomic_add_fetch(&rejected[reason], 1, __ATOMIC_RELAXED);
+    const IOReturn result = reason == NabuGpuTrace::ShortSwap ? kIOReturnBadArgument : kIOReturnUnsupported;
+    const uint64_t at = nowUs();
+    if (reason == NabuGpuTrace::ShortSwap) {
+        traceFrame(at, NabuGpuTrace::PresentRejected, 0, reason, uint32_t(result), bytes);
+        if (count == 1 || count % 120 == 0)
+            IOLog("NABU DPU: present-rejected reason=%u count=%llu bytes=%llu status=%#x\n",
+                reason, count, uint64_t(bytes), result);
+        return result;
+    }
+    const uint32_t id = word(swap, SwapId), cleared = word(swap, Cleared);
+    uint32_t sid[4], source[4], destination[4];
+    for (unsigned i = 0; i < 4; ++i) {
+        sid[i] = word(swap, Surface + i * 4);
+        source[i] = word(swap, Source + i * 4);
+        destination[i] = word(swap, Destination + i * 4);
+    }
+    traceFrame(at, NabuGpuTrace::PresentRejected, id, reason, uint32_t(result), count);
+    traceFrame(at, NabuGpuTrace::PresentSurfaceList, id,
+        sid[0] | (uint64_t(sid[1]) << 32), sid[2] | (uint64_t(sid[3]) << 32), cleared);
+    traceFrame(at, NabuGpuTrace::PresentSourceRect, id,
+        source[0] | (uint64_t(source[1]) << 32), source[2] | (uint64_t(source[3]) << 32), 0);
+    traceFrame(at, NabuGpuTrace::PresentDestinationRect, id,
+        destination[0] | (uint64_t(destination[1]) << 32), destination[2] | (uint64_t(destination[3]) << 32), 0);
+    if (count == 1 || count % 120 == 0) {
+        IOLog("NABU DPU: present-rejected swap=%u reason=%u count=%llu status=%#x\n", id, reason, count, result);
+        IOLog("NABU DPU: rejected-surfaces swap=%u sid=%u,%u,%u,%u cleared=%#x\n", id, sid[0], sid[1], sid[2], sid[3], cleared);
+        IOLog("NABU DPU: rejected-rects swap=%u src=%u,%u,%u,%u dst=%u,%u,%u,%u\n", id,
+            source[0], source[1], source[2], source[3], destination[0], destination[1], destination[2], destination[3]);
+    }
+    return result;
+}
 IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     const uint64_t presentAt = nowUs();
-    if (bytes < SwapBytes) return kIOReturnBadArgument;
+    if (bytes < SwapBytes) return rejectPresent(swap, bytes, NabuGpuTrace::ShortSwap);
     static uint32_t firstPresentTraced;
     const bool trace = NabuDpuCheckpoint::enabled() &&
         __sync_bool_compare_and_swap(&firstPresentTraced, 0, 1);
     if (trace) NabuDpuCheckpoint::record("present-enter");
     const uint32_t id = word(swap, SwapId), sid = word(swap, Surface);
+    traceFrame(presentAt, NabuGpuTrace::Present, id, sid, 0, 0);
     for (unsigned layer = 1; layer < 4; ++layer)
-        if (word(swap, Surface + layer * 4)) return kIOReturnUnsupported;
-    if (sid && (!fullscreen(swap, Source) || !fullscreen(swap, Destination))) return kIOReturnUnsupported;
-    if (!sid && !(word(swap, Cleared) & 1)) return kIOReturnUnsupported;
+        if (word(swap, Surface + layer * 4)) return rejectPresent(swap, bytes, NabuGpuTrace::ExtraLayers);
+    if (sid && !fullscreen(swap, Source)) return rejectPresent(swap, bytes, NabuGpuTrace::SourceRect);
+    if (sid && !fullscreen(swap, Destination)) return rejectPresent(swap, bytes, NabuGpuTrace::DestinationRect);
+    if (!sid && !(word(swap, Cleared) & 1)) return rejectPresent(swap, bytes, NabuGpuTrace::MissingSurfaceAndClear);
     IOLockLock(b->submitLock);
     const uint64_t serializedAt = nowUs();
     const uint64_t presentGapUs = b->lastPresentAt ? serializedAt - b->lastPresentAt : 0;
@@ -551,6 +615,8 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
             result = b->failure;
             if (!result) {
                 held.queuedAt = nowUs(); held.queueDepth = b->queueCount + 1;
+                traceFrame(held.queuedAt, NabuGpuTrace::Queued, id,
+                    s->sid, held.queueDepth, held.leaseIdentity);
                 b->queue[(b->queueFirst + b->queueCount) % 2] = held;
                 held = {}; ++b->queueCount;
                 IOLockWakeup(b->stateLock, b->queue, true);
@@ -560,6 +626,7 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
         if (held.surface) drop(held); // never queued or accessed by the DPU
     }
     if (result) {
+        traceFrame(nowUs(), NabuGpuTrace::DisplayFailure, id, sid, uint32_t(result), 0);
         finishRecord(b, id, Swap::Failed, result);
         IOLog("NABU DPU: enqueue swap=%u surface=%u failed=%#x; no completion fabricated\n",
             id, sid, result);

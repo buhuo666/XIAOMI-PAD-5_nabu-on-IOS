@@ -1,0 +1,127 @@
+{
+  "source": "log\\device\\nabu-boot-20261111-216\\runtime-log\\runtime.log",
+  "run_wall_time_origin": "run_id microseconds + 3-second warmup; source clock consistency assumed",
+  "runs": [
+    {
+      "run": "1794403867974901-scene0-repeat1",
+      "revision": 1,
+      "start": "2026-11-11T21:31:10.974901+08:00",
+      "end": "2026-11-11T21:32:10.977250+08:00",
+      "errors": 0,
+      "first_line": null,
+      "last_line": null,
+      "first_time": null,
+      "last_time": null
+    },
+    {
+      "run": "1794403933088000-scene0-repeat2",
+      "revision": 1,
+      "start": "2026-11-11T21:32:16.088000+08:00",
+      "end": "2026-11-11T21:33:16.088454+08:00",
+      "errors": 1094,
+      "first_line": 38230,
+      "last_line": 41364,
+      "first_time": "2026-11-11T21:32:16.134495+08:00",
+      "last_time": "2026-11-11T21:33:16.077013+08:00"
+    },
+    {
+      "run": "1794403998246199-scene0-repeat3",
+      "revision": 1,
+      "start": "2026-11-11T21:33:21.246199+08:00",
+      "end": "2026-11-11T21:34:21.252236+08:00",
+      "errors": 1946,
+      "first_line": 41842,
+      "last_line": 45880,
+      "first_time": "2026-11-11T21:33:21.252178+08:00",
+      "last_time": "2026-11-11T21:34:21.243430+08:00"
+    },
+    {
+      "run": "1794404063388612-scene1-repeat1",
+      "revision": 1,
+      "start": "2026-11-11T21:34:26.388612+08:00",
+      "end": "2026-11-11T21:35:26.393919+08:00",
+      "errors": 3029,
+      "first_line": 46493,
+      "last_line": 51729,
+      "first_time": "2026-11-11T21:34:26.411126+08:00",
+      "last_time": "2026-11-11T21:35:26.387058+08:00"
+    },
+    {
+      "run": "1794404128518730-scene1-repeat2",
+      "revision": 1,
+      "start": "2026-11-11T21:35:31.518730+08:00",
+      "end": "2026-11-11T21:36:31.518903+08:00",
+      "errors": 3028,
+      "first_line": 52266,
+      "last_line": 57700,
+      "first_time": "2026-11-11T21:35:31.528735+08:00",
+      "last_time": "2026-11-11T21:36:31.511890+08:00"
+    },
+    {
+      "run": "1794404193673281-scene1-repeat3",
+      "revision": 1,
+      "start": "2026-11-11T21:36:36.673281+08:00",
+      "end": "2026-11-11T21:37:36.674705+08:00",
+      "errors": 3042,
+      "first_line": 58332,
+      "last_line": 63771,
+      "first_time": "2026-11-11T21:36:36.688139+08:00",
+      "last_time": "2026-11-11T21:37:36.647249+08:00"
+    },
+    {
+      "run": "1794404588552645-scene0-repeat1",
+      "revision": 2,
+      "start": "2026-11-11T21:43:11.552645+08:00",
+      "end": "2026-11-11T21:44:11.560565+08:00",
+      "errors": 0,
+      "first_line": null,
+      "last_line": null,
+      "first_time": null,
+      "last_time": null
+    },
+    {
+      "run": "1794404653741243-scene0-repeat2",
+      "revision": 2,
+      "start": "2026-11-11T21:44:16.741243+08:00",
+      "end": "2026-11-11T21:45:16.743890+08:00",
+      "errors": 1075,
+      "first_line": 113340,
+      "last_line": 117126,
+      "first_time": "2026-11-11T21:44:16.769552+08:00",
+      "last_time": "2026-11-11T21:45:16.695494+08:00"
+    },
+    {
+      "run": "1794404718847723-scene0-repeat3",
+      "revision": 2,
+      "start": "2026-11-11T21:45:21.847723+08:00",
+      "end": "2026-11-11T21:46:21.850603+08:00",
+      "errors": 0,
+      "first_line": null,
+      "last_line": null,
+      "first_time": null,
+      "last_time": null
+    },
+    {
+      "run": "1794404783993381-scene1-repeat1",
+      "revision": 2,
+      "start": "2026-11-11T21:46:26.993381+08:00",
+      "end": "2026-11-11T21:47:26.993914+08:00",
+      "errors": 0,
+      "first_line": null,
+      "last_line": null,
+      "first_time": null,
+      "last_time": null
+    },
+    {
+      "run": "1794404849141235-scene1-repeat2",
+      "revision": 2,
+      "start": "2026-11-11T21:47:32.141235+08:00",
+      "end": "2026-11-11T21:47:43.333731+08:00",
+      "errors": 439,
+      "first_line": 123900,
+      "last_line": 124879,
+      "first_time": "2026-11-11T21:47:32.172513+08:00",
+      "last_time": "2026-11-11T21:47:43.317839+08:00"
+    }
+  ]
+}
