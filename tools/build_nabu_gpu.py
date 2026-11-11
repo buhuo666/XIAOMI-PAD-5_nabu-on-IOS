@@ -84,6 +84,9 @@ def main():
                 source_map[path.name] = str(path.relative_to(ROOT))
             elif path.name.startswith(('LICENSE', 'COPYING', 'PROVENANCE')):
                 shutil.copyfile(path, licenses/(label.replace('/', '-')+'-'+path.name))
+    path = ROOT/'patches/nabu-diagnostics/NabuCaTraceBridge.h'
+    shutil.copyfile(path, staged/path.name)
+    source_map[path.name] = str(path.relative_to(ROOT))
     if args.dpu_snapshot:
         for name in ('NabuDpuSnapshot.cpp', 'NabuDpuSnapshot.h'):
             path = ROOT/'patches/nabu-display'/name

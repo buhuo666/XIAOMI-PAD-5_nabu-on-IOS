@@ -75,6 +75,10 @@ python3 tools/check_nabu_log_runtime.py --output log/ci/nabu-log-runtime
 python3 tools/check_nabu_log_format.py --output log/ci/nabu-log-format --native-fixture log/ci/nabu-log-writer/valid-slot.bin
 python3 tools/check_return_diagnostics.py --tree "$XNU_SRC" --output log/ci/return-diagnostics-host
 python3 tools/prepare_nabu_display_power.py --tree "$XNU_SRC" --output log/ci/nabu-display-power/source.json
+python3 tools/prepare_nabu_ca_trace_bridge.py --tree "$XNU_SRC" --output log/ci/nabu-ca-trace-bridge/source.json
+python3 tools/prepare_nabu_ca_ipc_trace.py --tree "$XNU_SRC" --output log/ci/nabu-ca-ipc-trace/source.json
+python3 tools/check_nabu_ca_trace_bridge.py --output log/ci/nabu-ca-trace-bridge/check --tree "$XNU_SRC"
+python3 tools/check_nabu_ca_ipc_trace.py --output log/ci/nabu-ca-ipc-trace/check
 python3 tools/check_nabu_dpu_display_lifecycle.py --tree "$XNU_SRC" --output log/ci/nabu-dpu-lifecycle.json
 python3 tools/check_nabu_gpu_surface_read.py --output log/ci/nabu-gpu-surface-read
 python3 tools/check_nabu_gpu_irq.py --output log/ci/nabu-gpu-irq

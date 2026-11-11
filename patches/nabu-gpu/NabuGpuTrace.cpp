@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "NabuGpuTrace.h"
 #include "NativeAdrenoKernelTime.h"
+#include "NabuCaTraceBridge.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOLocks.h>
 
@@ -42,6 +43,8 @@ IOReturn initialize() {
     }
     recorder.initialize(allocatedStorage, Capacity);
     lock = allocatedLock;
+    static const NabuCaTraceCallbacks callbacks = {window, recordWindow};
+    nabu_ca_trace_register_callbacks(&callbacks);
     return kIOReturnSuccess;
 }
 IOReturn start(uint32_t durationMs) {
