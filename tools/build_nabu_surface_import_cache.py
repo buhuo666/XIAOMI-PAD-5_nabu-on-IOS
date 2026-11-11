@@ -25,24 +25,43 @@ def stage_surface_import_cache(root, metal):
     shutil.copyfile(root/'patches/nabu-metal'/PATCH,metal/PATCH)
 
 
+def stage_ca_present_trace(root, metal):
+    path=metal/'NativeBridgeMetalFrontend.mm'
+    source=path.read_text(encoding='utf-8')
+    anchor='extern "C" void sys_dcache_flush(void *start, size_t length);'
+    source=source.replace(anchor, '#include "NativeMetalCaPresentTrace.inc"\n\n'+anchor, 1)
+    for old,new in (('   [drawable present];','   nabuCaPresent(drawable,false,0);'),
+                    ('   [drawable presentAtTime:time];','   nabuCaPresent(drawable,true,time);')):
+        if source.count(old)!=1:raise ValueError('Qualified present site changed: '+old)
+        source=source.replace(old,new,1)
+    path.write_text(source,encoding='utf-8')
+    shutil.copyfile(root/'patches/nabu-metal/NativeMetalCaPresentTrace.inc',metal/'NativeMetalCaPresentTrace.inc')
+    shutil.copyfile(root/'userland/nabu/src/ca_trace_marker.h',metal/'ca_trace_marker.h')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--ca-trace',action='store_true')
     args=p.parse_args()
     if sys.platform!='darwin':p.error('The frontend relink requires macOS/Xcode')
     prior_dir=args.input.resolve();out=args.output.resolve()
     prior=json.loads((prior_dir/'build-report.json').read_text())
-    if prior['ci']['run_id']!='42757503932' or not prior['owned_copy_pages']:
-        raise ValueError('Expected the qualified GPU180/216 frontend input CI42757503932')
+    expected='43040953235' if args.ca_trace else '42757503932'
+    if prior['ci']['run_id']!=expected or not prior['owned_copy_pages']:
+        raise ValueError('Expected qualified frontend input CI'+expected)
     shutil.copytree(prior_dir,out)
-    metal=out/'frontend-source';stage_surface_import_cache(ROOT,metal)
+    metal=out/'frontend-source'
+    if args.ca_trace:stage_ca_present_trace(ROOT,metal)
+    else:stage_surface_import_cache(ROOT,metal)
     report=dict(prior)
     report.update(result='building',surface_import_cache_recovery=True,
                   surface_import_cache_scope='Prune before import; one exact Device OOM retry after dropping only cache strong references outside mutex',
                   source_frontend_ci=prior['ci'],rust_rebuilt=False,turnip_rebuilt=False,
                   ci={'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')},
                   commands=[])
+    report['ca_present_trace']=args.ca_trace
     def run(command,**kw):
         command=list(map(str,command));report['commands'].append(command)
         r=subprocess.run(command,capture_output=True,text=True,**kw)

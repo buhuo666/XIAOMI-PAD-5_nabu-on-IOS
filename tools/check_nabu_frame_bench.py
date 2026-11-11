@@ -50,6 +50,9 @@ def check_analysis():
         assert result['app_submit_rate'] == fps and result['display_fps'] is None and result['pure_gpu_ms'] is None
         assert result['metrics']['submit_to_completion_observed']['p95_ms'] < 2.001
         assert result['valid_performance_run'] and result['complete_interval']
+        diagnostic = analyze(dict(metadata, diagnostic_only=True, benchmark_revision=4), rows)
+        assert not diagnostic['valid_performance_run'] and diagnostic['app_submit_rate'] is None
+        assert diagnostic['diagnostic_observed_submit_rate'] == fps
         historical = analyze(dict(metadata, benchmark_revision=1), rows)
         assert historical['app_submit_rate'] is None and not historical['valid_performance_run']
         partial_rows = [r for r in rows if r['callback_s'] < 10.25]

@@ -1,0 +1,44 @@
+name: nabu16 - short CA frame latency diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ca-trace:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Retrieve qualified GPU217 frontend and Rust archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 43040953235 --name nabu-surface-import-cache-1
+          --dir inputs/qualified
+      - name: Add bounded present markers to the qualified frontend
+        run: >-
+          python3 tools/build_nabu_surface_import_cache.py
+          --input inputs/qualified/nabu-surface-import-cache
+          --output artifacts/nabu-ca-present --ca-trace
+      - name: Build original-image CA display observer
+        run: python3 tools/build_nabu_ca_frame_trace.py --output artifacts/nabu-ca-frame-trace
+      - name: Check CA observer semantics
+        run: python3 tools/check_nabu_ca_frame_trace.py --output artifacts/nabu-ca-frame-trace/host-check
+      - name: Build 15-second diagnostic application
+        run: python3 tools/build_nabu_frame_bench.py --output artifacts/nabu-frame-bench
+      - name: Check raw marker transport and diagnostic reporting
+        run: |
+          python3 tools/check_nabu_ca_trace_bridge.py --output artifacts/nabu-ca-bridge-check
+          python3 tools/check_nabu_frame_bench.py --output artifacts/nabu-frame-bench/host-check
+          python3 tools/check_nabu_ca_trace_analysis.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-ca-trace-${{ github.run_number }}
+          path: artifacts/nabu-*/
+          retention-days: 14

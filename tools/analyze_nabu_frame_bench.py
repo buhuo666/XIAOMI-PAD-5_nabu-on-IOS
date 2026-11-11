@@ -32,6 +32,7 @@ def analyze(metadata, rows):
     complete_interval = stopped is not None and stopped >= end
     revision = metadata.get('benchmark_revision', 1)
     valid_performance_run = (revision >= 2 and complete_interval
+                            and not metadata.get('diagnostic_only', False)
                             and metadata['result'] == 'captured_not_display_qualified'
                             and not metadata.get('command_failures', 0)
                             and not metadata.get('nil_drawables', 0)
@@ -67,6 +68,7 @@ def analyze(metadata, rows):
             'error': metadata.get('error', ''), 'duration_s': observed_duration,
             'requested_duration_s': end-start, 'complete_interval': complete_interval,
             'valid_performance_run': valid_performance_run,
+            'diagnostic_only': metadata.get('diagnostic_only', False),
             'frames_submitted': len(submitted), 'commands_completed': len(completed),
             'app_submit_rate': len(submitted)/(end-start) if valid_performance_run else None,
             'diagnostic_observed_submit_rate': len(submitted)/observed_duration if observed_duration else None,

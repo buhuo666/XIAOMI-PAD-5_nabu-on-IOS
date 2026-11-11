@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+#include <dlfcn.h>
 #include "FrameCompletion.h"
+#include "ca_trace_marker.h"
 
 namespace {
 constexpr uint32_t Width = 1600, Height = 2560, Capacity = 80000;
@@ -33,7 +35,7 @@ NSDictionary *distribution(std::vector<double> values) {
     uint32_t rowCount, pending, epoch, missedAdmission, nullDrawable, failures, displayLinkCallbacks;
     unsigned scene, repetition, rate, sequenceIndex, sequenceCount;
     double sampleStart, sampleEnd, stoppedAt, duration;
-    bool running, draining, automated;
+    bool running, draining, automated, diagnostic;
     NSInteger initialThermal;
 }
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
@@ -65,7 +67,8 @@ NSDictionary *distribution(std::vector<double> values) {
     self.label.text = @"1600×2560 连续帧基准\n每场景预热3秒，采样60秒，重复3次。";
     self.controls = [[UIStackView alloc] initWithArrangedSubviews:@[self.label]];
     self.controls.axis = UILayoutConstraintAxisVertical; self.controls.spacing = 24;
-    for (NSArray *option in @[@[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
+    for (NSArray *option in @[@[@"CA等待定位（15秒）", NSStringFromSelector(@selector(startDiagnostic))],
+                              @[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
                               @[@"60帧场景对照", NSStringFromSelector(@selector(start60))],
                               @[@"120帧持续10分钟", NSStringFromSelector(@selector(startSoak))]]) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -118,9 +121,15 @@ NSDictionary *distribution(std::vector<double> values) {
 - (void)start120 { [self beginSequence:120 soak:NO]; }
 - (void)start60 { [self beginSequence:60 soak:NO]; }
 - (void)startSoak { [self beginSequence:120 soak:YES]; }
+- (void)startDiagnostic {
+    if (running || draining || ![self prepareRenderer]) return;
+    diagnostic = true; rate = 120; duration = 15;
+    sequenceIndex = 0; sequenceCount = 1; automated = true;
+    [self beginRun];
+}
 - (void)beginSequence:(unsigned)targetRate soak:(BOOL)soak {
     if (running || draining || ![self prepareRenderer]) return;
-    rate = targetRate; duration = soak ? 600 : 60;
+    diagnostic = false; rate = targetRate; duration = soak ? 600 : 60;
     sequenceIndex = 0; sequenceCount = soak ? 1 : 6; automated = true;
     [self beginRun];
 }
@@ -133,6 +142,9 @@ NSDictionary *distribution(std::vector<double> values) {
     self.failureEvents = [NSMutableArray array];
     self.runID = [NSString stringWithFormat:@"%.0f-scene%u-repeat%u", NSDate.date.timeIntervalSince1970 * 1e6, scene, repetition];
     sampleStart = CACurrentMediaTime() + 3; sampleEnd = sampleStart + duration;
+    auto setTrace = (void (*)(bool))dlsym(RTLD_DEFAULT, "native_bridge_metal_set_ca_trace");
+    if (setTrace) setTrace(diagnostic);
+    if (diagnostic) nabu_ca_trace_marker(88, epoch, uint64_t(duration * 1e6), uint64_t(sampleStart * 1e6), setTrace != nullptr);
     initialThermal = NSProcessInfo.processInfo.thermalState;
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     self.controls.hidden = YES;
@@ -149,6 +161,8 @@ NSDictionary *distribution(std::vector<double> values) {
     if (now >= sampleStart) ++displayLinkCallbacks;
     if (pending == 3) { if (now >= sampleStart) ++missedAdmission; return; }
     const uint32_t index = rowCount++, generation = epoch;
+    const uint64_t traceID = (uint64_t(generation) << 32) | index;
+    const bool trace = diagnostic;
     const unsigned layers = scene ? 8 : 1;
     Row &row = rows[index]; row = {};
     row.callback = now; row.target = link.targetTimestamp; row.frame = index;
@@ -158,9 +172,11 @@ NSDictionary *distribution(std::vector<double> values) {
         @autoreleasepool {
             Row &r = self->rows[index];
             r.acquireBegin = CACurrentMediaTime();
+            if (trace) nabu_ca_trace_marker(83, traceID, 0, 0, 0);
             id<CAMetalDrawable> drawable = [self.metalLayer nextDrawable];
             r.acquireEnd = CACurrentMediaTime();
             if (!drawable) {
+                if (trace) nabu_ca_trace_marker(84, traceID, 0, 0, 0);
                 dispatch_async(dispatch_get_main_queue(), ^{ ++self->nullDrawable; --self->pending; [self checkDeadline]; });
                 return;
             }
@@ -168,6 +184,7 @@ NSDictionary *distribution(std::vector<double> values) {
             id<MTLTexture> texture = drawable.texture;
             IOSurfaceRef surface = texture.iosurface;
             r.surface = surface ? IOSurfaceGetID(surface) : 0;
+            if (trace) nabu_ca_trace_marker(84, traceID, r.surface, r.drawable, (uint64_t)(uintptr_t)(__bridge void *)drawable);
             const NSUInteger textureWidth = texture.width, textureHeight = texture.height;
             id<MTLCommandBuffer> command = [self.queue commandBuffer];
             MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -213,6 +230,7 @@ NSDictionary *distribution(std::vector<double> values) {
             [command addCompletedHandler:^(id<MTLCommandBuffer> finished) {
                 const double completedAt = CACurrentMediaTime();
                 const uint32_t status = uint32_t(finished.status);
+                if (trace) nabu_ca_trace_marker(87, traceID, self->rows[index].surface, self->rows[index].drawable, status);
                 NSError *error = finished.error;
                 NSDictionary *event = status == MTLCommandBufferStatusCompleted ? nil :
                     @{@"stage": @"command_completion_failed", @"frame": @(index), @"time_s": @(completedAt),
@@ -226,8 +244,10 @@ NSDictionary *distribution(std::vector<double> values) {
                 });
             }];
             r.submit = CACurrentMediaTime();
+            if (trace) nabu_ca_trace_marker(85, traceID, r.surface, r.drawable, 0);
             [command commit];
             r.commitReturn = CACurrentMediaTime();
+            if (trace) nabu_ca_trace_marker(86, traceID, r.surface, r.drawable, 0);
             // Completion may race commit's return. Join the two publications
             // on main without putting completion behind another nextDrawable.
             NabuFrameCompletion::publish(r.ready, NabuFrameCompletion::CommitReturned);
@@ -266,6 +286,11 @@ NSDictionary *distribution(std::vector<double> values) {
         return;
     }
     draining = false;
+    if (diagnostic) {
+        nabu_ca_trace_marker(89, epoch, rowCount, failures, nullDrawable);
+        auto setTrace = (void (*)(bool))dlsym(RTLD_DEFAULT, "native_bridge_metal_set_ca_trace");
+        if (setTrace) setTrace(false);
+    }
     [self exportRun];
     if (automated && !failures && !nullDrawable && ++sequenceIndex < sequenceCount) {
         self.label.text = @"本轮已保存，准备下一轮…";
@@ -308,9 +333,9 @@ NSDictionary *distribution(std::vector<double> values) {
     if (writeFailed || closeStatus) { ++failures; self.failureReason = @"Frame CSV write incomplete"; }
     const double observedDuration = std::max(0.0, std::min(stoppedAt, sampleEnd) - sampleStart);
     const bool completeInterval = stoppedAt >= sampleEnd;
-    const bool validPerformance = completeInterval && !failures && !nullDrawable && generated;
+    const bool validPerformance = !diagnostic && completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @3,
+        @"run_id": self.runID, @"benchmark_revision": @4, @"diagnostic_only": @(diagnostic),
         @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
         @"repetition": @(repetition), @"target_hz": @(rate), @"width": @(Width), @"height": @(Height),
