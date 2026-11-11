@@ -666,6 +666,7 @@ public:
 OSDefineMetaClassAndStructors(NativeAdrenoControl,IOService)
 
 static NativeAdrenoControl *controlService=nullptr;
+extern "C" void native_adreno_metal_dump_stats(void);
 
 IOReturn NativeAdrenoControl::setProperties(OSObject *properties)
 {
@@ -674,10 +675,25 @@ IOReturn NativeAdrenoControl::setProperties(OSObject *properties)
         return privilege;
     }
     OSDictionary *dictionary=OSDynamicCast(OSDictionary,properties);
-    if(!dictionary || dictionary->getCount()!=1 || dictionary->getObject("Start")!=kOSBooleanTrue) {
+    if(!dictionary) {
         return kIOReturnBadArgument;
     }
-    return native_adreno_a6xx_request_start();
+    if(dictionary->getCount()==1 && dictionary->getObject("Start")==kOSBooleanTrue) {
+        return native_adreno_a6xx_request_start();
+    }
+    OSString *identifier=OSDynamicCast(OSString,dictionary->getObject("RequestID"));
+    if(dictionary->getCount()!=2 || dictionary->getObject("DumpStats")!=kOSBooleanTrue ||
+        !identifier || !identifier->getLength() || identifier->getLength()>64) {
+        return kIOReturnBadArgument;
+    }
+    // Paired, administrator-requested diagnostic outside rendering work.
+    // The dump copies scheduler state under g.lock and prints after unlocking;
+    // its existing lock_busy marker explicitly reports a missed GPU snapshot.
+    IOLog("NativeAdrenoStatsRequest: begin id=%s\n",identifier->getCStringNoCopy());
+    native_adreno_metal_dump_stats();
+    IOLog("NativeAdrenoStatsRequest: end id=%s\n",identifier->getCStringNoCopy());
+    setProperty("LastStatsRequestID",identifier);
+    return kIOReturnSuccess;
 }
 
 extern "C" void native_adreno_control_update(uint32_t step,uint32_t status,const char *state)

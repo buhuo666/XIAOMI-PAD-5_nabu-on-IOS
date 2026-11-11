@@ -30,10 +30,19 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
     CFTypeRef (*property)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = dlsym(kit, "IORegistryEntryCreateCFProperty");
     int (*setProperties)(uint32_t, CFTypeRef) = dlsym(kit, "IORegistryEntrySetCFProperties");
     int (*release)(uint32_t) = dlsym(kit, "IOObjectRelease");
-    uint32_t entry = service(0, matching("IOMobileFramebuffer"));
-    if (!entry) { dlclose(kit); return @{@"error": @"framebuffer unavailable"}; }
+    const BOOL gpuStats = [action isEqual:@"GpuPerformance"];
+    uint32_t entry = service(0, matching(gpuStats ? "NativeAdrenoControl" : "IOMobileFramebuffer"));
+    if (!entry) { dlclose(kit); return @{@"error": gpuStats ? @"GPU control unavailable" : @"framebuffer unavailable"}; }
     NSMutableDictionary *out = [@{@"request_id": identifier,
         @"post_desktop": @YES, @"uid": @(getuid())} mutableCopy];
+    if (gpuStats) {
+        NSDictionary *request = @{@"DumpStats": @YES, @"RequestID": identifier};
+        int status = setProperties(entry, (__bridge CFTypeRef)request);
+        out[@"submit_status"] = @((uint32_t)status);
+        out[@"completed_request_id"] = CFBridgingRelease(property(entry, CFSTR("LastStatsRequestID"), NULL, 0)) ?: NSNull.null;
+        out[@"scope"] = @"Statistics only; inspect matching kernel begin/end and submission_sample markers for snapshot completeness";
+        release(entry); dlclose(kit); return out;
+    }
     id available = CFBridgingRelease(property(entry, CFSTR("NabuDpuDiagnosticAvailable"), NULL, 0));
     out[@"available"] = available ?: @NO;
     if (![available isEqual:@YES]) {
@@ -65,7 +74,7 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
 }
 
 // A dedicated root launch job selects this entry point. The regular services
-// probe remains mobile; the root process accepts only the named DPU commands.
+// probe remains mobile; the root process accepts only the named diagnostics.
 int nabuDpuServiceMain(void) {
     if (getuid() != 0) return 1;
     @autoreleasepool {
@@ -94,7 +103,8 @@ int nabuDpuServiceMain(void) {
                     NSString *action = request[@"Action"], *identifier = request[@"ID"];
                     if (([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
                          [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"] ||
-                         [action isEqual:@"DpuActivateGopPolled"] || [action isEqual:@"DpuResumeIrq"]) &&
+                         [action isEqual:@"DpuActivateGopPolled"] || [action isEqual:@"DpuResumeIrq"] ||
+                         [action isEqual:@"GpuPerformance"]) &&
                         [identifier isKindOfClass:NSString.class] && identifier.length && identifier.length <= 64) {
                         NSDictionary *result = nabuDpuRequest(action, identifier);
                         NSData *bytes = [NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];

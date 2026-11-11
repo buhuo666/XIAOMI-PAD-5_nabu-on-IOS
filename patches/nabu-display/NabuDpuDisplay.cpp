@@ -116,14 +116,19 @@ static void logFrameTiming(Binding *b, const Held &h, uint64_t initUs, uint64_t 
     ++b->timingFrames;
     if (b->accepted > 8 && b->accepted % 120) return;
     // Output is outside display locks and after acceptance/retirement timing.
-    IOLog("NABU DPU PERF: frame=%llu swap=%u at-us=%llu depth=%u fence=%u checks=%u old-active-us=%llu n=%llu; stages=gap,admission,acquire,queue,producer,init,map,scan,retire,end-to-end; sum/max/over16ms="
-        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,"
-        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu\n",
+    // Kernel os_log has a 256-byte argument buffer. GPU210's 38 scalar
+    // arguments survived serial capture but were absent from syslog. Each
+    // half below fits that encoder, with frame/time pairing for the reader.
+    IOLog("NABU DPU PERF: frame=%llu swap=%u at-us=%llu depth=%u fence=%u checks=%u old-active-us=%llu n=%llu; stages=gap,admission,acquire,queue; sum/max/over16ms="
+        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu\n",
         b->accepted, h.swap, h.acceptedAt, h.queueDepth, h.producerFence, h.producerChecks, oldActiveUs, b->timingFrames,
         b->frameTiming[0].sumUs, b->frameTiming[0].maxUs, b->frameTiming[0].over16ms,
         b->frameTiming[1].sumUs, b->frameTiming[1].maxUs, b->frameTiming[1].over16ms,
         b->frameTiming[2].sumUs, b->frameTiming[2].maxUs, b->frameTiming[2].over16ms,
-        b->frameTiming[3].sumUs, b->frameTiming[3].maxUs, b->frameTiming[3].over16ms,
+        b->frameTiming[3].sumUs, b->frameTiming[3].maxUs, b->frameTiming[3].over16ms);
+    IOLog("NABU DPU PERF2: frame=%llu at-us=%llu n=%llu; stages=producer,init,map,scan,retire,end-to-end; sum/max/over16ms="
+        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu\n",
+        b->accepted, h.acceptedAt, b->timingFrames,
         b->frameTiming[4].sumUs, b->frameTiming[4].maxUs, b->frameTiming[4].over16ms,
         b->frameTiming[5].sumUs, b->frameTiming[5].maxUs, b->frameTiming[5].over16ms,
         b->frameTiming[6].sumUs, b->frameTiming[6].maxUs, b->frameTiming[6].over16ms,

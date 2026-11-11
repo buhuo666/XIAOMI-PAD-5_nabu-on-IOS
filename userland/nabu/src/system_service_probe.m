@@ -617,6 +617,9 @@ int main(int argc, char **argv) {
                             result[@"read_only"] = @YES;
                             result[@"gpu"] = gpuSnapshot();
                         }
+                        else if ([action isEqual:@"GpuPerformance"]) {
+                            result[@"gpu_performance"] = nabuDpuRequest(action, request[@"ID"] ?: @"");
+                        }
                         else if ([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
                                  [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"] ||
                                  [action isEqual:@"DpuActivateGopPolled"] || [action isEqual:@"DpuResumeIrq"]) {
