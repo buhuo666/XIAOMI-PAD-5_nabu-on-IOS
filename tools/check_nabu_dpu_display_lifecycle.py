@@ -112,6 +112,7 @@ void IOLockFree(IOLock *l){delete l;}
 void IOLockLock(IOLock *l){l->mutex.lock();}
 void IOLockUnlock(IOLock *l){l->mutex.unlock();}
 uint64_t mach_absolute_time(){return std::chrono::steady_clock::now().time_since_epoch().count();}
+void absolutetime_to_nanoseconds(uint64_t in,uint64_t *out){*out=in;}
 void clock_interval_to_deadline(uint32_t count,int scale,uint64_t *out){*out=mach_absolute_time()+uint64_t(count)*scale;}
 int IOLockSleepDeadline(IOLock *l,const void *,uint64_t deadline,int){
     std::unique_lock<std::mutex> held(l->mutex,std::adopt_lock);
@@ -193,6 +194,7 @@ IOReturn readFault(Binding *b){return b->fault;}
 struct Listener {Listener *next;void *cookie;void (*notify)(void *,const NabuDpuVBlank::Sample &);};
 // Only the state touched by the extracted functions is substituted. The ledger
 // and every tested function body below remain production code.
+TIMING_STRUCTS
 struct Binding {
     IOLock *stateLock=IOLockAlloc(),*listenerLock=IOLockAlloc();
     NabuDpuVBlank::Binding *clock=nullptr;
@@ -202,6 +204,7 @@ struct Binding {
     Listener *listeners=nullptr;
     Swap::Ledger ledger{};
     uint64_t eventGeneration=0;
+    WaitTiming waitTiming[4]{};
     IOReturn failure=0;
     bool powerOn=true;
     ~Binding(){assert(!listeners);IOLockFree(stateLock);IOLockFree(listenerLock);}
@@ -381,7 +384,10 @@ def harness(framebuffer):
     # Access visibility alone changes, allowing the fixture to initialize and
     # observe fields. No method/body or lifecycle expression is rewritten.
     client = client.replace('class IOMobileFramebufferUserClient', 'struct IOMobileFramebufferUserClient', 1)
-    result = PRELUDE + '\nnamespace NabuDpuDisplay {\n'
+    timing = body(display, 'struct Duration', ';') + '\n' + body(display, 'struct WaitTiming', ';')
+    result = PRELUDE.replace('TIMING_STRUCTS', timing) + '\nnamespace NabuDpuDisplay {\n'
+    result += body(display, 'uint64_t nowUs(') + '\n'
+    result += body(display, 'static void addDuration(') + '\n'
     result += body(display, 'struct DiagnosticSession', ';') + '\nstatic DiagnosticSession *diagnostics;\n'
     for signature in ('void diagnosticDrawBegin(', 'void diagnosticDrawEnd(',
                       'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop(',

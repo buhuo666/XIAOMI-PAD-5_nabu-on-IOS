@@ -888,6 +888,7 @@ MAPPER_FUNCTIONS = (
     'IOReturn accept(', 'IOReturn acceptGop(', 'IOReturn releaseRetired(',
 )
 DISPLAY_FUNCTIONS = (
+    'static void addDuration(', 'static void logFrameTiming(',
     'static void vblank(', 'static void wake(', 'static void drop(',
     'static IOReturn acquire(', 'static IOReturn waitProducer(', 'static IOReturn initializeMapper(',
     'static void finishRecord(', 'static IOReturn submitFrame(', 'static IOReturn flip(',
@@ -928,6 +929,8 @@ def harness():
     result += '\nnamespace NabuDpuDisplay {\nnamespace Scan=NabuDpuScanout; namespace PT=NabuDpuPageTable;\n'
     result += 'namespace Mapper=NabuDpuMapper; namespace Swap=NabuDpuSwap;\n'
     result += 'struct Listener { Listener *next; void *cookie; void (*notify)(void *,const NabuDpuVBlank::Sample &); };\n'
+    result += body(display, 'struct Duration', ';') + '\n'
+    result += body(display, 'struct WaitTiming', ';') + '\n'
     result += body(display, 'struct Held', ';') + '\n'
     result += body(display, 'struct Binding', ';') + '\n'
     result += body(display, 'struct DiagnosticSession', ';') + '\nstatic DiagnosticSession *diagnostics;\n'

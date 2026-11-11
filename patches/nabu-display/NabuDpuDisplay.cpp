@@ -53,12 +53,21 @@ namespace Scan = NabuDpuScanout;
 namespace Mapper = NabuDpuMapper;
 namespace PT = NabuDpuPageTable;
 namespace Swap = NabuDpuSwap;
+struct Duration {
+    uint64_t sumUs, maxUs, over16ms;
+};
+struct WaitTiming {
+    Duration elapsed;
+    uint64_t calls, sleeps, timeouts, errors;
+};
 struct Held {
     MiniIOSurface *surface;
     void *read;
     const NabuDpuProducerOps *ops;
     PT::Mapping mapping;
     uint32_t swap;
+    uint64_t presentAt, presentGapUs, admissionUs, acquireUs, queuedAt, queueUs, producerUs, acceptedAt;
+    uint32_t producerFence, producerChecks, queueDepth;
 };
 struct Binding {
     IOLock *submitLock, *stateLock, *listenerLock;
@@ -75,6 +84,9 @@ struct Binding {
     unsigned queueFirst, queueCount;
     MiniIOSurface *blank;
     uint64_t accepted, producerWaitUs, lastDisplayTime, eventGeneration;
+    uint64_t lastPresentAt, timingFrames;
+    Duration frameTiming[10];
+    WaitTiming waitTiming[4];
     uint64_t handoverQuiesceUs, handoverProgramUs, handoverResumeUs, handoverHaltedUs;
     IOReturn failure;
     bool powerOn;
@@ -88,6 +100,38 @@ struct Binding {
 static Binding *display;
 static void worker(void *, wait_result_t);
 
+static void addDuration(Duration &d, uint64_t us) {
+    d.sumUs += us;
+    if (us > d.maxUs) d.maxUs = us;
+    if (us > 16666) ++d.over16ms;
+}
+static void logFrameTiming(Binding *b, const Held &h, uint64_t initUs, uint64_t mapUs,
+                           uint64_t scanUs, uint64_t retireUs, uint64_t oldActiveUs) {
+    // One worker owns these window counters. Only accepted frames contribute;
+    // request gaps include idle time and are not a count of unique GPU images.
+    const uint64_t endToEndUs = h.presentAt ? h.acceptedAt - h.presentAt : 0;
+    const uint64_t values[] = {h.presentGapUs, h.admissionUs, h.acquireUs, h.queueUs,
+        h.producerUs, initUs, mapUs, scanUs, retireUs, endToEndUs};
+    for (unsigned i = 0; i < 10; ++i) addDuration(b->frameTiming[i], values[i]);
+    ++b->timingFrames;
+    if (b->accepted > 8 && b->accepted % 120) return;
+    // Output is outside display locks and after acceptance/retirement timing.
+    IOLog("NABU DPU PERF: frame=%llu swap=%u at-us=%llu depth=%u fence=%u checks=%u old-active-us=%llu n=%llu; stages=gap,admission,acquire,queue,producer,init,map,scan,retire,end-to-end; sum/max/over16ms="
+        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,"
+        "%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu,%llu/%llu/%llu\n",
+        b->accepted, h.swap, h.acceptedAt, h.queueDepth, h.producerFence, h.producerChecks, oldActiveUs, b->timingFrames,
+        b->frameTiming[0].sumUs, b->frameTiming[0].maxUs, b->frameTiming[0].over16ms,
+        b->frameTiming[1].sumUs, b->frameTiming[1].maxUs, b->frameTiming[1].over16ms,
+        b->frameTiming[2].sumUs, b->frameTiming[2].maxUs, b->frameTiming[2].over16ms,
+        b->frameTiming[3].sumUs, b->frameTiming[3].maxUs, b->frameTiming[3].over16ms,
+        b->frameTiming[4].sumUs, b->frameTiming[4].maxUs, b->frameTiming[4].over16ms,
+        b->frameTiming[5].sumUs, b->frameTiming[5].maxUs, b->frameTiming[5].over16ms,
+        b->frameTiming[6].sumUs, b->frameTiming[6].maxUs, b->frameTiming[6].over16ms,
+        b->frameTiming[7].sumUs, b->frameTiming[7].maxUs, b->frameTiming[7].over16ms,
+        b->frameTiming[8].sumUs, b->frameTiming[8].maxUs, b->frameTiming[8].over16ms,
+        b->frameTiming[9].sumUs, b->frameTiming[9].maxUs, b->frameTiming[9].over16ms);
+    bzero(b->frameTiming, sizeof(b->frameTiming)); b->timingFrames = 0;
+}
 static void traceRegister(const char *phase, Scan::Region region, uint32_t offset, uint32_t value) {
     char marker[112];
     snprintf(marker, sizeof(marker), "%s region=%u offset=%#x value=%#x", phase, region, offset, value);
@@ -223,6 +267,7 @@ static IOReturn waitProducer(Binding *b, Held &h) {
         uint32_t hardware = 0;
         // status may dispatch a ready callback synchronously: no display lock.
         result = h.ops->status(h.read, &hardware);
+        h.producerFence = hardware; ++h.producerChecks;
         IOLockLock(b->stateLock);
         if (b->failure) result = b->failure;
         if (result != kIOReturnNotReady) { IOLockUnlock(b->stateLock); break; }
@@ -232,6 +277,7 @@ static IOReturn waitProducer(Binding *b, Held &h) {
         IOLockUnlock(b->stateLock);
         if (timedOut || mach_absolute_time() >= deadline) {
             result = h.ops->status(h.read, &hardware);
+            h.producerFence = hardware; ++h.producerChecks;
             if (result == kIOReturnNotReady) result = kIOReturnTimeout;
             break;
         }
@@ -346,12 +392,16 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     const uint64_t bytes = uint64_t(s->info.bytesPerRow) * 2559 + 6400;
     IOLockLock(b->stateLock); IOReturn result = b->failure; IOLockUnlock(b->stateLock);
     if (result) return result;
+    const uint64_t initAt = nowUs();
     result = initializeMapper(b);
+    const uint64_t initUs = nowUs() - initAt;
     if (result) return result;
     IOMemoryDescriptor *memory = s->client ? s->client : s->memory;
     const uint64_t offset = (s->client ? 0 : PAGE_SIZE) + uint64_t(s->info.offset);
     if (trace) NabuDpuCheckpoint::record("surface-dpu-map-enter");
+    const uint64_t mapAt = nowUs();
     result = Mapper::mapDescriptor(b->mapper, memory, offset, bytes, &h.mapping);
+    const uint64_t mapUs = nowUs() - mapAt;
     if (trace) NabuDpuCheckpoint::record("surface-dpu-map-returned", result);
     if (result) return result;
     const unsigned slot = h.mapping.slot;
@@ -366,10 +416,15 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     Scan::Frame frame{held.mapping.iova, s->info.bytesPerRow, bytes, b->scan.current_sequence + 1,
         1600, 2560, s->info.pixelFormat, s->info.bytesPerElement, s->info.planeCount, true};
     Scan::Acceptance accepted{};
+    const uint64_t scanAt = nowUs();
     result = submitFrame(b, frame, accepted, trace);
+    const uint64_t acceptedAt = nowUs(), scanUs = acceptedAt - scanAt;
     if (result) return result;
+    held.acceptedAt = acceptedAt;
     if (evidence) *evidence = accepted;
     unsigned old = PT::NoSlot;
+    uint64_t oldActiveUs = 0;
+    const uint64_t retireAt = nowUs();
     IOLockLock(b->stateLock);
     result = b->failure ? b->failure : Mapper::accept(b->mapper, held.mapping, &old);
     if (!result && old != PT::NoSlot)
@@ -380,12 +435,15 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     finishRecord(b, held.swap, Swap::Displayed);
     if (old != PT::NoSlot) {
         Held &previous = b->held[old];
+        oldActiveUs = previous.acceptedAt ? acceptedAt - previous.acceptedAt : 0;
         const auto oldSwap = previous.swap;
         drop(previous);
         finishRecord(b, oldSwap, Swap::Retired);
     }
     ++b->accepted;
     b->lastDisplayTime = mach_absolute_time();
+    const uint64_t retireUs = nowUs() - retireAt;
+    logFrameTiming(b, held, initUs, mapUs, scanUs, retireUs, oldActiveUs);
     if (b->accepted <= 8 || !(b->accepted % 120))
         IOLog("NABU DPU: displayed=%llu swap=%u surface=%u iova=%#x frame=%u/%u retired-slot=%u irq=%llu vsync=%llu copied=0\n",
             b->accepted, held.swap, s->sid, held.mapping.iova,
@@ -398,6 +456,7 @@ static void worker(void *cookie, wait_result_t) {
         IOLockLock(b->stateLock);
         while (!b->queueCount) IOLockSleep(b->stateLock, b->queue, THREAD_UNINT);
         Held held = b->queue[b->queueFirst];
+        held.queueUs = nowUs() - held.queuedAt;
         b->queue[b->queueFirst] = {};
         b->queueFirst = (b->queueFirst + 1) % 2; --b->queueCount;
         IOLockWakeup(b->stateLock, &b->queueCount, false);
@@ -409,7 +468,8 @@ static void worker(void *cookie, wait_result_t) {
         if (trace) NabuDpuCheckpoint::record("producer-wait-enter");
         const uint64_t began = nowUs();
         if (!result) result = waitProducer(b, held);
-        b->producerWaitUs += nowUs() - began;
+        held.producerUs = nowUs() - began;
+        b->producerWaitUs += held.producerUs;
         if (trace) NabuDpuCheckpoint::record("producer-wait-returned", result);
         if (!result) {
             result = flip(b, held, trace);
@@ -427,6 +487,7 @@ static void worker(void *cookie, wait_result_t) {
     }
 }
 IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
+    const uint64_t presentAt = nowUs();
     if (bytes < SwapBytes) return kIOReturnBadArgument;
     static uint32_t firstPresentTraced;
     const bool trace = NabuDpuCheckpoint::enabled() &&
@@ -438,6 +499,9 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     if (sid && (!fullscreen(swap, Source) || !fullscreen(swap, Destination))) return kIOReturnUnsupported;
     if (!sid && !(word(swap, Cleared) & 1)) return kIOReturnUnsupported;
     IOLockLock(b->submitLock);
+    const uint64_t serializedAt = nowUs();
+    const uint64_t presentGapUs = b->lastPresentAt ? serializedAt - b->lastPresentAt : 0;
+    b->lastPresentAt = serializedAt;
     IOLockLock(b->stateLock);
     IOReturn result = b->failure;
     uint64_t deadline; clock_interval_to_deadline(WaitMs, kMillisecondScale, &deadline);
@@ -449,6 +513,7 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     if (!result && !b->ledger.insert(id)) result = kIOReturnBusy;
     IOLockUnlock(b->stateLock);
     if (result) { IOLockUnlock(b->submitLock); return result; }
+    const uint64_t admittedAt = nowUs();
     MiniIOSurface *s = nullptr;
     if (sid) s = MiniIOSurfaceCopy(sid);
     else {
@@ -473,10 +538,14 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
         MiniIOSurfaceDrop(s); result = kIOReturnUnsupported;
     } else {
         result = acquire(b, s, held); held.swap = id;
+        held.presentAt = presentAt; held.presentGapUs = presentGapUs;
+        held.admissionUs = admittedAt - presentAt;
+        held.acquireUs = nowUs() - admittedAt;
         if (!result) {
             IOLockLock(b->stateLock);
             result = b->failure;
             if (!result) {
+                held.queuedAt = nowUs(); held.queueDepth = b->queueCount + 1;
                 b->queue[(b->queueFirst + b->queueCount) % 2] = held;
                 held = {}; ++b->queueCount;
                 IOLockWakeup(b->stateLock, b->queue, true);
@@ -494,6 +563,7 @@ IOReturn present(Binding *b, const uint8_t *swap, size_t bytes) {
     return result;
 }
 IOReturn wait(Binding *b, uint32_t id, uint32_t flags, uint64_t timeoutMs) {
+    const uint64_t began = nowUs();
     const uint32_t mode = flags & 3;
     if (flags & ~0x80000003u) return kIOReturnUnsupported;
     if (mode >= 2 && id) return kIOReturnUnsupported;
@@ -502,6 +572,8 @@ IOReturn wait(Binding *b, uint32_t id, uint32_t flags, uint64_t timeoutMs) {
     uint64_t deadline; clock_interval_to_deadline(milliseconds, kMillisecondScale, &deadline);
     IOLockLock(b->stateLock);
     const uint64_t through = b->ledger.next;
+    const uint32_t entryPhase = mode < 2 && b->ledger.find(id) ? uint32_t(b->ledger.find(id)->phase) : 0;
+    uint64_t sleeps = 0;
     IOReturn result;
     for (;;) {
         result = b->failure;
@@ -522,11 +594,27 @@ IOReturn wait(Binding *b, uint32_t id, uint32_t flags, uint64_t timeoutMs) {
         }
         if (result || done) break;
         if (flags & 0x80000000u) { result = kIOReturnBusy; break; }
+        ++sleeps;
         if (IOLockSleepDeadline(b->stateLock, b, deadline, THREAD_UNINT) == THREAD_TIMED_OUT) {
             result = kIOReturnTimeout; break;
         }
     }
-    IOLockUnlock(b->stateLock); return result;
+    const uint64_t ended = nowUs(), elapsed = ended - began;
+    auto &stats = b->waitTiming[mode];
+    ++stats.calls; stats.sleeps += sleeps;
+    if (result == kIOReturnTimeout) ++stats.timeouts;
+    if (result && result != kIOReturnBusy) ++stats.errors;
+    addDuration(stats.elapsed, elapsed);
+    const WaitTiming totals = stats;
+    const uint32_t exitPhase = mode < 2 && b->ledger.find(id) ? uint32_t(b->ledger.find(id)->phase) : 0;
+    IOLockUnlock(b->stateLock);
+    if (totals.calls <= 8 || !(totals.calls % 120) ||
+        (result == kIOReturnTimeout && (totals.timeouts <= 8 || !(totals.timeouts % 120))))
+        IOLog("NABU DPU WAIT: mode=%u swap=%u flags=%#x limit-ms=%u at-us=%llu elapsed-us=%llu sleeps=%llu phase=%u/%u result=%#x calls=%llu timeouts=%llu errors=%llu total-sleeps=%llu sum-us=%llu max-us=%llu over16ms=%llu\n",
+            mode, id, flags, milliseconds, ended, elapsed, sleeps, entryPhase, exitPhase, result,
+            totals.calls, totals.timeouts, totals.errors, totals.sleeps,
+            totals.elapsed.sumUs, totals.elapsed.maxUs, totals.elapsed.over16ms);
+    return result;
 }
 
 // The diagnostic worker owns these requests independently of SwapEnd. The
