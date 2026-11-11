@@ -94,6 +94,7 @@ extern "C" void native_adreno_profile_lock_wait(uint32_t method,uint64_t us);
 extern "C" void native_adreno_profile_set_client(const char *name);
 extern "C" void native_adreno_profile_dump(void);
 extern "C" void native_adreno_profile_set_continuous_clock(uint64_t (*)(void));
+extern "C" uint64_t native_adreno_surface_index_stats[5];
 extern "C" {volatile uint32_t native_adreno_view_diag[6],native_adreno_view_kept;}   /* kept: BoCpuUnmap calls that left the view for another lease */
 }
 
@@ -2176,7 +2177,8 @@ extern "C" void native_adreno_metal_dump_stats(void)
     }
 
     if(g.published && g.lock && IOLockTryLock(g.lock)) {
-        uint64_t vmPhases[2][8],tablePhases[2][8],memoryStages[10][4],backingCache[12];
+        uint64_t vmPhases[2][8],tablePhases[2][8],memoryStages[10][4],backingCache[12],surfaceIndex[5];
+        memcpy(surfaceIndex,native_adreno_surface_index_stats,sizeof(surfaceIndex));
         for(unsigned row=0;row<2;++row) {
             for(unsigned slot=0;slot<8;++slot) {
                 vmPhases[row][slot]=native_adreno_vm_phase_us[row][slot];
@@ -2205,6 +2207,8 @@ extern "C" void native_adreno_metal_dump_stats(void)
         const bool failed=g.failed,vmPoisoned=g.vm->poisoned(),submitPoisoned=g.submit->poisoned(),ringPoisoned=g.ring->poisoned();
         IOLockUnlock(g.lock);
 
+        IOLog("NativeAdrenoMetal: surface_index maps=%llu backings=%llu skipped=%llu span_tests=%llu alias_queries=%llu\n",
+            surfaceIndex[0],surfaceIndex[1],surfaceIndex[2],surfaceIndex[3],surfaceIndex[4]);
         IOLog("NativeAdrenoMetal: mapping_budget capacity=%zu used=%zu reserved=%zu generation=%llu\n",
             mappingCapacity,objects,mappingReserved,mappingGeneration);
         for(unsigned at=0;at<NativeAdrenoMaxClients;++at) {

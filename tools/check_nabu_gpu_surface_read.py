@@ -81,17 +81,22 @@ struct NativeAdrenoSubmitResource {
     uint64_t handle=0;size_t offset=0,bytes=0;unsigned access=0;
     bool check_overlap=false,owns_reference=false;uint16_t next_for_mapping=0;
 };
-struct NativeAdrenoMemory {};
+struct NativeAdrenoMemory {
+    std::vector<HostSegment> physical;
+    size_t spanCount() const {return physical.size();}
+    const HostSegment *spans() const {return physical.data();}
+};
 class NativeAdrenoVm {
 public:
     struct Mapping {NativeAdrenoMemory memory;uint64_t iova;std::vector<HostSegment> segments;unsigned references=0;};
     std::map<uint64_t,Mapping> mappings;
+    mutable uint64_t physicalQueries=0;
     IOReturn (*added)(void*,uint64_t)=nullptr;
     void (*removed)(void*,uint64_t)=nullptr;
     void *context=nullptr;
     void setMappingObserver(IOReturn(*a)(void*,uint64_t),void(*r)(void*,uint64_t),void*c){added=a;removed=r;context=c;}
     IOReturn map(uint64_t handle,std::vector<HostSegment> segments){
-        assert(!mappings.count(handle));mappings.emplace(handle,Mapping{{},0x200000+handle*0x10000,segments,0});
+        assert(!mappings.count(handle));mappings.emplace(handle,Mapping{{segments},0x200000+handle*0x10000,segments,0});
         return added?added(context,handle):0;
     }
     IOReturn unmap(uint64_t handle){
@@ -107,6 +112,7 @@ public:
     IOReturn retireJobAfterCompletion(uint64_t handle){auto it=mappings.find(handle);assert(it!=mappings.end()&&it->second.references);--it->second.references;return 0;}
     const NativeAdrenoMemory*resourceBacking(uint64_t handle){auto it=mappings.find(handle);return it==mappings.end()?nullptr:&it->second.memory;}
     IOReturn visitPhysicalAliases(uint64_t physical,size_t bytes,bool(*visit)(void*,uint64_t,size_t,size_t),void*cookie) const {
+        ++physicalQueries;
         for(const auto &entry:mappings){size_t offset=0;
             for(auto s:entry.second.segments){
                 const uint64_t begin=std::max(physical,s.physical),end=std::min(physical+bytes,s.physical+s.bytes);
@@ -167,9 +173,9 @@ struct Fixture {
     ~Fixture(){assert(scheduler.detach()==0);for(const auto&p:descriptors){assert(p->references==1);assert(p->prepared==0);}}
     IOMemoryDescriptor *surface(std::vector<HostSegment>s){descriptors.emplace_back(new IOMemoryDescriptor(s));return descriptors.back().get();}
     uint64_t accept(uint64_t target,unsigned access=NativeAdrenoResourceWrite,uint32_t queue=0,
-        const NativeAdrenoAbiSyncPoint*wait=nullptr){
+        const NativeAdrenoAbiSyncPoint*wait=nullptr,size_t offset=0,size_t bytes=4096){
         NativeAdrenoSubmitBuffer ib{1,vm.mappings.at(1).iova,16};
-        NativeAdrenoSubmitResource resources[2]={{1,0,16,NativeAdrenoResourceRead},{target,0,4096,access}};
+        NativeAdrenoSubmitResource resources[2]={{1,0,16,NativeAdrenoResourceRead},{target,offset,bytes,access}};
         uint64_t completion=0;assert(scheduler.accept(0,queue,&ib,1,resources,2,0,wait,wait?1:0,nullptr,0,&completion)==0);return completion;
     }
     void complete(uint32_t fence){ring.completed=fence;assert(scheduler.advance()==0);}
@@ -252,10 +258,55 @@ static void legacy_busy_does_not_leave_accepted_writer(){
     assert(!f.scheduler.rangeOutstanding(0,8));f.scheduler.releaseRead(r);
     assert(f.scheduler.submitLegacy(0,&ib,1,&resource,1,NativeAdrenoFallbackLegacySubmit,&fence)==0&&fence==1);f.finish();
 }
+static void unrelated_mapping_prefilter(){
+    Fixture f;std::vector<HostSegment> segments;
+    for(unsigned at=1024;at-->0;)segments.push_back({0x400000+uint64_t(at)*8192,4096});
+    auto*m=f.surface(segments);NativeAdrenoSurfaceRead*r=nullptr;
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    const uint64_t queries=f.vm.physicalQueries;
+    for(uint64_t handle=2;handle<258;++handle)
+        assert(f.vm.map(handle,{{0x20000000+handle*8192,4096}})==0);
+    // Irrelevant BOs must not search the global physical alias tree for all
+    // 1024 retained surface segments; the original path made 262144 queries.
+    assert(f.vm.physicalQueries==queries&&m->rawQueries==2048);
+    assert(f.vm.map(300,{{0x400000,4096}})==0);
+    assert(f.vm.physicalQueries==queries+1024);
+    f.accept(300);assert(f.ring.submitted==0);
+    f.scheduler.releaseRead(r);assert(f.ring.submitted==1);f.finish();
+}
+static void late_alias_byte_ranges(){
+    Fixture f;
+    auto*m=f.surface({{0x604000,4096},{0x400000,8192},{0x401000,1024},{0x400000,4096}});
+    NativeAdrenoSurfaceRead*r=nullptr;assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(f.vm.map(2,{{0x800000,4096},{0x3ff000,16384},{0x604800,1024}})==0);
+    assert(f.vm.map(3,{{0x402000,4096}})==0); // Exact end of a source interval.
+    f.accept(3);assert(f.ring.submitted==1);f.finish();
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,4096,4096); // Gap before source.
+    assert(f.ring.submitted==2);f.finish();
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,8192,4096);
+    f.accept(2,NativeAdrenoResourceWrite,1,nullptr,20480,1024);
+    assert(f.ring.submitted==2&&f.vm.unmap(2)==kIOReturnBusy);
+    f.scheduler.releaseRead(r);assert(f.ring.submitted==4);f.finish();
+    assert(f.vm.unmap(2)==0&&f.vm.unmap(3)==0);
+}
+static void backing_index_rebuilt_after_release(){
+    Fixture f;auto*m=f.surface({{0x400000,4096},{0x600000,4096}});
+    NativeAdrenoSurfaceRead*r=nullptr;assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(f.vm.map(2,{{0x400000,4096}})==0);f.scheduler.releaseRead(r);
+    assert(f.vm.unmap(2)==0&&m->prepared==0&&m->references==1);
+    m->segments={{0x900000,4096}}; // Reuse only after the old pin was released.
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    const uint64_t queries=f.vm.physicalQueries;
+    assert(f.vm.map(3,{{0x400000,4096}})==0&&f.vm.physicalQueries==queries);
+    assert(f.vm.map(4,{{0x900000,4096}})==0&&f.vm.physicalQueries==queries+1);
+    f.accept(4);assert(f.ring.submitted==0);f.scheduler.releaseRead(r);
+    assert(f.ring.submitted==1);f.finish();
+}
 int main(){submitted_snapshot();accepted_before_hardware_and_future_writer();physical_alias_and_scattered_surface();
     alias_added_during_display();gpu_reader_can_overlap_display();multiple_readers();fault_retains_gpu_mapping();
     cancelled_callback();closed_pending_producer();legacy_busy_does_not_leave_accepted_writer();
-    puts("10 production scheduler surface-read suites passed");}
+    unrelated_mapping_prefilter();late_alias_byte_ranges();backing_index_rebuilt_after_release();
+    puts("13 production scheduler surface-read suites passed; unrelated maps avoided 262144 full alias queries");}
 '''
 
 ADAPTER_HARNESS = r'''
@@ -305,7 +356,7 @@ def main():
     for filename, source in [('IOKit/IOTypes.h', IO_TYPES), ('IOKit/IOLib.h', IO_LIB),
                              ('IOKit/IOMemoryDescriptor.h', IO_MEMORY), ('NativeAdrenoSubmit.h', BACKEND)]:
         (include / filename).write_text(source, encoding='utf-8', newline='\n')
-    for name in ['NativeAdrenoScheduler.h', 'NativeAdrenoABI.h']:
+    for name in ['NativeAdrenoScheduler.h', 'NativeAdrenoABI.h', 'NativeAdrenoVmAlias.h']:
         shutil.copyfile(ROOT / 'src/nabu/gpu/upstream/Adreno6xx' / name, include / name)
     shutil.copyfile(ROOT / 'src/xnu-8796/libkern/libkern/tree.h', include / 'libkern/tree.h')
     production = ROOT / 'patches/nabu-gpu/NativeAdrenoScheduler.cpp'
@@ -338,22 +389,20 @@ def main():
         if result.returncode:
             raise RuntimeError(label + ' failed: ' + (result.stdout + result.stderr).decode(errors='replace')[-6000:])
 
-    original = (ROOT / 'src/nabu/gpu/upstream/Adreno6xx/NativeAdrenoScheduler.cpp').read_text(encoding='utf-8')
     overlaid = production.read_text(encoding='utf-8')
-    marker = ('/* Nabu overlay of pinned gpu/upstream/Adreno6xx/NativeAdrenoScheduler.cpp:\n'
-              ' * match raw physical extents, never a platform mapper IOVA, to GPU imports. */\n')
-    expected = original.replace('memory->getPhysicalSegment(at,&bytes);',
-        'memory->getPhysicalSegment(at,&bytes,kIOMemoryMapperNone);').replace(
-        'memory->getPhysicalSegment(offset,&bytes);', 'memory->getPhysicalSegment(offset,&bytes,kIOMemoryMapperNone);')
-    assert overlaid.replace(marker, '') == expected
+    assert 'memory->getPhysicalSegment(at,&bytes,kIOMemoryMapperNone)' in overlaid
+    assert 'memory->getPhysicalSegment(offset,&bytes,kIOMemoryMapperNone)' in overlaid
     report = dict(result='pass', production_source=str(production.relative_to(ROOT)),
-        production_scheduler_compiled=True, production_red_black_tree=True, suites=10,
+        production_scheduler_compiled=True, production_red_black_tree=True, suites=13,
         cases=['submitted snapshot excludes unrelated later work', 'accepted writer before hardware publication',
                'physical alias and scattered descriptor', 'new alias during display lease',
                'GPU reads overlap display', 'multiple display readers', 'fault retains live GPU mapping',
                'cancelled callback is not delivered', 'pending producer close aborts display',
-               'legacy refusal leaves no orphan job'],
-        raw_physical_mapping_test=True, overlay_changes_only_two_raw_queries=True,
+               'legacy refusal leaves no orphan job', 'unrelated mappings avoid global alias queries',
+               'late alias preserves exact offsets with nested and duplicate source intervals',
+               'released backing index cannot survive descriptor reuse'],
+        raw_physical_mapping_test=True, indexed_mapping_prefilter=True,
+        unrelated_mapping_full_queries_before=262144, unrelated_mapping_full_queries_after=0,
         production_adapter_compiled=True, adapter_null_unpublished_not_ready=True,
         adapter_preserves_read_until_explicit_release=True, adapter_pending_kicks_completion_worker=True,
         sanitizers=['address', 'undefined'],

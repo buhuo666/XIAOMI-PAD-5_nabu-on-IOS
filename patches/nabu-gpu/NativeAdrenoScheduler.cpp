@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: MIT */
 /* Nabu overlay of pinned gpu/upstream/Adreno6xx/NativeAdrenoScheduler.cpp:
- * match raw physical extents, never a platform mapper IOVA, to GPU imports. */
+ * match raw physical extents, never a platform mapper IOVA, to GPU imports.
+ * Reject unrelated new mappings through the retained surface interval index. */
 #include "NativeAdrenoScheduler.h"
+#include "NativeAdrenoVmAlias.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
 extern "C" uint64_t (*native_adreno_vm_now_us)(void);
+// Serialized by the publication service's GPU lock: maps, backing checks,
+// nonoverlapping backings, new-mapping spans tested, full alias queries.
+extern "C" { uint64_t native_adreno_surface_index_stats[5]{}; }
 
 static uint64_t schedulerNow()
 {
@@ -44,8 +49,9 @@ struct NativeAdrenoSurfaceBacking {
     NativeAdrenoScheduler *scheduler=nullptr;
     IOMemoryDescriptor *memory=nullptr;
     Segment *segments=nullptr;
+    uint32_t *physicalOrder=nullptr;
     Range *ranges=nullptr;
-    size_t segmentCount=0,rangeCount=0;
+    size_t segmentCount=0,physicalCount=0,rangeCount=0;
     uint32_t slot=0,readers=0;
     IOReturn status=kIOReturnSuccess;
     bool prepared=false;
@@ -833,6 +839,9 @@ void NativeAdrenoScheduler::releaseBacking(NativeAdrenoSurfaceBacking *backing)
     if(backing->segments) {
         IODeleteData(backing->segments,NativeAdrenoSurfaceBacking::Segment,backing->segmentCount);
     }
+    if(backing->physicalOrder) {
+        IODeleteData(backing->physicalOrder,uint32_t,backing->segmentCount);
+    }
     if(backing->prepared) {
         backing->memory->complete(kIODirectionIn);
     }
@@ -891,7 +900,8 @@ IOReturn NativeAdrenoScheduler::acquireBacking(IOMemoryDescriptor *memory,
     }
     if(!status) {
         backing->segments=IONewData(NativeAdrenoSurfaceBacking::Segment,backing->segmentCount);
-        if(!backing->segments) {
+        backing->physicalOrder=IONewData(uint32_t,backing->segmentCount);
+        if(!backing->segments || !backing->physicalOrder) {
             status=kIOReturnNoMemory;
         }
     }
@@ -904,6 +914,7 @@ IOReturn NativeAdrenoScheduler::acquireBacking(IOMemoryDescriptor *memory,
             break;
         }
         backing->segments[at]={physical,size_t(bytes)};
+        backing->physicalOrder[at]=uint32_t(at);
         status=vm_->visitPhysicalAliases(physical,size_t(bytes),addSurfaceAlias,backing);
         offset+=bytes;
     }
@@ -911,6 +922,10 @@ IOReturn NativeAdrenoScheduler::acquireBacking(IOMemoryDescriptor *memory,
         releaseBacking(backing);
         return status;
     }
+    // The descriptor remains prepared until releaseBacking. Sort CPU metadata
+    // once; retain every original segment for exact alias reservation queries.
+    NativeAdrenoPhysicalIndex index(backing->segments,backing->physicalOrder,backing->segmentCount);
+    backing->physicalCount=index.count();
     *out=backing;
     return kIOReturnSuccess;
 }
@@ -970,13 +985,32 @@ IOReturn NativeAdrenoScheduler::acquireRead(IOMemoryDescriptor *memory,
 
 IOReturn NativeAdrenoScheduler::mappingAdded(uint64_t handle)
 {
-    if (!vm_->resourceBacking(handle)) {
+    const NativeAdrenoMemory *memory=vm_->resourceBacking(handle);
+    if (!memory) {
         return kIOReturnBadArgument;
     }
+    ++native_adreno_surface_index_stats[0];
     for (NativeAdrenoSurfaceBacking *backing : backings_) {
         if (!backing) {
             continue;
         }
+        ++native_adreno_surface_index_stats[1];
+        NativeAdrenoPhysicalIndex index(backing->segments,backing->physicalOrder,backing->physicalCount,true);
+        bool overlapping=false;
+        for(size_t at=0;at<memory->spanCount();++at) {
+            const auto &span=memory->spans()[at];
+            ++native_adreno_surface_index_stats[3];
+            if(index.overlaps(span.physical,span.bytes)) {
+                overlapping=true;
+                break;
+            }
+        }
+        if(!overlapping) {
+            ++native_adreno_surface_index_stats[2];
+            continue;
+        }
+        // A possible overlap still follows the original byte-exact lookup.
+        // This also installs reservations for mappings added during scanout.
         for(size_t at=0;at<backing->segmentCount;++at) {
             const auto &segment=backing->segments[at];
             struct AddedMapping {
@@ -985,6 +1019,7 @@ IOReturn NativeAdrenoScheduler::mappingAdded(uint64_t handle)
                 uint64_t handle;
                 IOReturn status;
             } query{this,backing,handle,kIOReturnSuccess};
+            ++native_adreno_surface_index_stats[4];
             const IOReturn status=vm_->visitPhysicalAliases(segment.physical,segment.bytes,
                 [](void *context,uint64_t mapped,size_t offset,size_t length)->bool {
                     auto &query=*static_cast<AddedMapping *>(context);
