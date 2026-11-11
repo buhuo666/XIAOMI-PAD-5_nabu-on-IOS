@@ -1,0 +1,29 @@
+name: nabu16 - sustained GPU frame benchmark
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-frame-bench.yml'
+      - 'tools/build_nabu_frame_bench.py'
+      - 'userland/nabu/apps/FrameBench/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  frame-bench:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build and sign the native-resolution benchmark
+        run: python3 tools/build_nabu_frame_bench.py --output artifacts/nabu-frame-bench
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-frame-bench-${{ github.run_number }}
+          path: artifacts/nabu-frame-bench/
+          retention-days: 14
