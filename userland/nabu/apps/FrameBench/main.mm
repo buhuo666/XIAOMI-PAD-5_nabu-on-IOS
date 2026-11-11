@@ -1,7 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
-#import <IOSurface/IOSurface.h>
+#import <IOSurface/IOSurfaceRef.h>
 #include <algorithm>
 #include <cstdio>
 #include <vector>
