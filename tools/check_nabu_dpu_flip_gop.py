@@ -554,7 +554,7 @@ struct Fixture {
         for (uint32_t at=0; at<PT::GopBytes; at+=4096)
             originalGop.push_back(static_cast<uint64_t>(mapper.arena.tables[PT::leafIndex(PT::GopStart+at)]));
         mapper.apps=reinterpret_cast<volatile uint8_t *>(h.apps.data());
-        mapper.active=true; mapper.programAttempted=true; mapper.asid=9;
+        mapper.active=true; mapper.programAttempted=true; mapper.asid=65534;
         assert(PT::captureAndQualifyRoutes({&mapper,MP::routeRead},mapper.routes)==PT::Ok);
         mapper.expected.cbar=0x1f000; mapper.expected.cba2r=1;
         mapper.expected.sctlr=0x21; mapper.expected.tcr=0x80000020;
@@ -878,6 +878,8 @@ def run(command):
 def validate_reports(output):
     counts = {'good': 0, 'error': 0, 'stale': 0}
     changes = {'changed': 0, 'unknown': 0, 'unchanged': 0}
+    signed_ttbr_successes = 0
+    rejected_ttbr_mismatches = 0
     for line in output.splitlines():
         if not line.startswith('REPORT '):
             continue
@@ -905,6 +907,28 @@ def validate_reports(output):
         checked = verify(data)
         if checked['passed'] is not (kind == 'good'):
             raise AssertionError(f'{kind}: {checked["issues"]}')
+        if kind == 'good':
+            signed = json.loads(json.dumps(data))
+            mapper = signed['dpu']['result']['mapper']
+            assert mapper['asid'] == 65534
+            for key in ('ttbr0', 'ttbr1'):
+                assert mapper[key] & (1 << 63)
+                mapper[key] -= 1 << 64
+            checked_signed = verify(signed)
+            if not checked_signed['passed']:
+                raise AssertionError(f'Signed TTBR representation: {checked_signed["issues"]}')
+            signed_ttbr_successes += 1
+            for key, bit, issue in (
+                ('ttbr0', 48, 'Actual TTBR ASID differs'),
+                ('ttbr0', 12, 'Actual TTBR0 differs'),
+                ('ttbr1', 48, 'Unexpected TTBR1'),
+            ):
+                changed = json.loads(json.dumps(signed))
+                changed['dpu']['result']['mapper'][key] ^= 1 << bit
+                rejected = verify(changed)
+                if rejected['passed'] or issue not in rejected['issues']:
+                    raise AssertionError(f'Consumer accepted mismatched signed {key}')
+                rejected_ttbr_mismatches += 1
         if kind == 'stale':
             keys = ('irq_count_delta', 'irq_frame_sequence_delta',
                     'master_vsync_delta', 'slave_vsync_delta')
@@ -920,6 +944,8 @@ def validate_reports(output):
         'accepted_success_dictionaries': counts['good'],
         'rejected_error_dictionaries': counts['error'],
         'rejected_stale_irq_dictionaries': counts['stale'],
+        'accepted_signed_ttbr_dictionaries': signed_ttbr_successes,
+        'rejected_ttbr_mismatches': rejected_ttbr_mismatches,
         'address_change_evidence': changes,
         'scope': 'Result-consumer validation using actual diagnostic dictionaries under the host model',
     }

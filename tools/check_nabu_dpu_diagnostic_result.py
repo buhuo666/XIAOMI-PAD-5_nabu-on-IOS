@@ -16,11 +16,12 @@ def verify(data):
 
     request = data.get("request", {})
     action, identifier = request.get("Action"), request.get("ID")
-    activate, flip = action == "DpuActivateGop", action == "DpuFlipGop"
+    polled, resume_irq = action == "DpuActivateGopPolled", action == "DpuResumeIrq"
+    activate, flip = action in ("DpuActivateGop", "DpuActivateGopPolled"), action == "DpuFlipGop"
     halt = action == "DpuHaltResume"
     dpu = data.get("dpu", {})
     result = dpu.get("result", {})
-    require(action in ("DpuSnapshot", "DpuHaltResume", "DpuActivateGop", "DpuFlipGop"),
+    require(action in ("DpuSnapshot", "DpuHaltResume", "DpuActivateGop", "DpuActivateGopPolled", "DpuResumeIrq", "DpuFlipGop"),
             "Unexpected request action")
     require(identifier and identifier == dpu.get("request_id") == result.get("request_id"),
             "Stale or missing request identity")
@@ -33,6 +34,13 @@ def verify(data):
     require(result.get("halt_resume_requested") is halt and
             result.get("activate_gop_requested") is activate and
             result.get("flip_gop_requested", False) is flip, "Wrong diagnostic mutation flags")
+    require(result.get("activate_gop_polled_requested", False) is polled and
+            result.get("resume_irq_requested", False) is resume_irq, "Wrong IRQ isolation request flags")
+    if polled or resume_irq:
+        require(result.get("irq_qualification_complete") is resume_irq, "IRQ qualification state differs")
+    if polled:
+        enabled = result.get("after", {}).get("irq_enable")
+        require(enabled is not None and enabled & 0x3c000000 == 0, "Polled control did not keep display IRQs masked")
     require(result.get("smmu_changed") is activate and
             result.get("scanout_address_changed") is flip, "Unexpected context/address mutation")
     require(result.get("gop_writer_frozen") is False, "GOP writer remains frozen")
@@ -45,7 +53,7 @@ def verify(data):
         require(result.get("sample_us", 0) >= 50000, "Counter observation interval too short")
         for name in ("master_frame_delta", "slave_frame_delta"):
             require(0 < result.get(name, 0) < 0x80000000, f"{name}: no forward progress")
-    if halt or activate or flip:
+    if halt or activate or flip or resume_irq:
         for name in ("halt_request", "halt_ack"):
             value = result.get("after", {}).get(name)
             require(value is not None and value & 0x11 == 0, f"{name}: halt not cleared")
@@ -53,6 +61,7 @@ def verify(data):
             before, after = result.get("before", {}).get(name), result.get("after", {}).get(name)
             require(before is not None and after is not None and (before & 1) == (after & 1),
                     f"{name}: force bit not restored")
+    if halt or (activate and not polled) or flip or resume_irq:
         require(result.get("irq_fault") == 0, "IRQ fault observed")
         for name in ("irq_count_delta", "irq_frame_sequence_delta", "master_vsync_delta", "slave_vsync_delta"):
             require(result.get(name, 0) > 0, f"{name}: no new postresume hardware events")
@@ -66,6 +75,8 @@ def verify(data):
     if activate:
         require(result.get("activate_status") == 0 and result.get("irq_start_status") == 0,
                 "Identity activation or IRQ start failed")
+    if resume_irq:
+        require(result.get("irq_resume_fault") == 0, "Independent IRQ rearm failed")
     if flip:
         for name in ("test_flip_status", "gop_flip_status", "retire_status"):
             require(result.get(name) == 0, f"{name}: missing or nonzero")
@@ -89,7 +100,7 @@ def verify(data):
                 "Wrong test surface provenance")
         require(result.get("test_surface_released") is True, "Test surface/lease not released after retirement")
     mapper = result.get("mapper")
-    if activate or flip or mapper is not None:
+    if activate or flip or resume_irq or mapper is not None:
         m = mapper or {}
         require(result.get("smmu_programmed") is True and m.get("status") == 0,
                 "No successful active mapper readback")
@@ -99,16 +110,21 @@ def verify(data):
         require(m.get("identity_pages") == 4000, "Whole GOP identity map not verified")
         root = m.get("root_physical", 0)
         require(0 < root < (1 << 40) and root % 4096 == 0, "Invalid table root")
-        require(m.get("ttbr0", 0) & ((1 << 40) - 4096) == root, "Actual TTBR0 differs")
-        require(m.get("ttbr0", 0) >> 48 == m.get("asid"), "Actual TTBR ASID differs")
-        require(m.get("ttbr1") == m.get("asid", 0) << 48, "Unexpected TTBR1")
+        # Foundation can serialize registers with bit 63 set as signed integers.
+        ttbr0 = m.get("ttbr0", 0) & ((1 << 64) - 1)
+        ttbr1 = m.get("ttbr1", 0) & ((1 << 64) - 1)
+        require(ttbr0 & ((1 << 40) - 4096) == root, "Actual TTBR0 differs")
+        require(ttbr0 >> 48 == m.get("asid"), "Actual TTBR ASID differs")
+        require(ttbr1 == m.get("asid", 0) << 48, "Unexpected TTBR1")
         require(m.get("sctlr", 0) & 0x61 == 0x21, "MMU/CFRE/CFIE readback differs")
         require(m.get("mair0") == 0xFF44 and m.get("mair1") == 0, "Memory attributes differ")
         require(m.get("global_fsr") == 0 and m.get("fsr", 0xC00001FE) & 0xC00001FE == 0,
                 "Actual SMMU fault observed")
         require(m.get("tlb_status", 1) & 1 == 0, "TLB synchronization still busy")
     return {"passed": not issues, "issues": issues, "action": action, "request_id": identifier,
-            "hardware_result": result, "cb2_takeover_verified": activate and not issues,
+            "hardware_result": result, "cb2_takeover_verified": activate and not polled and not issues,
+            "polled_takeover_verified": polled and not issues,
+            "independent_irq_resume_verified": resume_irq and not issues,
             "page_flip_hardware_verified": flip and not issues, "visual_verified": False,
             "sustained_high_refresh_verified": False}
 

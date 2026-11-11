@@ -40,8 +40,10 @@ NSDictionary *nabuDpuRequest(NSString *action, NSString *identifier) {
         out[@"error"] = @"diagnostic boot option unavailable";
     } else {
         NSString *command = [action isEqual:@"DpuSnapshot"] ? @"Snapshot" :
-            ([action isEqual:@"DpuActivateGop"] ? @"ActivateGop" :
-             ([action isEqual:@"DpuFlipGop"] ? @"FlipGop" : @"HaltResume"));
+            ([action isEqual:@"DpuActivateGopPolled"] ? @"ActivateGopPolled" :
+             ([action isEqual:@"DpuResumeIrq"] ? @"ResumeIrq" :
+              ([action isEqual:@"DpuActivateGop"] ? @"ActivateGop" :
+               ([action isEqual:@"DpuFlipGop"] ? @"FlipGop" : @"HaltResume"))));
         NSDictionary *request = @{@"NabuDpuDiagnostic": command, @"RequestID": identifier};
         int status = setProperties(entry, (__bridge CFTypeRef)request);
         out[@"submit_status"] = @((uint32_t)status);
@@ -89,7 +91,8 @@ int nabuDpuServiceMain(void) {
                     [fm removeItemAtPath:requestPath error:NULL];
                     NSString *action = request[@"Action"], *identifier = request[@"ID"];
                     if (([action isEqual:@"DpuSnapshot"] || [action isEqual:@"DpuHaltResume"] ||
-                         [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"]) &&
+                         [action isEqual:@"DpuActivateGop"] || [action isEqual:@"DpuFlipGop"] ||
+                         [action isEqual:@"DpuActivateGopPolled"] || [action isEqual:@"DpuResumeIrq"]) &&
                         [identifier isKindOfClass:NSString.class] && identifier.length && identifier.length <= 64) {
                         NSDictionary *result = nabuDpuRequest(action, identifier);
                         NSData *bytes = [NSJSONSerialization dataWithJSONObject:result options:0 error:NULL];
