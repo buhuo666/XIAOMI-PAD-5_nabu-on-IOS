@@ -309,6 +309,9 @@ IOReturn preflightSources(Binding *, const NabuDpuScanout::Io &) { assert(false)
 IOReturn activateAfterQuiesce(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &) {
     assert(false); return kIOReturnUnsupported;
 }
+IOReturn activateIdentityLive(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &) {
+    assert(false); return kIOReturnUnsupported;
+}
 '''
 
 
@@ -856,7 +859,7 @@ def harness():
     result += body(mapper_header, 'struct ActiveSnapshot', ';') + '\n'
     # Hardware readOrdering() retains the source's explicit host-test switch.
     # Forward declarations only resolve extraction order; bodies stay intact.
-    result += 'static void readOrdering();\nstatic bool imageMatches(Binding *,bool,ArmSmmu4KContextImage *);\n'
+    result += 'static void readOrdering();\nstatic bool imageMatches(Binding *,bool,ArmSmmu4KContextImage *,uint32_t);\n'
     result += MAPPER_SUBSTITUTES
     for signature in MAPPER_FUNCTIONS:
         result += body(mapper, signature) + '\n'

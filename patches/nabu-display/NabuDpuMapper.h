@@ -22,6 +22,10 @@ void discardPrepared(Binding *);
 // output. Route mask covers 0x800,0x820,0xc00,0xc20; offline rotator SID0x1040
 // is separate. No shared-CB-only assumption of idle is made.
 IOReturn activateAfterQuiesce(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &);
+// GOP-only transition from inherited M=0 bypass to identical physical pages.
+// Pre-stage translation registers with M=0, then enable the completed context.
+// Never writes DPU/VBIF or changes the scanout address; unrelated routes stay fixed.
+IOReturn activateIdentityLive(Binding *, const NabuDpuScanout::Io &, const NabuDpuScanout::State &);
 // A read-only qualification refusal leaves poisoned()==false and no context
 // mutation; the root may resume its own halt lease. A poisoned failure retains it.
 IOReturn mapDescriptor(Binding *, IOMemoryDescriptor *, uint64_t offset, uint64_t bytes,

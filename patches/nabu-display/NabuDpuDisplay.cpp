@@ -81,6 +81,7 @@ struct Binding {
     bool firstWorkerTraced;
     bool traceQuiesce;
     bool traceVbifPending;
+    bool liveIdentity;
     unsigned quiesceReads, quiesceWrites;
     Mapper::Binding *activeMapper;
 };
@@ -255,37 +256,49 @@ static IOReturn initializeMapper(Binding *b, bool rearmIrq = true) {
         paused, irq.irqCount, irq.masterSequence, irq.underrun[0], irq.underrun[1], irq.topEnable, irq.topStatus);
     NabuDpuCheckpoint::record("handover-irq-pause-returned", paused);
     if (paused) return kIOReturnIOError;
-    Scan::Diagnostic d{};
-    NabuDpuCheckpoint::record("xin-quiesce-enter");
-    b->traceQuiesce = NabuDpuCheckpoint::enabled();
-    const auto haltBegan = nowUs();
-    auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
-    const auto haltedAt = nowUs();
-    b->handoverQuiesceUs = haltedAt - haltBegan;
-    b->traceQuiesce = false;
-    b->traceVbifPending = false;
-    NabuDpuCheckpoint::record("xin-quiesce-returned", status);
-    if (status != Scan::Ok) {
-        IOLog("NABU DPU: quiesce failed status=%u region=%u offset=%#x want=%#x got=%#x\n",
-            status, d.region, d.offset, d.expected, d.observed);
-        return kIOReturnIOError;
+    uint32_t liveIdentity = 0;
+    PE_parse_boot_argn("nabu-dpu-live-identity", &liveIdentity, sizeof(liveIdentity));
+    b->liveIdentity = liveIdentity == 1;
+    if (b->liveIdentity) {
+        const auto began = nowUs();
+        result = Mapper::activateIdentityLive(b->mapper, b->io, b->scan);
+        b->handoverProgramUs = nowUs() - began;
+        IOLog("NABU DPU: live GOP identity transition status=%#x elapsed-us=%llu; no XIN halt or scanout address writes\n",
+            result, b->handoverProgramUs);
+        if (result) return result;
+    } else {
+        Scan::Diagnostic d{};
+        NabuDpuCheckpoint::record("xin-quiesce-enter");
+        b->traceQuiesce = NabuDpuCheckpoint::enabled();
+        const auto haltBegan = nowUs();
+        auto status = Scan::quiesce(b->io, b->scan, Scan::HaltTimeoutUs, &d);
+        const auto haltedAt = nowUs();
+        b->handoverQuiesceUs = haltedAt - haltBegan;
+        b->traceQuiesce = false;
+        b->traceVbifPending = false;
+        NabuDpuCheckpoint::record("xin-quiesce-returned", status);
+        if (status != Scan::Ok) {
+            IOLog("NABU DPU: quiesce failed status=%u region=%u offset=%#x want=%#x got=%#x\n",
+                status, d.region, d.offset, d.expected, d.observed);
+            return kIOReturnIOError;
+        }
+        NabuDpuCheckpoint::record("cb2-activate-enter");
+        const auto programBegan = nowUs();
+        result = Mapper::activateAfterQuiesce(b->mapper, b->io, b->scan);
+        b->handoverProgramUs = nowUs() - programBegan;
+        NabuDpuCheckpoint::record("cb2-activate-returned", result);
+        if (result != kIOReturnSuccess) return result;
+        NabuDpuCheckpoint::record("xin-resume-enter");
+        const auto resumeBegan = nowUs();
+        status = Scan::resume(b->io, b->scan, &d);
+        const auto resumedAt = nowUs();
+        b->handoverResumeUs = resumedAt - resumeBegan;
+        b->handoverHaltedUs = resumedAt - haltedAt;
+        NabuDpuCheckpoint::record("xin-resume-returned", status);
+        IOLog("NABU DPU: handover timing quiesce-us=%llu program-us=%llu resume-us=%llu halted-us=%llu resume-status=%u; table-WB-PoC upstream-walk\n",
+            b->handoverQuiesceUs, b->handoverProgramUs, b->handoverResumeUs, b->handoverHaltedUs, status);
+        if (status != Scan::Ok) return kIOReturnIOError;
     }
-    NabuDpuCheckpoint::record("cb2-activate-enter");
-    const auto programBegan = nowUs();
-    result = Mapper::activateAfterQuiesce(b->mapper, b->io, b->scan);
-    b->handoverProgramUs = nowUs() - programBegan;
-    NabuDpuCheckpoint::record("cb2-activate-returned", result);
-    if (result != kIOReturnSuccess) return result;
-    NabuDpuCheckpoint::record("xin-resume-enter");
-    const auto resumeBegan = nowUs();
-    status = Scan::resume(b->io, b->scan, &d);
-    const auto resumedAt = nowUs();
-    b->handoverResumeUs = resumedAt - resumeBegan;
-    b->handoverHaltedUs = resumedAt - haltedAt;
-    NabuDpuCheckpoint::record("xin-resume-returned", status);
-    IOLog("NABU DPU: handover timing quiesce-us=%llu program-us=%llu resume-us=%llu halted-us=%llu resume-status=%u; table-WB-PoC upstream-walk\n",
-        b->handoverQuiesceUs, b->handoverProgramUs, b->handoverResumeUs, b->handoverHaltedUs, status);
-    if (status != Scan::Ok) return kIOReturnIOError;
     IOLockLock(b->stateLock); b->activeMapper = b->mapper; IOLockUnlock(b->stateLock);
     if (!rearmIrq) {
         IOLog("NABU DPU: CB2 enabled with GOP identity; display IRQ remains paused for polled control\n");
@@ -651,7 +664,7 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
           s.identityPages, s.sctlr, s.fsr, s.globalFsr, s.far, s.fsynr0, s.streamSyndrome, s.tlbStatus,
           s.tablePhysical, s.ttbr0, s.ttbr1, s.actlr, s.inheritedActlr, s.tcr);
     const auto &t = s.timing;
-    IOLog("NABU DPU DIAGNOSTIC activation-stage-us: halt=%llu sources=%llu inherited=%llu encode=%llu disable=%llu registers=%llu disabled-readback=%llu tlbi=%llu enable=%llu enabled-readback=%llu routes=%llu total=%llu\n",
+    if (!b->liveIdentity) IOLog("NABU DPU DIAGNOSTIC activation-stage-us: halt=%llu sources=%llu inherited=%llu encode=%llu disable=%llu registers=%llu disabled-readback=%llu tlbi=%llu enable=%llu enabled-readback=%llu routes=%llu total=%llu\n",
           t.halt, t.sources - t.halt, t.inherited - t.sources, t.encoded - t.inherited,
           t.disabled - t.encoded, t.registers - t.disabled, t.disabledReadback - t.registers,
           t.tlbi - t.disabledReadback, t.enabled - t.tlbi, t.enabledReadback - t.enabled,
@@ -671,15 +684,17 @@ static Scan::Status diagnosticMapper(DiagnosticSession *d, Binding *b, OSDiction
     diagnosticNumber(values, "far", s.far); diagnosticNumber(values, "fsynr0", s.fsynr0);
     diagnosticNumber(values, "stream_syndrome", s.streamSyndrome);
     diagnosticNumber(values, "tlb_status", s.tlbStatus); diagnosticNumber(values, "identity_pages", s.identityPages);
-    auto timing = OSDictionary::withCapacity(11);
-    if (!timing) { values->release(); return Scan::IoError; }
-    diagnosticNumber(timing, "halt", t.halt); diagnosticNumber(timing, "sources", t.sources);
-    diagnosticNumber(timing, "inherited", t.inherited); diagnosticNumber(timing, "encoded", t.encoded);
-    diagnosticNumber(timing, "disabled", t.disabled); diagnosticNumber(timing, "registers", t.registers);
-    diagnosticNumber(timing, "disabled_readback", t.disabledReadback); diagnosticNumber(timing, "tlbi", t.tlbi);
-    diagnosticNumber(timing, "enabled", t.enabled); diagnosticNumber(timing, "enabled_readback", t.enabledReadback);
-    diagnosticNumber(timing, "routes", t.routes);
-    values->setObject("activation_elapsed_us", timing); timing->release();
+    if (!b->liveIdentity) {
+        auto timing = OSDictionary::withCapacity(11);
+        if (!timing) { values->release(); return Scan::IoError; }
+        diagnosticNumber(timing, "halt", t.halt); diagnosticNumber(timing, "sources", t.sources);
+        diagnosticNumber(timing, "inherited", t.inherited); diagnosticNumber(timing, "encoded", t.encoded);
+        diagnosticNumber(timing, "disabled", t.disabled); diagnosticNumber(timing, "registers", t.registers);
+        diagnosticNumber(timing, "disabled_readback", t.disabledReadback); diagnosticNumber(timing, "tlbi", t.tlbi);
+        diagnosticNumber(timing, "enabled", t.enabled); diagnosticNumber(timing, "enabled_readback", t.enabledReadback);
+        diagnosticNumber(timing, "routes", t.routes);
+        values->setObject("activation_elapsed_us", timing); timing->release();
+    }
     values->setObject("active", s.active ? kOSBooleanTrue : kOSBooleanFalse);
     values->setObject("poisoned", s.poisoned ? kOSBooleanTrue : kOSBooleanFalse);
     values->setObject("context_matches", s.contextMatches ? kOSBooleanTrue : kOSBooleanFalse);
@@ -812,6 +827,7 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
         diagnosticStage(d, "diagnostic-identity-takeover-enter");
         const auto activated = initializeMapper(b, !d->polledActivate);
         diagnosticNumber(out, "activate_status", activated);
+        out->setObject("identity_live_requested", b->liveIdentity ? kOSBooleanTrue : kOSBooleanFalse);
         diagnosticNumber(out, "handover_quiesce_us", b->handoverQuiesceUs);
         diagnosticNumber(out, "handover_program_us", b->handoverProgramUs);
         diagnosticNumber(out, "handover_resume_us", b->handoverResumeUs);
@@ -1010,7 +1026,9 @@ static Scan::Status runDiagnostic(DiagnosticSession *d, OSDictionary *out) {
     return Scan::Ok;
 }
 static bool finishDiagnostic(DiagnosticSession *d, Scan::Status status) {
-    const bool uncertain = status != Scan::Ok && d->frozen && d->engine && d->engine->scan.mutation_attempted;
+    const bool uncertain = status != Scan::Ok && d->frozen && d->engine &&
+        (d->engine->scan.mutation_attempted ||
+         (d->activateGop && Mapper::programmingAttempted(d->engine->mapper)));
     if (status != Scan::Ok && !uncertain && d->engine && d->engine->clock) {
         NabuDpuVBlank::stop(d->engine->clock); d->engine->clock = nullptr;
     }

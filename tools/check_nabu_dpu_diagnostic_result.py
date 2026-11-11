@@ -79,6 +79,11 @@ def verify(data):
         for name in ("halted_request", "halted_ack"):
             require(result.get(name, 0) & 0x11 == 0x11, f"{name}: both XIN ACKs not observed")
     if activate:
+        if result.get("identity_live_requested"):
+            require(all(result.get(name) == 0 for name in
+                        ("handover_halted_us", "handover_quiesce_us", "handover_resume_us")),
+                    "Live identity control unexpectedly halted XIN")
+            require(result.get("handover_program_us", 0) > 0, "Live activation timing is missing")
         require(result.get("activate_status") == 0 and result.get("irq_start_status") == 0,
                 "Identity activation or IRQ start failed")
         pixels_before, pixels_after = result.get("gop_pixels_before", {}), result.get("gop_pixels_after", {})

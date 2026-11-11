@@ -27,3 +27,18 @@
 之前不进行真正的ActivateGopPolled，后续仍不在画面异常时ResumeIrq/FlipGop。
 
 当前Android/USB在线，Data182；GPU204日志已回收清空读回。目标active，GPU205未部署。
+
+## GPU205 实机结果
+
+提交e44559a，完整CI42963052903、64对象链接/分支/加载器通过，部署读回并临时启动。
+用户确认桌面与触摸正常，GPU ready/Snapshot通过。只请求DpuHaltResume只读对照，
+请求ID `f6e5d9f5bc9a47589dda2a524ef77dde`，没有请求真正的页表接管、ResumeIrq或FlipGop。
+
+持久化日志确认只读状态0、audit2042027µs、SCTLR0xe0，halt13µs、resume8945µs，
+恢复状态0；新IRQ/双vsync各13、无新增underrun，最终status0/programmed0/frozen0。
+用户仍确认背光亮但纯黑，AFC及独立IORegistry读取超时。这证明翻译启用不是这种黑屏的
+必要条件，但尚未区分单纯长暂停与暂停期间读取的作用。后续优先消除长暂停窗口。
+
+完整64MiB槽及3,303,236字节有效连续前缀已保存至
+`log/device/nabu-boot-20261111-205/runtime-log/`。运行流未正常封口；清槽读回通过，
+引导分区未变，Data183，设备Android/USB在线。目标active。

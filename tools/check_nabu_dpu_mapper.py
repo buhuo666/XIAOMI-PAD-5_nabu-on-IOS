@@ -139,6 +139,32 @@ int main(){
         }
         finish(probe);
     }
+    {
+        initApps();Dpu live;live.halt=0;SC::State running{};
+        assert(SC::initialize(live.io(),running,nullptr)==SC::Ok);
+        auto b=prepared();auto original=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
+        auto leaf=PT::leafIndex(PT::GopStart);const auto valid=b->arena.tables[leaf];
+        b->arena.tables[leaf]=0;
+        assert(MP::activateIdentityLive(b,live.io(),running)==kIOReturnUnsupported&&!b->programAttempted);
+        assert(!std::memcmp(original.data(),appsMemory,sizeof(appsMemory)));b->arena.tables[leaf]=valid;
+        b->smmuIo.write32=[](void *cookie,size_t at,uint32_t value){
+            // At actual TLB maintenance, all table registers are staged while
+            // M remains zero. No translation observes partial configuration.
+            auto b=static_cast<MP::Binding *>(cookie);
+            assert(reg(0x82000)==0xe0 && appsMemory[0x82020/8]==(0xfffeull<<48|b->arena.physical));
+            assert(reg(0x82030)==0x80800420 && reg(0x82038)==0xff44);
+            assert(!cacheCleans.empty()&&cacheCleans.back().second==PT::TablePages*PT::PageBytes);
+            for(uint32_t address=PT::GopStart;address<PT::GopStart+PT::GopBytes;address+=4096)
+                assert(b->arena.tables[PT::leafIndex(address)]==PT::gopLeafDescriptor(address));
+            return MP::wr32(cookie,at,value);
+        };
+        forbidLogs=true;assert(MP::activateIdentityLive(b,live.io(),running)==0);forbidLogs=false;
+        MP::ActiveSnapshot snapshot{};assert(MP::snapshotActive(b,&snapshot)==0);
+        assert(snapshot.active&&snapshot.routesUnchanged&&snapshot.gopIdentity&&snapshot.identityPages==4000);
+        assert(running.phase==SC::Ready&&!running.mutation_attempted&&live.halt==0);
+        assert(reg(0x810)==0x80000140&&reg(0xc10)==3&&reg(0x83000)==1);
+        finish(b);
+    }
     initApps();Dpu dpu;SC::State state={};assert(SC::initialize(dpu.io(),state,nullptr)==SC::Ok);state.phase=SC::Quiesced;
     MP::Binding *b=prepared();auto before=std::vector<uint64_t>(appsMemory,appsMemory+0x100000/8);
     dpu.halt=0;assert(MP::preflightSources(b,dpu.io())==0);

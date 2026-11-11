@@ -66,6 +66,13 @@ IOReturn activateAfterQuiesce(Binding *b, const NabuDpuScanout::Io &, const Nabu
     if (hardware->mapperFault) hardware->app(0x82058)=2;
     return 0;
 }
+IOReturn activateIdentityLive(Binding *b, const NabuDpuScanout::Io &, const NabuDpuScanout::State &s) {
+    assert(s.phase==NabuDpuScanout::Ready);
+    assert(!(hardware->vbif[NabuDpuScanout::HaltRequest/4]&NabuDpuScanout::XinMask));
+    b->active=true; b->programAttempted=true; hardware->now+=75;
+    hardware->events.push_back("mapper-live-activated");
+    return hardware->mapperFault ? kIOReturnIOError : kIOReturnSuccess;
+}
 '''
 
 THREADS = r'''
@@ -119,6 +126,17 @@ static const OSDictionary &execute(Fixture &f, const char *command, const char *
 }
 int main() {
     unsigned groups=0;
+    for (bool failed:{false,true}) {
+        Fixture f; resetForAdmission(f); f.h.liveIdentity=true; f.h.mapperFault=failed;
+        const auto &out=execute(f,"ActivateGopPolled","DpuActivateGopPolled");
+        assert(boolean(out,"identity_live_requested") && boolean(out,"smmu_changed"));
+        assert((number(out,"status")==0)==!failed && f.diagnostic.frozen==failed);
+        assert(!f.display.scan.mutation_attempted && !f.h.irqRearms && !f.h.submissions);
+        assert(number(out,"handover_halted_us")==0 && number(out,"handover_quiesce_us")==0);
+        assert(number(out,"handover_resume_us")==0 && number(out,"handover_program_us")==75);
+        assert(f.clock.paused && f.mapper.programAttempted);
+        assert(event(f.h,"irq-paused")<event(f.h,"mapper-live-activated")); ++groups;
+    }
     for (unsigned mode=0;mode<3;++mode) {
         Fixture f; resetForAdmission(f);
         f.h.haltAudit=mode!=0; f.h.auditFails=mode==2;
@@ -211,15 +229,17 @@ def harness():
         assert(!(hardware->vbif[SC::HaltRequest/4]&SC::XinMask));
     }''')
     source = source.replace('    Hardware();', '''    NabuDpuVBlank::Binding *irqBinding=nullptr;
-    bool haltAudit=false, auditFails=false;
+    bool haltAudit=false, auditFails=false, liveIdentity=false;
     unsigned audits=0, auditDiscards=0;
     unsigned irqSnapshots=0, irqRearms=0;
     bool mapperFault=false, irqRearmFails=false, polledMaskLost=false, corruptGop=false;
     std::vector<uint32_t> gopPixels=std::vector<uint32_t>(PT::GopBytes/4,0xff00aa55);
     Hardware();''')
     source = source.replace('static bool PE_parse_boot_argn(const char *, void *, int) { return false; }', '''static bool PE_parse_boot_argn(const char *name, void *out, int size) {
-        assert(std::string(name)=="nabu-dpu-halt-audit" && size==4);
-        *static_cast<uint32_t *>(out)=hardware->haltAudit; return true;
+        assert(size==4);
+        if (std::string(name)=="nabu-dpu-halt-audit") *static_cast<uint32_t *>(out)=hardware->haltAudit;
+        else { assert(std::string(name)=="nabu-dpu-live-identity"); *static_cast<uint32_t *>(out)=hardware->liveIdentity; }
+        return true;
     }''')
     source = source.replace('    const char *getCStringNoCopy()', '''    bool isEqualTo(const char *value) const { return text==value; }
     size_t getLength() const { return text.size(); }
@@ -295,8 +315,8 @@ def main():
                 changed['dpu']['result'][section][key] ^= 0x400 if key == 'tcr' else 1
                 assert not verify(changed)['passed']
                 counts['profile_or_pixels_rejected'] += 1
-    assert counts == {'success': 9, 'failure': 7, 'false_qualification_rejected': 9,
-                      'profile_or_pixels_rejected': 12}, counts
+    assert counts == {'success': 10, 'failure': 8, 'false_qualification_rejected': 12,
+                      'profile_or_pixels_rejected': 16}, counts
     report = {'passed': True, 'host_result': output.splitlines()[-1], 'consumer': counts,
               'sanitizers': ['address', 'undefined'], 'device_accessed': False,
               'scope': 'Actual Display admission, worker, handover sequencing, counters, mapper readback and finish code; modeled IRQ binding and initial SMMU programming; no physical acceptance'}

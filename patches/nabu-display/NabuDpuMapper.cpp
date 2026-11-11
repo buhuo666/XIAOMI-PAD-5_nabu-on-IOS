@@ -116,21 +116,22 @@ static bool readImage(Binding *b, ArmSmmu4KContextImage &image) {
         !rd32(b, Cb + 0x30, &image.tcr) && !rd32(b, Cb + 0x38, &image.mair0) &&
         !rd32(b, Cb + 0x3c, &image.mair1);
 }
-static bool imageMatches(Binding *b, bool enabled, ArmSmmu4KContextImage *observed = nullptr) {
+static bool imageMatches(Binding *b, bool enabled, ArmSmmu4KContextImage *observed = nullptr,
+                         uint32_t bypassSctlr = 0) {
     ArmSmmu4KContextImage actual;
     if (!readImage(b, actual)) return false;
     uint32_t actlr = 0;
     if (rd32(b, Cb + 4, &actlr) || actlr != DpuActlr) return false;
     if (observed) *observed = actual;
     const auto &e = b->expected;
-    const uint32_t expectedSctlr = enabled ? e.sctlr : 0;
+    const uint32_t expectedSctlr = enabled ? e.sctlr : bypassSctlr;
     // Same hardware readback allowances as ArmSmmu4KValidateContextReadback:
     // TBI may read one, ASIDPNE may read zero. CFIE must actually stay zero.
     const uint32_t tbiSet = actual.tcr2 & ~e.tcr2 & 0x60;
     const uint32_t asidpneClear = expectedSctlr & ~actual.sctlr & 0x1000;
     return actual.cbar == e.cbar && actual.cba2r == e.cba2r && actual.tcr == e.tcr &&
         !((actual.tcr2 ^ e.tcr2) & ~tbiSet) && actual.ttbr0 == e.ttbr0 && actual.ttbr1 == e.ttbr1 &&
-        actual.mair0 == e.mair0 && actual.mair1 == e.mair1 && !(actual.sctlr & Cfie) &&
+        actual.mair0 == e.mair0 && actual.mair1 == e.mair1 && (!enabled || !(actual.sctlr & Cfie)) &&
         !((actual.sctlr ^ expectedSctlr) & ~asidpneClear);
 }
 IOReturn snapshotActive(Binding *b, ActiveSnapshot *out) {
@@ -345,6 +346,50 @@ IOReturn auditInactiveAfterQuiesce(Binding *b, const SC::Io &io, const SC::State
         return kIOReturnUnsupported;
     return kIOReturnSuccess;
 }
+static IOReturn encodeIdentity(Binding *b) {
+    ArmSmmu4KConfig lower = {32, 40, b->arena.physical, 1048576};
+    ArmSmmu4KResult tables = {b->arena.physical, PT::Mair, PT::TablePages, b->state.mapped_leaf_pages, 1, 0};
+    ArmSmmu4KContextConfig config = {&lower, nullptr, &tables, nullptr,
+        b->routes.idr0, b->routes.idr2, b->asid, 0, 0, 0,
+        ArmSmmu4KShareabilityFromTransaction, ArmSmmu4KShareabilityFromTransaction};
+    if (ArmSmmu4KEncodeContext(&config, &b->expected) != ArmSmmu4KSuccess) return kIOReturnUnsupported;
+    b->expected.tcr = (b->expected.tcr & ~WalkTcrMask) | DpuWalkTcr;
+    b->expected.sctlr &= ~Cfie;
+    return kIOReturnSuccess;
+}
+IOReturn activateIdentityLive(Binding *b, const SC::Io &io, const SC::State &state) {
+    if (!b || poisoned(b) || b->active || b->programAttempted ||
+        state.phase != SC::Ready || state.current_iova != SC::GopPhysical) return kIOReturnNotReady;
+    const auto preflight = preflightSources(b, io);
+    if (preflight) return preflight;
+    ArmSmmu4KContextImage old{};
+    uint32_t fsr = 0, gfsr = 0;
+    if (!readImage(b, old) || old.sctlr != 0xe0 || old.cbar != 0x1f000 || old.cba2r != 1 ||
+        rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr) ||
+        rd32(b, Cb + 4, &b->inheritedActlr) || (fsr & FaultMask) || gfsr)
+        return kIOReturnUnsupported;
+    for (uint32_t at = PT::GopStart; at < PT::GopStart + PT::GopBytes; at += PT::PageBytes)
+        if (b->arena.tables[PT::leafIndex(at)] != PT::gopLeafDescriptor(at)) return kIOReturnUnsupported;
+    if (encodeIdentity(b)) return kIOReturnUnsupported;
+    const auto &e = b->expected;
+    // IHI0062D.a 2.4 and 16.5.29: with M=0 the stage-1 translation table is
+    // unused. M is not TLB-cacheable; transactions straddling the completed
+    // enable write may use either state. Both states map this frozen, permanent
+    // GOP to the same PA. Keep bypass enabled throughout all register staging.
+    if (wr32(b, Cba2r, e.cba2r) || wr32(b, Cbar, e.cbar) ||
+        wr32(b, Cb + 0x10, e.tcr2) || wr32(b, Cb + 0x30, e.tcr) ||
+        wr64(b, Cb + 0x20, e.ttbr0) || wr64(b, Cb + 0x28, e.ttbr1) ||
+        wr32(b, Cb + 0x38, e.mair0) || wr32(b, Cb + 0x3c, e.mair1) ||
+        wr32(b, Cb + 4, DpuActlr) || barrier(b) || !imageMatches(b, false, nullptr, old.sctlr) ||
+        !sync(b) || PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok)
+        return fail(b, kIOReturnIOError);
+    if (wr32(b, Cb, e.sctlr) || barrier(b) || !imageMatches(b, true) ||
+        rd32(b, Cb + 0x58, &fsr) || rd32(b, 0x48, &gfsr) || (fsr & FaultMask) || gfsr ||
+        PT::verifyRoutesUnchanged({b, routeRead}, b->routes) != PT::Ok)
+        return fail(b, kIOReturnIOError);
+    b->active = true;
+    return kIOReturnSuccess;
+}
 IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &state) {
     if (!b || poisoned(b) || b->active || b->programAttempted) return kIOReturnNotReady;
     if (state.phase != SC::Quiesced || state.current_iova != SC::GopPhysical) return kIOReturnNotReady;
@@ -368,17 +413,10 @@ IOReturn activateAfterQuiesce(Binding *b, const SC::Io &io, const SC::State &sta
         rd32(b, Cb + 4, &b->inheritedActlr) || (fsr & FaultMask) || gfsr)
         return kIOReturnUnsupported;
     t.inherited = io.now_us(io.cookie) - began;
-    ArmSmmu4KConfig lower = {32, 40, b->arena.physical, 1048576};
-    ArmSmmu4KResult tables = {b->arena.physical, PT::Mair, PT::TablePages, b->state.mapped_leaf_pages, 1, 0};
-    ArmSmmu4KContextConfig config = {&lower, nullptr, &tables, nullptr,
-        b->routes.idr0, b->routes.idr2, b->asid, 0, 0, 0,
-        ArmSmmu4KShareabilityFromTransaction, ArmSmmu4KShareabilityFromTransaction};
-    if (ArmSmmu4KEncodeContext(&config, &b->expected) != ArmSmmu4KSuccess) return kIOReturnUnsupported;
-    b->expected.tcr = (b->expected.tcr & ~WalkTcrMask) | DpuWalkTcr;
+    if (encodeIdentity(b)) return kIOReturnUnsupported;
     // Explicit POLLED fault variant. Do not invoke ProgramDisabledContext,
     // whose IRQ-handler precondition and default CFIE=1 are inapplicable here.
     // CFRE remains set to record faults in FSR; no stalls or implicit retries.
-    b->expected.sctlr &= ~Cfie;
     const auto &e = b->expected;
     t.encoded = io.now_us(io.cookie) - began;
     // XIN0/4 are halted here. Even with trace disabled, IOLog also drains the
