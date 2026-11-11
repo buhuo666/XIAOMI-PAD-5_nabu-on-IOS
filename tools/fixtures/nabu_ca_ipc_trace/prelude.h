@@ -15,7 +15,9 @@
 #define MACH_FLIPC 0
 #define IMPORTANCE_INHERITANCE 1
 #define IMPORTANCE_TRACE 0
+#ifndef __unused
 #define __unused __attribute__((unused))
+#endif
 #define __assert_only
 #define FALSE false
 #define TRUE true
