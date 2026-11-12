@@ -70,7 +70,8 @@ def main():
     args = parser.parse_args()
     cases = []
     for name in ('stock-cp1', 'stock-cp0', 'reported-nonzero-dram',
-                 'missing-version-nonzero-dram', 'missing-version-and-window', 'missing-auto'):
+                 'missing-version-nonzero-dram', 'missing-version-and-window',
+                 'generic-1g-nonzero-dram', 'missing-auto'):
         tree = make_tree(bytes(range(64)), checkpoint=0 if name=='stock-cp0' else 1, bootstrap=True)
         chosen = next(n for n in tree.children if n.props['name']==b'chosen\0')
         if 'nonzero-dram' in name:
@@ -78,6 +79,9 @@ def main():
             chosen.props['dram-size'] = struct.pack('<Q', 0x140000000)
         if name.startswith('missing-version'):
             del chosen.props['nabu-handoff-version']
+        if name=='generic-1g-nonzero-dram':
+            del chosen.props['nabu-handoff-version']
+            chosen.props['darwinboot-memory-size'] = struct.pack('<Q', 0x40000000)
         if name=='missing-version-and-window':
             del chosen.props['darwinboot-memory-size']
         if name=='missing-auto':
@@ -94,6 +98,8 @@ def main():
             assert nabu['enabled']==nabu['auto_memory']==expected_enabled, (name,nabu)
             if expected_enabled:
                 assert nabu['checkpoint']==(0 if name=='stock-cp0' else 1)
+        if name=='generic-1g-nonzero-dram':
+            assert generic['window_requested']==0x40000000 and not nabu['enabled']
         cases.append({'name':name,'generic':generic,'nabu':nabu})
     report = {'passed':True, 'input':'shipped GPU224 DarwinBoot.efi',
               'method':'Unicorn replay of actual PE instructions; synthetic ADTs; no UEFI services',

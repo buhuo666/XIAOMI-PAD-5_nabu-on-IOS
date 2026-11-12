@@ -8,7 +8,8 @@ build receipt records SHA-256
 Questions: which ADT properties enable NabuFindChosen; whether handoff files
 are written before or after kernel callbacks; whether nonzero on-disk DRAM
 properties can pass the supplied loader; whether missing version and memory
-properties reproduce disabled callbacks and the default 1GiB window.
+properties reproduce disabled callbacks. The recovered fallback is 256MiB;
+the reported 1GiB is therefore not evidence of that default being used.
 
 Ghidra recovers searchable C and assembly on GitHub Actions. An independent
 Unicorn replay executes the input PE's NabuFindChosen bytes using synthetic
