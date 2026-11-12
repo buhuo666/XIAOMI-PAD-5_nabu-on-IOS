@@ -890,6 +890,7 @@ MAPPER_FUNCTIONS = (
 )
 DISPLAY_FUNCTIONS = (
     'static void addDuration(', 'static void logFrameTiming(',
+    'static Scan::Status pollFrameLocked(',
     'static void vblank(', 'static void wake(', 'static void drop(',
     'static IOReturn acquire(', 'static IOReturn waitProducer(', 'static IOReturn initializeMapper(',
     'static void finishRecord(', 'static IOReturn submitFrame(', 'static IOReturn flip(',
@@ -934,6 +935,7 @@ def harness():
     result += body(display, 'struct WaitTiming', ';') + '\n'
     result += body(display, 'struct Held', ';') + '\n'
     result += body(display, 'struct Binding', ';') + '\n'
+    result += body(display, 'struct RetirementPublication', ';') + '\n'
     result += body(display, 'struct DiagnosticSession', ';') + '\nstatic DiagnosticSession *diagnostics;\n'
     result += DISPLAY_SUBSTITUTES
     for signature in DISPLAY_FUNCTIONS:

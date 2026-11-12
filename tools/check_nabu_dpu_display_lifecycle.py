@@ -207,6 +207,10 @@ public:
 namespace NabuDpuDisplay {
 namespace Swap=NabuDpuSwap;
 namespace Scan=NabuDpuScanout;
+namespace NabuTestScan {
+Scan::Status status=Scan::Pending;
+unsigned calls=0;
+}
 namespace Mapper {
 struct Binding {IOReturn fault=0;};
 IOReturn readFault(Binding *b){return b->fault;}
@@ -220,6 +224,11 @@ struct Binding {
     NabuDpuVBlank::Binding *clock=nullptr;
     Mapper::Binding *activeMapper=nullptr;
     Scan::State scan{};
+    Scan::Io io{};
+    Scan::Acceptance observedAcceptance{};
+    uint64_t retirementDeadline=0;
+    uint64_t retirementSequence=77;
+    bool retirementPending=false;
     NabuDpuVBlank::Sample sample{};
     Listener *listeners=nullptr;
     Swap::Ledger ledger{};
@@ -232,6 +241,13 @@ struct Binding {
 }
 const void *producer=nullptr;
 struct IOMobileFramebuffer:IOService {NabuDpuDisplay::Binding *fDpu;};
+namespace NabuDpuScanout {
+Status poll(const Io &,State &,Acceptance &out,Diagnostic *) {
+    ++NabuDpuDisplay::NabuTestScan::calls;
+    if(NabuDpuDisplay::NabuTestScan::status==Ok){out.accepted=true;out.sequence=77;}
+    return NabuDpuDisplay::NabuTestScan::status;
+}
+}
 '''
 
 TESTS = r'''
@@ -402,6 +418,92 @@ int main(){
     }
     assert(timerEnters==0);
     {
+        // Reproduce GPU219's ordering: the physical VBlank arrives before
+        // old page cleanup. The same callback must wait for real retirement.
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.ledger.insert(1)->phase=Swap::Displayed;b.retirementPending=true;
+        clock_interval_to_deadline(500,kMillisecondScale,&b.retirementDeadline);
+        NabuTestScan::status=Scan::Ok;NabuTestScan::calls=0;
+        auto callback=std::async(std::launch::async,[&]{tick(b,10,10000);});
+        while(!b.stateLock->sleeps.load())std::this_thread::yield();
+        assert(callback.wait_for(5ms)==std::future_status::timeout&&messages.empty());
+        IOLockLock(b.stateLock);
+        assert(b.observedAcceptance.accepted&&b.ledger.find(1)->phase==Swap::Displayed);
+        Scan::Acceptance cached{};Scan::Diagnostic d{};
+        assert(pollFrameLocked(&b,cached,&d)==Scan::Ok&&NabuTestScan::calls==1);
+        IOLockWakeup(b.stateLock,&b.retirementPending,false);IOLockUnlock(b.stateLock);
+        assert(callback.wait_for(5ms)==std::future_status::timeout&&messages.empty());
+        IOLockLock(b.stateLock);b.ledger.find(1)->phase=Swap::Retired;IOLockUnlock(b.stateLock);
+        IOReturn result=0;{RetirementPublication publication{&b,result};publication.complete();publication.complete();}
+        callback.get();assert(messages.size()==1&&messages[0].args[0]==10000&&!b.retirementPending&&!b.failure);
+        tick(b,10,10000);assert(messages.size()==1); // no duplicate physical VBlank
+        c.clientClose();c.free();++groups;
+    }
+    {
+        // Retirement can finish and the FIFO can arm the next flip before the
+        // VBlank waiter reacquires stateLock. Its accepted sequence is done.
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.retirementPending=true;NabuTestScan::status=Scan::Ok;
+        clock_interval_to_deadline(500,kMillisecondScale,&b.retirementDeadline);
+        auto callback=std::async(std::launch::async,[&]{tick(b,10,10000);});
+        while(!b.stateLock->sleeps.load())std::this_thread::yield();
+        IOLockLock(b.stateLock);
+        b.retirementSequence=78;b.observedAcceptance={};
+        IOLockWakeup(b.stateLock,&b.retirementPending,false);IOLockUnlock(b.stateLock);
+        assert(callback.wait_for(100ms)==std::future_status::ready);callback.get();
+        assert(messages.size()==1&&messages[0].args[0]==10000&&b.retirementPending&&!b.failure);
+        IOReturn result=0;{RetirementPublication next{&b,result};}
+        c.clientClose();c.free();++groups;
+    }
+    {
+        // Hardware not yet accepted: don't delay this physical refresh or
+        // manufacture retirement. The existing worker keeps ownership.
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.retirementPending=true;NabuTestScan::status=Scan::Pending;tick(b,1);
+        assert(messages.size()==1&&b.retirementPending&&!b.stateLock->sleeps);
+        IOReturn error=kIOReturnIOError;{RetirementPublication failed{&b,error};}
+        assert(!b.retirementPending&&b.failure==error);tick(b,2);assert(messages.size()==1);
+        c.clientClose();c.free();++groups;
+    }
+    {
+        // A cleanup failure wakes the waiting delivery but sends no success.
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.retirementPending=true;NabuTestScan::status=Scan::Ok;
+        clock_interval_to_deadline(500,kMillisecondScale,&b.retirementDeadline);
+        auto callback=std::async(std::launch::async,[&]{tick(b,1);});
+        while(!b.stateLock->sleeps.load())std::this_thread::yield();
+        IOReturn error=kIOReturnIOError;{RetirementPublication failed{&b,error};}
+        callback.get();assert(messages.empty()&&!b.retirementPending&&b.failure==error);
+        c.clientClose();c.free();++groups;
+    }
+    {
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.retirementPending=true;NabuTestScan::status=Scan::Ok;
+        clock_interval_to_deadline(1,kMillisecondScale,&b.retirementDeadline);tick(b,1);
+        assert(messages.empty()&&b.failure==kIOReturnTimeout&&b.retirementPending);
+        IOReturn error=b.failure;{RetirementPublication failed{&b,error};}
+        assert(!b.retirementPending);c.clientClose();c.free();++groups;
+    }
+    {
+        using namespace NabuDpuDisplay;
+        messages.clear();Binding b;IOMobileFramebuffer owner;owner.fDpu=&b;
+        IOMobileFramebufferUserClient c{};Port p;connect(c,owner,p);
+        b.retirementPending=true;NabuTestScan::status=Scan::ReadbackMismatch;tick(b,1);
+        assert(messages.empty()&&b.failure==kIOReturnIOError&&b.retirementPending);
+        IOReturn error=b.failure;{RetirementPublication failed{&b,error};}
+        c.clientClose();c.free();++groups;
+    }
+    {
         using namespace NabuDpuDisplay;
         diagnosticDrawBegin();diagnosticDrawEnd(); // Disabled mode changes nothing.
         DiagnosticSession d{};d.lock=IOLockAlloc();diagnostics=&d;
@@ -456,6 +558,8 @@ def harness(framebuffer):
                       'static void freezeDiagnosticGop(', 'static void thawDiagnosticGop(',
                       'static void diagnosticStage('):
         result += body(display, signature) + '\n'
+    result += body(display, 'struct RetirementPublication', ';') + '\n'
+    result += body(display, 'static Scan::Status pollFrameLocked(') + '\n'
     for signature in ('static void vblank(', 'void traceNativeVblank(', 'void subscribe(', 'void unsubscribe(', 'bool snapshot(', 'IOReturn wait('):
         result += body(display, signature) + '\n'
     result += '}\n' + client + '\n'

@@ -96,6 +96,10 @@ struct Binding {
     Mapper::Binding *mapper;
     NabuDpuVBlank::Binding *clock;
     NabuDpuVBlank::Sample sample;
+    Scan::Acceptance observedAcceptance;
+    uint64_t retirementDeadline;
+    uint64_t retirementSequence;
+    bool retirementPending;
     Listener *listeners;
     Swap::Ledger ledger;
     Held held[PT::SlotCount];
@@ -192,6 +196,35 @@ static void wake(void *cookie, IOReturn) {
     IOLockLock(b->stateLock); ++b->eventGeneration;
     IOLockWakeup(b->stateLock, b, false); IOLockUnlock(b->stateLock);
 }
+// stateLock serializes the real acceptance check between the display worker
+// and VBlank delivery. A sampled acceptance is consumed once by the worker;
+// it does not publish Displayed/Retired or release any resource here.
+static Scan::Status pollFrameLocked(Binding *b, Scan::Acceptance &accepted, Scan::Diagnostic *d) {
+    if (b->observedAcceptance.accepted) {
+        accepted = b->observedAcceptance;
+        return Scan::Ok;
+    }
+    const auto status = Scan::poll(b->io, b->scan, accepted, d);
+    if (status == Scan::Ok) b->observedAcceptance = accepted;
+    return status;
+}
+struct RetirementPublication {
+    Binding *binding;
+    IOReturn &result;
+    bool completed = false;
+    void complete() {
+        if (completed) return;
+        completed = true;
+        IOLockLock(binding->stateLock);
+        if (binding->retirementPending) {
+            if (result) binding->failure = result;
+            binding->retirementPending = false;
+            IOLockWakeup(binding->stateLock, &binding->retirementPending, false);
+        }
+        IOLockUnlock(binding->stateLock);
+    }
+    ~RetirementPublication() { complete(); }
+};
 static void vblank(void *cookie, const NabuDpuVBlank::Sample &sample) {
     auto b = static_cast<Binding *>(cookie);
     uint64_t irqNs; absolutetime_to_nanoseconds(sample.masterTimestamp, &irqNs);
@@ -201,6 +234,34 @@ static void vblank(void *cookie, const NabuDpuVBlank::Sample &sample) {
     ++b->eventGeneration;
     if (sample.fault) b->failure = kIOReturnIOError;
     if (b->activeMapper && Mapper::readFault(b->activeMapper)) b->failure = kIOReturnIOError;
+    if (advanced && !b->failure && b->powerOn && b->retirementPending) {
+        Scan::Acceptance accepted{};
+        Scan::Diagnostic diagnostic{};
+        const auto status = pollFrameLocked(b, accepted, &diagnostic);
+        if (status != Scan::Pending && status != Scan::Ok) b->failure = kIOReturnIOError;
+        if (status == Scan::Ok) {
+            const uint64_t began = nowUs();
+            traceFrame(began, NabuGpuTrace::VsyncRetirementWait, sample.masterSequence,
+                irqNs / 1000, accepted.sequence, 0);
+            IOLockWakeup(b->stateLock, b, false);
+            // This is the VBlank thread-call, not the hard IRQ. Release the
+            // state lock while the dedicated display worker retires the old
+            // mapping and read lease. Send this physical VBlank only after
+            // SwapWait can observe that real retirement, with its original
+            // timestamp/sequence. A still-pending hardware flip never waits.
+            // The FIFO worker can arm its next queued flip before this waiter
+            // reacquires stateLock. Do not wait for that later physical frame.
+            while (b->retirementPending && b->retirementSequence == accepted.sequence && !b->failure) {
+                if (IOLockSleepDeadline(b->stateLock, &b->retirementPending,
+                    b->retirementDeadline, THREAD_UNINT) == THREAD_TIMED_OUT) {
+                    b->failure = kIOReturnTimeout;
+                    break;
+                }
+            }
+            traceFrame(nowUs(), NabuGpuTrace::VsyncRetirementPublished, sample.masterSequence,
+                accepted.sequence, nowUs() - began, uint32_t(b->failure));
+        }
+    }
     const bool notify = advanced && !b->failure && b->powerOn;
     IOLockWakeup(b->stateLock, b, false);
     IOLockUnlock(b->stateLock);
@@ -399,12 +460,19 @@ static void finishRecord(Binding *b, uint32_t id, Swap::Phase phase, IOReturn er
     if (auto r = b->ledger.find(id)) { r->phase = phase; r->error = error; }
     IOLockWakeup(b->stateLock, b, false); IOLockUnlock(b->stateLock);
 }
-static IOReturn submitFrame(Binding *b, const Scan::Frame &frame, Scan::Acceptance &accepted, bool trace) {
+static IOReturn submitFrame(Binding *b, const Scan::Frame &frame, Scan::Acceptance &accepted, bool trace,
+                           bool publishRetirement = false) {
     Scan::Diagnostic d{};
     if (trace) NabuDpuCheckpoint::record("scan-submit-enter");
     IOLockLock(b->stateLock);
+    b->observedAcceptance = {};
     IOReturn result = b->failure ? b->failure : Mapper::checkFault(b->mapper);
     auto status = result ? Scan::IoError : Scan::submit(b->io, b->scan, frame, &d);
+    if (status == Scan::Pending && publishRetirement) {
+        b->retirementPending = true;
+        b->retirementSequence = frame.sequence;
+        clock_interval_to_deadline(FlipMs, kMillisecondScale, &b->retirementDeadline);
+    }
     IOLockUnlock(b->stateLock);
     if (trace) NabuDpuCheckpoint::record("scan-submit-returned", status);
     if (status != Scan::Pending) return kIOReturnIOError;
@@ -412,7 +480,7 @@ static IOReturn submitFrame(Binding *b, const Scan::Frame &frame, Scan::Acceptan
     IOLockLock(b->stateLock);
     for (;;) {
         if (b->failure || Mapper::checkFault(b->mapper)) { result = kIOReturnIOError; break; }
-        status = Scan::poll(b->io, b->scan, accepted, &d);
+        status = pollFrameLocked(b, accepted, &d);
         if (status != Scan::Pending) { result = status == Scan::Ok ? kIOReturnSuccess : kIOReturnIOError; break; }
         if (IOLockSleepDeadline(b->stateLock, b, deadline, THREAD_UNINT) == THREAD_TIMED_OUT) {
             result = kIOReturnTimeout; break;
@@ -426,6 +494,7 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     auto s = h.surface;
     const uint64_t bytes = uint64_t(s->info.bytesPerRow) * 2559 + 6400;
     IOLockLock(b->stateLock); IOReturn result = b->failure; IOLockUnlock(b->stateLock);
+    RetirementPublication publication{b, result};
     if (result) return result;
     const uint64_t initAt = nowUs();
     result = initializeMapper(b);
@@ -454,7 +523,9 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     Scan::Acceptance accepted{};
     const uint64_t scanAt = nowUs();
     traceFrame(scanAt, NabuGpuTrace::ScanSubmit, held.swap, s->sid, held.mapping.token, frame.sequence);
-    result = submitFrame(b, frame, accepted, trace);
+    // The independent GOP diagnostic owns no CA swap lifecycle. Only the
+    // ordinary FIFO path coordinates client notification with page retirement.
+    result = submitFrame(b, frame, accepted, trace, evidence == nullptr);
     const uint64_t acceptedAt = nowUs(), scanUs = acceptedAt - scanAt;
     if (result) return result;
     held.acceptedAt = acceptedAt;
@@ -485,6 +556,7 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
     ++b->accepted;
     b->lastDisplayTime = mach_absolute_time();
     const uint64_t retireUs = nowUs() - retireAt;
+    publication.complete();
     logFrameTiming(b, held, initUs, mapUs, scanUs, retireUs, oldActiveUs);
     if (b->accepted <= 8 || !(b->accepted % 120))
         IOLog("NABU DPU: displayed=%llu swap=%u surface=%u iova=%#x frame=%u/%u retired-slot=%u irq=%llu vsync=%llu copied=0\n",

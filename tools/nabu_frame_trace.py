@@ -104,6 +104,10 @@ class PairedTrace:
                             metadata.get('RequestID') != request['ID']:
                         raise ValueError('Trace request failed: ' + json.dumps(reply))
                     return result
+            except json.JSONDecodeError:
+                # The helper rewrites this reply in place. GPU219 observed a
+                # partial JSON during export; wait for this same request ID.
+                pass
             except RuntimeError as error:
                 if str(error) not in ('AFC status 8', 'AFC status 1'): raise
             time.sleep(.5)

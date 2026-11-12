@@ -15,7 +15,9 @@ enum Event : uint32_t {
     PresentSourceRect, PresentDestinationRect, PresentLayerFlags,
     // Non-pixel transaction: id=swap, a=mask; queued b=depth,
     // complete b=IOReturn/c=cumulative successful clears. Exclude from FPS.
-    InactiveLayerClearQueued, InactiveLayerClearComplete
+    InactiveLayerClearQueued, InactiveLayerClearComplete,
+    // Same physical VBlank retained until accepted flip resources retire.
+    VsyncRetirementWait, VsyncRetirementPublished
 };
 enum PresentRejection : uint32_t {
     ShortSwap = 0, ExtraLayers = 1, SourceRect = 2, DestinationRect = 3,
