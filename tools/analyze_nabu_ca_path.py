@@ -3,6 +3,7 @@
 import argparse
 from bisect import bisect_right
 from collections import Counter, defaultdict
+import csv
 import json
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from analyze_nabu_ca_trace import analyze
 from nabu_frame_trace import FIELDS, WIRE, validate_export
 
 
-def decompose(ca, rows, run):
+def decompose(ca, rows, run, benchmark_rows=None):
     start, end = run['sample_start_s']*1e6, run['sample_end_s']*1e6
     calls=defaultdict(list)
     for call in ca['ca']['calls']:calls[call['event']].append(call)
@@ -28,9 +29,29 @@ def decompose(ca, rows, run):
     for u in ca['ca']['updates']:
         updates[(u['pid'],u['update'],u['display'],u['frame'],u['finish_enter_us'])].append(u)
     diagnostics=Counter();frames=[];metrics=defaultdict(list)
+    measured=None;run_owner=None
+    if benchmark_rows is not None:
+        measured={int(r['frame']):r for r in benchmark_rows if int(r['measured']) and float(r['submit_s'])>0}
+        markers=[r for r in ca.get('user_markers',[]) if r['event']==88 and abs(r['b']-start)<1
+                 and r['a']==round(run['requested_duration_s']*1e6)]
+        if len(markers)==1:run_owner=(markers[0]['pid'],markers[0]['identity'])
+        else:diagnostics['benchmark_run_marker_missing_or_ambiguous']+=1
+        if len(measured)!=run['frames_submitted']:diagnostics['benchmark_submitted_count_mismatch']+=1
     for frame in ca['app']['frames']:
         submitted=frame['stages'].get(85,frame['stages'].get('85'))
-        if not submitted or not start<=submitted['time_us']<end:continue
+        if not submitted:continue
+        if measured is None:
+            if not start<=submitted['time_us']<end:continue
+        else:
+            # FrameBench selects measured rows at display-link admission. A
+            # warmup row can submit after sampleStart when nextDrawable stalls.
+            # Join its recorded epoch and CSV index rather than moving that row
+            # into the measured set because its later submit crossed the clock.
+            if run_owner!=(frame['pid'],frame['frame_id']>>32):continue
+            benchmark=measured.get(frame['frame_id']&0xffffffff)
+            if benchmark is None:continue
+            if int(benchmark['surface_id'])!=frame['surface_id']:
+                diagnostics['benchmark_surface_mismatch']+=1;continue
         present=frame['present'];dpu=frame['dpu_present_us']
         if present is None or dpu is None:
             diagnostics['app_association_missing']+=1;continue
@@ -103,7 +124,8 @@ def decompose(ca, rows, run):
             render=u.get('render'),**values))
     path_values=metrics['present_to_dpu_ms']
     complete=(bool(frames) and len(frames)==run['frames_submitted']
-              and ca.get('complete_record_stream',False) and run.get('complete_interval',False))
+              and ca.get('complete_record_stream',False) and run.get('complete_interval',False)
+              and not diagnostics)
     within=sum(value<=5 for value in path_values)
     target=dict(limit_ms=5,scope='present return to DPU entry; IPC nested, not additive',
         complete_frame_coverage=complete,within_target_frames=within,
@@ -112,6 +134,7 @@ def decompose(ca, rows, run):
         verdict='failed' if within<len(frames) else 'passed_short_capture' if complete else 'incomplete',
         panel_scan_qualified=False,sustained_120fps_qualified=False)
     return dict(run_id=run['run_id'],matched_frames=len(frames),submitted_frames=run['frames_submitted'],
+        frame_selection='recorded run epoch and measured CSV rows' if measured is not None else 'submit time interval; measured CSV not supplied',
         target=target,
         selected_samples_matched=len(frames),metrics={k:dict(distribution(v),over_5ms=sum(x>5 for x in v)) for k,v in metrics.items()},
         busy_count_distribution=dict(Counter(f['failed_can'] for f in frames)),
@@ -126,7 +149,10 @@ def main():
     a=p.parse_args();meta=json.loads((a.input/'metadata.json').read_text());raw=(a.input/'records.bin').read_bytes()
     validate_export(meta,raw,meta['window']);rows=[dict(zip(FIELDS,r)) for r in WIRE.iter_unpack(raw)]
     ca=json.loads(a.ca_analysis.read_text()) if a.ca_analysis else analyze(rows,meta)
-    result=decompose(ca,rows,json.loads(a.run.read_text()))
+    run=json.loads(a.run.read_text())
+    csv_path=a.run.parent/run['frame_csv'] if run.get('frame_csv') else None
+    benchmark_rows=list(csv.DictReader(csv_path.read_text().splitlines())) if csv_path and csv_path.exists() else None
+    result=decompose(ca,rows,run,benchmark_rows)
     a.output.write_bytes((json.dumps(result,indent=2)+'\n').encode())
     print(json.dumps({k:v for k,v in result.items() if k!='frames'},indent=2))
 

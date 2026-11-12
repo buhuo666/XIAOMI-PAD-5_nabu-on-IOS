@@ -816,16 +816,46 @@ bool NativeAdrenoScheduler::addSurfaceAlias(void *context, uint64_t handle,
 IOReturn NativeAdrenoScheduler::addBackingRange(NativeAdrenoSurfaceBacking *backing,
     uint64_t handle,size_t first,size_t bytes)
 {
-    if(backing->rangeCount==NativeAdrenoAliasRangeLimit) {
-        return kIOReturnNoResources;
+    // Physical fragmentation does not imply a gap in one GPU mapping's byte
+    // offsets. Cache their exact union once, rather than rebuilding one read
+    // reservation per physical extent on every display use. Keep full mapping
+    // handles (including their generation) and never join across a real gap.
+    auto **link=&backing->ranges;
+    while(*link && ((*link)->handle<handle ||
+        ((*link)->handle==handle && (*link)->first+(*link)->bytes<first))) {
+        link=&(*link)->next;
     }
-    auto *range=IONew(NativeAdrenoSurfaceBacking::Range,1);
-    if(!range) {
-        return kIOReturnNoMemory;
+    const size_t end=first+bytes;
+    auto *range=*link;
+    if(range && range->handle==handle && range->first<=end) {
+        const size_t rangeEnd=range->first+range->bytes;
+        const size_t mergedFirst=range->first<first?range->first:first;
+        size_t mergedEnd=rangeEnd>end?rangeEnd:end;
+        while(range->next && range->next->handle==handle && range->next->first<=mergedEnd) {
+            auto *next=range->next;
+            const size_t nextEnd=next->first+next->bytes;
+            if(nextEnd>mergedEnd) mergedEnd=nextEnd;
+            range->next=next->next;
+            IODelete(next,NativeAdrenoSurfaceBacking::Range,1);
+            --backing->rangeCount;
+        }
+        range->first=mergedFirst;
+        range->bytes=mergedEnd-mergedFirst;
+    } else {
+        if(backing->rangeCount==NativeAdrenoAliasRangeLimit) {
+            return kIOReturnNoResources;
+        }
+        range=IONew(NativeAdrenoSurfaceBacking::Range,1);
+        if(!range) {
+            return kIOReturnNoMemory;
+        }
+        *range={handle,first,bytes,*link};
+        *link=range;
+        ++backing->rangeCount;
     }
-    *range={handle,first,bytes,backing->ranges};
-    backing->ranges=range;
-    ++backing->rangeCount;
+    // Already active reads own separate reservations and mapping references.
+    // Reserve the original newly discovered bytes for every such read even
+    // when its cached interval merged; do not rewrite a published reservation.
     for(NativeAdrenoSurfaceRead *read:reads_) {
         if(read && read->backing==backing && !read->cancelled) {
             const IOReturn status=addReadRange(read,handle,first,bytes);
@@ -994,6 +1024,8 @@ IOReturn NativeAdrenoScheduler::acquireRead(IOMemoryDescriptor *memory,
         NabuGpuTrace::record(NabuGpuTrace::ProducerWriter, read->traceIdentity,
             job.completion, job.hardware, job.queue);
     }
+    NabuGpuTrace::record(NabuGpuTrace::ProducerReadShape, read->traceIdentity,
+        backing->segmentCount, backing->rangeCount, read->storageCount);
     *out = read;
     return read->status;
 }

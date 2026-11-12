@@ -70,6 +70,17 @@ def main():
     slow['ca']['calls'][0]['end']['time_us']=6500;slow['app']['frames'][0]['dpu_present_us']=6100
     result=decompose(slow,[],run)
     assert result['target']['verdict']=='failed' and result['target']['over_target_frames']==1
+    selected=deepcopy(ca);selected['app']['frames'][0].update(pid=42,frame_id=(3<<32)|1)
+    warmup=deepcopy(selected['app']['frames'][0]);warmup['frame_id']=3<<32
+    selected['app']['frames'].append(warmup)
+    selected['user_markers']=[dict(event=88,pid=42,identity=3,a=10000,b=0)]
+    csv_rows=[dict(frame='0',measured='0',submit_s='.0004',surface_id='40'),
+              dict(frame='1',measured='1',submit_s='.0005',surface_id='40')]
+    result=decompose(selected,[],dict(run,requested_duration_s=.01),csv_rows)
+    assert result['matched_frames']==1 and result['frames'][0]['frame_id']==(3<<32)|1
+    assert result['target']['complete_frame_coverage']
+    selected['user_markers']=[]
+    assert decompose(selected,[],dict(run,requested_duration_s=.01),csv_rows)['target']['verdict']=='incomplete'
     print('CA path attribution, complete capture and 5 ms target checks passed')
 
 

@@ -77,7 +77,7 @@ struct WaitTiming {
     uint64_t calls, sleeps, timeouts, errors;
 };
 struct Held {
-    enum Kind { Pixels, ClearInactiveLayer1 };
+    enum Kind { Pixels, ClearInactiveLayer1, ClearInheritedLayer0 };
     Kind kind;
     MiniIOSurface *surface;
     void *read;
@@ -352,6 +352,29 @@ static IOReturn acquire(Binding *b, MiniIOSurface *s, Held &h) {
     h.leaseIdentity = h.ops->traceIdentity ? h.ops->traceIdentity(h.read) : 0;
     return kIOReturnSuccess; // lease captured; the worker waits for its writers
 }
+static IOReturn inheritInactiveLayer1Clear(Binding *b, Held &h) {
+    // The FIFO worker alone changes held resources. A partial layer1 commit
+    // inherits the current layer0 pixels, including their completed producer
+    // snapshot. Do not acquire a new read: a future writer may already wait on
+    // this active read, and waiting for it here would form a retirement cycle.
+    for (Held &current : b->held) {
+        if (!current.surface || current.mapping.iova != b->scan.current_iova) continue;
+        h.surface = MiniIOSurfaceCopy(current.surface->sid);
+        if (!h.surface) return kIOReturnNotFound;
+        MiniIOSurfaceDisplayUse(h.surface, 1);
+        h.kind = Held::ClearInheritedLayer0;
+        h.ops = current.ops;
+        h.leaseIdentity = current.leaseIdentity;
+        h.producerFence = current.producerFence;
+        // h.read remains null: the old Held exclusively owns the live lease
+        // until the replacement scan has really been accepted. Failed new
+        // mappings therefore cannot double-release or unblock that lease.
+        traceFrame(nowUs(), NabuGpuTrace::InactiveLayerClearInherited, h.swap,
+            current.swap, current.surface->sid, current.leaseIdentity);
+        break;
+    }
+    return kIOReturnSuccess; // The initial GOP has no inherited surface lease.
+}
 static IOReturn waitProducer(Binding *b, Held &h) {
     IOReturn result;
     uint64_t deadline; clock_interval_to_deadline(WaitMs, kMillisecondScale, &deadline);
@@ -549,37 +572,46 @@ static IOReturn flip(Binding *b, Held &h, bool trace, Scan::Acceptance *evidence
         oldActiveUs = previous.acceptedAt ? acceptedAt - previous.acceptedAt : 0;
         const auto oldSwap = previous.swap;
         const uint64_t oldSid = previous.surface->sid, oldToken = previous.mapping.token;
+        if (held.kind == Held::ClearInheritedLayer0) {
+            // The unchanged primary is now owned by this accepted transaction.
+            // Keep its read protection continuous while releasing the old
+            // mapping and old surface reference. This transfers ownership,
+            // rather than fabricating completion of a still-active read.
+            held.read = previous.read;
+            previous.read = nullptr;
+        }
         drop(previous);
         finishRecord(b, oldSwap, Swap::Retired);
         traceFrame(nowUs(), NabuGpuTrace::Retired, oldSwap, oldSid, oldToken, held.swap);
     }
-    ++b->accepted;
+    if (held.kind == Held::Pixels) ++b->accepted;
     b->lastDisplayTime = mach_absolute_time();
     const uint64_t retireUs = nowUs() - retireAt;
     publication.complete();
-    logFrameTiming(b, held, initUs, mapUs, scanUs, retireUs, oldActiveUs);
-    if (b->accepted <= 8 || !(b->accepted % 120))
+    if (held.kind == Held::Pixels) logFrameTiming(b, held, initUs, mapUs, scanUs, retireUs, oldActiveUs);
+    if (held.kind == Held::Pixels && (b->accepted <= 8 || !(b->accepted % 120)))
         IOLog("NABU DPU: displayed=%llu swap=%u surface=%u iova=%#x frame=%u/%u retired-slot=%u irq=%llu vsync=%llu copied=0\n",
             b->accepted, held.swap, s->sid, held.mapping.iova,
             accepted.observed.frame[0], accepted.observed.frame[1], old, irqCount, vblankSequence);
     return kIOReturnSuccess;
 }
-static void completeInactiveLayer1Clear(Binding *b, uint32_t id) {
-    // The single FIFO worker has finished all preceding work. Logical layer1
-    // is never enabled by this backend (VIG1 is the right half of layer0).
-    // This transaction owns no pixel resources; retiring it must not retire
-    // or touch the existing layer0 transaction, mapping or producer read lease.
+static void completeInactiveLayer1Clear(Binding *b, uint32_t id,
+                                       IOReturn operationResult = kIOReturnSuccess, bool inherited = false) {
+    // A GOP-only clear owns no resources. With a live layer0, flip() has made
+    // this transaction Displayed and retained its inherited read; it retires
+    // only after a subsequent real replacement, like an ordinary pixel swap.
     IOLockLock(b->stateLock);
     auto r = b->ledger.find(id); // Queued entries cannot be evicted.
-    const IOReturn result = b->failure ? b->failure : b->ledger.failedThrough(r->order);
-    r->phase = result ? Swap::Failed : Swap::Retired;
+    const IOReturn result = operationResult ? operationResult : b->failure ? b->failure : b->ledger.failedThrough(r->order);
+    if (result) r->phase = Swap::Failed;
+    else if (!inherited) r->phase = Swap::Retired;
     r->error = result;
     const uint64_t count = result ? b->inactiveLayer1Clears : ++b->inactiveLayer1Clears;
     IOLockWakeup(b->stateLock, b, false);
     IOLockUnlock(b->stateLock);
     traceFrame(nowUs(), NabuGpuTrace::InactiveLayerClearComplete, id, 2, uint32_t(result), count);
     if (result || count == 1 || !(count % 120))
-        IOLog("NABU DPU: inactive-layer1-clear swap=%u completed=%llu status=%#x; layer0 retained\n", id, count, result);
+        IOLog("NABU DPU: inactive-layer1-clear swap=%u completed=%llu status=%#x inherited=%u; layer0 retained\n", id, count, result, inherited);
 }
 static void worker(void *cookie, wait_result_t) {
     auto b = static_cast<Binding *>(cookie);
@@ -595,16 +627,20 @@ static void worker(void *cookie, wait_result_t) {
         IOLockUnlock(b->stateLock);
         const uint32_t id = held.swap;
         if (held.kind == Held::ClearInactiveLayer1) {
-            completeInactiveLayer1Clear(b, id);
-            continue;
+            if (!result) result = inheritInactiveLayer1Clear(b, held);
+            if (result || !held.surface) {
+                completeInactiveLayer1Clear(b, id, result);
+                continue;
+            }
         }
+        const bool inherited = held.kind == Held::ClearInheritedLayer0;
         const uint32_t sid = held.surface->sid;
         traceFrame(nowUs(), NabuGpuTrace::DisplayWorker, id, sid, held.queueDepth, held.leaseIdentity);
         const bool trace = !b->firstWorkerTraced && NabuDpuCheckpoint::enabled();
         b->firstWorkerTraced = true;
         if (trace) NabuDpuCheckpoint::record("producer-wait-enter");
         const uint64_t began = nowUs();
-        if (!result) result = waitProducer(b, held);
+        if (!result && !inherited) result = waitProducer(b, held);
         held.producerUs = nowUs() - began;
         traceFrame(nowUs(), NabuGpuTrace::ProducerReady, id,
             held.leaseIdentity, held.producerFence, uint32_t(result));
@@ -623,6 +659,7 @@ static void worker(void *cookie, wait_result_t) {
             IOLog("NABU DPU: swap=%u surface=%u failed=%#x scan-phase=%u; no completion fabricated\n",
                 id, sid, result, b->scan.phase);
         }
+        if (inherited) completeInactiveLayer1Clear(b, id, result, true);
         if (trace) NabuDpuCheckpoint::record("first-frame-worker-returned", result);
     }
 }

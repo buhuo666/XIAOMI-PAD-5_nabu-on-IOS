@@ -78,7 +78,9 @@ struct MiniIOSurface {
         uint32_t planeCount=0,bytesPerElement=4,bytesPerRow=6400,offset=0,allocSize=16384000;} info;
     struct Shared {bool tiled=false;} sharedData;
     uint32_t sid=0;std::atomic<unsigned> refs{0},leases{0};
-    Gate *producerGate=nullptr,*acceptGate=nullptr;IOReturn producerResult=0,acceptResult=0;
+    Gate *producerGate=nullptr,*acceptGate=nullptr,*inheritGate=nullptr;
+    IOReturn producerResult=0,acceptResult=0,inheritResult=0;
+    std::atomic<unsigned> displayUses{0};
     Shared *shared(){return &sharedData;}void *pixels(){assert(false);return nullptr;}
 };
 struct NabuDpuProducerOps {};
@@ -91,6 +93,9 @@ MiniIOSurface *MiniIOSurfaceCopy(uint32_t sid){
 }
 MiniIOSurface *MiniIOSurfaceCreateSimple(uint32_t,uint32_t,uint32_t){assert(false);return nullptr;}
 void MiniIOSurfaceDrop(MiniIOSurface *s){assert(s->refs);--s->refs;}
+void MiniIOSurfaceDisplayUse(MiniIOSurface *s,int change){
+    if(change<0)assert(s->displayUses);s->displayUses+=change;
+}
 void FlushPoC_DcacheRegion(vm_offset_t,unsigned){assert(false);}
 bool barrier(void *){assert(false);return false;}
 void IOLog(const char *,...){}
@@ -108,7 +113,7 @@ namespace Scan=NabuDpuScanout;namespace PT=NabuDpuPageTable;namespace Swap=NabuD
 __STRUCTS__
 struct Binding {
     IOLock *submitLock=IOLockAlloc(),*stateLock=IOLockAlloc();
-    Swap::Ledger ledger;Held queue[2]{},active{};unsigned queueFirst=0,queueCount=0;
+    Swap::Ledger ledger;Held queue[2]{},held[PT::SlotCount]{};Held &active=held[0];unsigned queueFirst=0,queueCount=0;
     MiniIOSurface *blank=nullptr;Scan::State scan{};NabuDpuVBlank::Binding *clock=nullptr;
     NabuDpuVBlank::Sample sample{};
     uint64_t accepted=0,inactiveLayer1Clears=0,producerWaitUs=0,lastPresentAt=0,lastDisplayTime=0;
@@ -116,17 +121,26 @@ struct Binding {
 };
 __FINISH__
 static IOReturn acquire(Binding *,MiniIOSurface *s,Held &h){
-    ++acquires;++s->leases;h.surface=s;h.read=s;h.mapping.token=s->sid;return 0;
+    ++acquires;++s->leases;MiniIOSurfaceDisplayUse(s,1);h.surface=s;h.read=s;return 0;
 }
-static void drop(Held &h){assert(h.surface && h.surface->leases);++drops;--h.surface->leases;MiniIOSurfaceDrop(h.surface);h={};}
+static void drop(Held &h){
+    assert(h.surface);++drops;if(h.read){assert(h.surface->leases);--h.surface->leases;}
+    MiniIOSurfaceDisplayUse(h.surface,-1);MiniIOSurfaceDrop(h.surface);h={};
+}
 static IOReturn waitProducer(Binding *,Held &h){
     ++producerWaits;if(h.surface->producerGate)h.surface->producerGate->block();return h.surface->producerResult;
 }
 static IOReturn flip(Binding *b,Held &h,bool){
-    ++flipCalls;if(h.surface->acceptGate)h.surface->acceptGate->block();
-    if(h.surface->acceptResult)return h.surface->acceptResult;
+    ++flipCalls;const bool inherited=h.kind==Held::ClearInheritedLayer0;
+    auto gate=inherited?h.surface->inheritGate:h.surface->acceptGate;
+    if(gate)gate->block();
+    const auto result=inherited?h.surface->inheritResult:h.surface->acceptResult;
+    if(result)return result;
     Held old;
-    IOLockLock(b->stateLock);old=b->active;b->active=h;h={};++b->accepted;
+    IOLockLock(b->stateLock);old=b->active;
+    if(inherited){assert(!h.read&&old.read);h.read=old.read;old.read=nullptr;}
+    b->active=h;h={};if(!inherited)++b->accepted;
+    b->active.mapping.token=b->scan.current_sequence+1;b->active.mapping.iova=b->active.surface->sid;
     b->scan.current_iova=b->active.surface->sid;++b->scan.current_sequence;
     b->lastDisplayTime=mach_absolute_time();IOLockUnlock(b->stateLock);
     finishRecord(b,b->active.swap,Swap::Displayed);
@@ -152,7 +166,8 @@ struct Fixture {
         copies=acquires=drops=producerWaits=flipCalls=acceptedTrace=0;
         pixelPresents=pixelQueued=clearQueued=clearCompleted=clearFailed=0;
         for(unsigned i=0;i<2;++i){auto &s=surfaces[i];assert(!s.refs&&!s.leases);
-            s.sid=36+i;s.producerGate=s.acceptGate=nullptr;s.producerResult=s.acceptResult=0;}
+            s.sid=36+i;s.producerGate=s.acceptGate=s.inheritGate=nullptr;
+            s.producerResult=s.acceptResult=s.inheritResult=0;assert(!s.displayUses);}
     }
     void start(){workerThread=std::thread([&]{try{worker(&b,0);}catch(const StopWorker &){}});}
     ~Fixture(){
@@ -165,6 +180,7 @@ struct Fixture {
     IOReturn send(const Request &r){return present(&b,r.data.data(),r.data.size());}
     uint32_t phase(uint32_t id){std::lock_guard<std::mutex> l(b.stateLock->mutex);auto r=b.ledger.find(id);return r?r->phase:Swap::Empty;}
     void retired(uint32_t id){eventually([&]{return phase(id)==Swap::Retired;});}
+    void displayed(uint32_t id){eventually([&]{return phase(id)==Swap::Displayed;});}
     void failed(uint32_t id){eventually([&]{return phase(id)==Swap::Failed;});}
 };
 void shape_scope(){
@@ -181,8 +197,9 @@ void shape_scope(){
     assert(copies==0&&acquires==0&&flipCalls==0&&drops==0);
 }
 void ordered_a_n_b(){
-    Fixture f;Gate producerA,acceptA,acceptB;surfaces[0].producerGate=&producerA;
+    Fixture f;Gate producerA,acceptA,acceptClear,acceptB;surfaces[0].producerGate=&producerA;
     surfaces[0].acceptGate=&acceptA;surfaces[1].acceptGate=&acceptB;
+    surfaces[0].inheritGate=&acceptClear;
     Request a(100),n(9),b(4);a.pixel(36);b.pixel(37);f.start();assert(f.send(a)==0);producerA.wait();
     assert(f.send(n)==0&&f.phase(9)==Swap::Queued);
     assert(f.send(n)==kIOReturnBusy); // full-ID duplicate, independent of numeric order
@@ -193,16 +210,20 @@ void ordered_a_n_b(){
     eventually([&]{return f.b.stateLock->timedSleeps>sleepCount;});
     assert(f.send(b)==0);producerA.release();acceptA.wait();
     assert(f.phase(9)==Swap::Queued&&oldDrain.wait_for(5ms)==std::future_status::timeout);
-    acceptA.release();acceptB.wait();f.retired(9);
+    acceptA.release();acceptClear.wait();
+    assert(f.phase(100)==Swap::Displayed&&f.phase(9)==Swap::Queued);
+    assert(wait(&f.b,100,0x80000000,0)==kIOReturnBusy&&surfaces[0].leases==1);
+    assert(f.b.active.swap==100&&copies==3&&acquires==2&&producerWaits==1);
+    acceptClear.release();acceptB.wait();f.retired(100);f.displayed(9);
     assert(oldDrain.wait_for(1s)==std::future_status::ready&&oldDrain.get()==0); // B was after entry
-    assert(wait(&f.b,9,0x80000000,0)==0&&wait(&f.b,9,0x80000001,0)==0);
-    assert(wait(&f.b,100,0x80000000,0)==kIOReturnBusy&&wait(&f.b,100,0x80000001,0)==0);
+    assert(wait(&f.b,9,0x80000000,0)==kIOReturnBusy&&wait(&f.b,9,0x80000001,0)==0);
+    assert(wait(&f.b,100,0x80000000,0)==0&&wait(&f.b,100,0x80000001,0)==0);
     assert(wait(&f.b,0,0x80000002,0)==kIOReturnBusy); // a new drain includes B
-    assert(f.b.active.swap==100&&f.b.active.mapping.token==36&&f.b.scan.current_iova==36);
-    assert(f.b.accepted==1&&f.b.inactiveLayer1Clears==1&&f.b.scan.current_sequence==1);
-    assert(surfaces[0].leases==1&&drops==0&&copies==2&&acquires==2&&producerWaits==2&&acceptedTrace==1);
-    acceptB.release();f.retired(100);
-    assert(wait(&f.b,0,2,1000)==0&&f.b.active.swap==4&&f.b.accepted==2&&drops==1);
+    assert(f.b.active.swap==9&&f.b.active.mapping.token==2&&f.b.scan.current_iova==36);
+    assert(f.b.accepted==1&&f.b.inactiveLayer1Clears==1&&f.b.scan.current_sequence==2);
+    assert(surfaces[0].leases==1&&drops==1&&copies==3&&acquires==2&&producerWaits==2&&acceptedTrace==2);
+    acceptB.release();f.retired(9);
+    assert(wait(&f.b,0,2,1000)==0&&f.b.active.swap==4&&f.b.accepted==2&&drops==2);
 }
 void failures(){
     for(bool producerFailure:{false,true}){
@@ -224,9 +245,10 @@ void backpressure(){
     auto third=std::async(std::launch::async,[&]{return f.send(n3);});
     eventually([&]{return f.b.stateLock->timedSleeps>sleeps;});
     assert(third.wait_for(5ms)==std::future_status::timeout&&f.phase(4)==Swap::Empty);
-    gate.release();assert(third.get()==0);f.retired(4);
-    assert(f.b.inactiveLayer1Clears==3&&f.b.accepted==1&&f.b.active.swap==1);
-    assert(copies==1&&acquires==1&&producerWaits==1&&flipCalls==1&&drops==0);
+    gate.release();assert(third.get()==0);f.displayed(4);f.retired(3);
+    eventually([&]{return clearCompleted==3;});
+    assert(f.b.inactiveLayer1Clears==3&&f.b.accepted==1&&f.b.active.swap==4);
+    assert(copies==4&&acquires==1&&producerWaits==1&&flipCalls==4&&drops==3);
 }
 void ledger_capacity_and_reuse(){
     Fixture f;for(uint32_t id=1;id<=64;++id)assert(f.b.ledger.insert(id));
@@ -240,17 +262,33 @@ void ledger_capacity_and_reuse(){
 }
 void active_pixel_and_clear_stream(){
     Fixture f;Request a(1);a.pixel(36);f.start();assert(f.send(a)==0);assert(wait(&f.b,1,1,1000)==0);
-    const auto lastPixel=f.b.lastPresentAt,lastDisplay=f.b.lastDisplayTime;
-    for(uint32_t id=2;id<=150;++id){Request n(id);assert(f.send(n)==0);f.retired(id);}
-    assert(f.b.active.swap==1&&f.b.active.mapping.token==36&&f.b.scan.current_sequence==1);
-    assert(f.b.inactiveLayer1Clears==149&&f.b.accepted==1&&f.b.lastPresentAt==lastPixel&&f.b.lastDisplayTime==lastDisplay);
-    assert(wait(&f.b,1,0x80000000,0)==kIOReturnBusy&&wait(&f.b,0,0x80000002,0)==0);
-    assert(surfaces[0].leases==1&&copies==1&&acquires==1&&producerWaits==1&&flipCalls==1&&acceptedTrace==1&&!drops);
+    const auto lastPixel=f.b.lastPresentAt;
+    for(uint32_t id=2;id<=150;++id){Request n(id);assert(f.send(n)==0);f.displayed(id);f.retired(id-1);}
+    assert(f.b.active.swap==150&&f.b.active.mapping.token==150&&f.b.scan.current_sequence==150);
+    assert(f.b.inactiveLayer1Clears==149&&f.b.accepted==1&&f.b.lastPresentAt==lastPixel);
+    assert(wait(&f.b,150,0x80000000,0)==kIOReturnBusy&&wait(&f.b,0,0x80000002,0)==0);
+    assert(surfaces[0].leases==1&&copies==150&&acquires==1&&producerWaits==1&&flipCalls==150&&acceptedTrace==150&&drops==149);
     eventually([&]{return clearCompleted==149;});
     assert(pixelPresents==1&&pixelQueued==1&&clearQueued==149&&clearFailed==0);
 }
+void future_writer_and_inherited_failure(){
+    for(bool fail:{false,true}){
+        Fixture f;Request a(1),n(2);a.pixel(36);f.start();assert(f.send(a)==0);f.displayed(1);
+        // A new producer snapshot would wait for a writer blocked by this old
+        // read. Inheritance must keep the same lease and never query it again.
+        Gate gate;surfaces[0].producerResult=kIOReturnBusy;surfaces[0].inheritGate=&gate;
+        surfaces[0].inheritResult=fail?kIOReturnIOError:0;
+        assert(f.send(n)==0);gate.wait();
+        assert(surfaces[0].leases==1&&acquires==1&&producerWaits==1&&f.b.active.swap==1);
+        gate.release();
+        if(fail){f.failed(2);assert(f.phase(1)==Swap::Displayed&&f.b.active.swap==1);}
+        else {f.displayed(2);f.retired(1);assert(f.b.active.swap==2);}
+        assert(surfaces[0].leases==1&&acquires==1&&producerWaits==1);
+    }
+}
 int main(){shape_scope();ordered_a_n_b();failures();backpressure();ledger_capacity_and_reuse();active_pixel_and_clear_stream();
-    puts("PASS 7 actual SwapEnd/FIFO/clear/SwapWait groups: exact shape, A-N-B, two failure origins, backpressure, ledger capacity/reuse, retained active scanout");}
+    future_writer_and_inherited_failure();
+    puts("PASS 9 actual SwapEnd/FIFO/clear/SwapWait groups: exact shape, real inherited A-N-B, failure origins, backpressure, ledger reuse, repeated clear, future-writer lease ownership");}
 '''
 
 
@@ -262,7 +300,7 @@ def harness():
                         ('struct Duration', 'struct WaitTiming', 'struct Held'))
     finish = body(source, 'static void finishRecord(')
     functions = '\n'.join(body(source, signature) for signature in
-                          ('static void addDuration(', 'static void completeInactiveLayer1Clear(',
+                          ('static void addDuration(', 'static IOReturn inheritInactiveLayer1Clear(', 'static void completeInactiveLayer1Clear(',
                            'static void worker(void *cookie,', 'static IOReturn rejectPresent(', 'IOReturn present(', 'IOReturn wait('))
     return (PRELUDE.replace('__SCALARS__', scalars).replace('__STRUCTS__', structs)
             .replace('__FINISH__', finish).replace('__FUNCTIONS__', functions) + TESTS)
@@ -283,9 +321,9 @@ def main():
         (out / (name + '.log')).write_bytes(result.stdout + result.stderr)
         if result.returncode:raise RuntimeError((result.stdout + result.stderr).decode(errors='replace')[-8000:])
     host_result = result.stdout.decode('utf-8', errors='replace').strip()
-    report = dict(passed=True, actual_functions=['present', 'worker', 'clearsInactiveLayer1',
+    report = dict(passed=True, actual_functions=['present', 'worker', 'clearsInactiveLayer1', 'inheritInactiveLayer1Clear',
                   'completeInactiveLayer1Clear', 'finishRecord', 'wait'], sanitizer=['address', 'undefined'],
-                  groups=7, exact_mask=2, software_pixel_boundaries=True, device_executed=False,
+                  groups=9, exact_mask=2, software_pixel_boundaries=True, device_executed=False,
                   separate_clear_trace_events=True, result=host_result)
     (out/'report.json').write_text(json.dumps(report, indent=2)+'\n');print(json.dumps(report))
 

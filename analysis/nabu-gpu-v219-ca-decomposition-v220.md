@@ -46,7 +46,17 @@ GPU220 同时在现有 begin/finish 的 98–101 marker 中记录 XNU `thread_ge
 
 原版 `Server::render_for_time` 的 begin 调用在 `0x18846cd24`，render_update 在 `0x18846ce5c`，finish 在 `0x18846d144`。IOMFBServer 的 render_update vtable 指向基础 Server 软件路径，EAGLServer 指向另一实现；尚未读取运行实例的 server vtable，不能据静态表断言本轮使用软件渲染。相关有界 Capstone 解码在 `analysis/ca-update-gap-20f66-v220/`，来自本地 20F66 cache 字节，不是 REA 运行结果。
 
-这些仅证明编译和模拟时序，GPU220 尚需完整 CI、链接检查与实机 15 秒对照。不能预先宣称已省掉 7.83ms，更不能宣称已到 5ms/120fps。
+GPU220 完整内核 CI `43138438550`（源码 `32ed2a5`）已成功，65 对象重链、实际分支和正式加载器检查通过。仍需实机 15 秒对照，不能预先宣称已省掉 7.83ms，更不能宣称已到 5ms/120fps。
+
+## 续接：实际渲染边界与统一验收
+
+用户态源码 `194e69b` 增加两个已由 20F66 字节确认的 Server::render_update 数据表槽观察：IOMFB `0x1d57ddc10→0x18846bc6c`、EAGL `0x1d57edde0→0x1882d770c`。不修改执行页或渲染决策；116/117 以 update 为 identity，保留 server、入口 frame/flags、原函数地址/原始 x0；118 记录 server/SWContext/EAGL context vptr。所有对象读取均发生在原调用前，退出仅使用已捕获标量。原参数、flags 修改、64 位返回值、errno、空上下文与扩展对象大小测试通过（60 markers，ASan/UBSan）。完整安装 capability 应为 15，运行证据仍待采集。
+
+正式 GPU219 的 626 个 begin-return→finish 区间内，每段恰有一个 queue49 GPU 工作，但关联到应用的下一帧；区间内没有其他队列的提交，不能将该 GPU 工作归因于 CA 合成。原版 Renderer::render 唯一显式 usleep 是诊断分支下的 100000us，与正式 6.586ms 不符。SWContext 确有逐矩形 CGBlt_fillBytes 清屏路径，但没有运行证据证明该场景每帧执行全屏软件清空。
+
+`tools/analyze_nabu_ca_path.py` 现在按同进程、线程、update、display、frame、包含 DPU 调用的 finish 区间及选中 sample 关联，不依赖最近两次 finish 或单独微秒时间戳。并发同时间戳、重叠 finish、缺失边界、错误线程、丢记录和缺帧均有回归检查；缺失的 CPU/render 标记保留未知。5ms 验收直接计算每帧 present-return→DPU-entry，另报平均/P95/P99、超过目标的帧数与覆盖率；IPC 不相加。短采样通过不等于面板扫描或持续120fps通过。
+
+旧样本重新分析仍完整匹配626帧，平均27.4008ms、P95 28.875ms、P99 29.049ms，626/626超5ms。present→首次can 4.9683ms，首次can→成功can返回15.3230ms，成功can→begin 0.3819ms。原先0.3262ms退休差使用SwapWait边界；统一脚本使用can返回边界，得到0.3220ms，二者相差约4us来自can尾部，不能误当性能变化。
 
 ## 后续工作与验收
 

@@ -34,6 +34,22 @@ def main():
     assert display['metrics']['present_to_accept_observed_ms']['mean_ms'] == 12
     assert display['metrics']['accepted_scan_lifetime_ms']['mean_ms'] == 20
     assert len(display['transactions'][0]['writer_jobs']) == 1
+    assert display['metrics']['present_to_scan_ms']['mean_ms']==4
+    assert display['scan_phase']['compared_transactions']==1
+    assert display['scan_phase']['submitted_after_first_vblank']==0
+    crossed=analyze(rows+[row(39,11500,99,9,99,99)],metadata)['display']
+    assert crossed['scan_phase']['submitted_after_first_vblank']==1
+    assert crossed['transactions'][0]['scan_after_first_vblank_ms']==.5
+    no_edges=analyze([r for r in rows if r['event']!=39],metadata)['display']
+    assert no_edges['scan_phase']['compared_transactions']==0
+    assert no_edges['transactions'][0]['scan_after_first_vblank'] is None
+    inherited=analyze(rows+[row(54,8400,99,4000,1,1),row(55,8500,41,40,500,99)],metadata)['display']
+    inherited_frame=inherited['transactions'][0]
+    assert inherited_frame['producer_read_shape']==dict(physical_segments=4000,mapping_ranges=1,initial_reservations=1)
+    assert inherited_frame['inherited_content'] and inherited_frame['inherited_layer0_from_swap']==40
+    assert inherited['inactive_layer_clears']['inherited_scan_acceptances']==1
+    assert inherited['hardware_accepted_transactions']==2 and inherited['accepted_transactions']==1
+    assert inherited['unique_content_fps'] is None
     assert display['native_notification_metrics']['irq_to_native_notification_ms']['count'] == 2
     overflow = analyze(rows, dict(metadata,dropped=3))
     assert not overflow['complete_record_stream'] and overflow['display']['accepted_transaction_rate'] is None

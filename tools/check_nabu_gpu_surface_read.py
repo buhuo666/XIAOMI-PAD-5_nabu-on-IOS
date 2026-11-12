@@ -163,6 +163,7 @@ public:
 
 HARNESS = r'''
 #include "NativeAdrenoScheduler.h"
+#include "NabuGpuTrace.h"
 #include <cstdio>
 #include <memory>
 extern "C" {uint64_t (*native_adreno_vm_now_us)(void)=nullptr;}
@@ -302,11 +303,104 @@ static void backing_index_rebuilt_after_release(){
     f.accept(4);assert(f.ring.submitted==0);f.scheduler.releaseRead(r);
     assert(f.ring.submitted==1);f.finish();
 }
+static void fragmented_mapping_uses_one_reservation(){
+    Fixture f;std::vector<HostSegment> segments;
+    for(unsigned at=0;at<4000;++at)segments.push_back({0x400000+uint64_t(at)*8192,4096});
+    assert(f.vm.map(2,segments)==0);auto*m=f.surface(segments);NativeAdrenoSurfaceRead*r=nullptr;
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    const auto shape=NabuGpuTrace::shapes.back();
+    assert(shape.segments==4000&&shape.ranges==1&&shape.storage==1);
+    assert(f.vm.mappings.at(2).references==1); // One real hold, not 4000 duplicate holds.
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,3999*4096,4096);
+    assert(f.ring.submitted==0&&f.vm.unmap(2)==kIOReturnBusy);
+    f.scheduler.releaseRead(r);assert(f.ring.submitted==1);f.finish();
+    const auto queries=m->rawQueries;
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0&&m->rawQueries==queries);
+    assert(NabuGpuTrace::shapes.back().storage==1&&f.vm.mappings.at(2).references==1);
+    f.scheduler.releaseRead(r);
+}
+static void unsorted_overlap_union_preserves_holes(){
+    Fixture f;assert(f.vm.map(2,{{0x400000,32768}})==0);
+    auto*m=f.surface({{0x403000,4096},{0x401000,4096},{0x400000,4096},
+                     {0x400800,6144},{0x402000,4096},{0x406000,4096}});
+    NativeAdrenoSurfaceRead*r=nullptr;assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==2&&f.vm.mappings.at(2).references==2);
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,16384,8192); // Real hole stays writable.
+    assert(f.ring.submitted==1);f.finish();
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,28672,4096); // Exact end is outside.
+    assert(f.ring.submitted==2);f.finish();
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,0,4096);
+    f.accept(2,NativeAdrenoResourceWrite,1,nullptr,24576,4096);
+    assert(f.ring.submitted==2);f.scheduler.releaseRead(r);
+    assert(f.ring.submitted==4);f.finish();
+}
+static void union_keeps_mapping_handles_separate(){
+    Fixture f;assert(f.vm.map(2,{{0x400000,8192}})==0);assert(f.vm.map(3,{{0x400000,8192}})==0);
+    auto*m=f.surface({{0x401000,4096},{0x400000,4096}});NativeAdrenoSurfaceRead*r=nullptr;
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==2);
+    assert(f.vm.mappings.at(2).references==1&&f.vm.mappings.at(3).references==1);
+    f.accept(2,NativeAdrenoResourceWrite,0);f.accept(3,NativeAdrenoResourceWrite,1);
+    assert(f.ring.submitted==0);f.scheduler.releaseRead(r);assert(f.ring.submitted==2);f.finish();
+}
+static void cache_merge_keeps_active_reservations(){
+    Fixture f;auto*m=f.surface({{0x401000,4096},{0x400000,4096}});
+    NativeAdrenoSurfaceRead*a=nullptr,*b=nullptr;
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&a)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==0);
+    assert(f.vm.map(2,{{0x400000,4096},{0x401000,4096}})==0);
+    assert(f.vm.mappings.at(2).references==2); // Both newly added extents reached the active read.
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&b)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==1&&NabuGpuTrace::shapes.back().storage==1);
+    assert(f.vm.mappings.at(2).references==3); // Existing two reservations are untouched.
+    f.accept(2,NativeAdrenoResourceWrite,0,nullptr,0,4096);
+    f.accept(2,NativeAdrenoResourceWrite,1,nullptr,4096,4096);
+    assert(f.ring.submitted==0);f.scheduler.releaseRead(b);assert(f.ring.submitted==0);
+    f.scheduler.releaseRead(a);assert(f.ring.submitted==2);f.finish();
+    assert(f.vm.unmap(2)==0&&m->prepared==0);
+}
+static void merged_ranges_follow_mapping_generation(){
+    Fixture f;auto*m=f.surface({{0x400000,4096},{0x401000,4096}});
+    NativeAdrenoSurfaceRead*r=nullptr;
+    assert(f.vm.map(2,{{0x400000,8192}})==0);
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);f.scheduler.releaseRead(r);
+    assert(f.vm.unmap(2)==0&&m->prepared==0);
+    const uint64_t replacement=(UINT64_C(1)<<12)|2; // Same access-tree slot, new generation.
+    assert(f.vm.map(replacement,{{0x800000,8192}})==0);
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==0);
+    f.accept(replacement);assert(f.ring.submitted==1);f.finish();f.scheduler.releaseRead(r);
+    assert(f.vm.unmap(replacement)==0);
+    const uint64_t alias=(UINT64_C(2)<<12)|2;
+    assert(f.vm.map(alias,{{0x400000,8192}})==0);
+    assert(f.scheduler.acquireRead(m,nullptr,nullptr,&r)==0);
+    assert(NabuGpuTrace::shapes.back().ranges==1&&f.vm.mappings.at(alias).references==1);
+    f.accept(alias);assert(f.ring.submitted==1);f.scheduler.releaseRead(r);
+    assert(f.ring.submitted==2);f.finish();assert(f.vm.unmap(alias)==0&&m->prepared==0);
+}
 int main(){submitted_snapshot();accepted_before_hardware_and_future_writer();physical_alias_and_scattered_surface();
     alias_added_during_display();gpu_reader_can_overlap_display();multiple_readers();fault_retains_gpu_mapping();
     cancelled_callback();closed_pending_producer();legacy_busy_does_not_leave_accepted_writer();
     unrelated_mapping_prefilter();late_alias_byte_ranges();backing_index_rebuilt_after_release();
-    puts("13 production scheduler surface-read suites passed; unrelated maps avoided 262144 full alias queries");}
+    fragmented_mapping_uses_one_reservation();unsorted_overlap_union_preserves_holes();
+    union_keeps_mapping_handles_separate();cache_merge_keeps_active_reservations();merged_ranges_follow_mapping_generation();
+    puts("18 production scheduler surface-read suites passed; 4000 fragmented pages use one cached reservation; active aliases retain exact writes");}
+'''
+
+TRACE_HARNESS = r'''
+#pragma once
+#include "NabuFrameTraceEvents.h"
+#include <vector>
+namespace NabuGpuTrace {
+struct ReadShape {uint64_t identity,segments,ranges,storage;};
+inline std::vector<ReadShape> shapes;
+inline void record(uint32_t event,uint64_t identity,uint64_t a=0,uint64_t b=0,uint64_t c=0) {
+    if(event==ProducerReadShape)shapes.push_back({identity,a,b,c});
+}
+inline void recordAt(uint64_t,uint32_t,uint64_t,uint64_t=0,uint64_t=0,uint64_t=0) {}
+inline void setWorker(uint64_t) {}
+inline uint64_t worker(){return 0;}
+}
 '''
 
 ADAPTER_HARNESS = r'''
@@ -354,8 +448,10 @@ def main():
     (include / 'IOKit').mkdir(parents=True, exist_ok=True)
     (include / 'libkern').mkdir(exist_ok=True)
     for filename, source in [('IOKit/IOTypes.h', IO_TYPES), ('IOKit/IOLib.h', IO_LIB),
-                             ('IOKit/IOMemoryDescriptor.h', IO_MEMORY), ('NativeAdrenoSubmit.h', BACKEND)]:
+                             ('IOKit/IOMemoryDescriptor.h', IO_MEMORY), ('NativeAdrenoSubmit.h', BACKEND),
+                             ('NabuGpuTrace.h', TRACE_HARNESS)]:
         (include / filename).write_text(source, encoding='utf-8', newline='\n')
+    shutil.copyfile(ROOT / 'patches/nabu-gpu/NabuFrameTraceEvents.h', include / 'NabuFrameTraceEvents.h')
     for name in ['NativeAdrenoScheduler.h', 'NativeAdrenoABI.h', 'NativeAdrenoVmAlias.h']:
         shutil.copyfile(ROOT / 'src/nabu/gpu/upstream/Adreno6xx' / name, include / name)
     shutil.copyfile(ROOT / 'src/xnu-8796/libkern/libkern/tree.h', include / 'libkern/tree.h')
@@ -397,16 +493,22 @@ def main():
     assert 'memory->getPhysicalSegment(at,&bytes,kIOMemoryMapperNone)' in overlaid
     assert 'memory->getPhysicalSegment(offset,&bytes,kIOMemoryMapperNone)' in overlaid
     report = dict(result='pass', production_source=str(production.relative_to(ROOT)),
-        production_scheduler_compiled=True, production_red_black_tree=True, suites=13,
+        production_scheduler_compiled=True, production_red_black_tree=True, suites=18,
         cases=['submitted snapshot excludes unrelated later work', 'accepted writer before hardware publication',
                'physical alias and scattered descriptor', 'new alias during display lease',
                'GPU reads overlap display', 'multiple display readers', 'fault retains live GPU mapping',
                'cancelled callback is not delivered', 'pending producer close aborts display',
                'legacy refusal leaves no orphan job', 'unrelated mappings avoid global alias queries',
                'late alias preserves exact offsets with nested and duplicate source intervals',
-               'released backing index cannot survive descriptor reuse'],
+               'released backing index cannot survive descriptor reuse',
+               '4000 fragmented physical pages use one cached logical reservation',
+               'unsorted overlapping ranges form an exact union with real holes',
+               'different mapping handles keep independent lifetime references',
+               'cache merges never skip new active-reader reservations',
+               'merged ranges are removed with their mapping generation'],
         raw_physical_mapping_test=True, indexed_mapping_prefilter=True,
         unrelated_mapping_full_queries_before=262144, unrelated_mapping_full_queries_after=0,
+        fragmented_page_reservations_before=4000, fragmented_page_reservations_after=1,
         production_adapter_compiled=True, adapter_null_unpublished_not_ready=True,
         adapter_preserves_read_until_explicit_release=True, adapter_pending_kicks_completion_worker=True,
         sanitizers=['address', 'undefined'],

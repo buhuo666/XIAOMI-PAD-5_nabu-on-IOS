@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Correlate recorded GPU jobs and DPU transactions, without inferring unique displayed frames."""
 import argparse
+from bisect import bisect_right
 from collections import Counter, defaultdict
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ PRESENT, QUEUED, READY, MAPPED, SCAN, ACCEPT, RETIRE = range(32, 39)
 VBLANK, NOTIFY, DISPLAY_WORK, FAILURE, COUNTERS, NATIVE_NOTIFY, REJECT = range(39, 46)
 INACTIVE_CLEAR_QUEUED, INACTIVE_CLEAR_COMPLETE = 50, 51
 RETIREMENT_WAIT, RETIREMENT_PUBLISHED = 52, 53
+PRODUCER_READ_SHAPE, INACTIVE_CLEAR_INHERITED = 54, 55
 
 
 def analyze(rows, metadata, start=None, end=None):
@@ -78,6 +80,9 @@ def analyze(rows, metadata, start=None, end=None):
                         'worker_lock_wait_ms': elapsed(began, locked),
                         'worker_locked_work_ms': elapsed(locked, finished)})
 
+    observed_vblanks=sorted((group[0] for group in index[VBLANK].values() if len(group)==1),
+                           key=lambda r:r['time_us'])
+    vblank_times=[r['time_us'] for r in observed_vblanks]
     displays = []
     for identity in sorted(set(index[PRESENT]) | set(index[ACCEPT])):
         events = {event: one(event, identity) for event in (PRESENT, QUEUED, DISPLAY_WORK, READY, MAPPED, SCAN, ACCEPT, RETIRE, COUNTERS)}
@@ -92,9 +97,15 @@ def analyze(rows, metadata, start=None, end=None):
             diagnostics['display_scan_identity_mismatch'] += 1
             continue
         lease = events[QUEUED]['c'] if events[QUEUED] else None
+        shape = one(PRODUCER_READ_SHAPE,lease) if lease is not None else None
+        inherited = one(INACTIVE_CLEAR_INHERITED,identity)
         writers = sorted({(r['a'], r['b'], r['c']) for r in index[PRODUCER_WRITER].get(lease, [])})
         row = {'swap_id': identity, 'surface_id': accepted['a'] if accepted else first['a'],
                'lease_id': lease, 'queue_depth': events[QUEUED]['b'] if events[QUEUED] else None,
+               'producer_read_shape': dict(physical_segments=shape['a'],mapping_ranges=shape['b'],
+                    initial_reservations=shape['c']) if shape else None,
+               'inherited_layer0_from_swap': inherited['a'] if inherited else None,
+               'inherited_content': bool(inherited),
                'present_us': first['time_us'] if first else None,
                'accepted_us': accepted['time_us'] if accepted else None,
                'retired_us': events[RETIRE]['time_us'] if events[RETIRE] else None,
@@ -104,12 +115,25 @@ def analyze(rows, metadata, start=None, end=None):
         for name, a, b in (
                 ('present_to_queued_ms', PRESENT, QUEUED), ('queue_wait_ms', QUEUED, DISPLAY_WORK),
                 ('producer_wait_ms', DISPLAY_WORK, READY), ('ready_to_mapped_ms', READY, MAPPED),
-                ('mapped_to_scan_ms', MAPPED, SCAN), ('scan_to_accept_observed_ms', SCAN, ACCEPT),
+                ('mapped_to_scan_ms', MAPPED, SCAN), ('present_to_scan_ms', PRESENT, SCAN),
+                ('scan_to_accept_observed_ms', SCAN, ACCEPT),
                 ('present_to_accept_observed_ms', PRESENT, ACCEPT), ('accepted_scan_lifetime_ms', ACCEPT, RETIRE)):
             row[name] = elapsed(events[a], events[b])
+        row.update(first_vblank_after_present=None,scan_after_first_vblank_ms=None,
+                   scan_after_first_vblank=None)
+        if first and events[SCAN]:
+            at=bisect_right(vblank_times,first['time_us'])
+            if at<len(observed_vblanks):
+                edge=observed_vblanks[at]
+                row.update(first_vblank_after_present=edge['identity'],
+                    scan_after_first_vblank_ms=(events[SCAN]['time_us']-edge['time_us'])/1000,
+                    scan_after_first_vblank=events[SCAN]['time_us']>edge['time_us'])
         displays.append(row)
 
     accepted = sorted((r for r in rows if r['event'] == ACCEPT and in_interval(r)), key=lambda r:r['time_us'])
+    hardware_acceptances=len(accepted)
+    inherited_ids=set(index[INACTIVE_CLEAR_QUEUED])|set(index[INACTIVE_CLEAR_INHERITED])
+    accepted=[r for r in accepted if r['identity'] not in inherited_ids]
     vblanks = sorted((r for r in rows if r['event'] == VBLANK and in_interval(r)), key=lambda r:r['time_us'])
     notifications = []
     for row in rows:
@@ -147,7 +171,7 @@ def analyze(rows, metadata, start=None, end=None):
         gates.append(item)
     gpu_names = ('accepted_to_issued_ms', 'issued_to_completion_observed_ms', 'accepted_to_completion_observed_ms')
     dpu_names = ('present_to_queued_ms', 'queue_wait_ms', 'producer_wait_ms', 'ready_to_mapped_ms',
-                 'mapped_to_scan_ms', 'scan_to_accept_observed_ms', 'present_to_accept_observed_ms', 'accepted_scan_lifetime_ms')
+                  'mapped_to_scan_ms', 'present_to_scan_ms', 'scan_to_accept_observed_ms', 'present_to_accept_observed_ms', 'accepted_scan_lifetime_ms')
     interval_seconds = (end - start)/1e6
     acceptance_ids_unique = len({r['identity'] for r in accepted}) == len(accepted)
     clear_queued = [r for r in rows if r['event'] == INACTIVE_CLEAR_QUEUED and in_interval(r)]
@@ -163,6 +187,8 @@ def analyze(rows, metadata, start=None, end=None):
             'worker': {'metrics': metrics(workers, ('latest_irq_seen_to_worker_ms', 'worker_lock_wait_ms', 'worker_locked_work_ms')), 'samples': workers},
             'display': {'transactions': displays, 'transactions_with_all_acceptance_boundaries': sum(r['all_acceptance_boundaries'] for r in displays),
                         'metrics': metrics(displays, dpu_names), 'accepted_transactions': len(accepted),
+                        'hardware_accepted_transactions': hardware_acceptances,
+                        'acceptance_scope': 'Pixel requests only; inherited partial-clear scans excluded. Requests may still repeat content and do not establish unique image FPS.',
                         'accepted_transaction_rate': len(accepted)/interval_seconds if not metadata['dropped'] and acceptance_ids_unique else None,
                         'recorded_acceptance_rate': len(accepted)/interval_seconds,
                         'acceptance_ids_unique': acceptance_ids_unique,
@@ -171,12 +197,18 @@ def analyze(rows, metadata, start=None, end=None):
                         'vblank_sequence_gaps': sum(max(0,b['identity']-a['identity']-1) for a,b in zip(vblanks,vblanks[1:])),
                         'native_notification_metrics': metrics(notifications, ('irq_to_native_notification_ms',)),
                         'native_send_status_counts': dict(Counter(r['status'] for r in notifications)),
+                        'scan_phase':dict(
+                            compared_transactions=sum(r['scan_after_first_vblank'] is not None for r in displays),
+                            submitted_after_first_vblank=sum(r['scan_after_first_vblank'] is True for r in displays),
+                            scope='Observed scan-submit completion compared with the first retained physical VBlank after DPU entry; missing IRQ edges and the hardware setup margin remain unknown.'),
                         'retirement_notification_gates': {
                             'samples':gates,'metrics':metrics(gates,('wait_ms','reported_wait_ms')),
                             'scope':'Same physical VBlank sequence; missing old retirement can be a capture boundary or first flip, never assumed complete.'},
                         'rejections_by_reason': dict(Counter(r['a'] for r in rows if r['event'] == REJECT and in_interval(r))),
                         'inactive_layer_clears': {
                             'recorded_queued': len(clear_queued), 'recorded_completed': len(clear_complete),
+                            'inherited_scan_transactions': sum(r['inherited_content'] for r in displays),
+                            'inherited_scan_acceptances': sum(r['inherited_content'] and r['accepted_us'] is not None for r in displays),
                             'completion_status_counts': dict(Counter(r['b'] for r in clear_complete)),
                             'included_in_pixel_acceptances': False,
                             'scope': 'Counts use each event time; boundary transactions can be queued or completed outside this interval.'},
