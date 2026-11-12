@@ -53,6 +53,15 @@ def main():
     assert non_pixels['recorded_queued'] == 3 and non_pixels['recorded_completed'] == 2
     assert non_pixels['completion_status_counts'] == {0:1, 0xe00002bc:1}
     assert not non_pixels['included_in_pixel_acceptances']
+    gate_rows=[row(52,20100,100,20000,21),row(38,20300,40,400,4,41),row(53,20400,100,21,300)]
+    ordered=analyze(rows+gate_rows,metadata)
+    gate,=ordered['display']['retirement_notification_gates']['samples']
+    assert gate['wait_ms']==.3 and gate['native_sends']==2 and gate['retired_swaps']==[40]
+    assert gate['retirement_observed'] and ordered['diagnostics']==report['diagnostics']
+    late=analyze(rows+[dict(r,time_us=20700) if r['event']==38 else r for r in gate_rows],metadata)
+    assert late['diagnostics']['retirement_after_gate_publication']==1
+    early=analyze(rows+[dict(r,time_us=20700) if r['event']==53 else r for r in gate_rows],metadata)
+    assert early['diagnostics']['native_notification_before_retirement_gate']==1
     try: analyze(rows,metadata,-1,100)
     except ValueError: pass
     else: raise AssertionError('Out-of-capture interval accepted')

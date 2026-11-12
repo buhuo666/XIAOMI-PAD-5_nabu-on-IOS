@@ -8,6 +8,7 @@
 typedef uintptr_t (*display_update_fn)(void *, void *, uint32_t);
 typedef uintptr_t (*display_begin_fn)(void *, void *);
 typedef uint32_t (*display_can_fn)(void *, uint32_t);
+typedef uintptr_t (*server_render_fn)(void *, void *, uint32_t *);
 typedef int32_t (*swap_end_fn)(void *);
 typedef int32_t (*swap_wait_fn)(void *, uint32_t, uint32_t);
 
@@ -28,6 +29,8 @@ static nabu_ca_trace_sink trace_sink;
 static display_update_fn original_finish;
 static display_begin_fn original_begin;
 static display_can_fn original_can;
+static server_render_fn original_iomfb_render,original_eagl_render;
+static uintptr_t eagl_vtable;
 static swap_end_fn original_swap;
 static swap_wait_fn original_wait;
 static uint32_t capabilities;
@@ -200,6 +203,35 @@ static uintptr_t traced_finish(void *display,void *update,uint32_t flags)
     return result;
 }
 
+static uintptr_t traced_render(void *server,void *update,uint32_t *flags,
+                               server_render_fn original,int eagl)
+{
+    int saved=*__error();
+    uint64_t frame_flags=pair(word(update,0xe0),*flags);
+    uintptr_t vtable=(uintptr_t)pointer(server,0);
+    /* 20F66 Server::sw_renderer (18846bd68) owns SWContext at +c0.
+     * EAGLServer::renderer (188262548) owns its hardware context at +318;
+     * base Server instances do not have that extended field. These contexts
+     * may be absent before their first use or coexist after a fallback.
+     * Observe only before the call, without invoking lazy renderer creation. */
+    void *sw=pointer(server,0xc0);
+    void *hardware=eagl&&vtable==eagl_vtable?pointer(server,0x318):0;
+    uintptr_t sw_vtable=sw?(uintptr_t)pointer(sw,0):0;
+    uintptr_t hardware_vtable=hardware?(uintptr_t)pointer(hardware,0):0;
+    mark(NabuCaRenderEnter,update,(uintptr_t)server,frame_flags,(uintptr_t)original);
+    mark(NabuCaServerState,server,vtable,sw_vtable,hardware_vtable);
+    *__error()=saved;
+    uintptr_t result=original(server,update,flags);
+    /* The original may change contexts, flags and Update state. Use only
+     * captured values after it returns; preserve the exact raw x0 and errno. */
+    mark(NabuCaRenderLeave,update,(uintptr_t)server,frame_flags,result);
+    return result;
+}
+static uintptr_t traced_iomfb_render(void *server,void *update,uint32_t *flags)
+{return traced_render(server,update,flags,original_iomfb_render,0);}
+static uintptr_t traced_eagl_render(void *server,void *update,uint32_t *flags)
+{return traced_render(server,update,flags,original_eagl_render,1);}
+
 static int uuid_matches(const void *image,const unsigned char expected[16])
 {
     if(!image||word(image,0)!=0xfeedfacf)return 0;
@@ -234,7 +266,7 @@ struct page_change {uint64_t address;int32_t protection;};
  * There is deliberately no restoration/unload race with active render calls. */
 static int install_sites(struct site *sites,unsigned count)
 {
-    struct page_change changed[12];unsigned pages_count=0;
+    struct page_change changed[14];unsigned pages_count=0;
     uint64_t page_size=(uint64_t)getpagesize();
     if(!page_size||(page_size&(page_size-1)))return -2;
     for(unsigned i=0;i<count;++i)
@@ -252,7 +284,7 @@ static int install_sites(struct site *sites,unsigned count)
     }
     for(unsigned i=0;i<count;++i)__atomic_store_n((uintptr_t *)sites[i].address,sites[i].replacement,__ATOMIC_RELEASE);
     {
-        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot);
+        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks);
         for(unsigned i=0;i<pages_count;++i)
             if(vm_protect(mach_task_self_,changed[i].address,page_size,0,changed[i].protection))result=-5;
         return result;
@@ -281,18 +313,23 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     original_can=(display_can_fn)(uintptr_t)(qc+0x18829cd88ULL);
     original_begin=(display_begin_fn)(uintptr_t)(qc+0x18825dda4ULL);
     original_finish=(display_update_fn)(uintptr_t)(qc+0x188248568ULL);
+    original_iomfb_render=(server_render_fn)(uintptr_t)(qc+0x18846bc6cULL);
+    original_eagl_render=(server_render_fn)(uintptr_t)(qc+0x1882d770cULL);
+    eagl_vtable=(uintptr_t)(qc+0x1d57edc68ULL);
     if(have_fb){
         original_swap=(swap_end_fn)(uintptr_t)(fb+0x1af12c530ULL);
         original_wait=(swap_wait_fn)(uintptr_t)(fb+0x1af12c648ULL);
     }
     static const uintptr_t tables[]={0x1d57ddc60ULL,0x1d57de420ULL,0x1d57ebd00ULL,0x1d57ec520ULL};
-    struct site sites[12];unsigned n=0;
+    struct site sites[14];unsigned n=0;
     for(unsigned i=0;i<4;++i){
         uintptr_t table=tables[i]+qc+16;
         sites[n++]=(struct site){table+0x140,(uintptr_t)original_can,(uintptr_t)traced_can};
         sites[n++]=(struct site){table+0x170,(uintptr_t)original_begin,(uintptr_t)traced_begin};
         sites[n++]=(struct site){table+0x178,(uintptr_t)original_finish,(uintptr_t)traced_finish};
     }
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57ddc10ULL),(uintptr_t)original_iomfb_render,(uintptr_t)traced_iomfb_render};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57edde0ULL),(uintptr_t)original_eagl_render,(uintptr_t)traced_eagl_render};
     trace_sink=sink;
     capabilities=have_fb?NabuCaFramebufferHooksSupported:0;
     int result=install_sites(sites,n);

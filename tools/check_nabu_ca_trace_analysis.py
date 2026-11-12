@@ -70,6 +70,22 @@ def check():
     assert backwards['diagnostics']['cpu_runtime_reversed']==1
     rows.remove(runtime)
     assert analyze(rows,metadata)['ca']['updates'][0]['begin_return_to_finish_cpu_ms'] is None
+    # Real render boundaries must belong to this update and thread, not the
+    # application's GPU submission that happens to overlap the interval.
+    marker(1100,116,1010,0xa,0x100,99|(3<<32),0x18846bc6c)
+    marker(1102,118,1011,0x100,0x1d57dda98,0x1d57e5618,0)
+    marker(7000,117,1012,0xa,0x100,99|(3<<32),0xffffffffffffffff)
+    measured=analyze(rows,metadata)['ca']['updates'][0]
+    assert measured['begin_return_to_render_ms']==.09 and measured['render_call_ms']==5.9
+    assert measured['render_return_to_finish_ms']==.01
+    assert measured['render']['begin']['decoded']['entry_flags']==3
+    assert measured['render']['end']['decoded']['result']==0xffffffffffffffff
+    state,=measured['render']['server_states']
+    assert state['decoded']['software_context_vtable']==0x1d57e5618
+    # A matching pointer on another thread is not the measured render.
+    for item in rows:
+        if item['event']==80 and item['identity'] in (1010,1011,1012):item['b']=8
+    assert analyze(rows,metadata)['ca']['updates'][0]['render_call_ms'] is None
     print(json.dumps(dict(passed=True,interleaved_markers=True,cookie_reuse=True,
                          missing_pairs=True,ambiguous_surface=True,short_diagnostic_only=True)))
 

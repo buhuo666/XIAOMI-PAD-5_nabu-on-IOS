@@ -13,6 +13,7 @@ WORK_BEGIN, WORK_LOCKED, WORK_END, PRODUCER_CALLBACK, PRODUCER_WRITER = 5, 6, 7,
 PRESENT, QUEUED, READY, MAPPED, SCAN, ACCEPT, RETIRE = range(32, 39)
 VBLANK, NOTIFY, DISPLAY_WORK, FAILURE, COUNTERS, NATIVE_NOTIFY, REJECT = range(39, 46)
 INACTIVE_CLEAR_QUEUED, INACTIVE_CLEAR_COMPLETE = 50, 51
+RETIREMENT_WAIT, RETIREMENT_PUBLISHED = 52, 53
 
 
 def analyze(rows, metadata, start=None, end=None):
@@ -118,6 +119,32 @@ def analyze(rows, metadata, start=None, end=None):
             continue
         notifications.append({'sequence': row['identity'], 'status': row['b'],
                               'irq_to_native_notification_ms': (row['time_us'] - row['a']) / 1000})
+    gates=[];scans_by_sequence=defaultdict(list);retired_by_replacement=defaultdict(list)
+    for group in index[SCAN].values():
+        for r in group:scans_by_sequence[r['c']].append(r)
+    for group in index[RETIRE].values():
+        for r in group:retired_by_replacement[r['c']].append(r)
+    for sequence in index[RETIREMENT_WAIT]:
+        began,done=(one(event,sequence) for event in (RETIREMENT_WAIT,RETIREMENT_PUBLISHED))
+        if not in_interval(began):continue
+        sends=index[NATIVE_NOTIFY].get(sequence,[])
+        item={'sequence':sequence,'scan_sequence':began['b'],
+              'status':done['c'] if done else None,'wait_ms':elapsed(began,done),
+              'reported_wait_ms':done['b']/1000 if done else None,
+              'native_sends':len(sends),'retired_swaps':[],'retirement_observed':False}
+        if done and done['a']!=began['b']:
+            diagnostics['retirement_gate_scan_mismatch']+=1
+        if done and any(s['time_us']<done['time_us'] for s in sends):
+            diagnostics['native_notification_before_retirement_gate']+=1
+        scans=scans_by_sequence.get(began['b'],[])
+        if len(scans)==1:
+            retired=retired_by_replacement.get(scans[0]['identity'],[])
+            item['retired_swaps']=[r['identity'] for r in retired]
+            item['retirement_observed']=bool(retired)
+            if done and any(r['time_us']>done['time_us'] for r in retired):
+                diagnostics['retirement_after_gate_publication']+=1
+        elif scans:diagnostics['retirement_gate_scan_ambiguous']+=1
+        gates.append(item)
     gpu_names = ('accepted_to_issued_ms', 'issued_to_completion_observed_ms', 'accepted_to_completion_observed_ms')
     dpu_names = ('present_to_queued_ms', 'queue_wait_ms', 'producer_wait_ms', 'ready_to_mapped_ms',
                  'mapped_to_scan_ms', 'scan_to_accept_observed_ms', 'present_to_accept_observed_ms', 'accepted_scan_lifetime_ms')
@@ -144,6 +171,9 @@ def analyze(rows, metadata, start=None, end=None):
                         'vblank_sequence_gaps': sum(max(0,b['identity']-a['identity']-1) for a,b in zip(vblanks,vblanks[1:])),
                         'native_notification_metrics': metrics(notifications, ('irq_to_native_notification_ms',)),
                         'native_send_status_counts': dict(Counter(r['status'] for r in notifications)),
+                        'retirement_notification_gates': {
+                            'samples':gates,'metrics':metrics(gates,('wait_ms','reported_wait_ms')),
+                            'scope':'Same physical VBlank sequence; missing old retirement can be a capture boundary or first flip, never assumed complete.'},
                         'rejections_by_reason': dict(Counter(r['a'] for r in rows if r['event'] == REJECT and in_interval(r))),
                         'inactive_layer_clears': {
                             'recorded_queued': len(clear_queued), 'recorded_completed': len(clear_complete),

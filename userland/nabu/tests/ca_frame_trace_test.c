@@ -12,6 +12,9 @@ static const char *process="test";
 static uintptr_t raw_return=UINT64_C(0xfedcba9876543210);
 static uint32_t can_return;
 static int fail_page;
+static void *expected_server,*expected_update;
+static uint32_t *expected_flags;
+static unsigned render_backend,render_order;
 int *__error(void){return &test_errno;}
 const char *getprogname(void){return process;}
 uint32_t _dyld_image_count(void){return 0;}
@@ -38,7 +41,10 @@ static void store64(void *b,size_t o,uint64_t v){memcpy((unsigned char *)b+o,&v,
 static void ptr(void *b,size_t o,const void *p){store64(b,o,(uintptr_t)p);}
 static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
 {
-    assert(event>=96&&event<=115);++marks;++seen[event];
+    assert(event>=96&&event<=118);++marks;++seen[event];
+    if(event==NabuCaRenderEnter){assert(render_order==0);render_order=1;}
+    if(event==NabuCaServerState){assert(render_order==1);render_order=2;}
+    if(event==NabuCaRenderLeave){assert(render_order==3);render_order=0;}
     last[event][0]=id;last[event][1]=a;last[event][2]=b;last[event][3]=c;
     test_errno=99;
 }
@@ -52,6 +58,45 @@ static int32_t original_w(void *d,uint32_t swap,uint32_t flags)
 {assert(d&&swap==91&&flags==0x80000000u&&test_errno==13);++original_calls;test_errno=47;return (int32_t)0xe00002d5u;}
 static int32_t original_s(void *d)
 {assert(d&&test_errno==13);++original_calls;test_errno=47;return (int32_t)0xe00002c7u;}
+static uintptr_t original_r(void *s,void *u,uint32_t *flags,unsigned backend)
+{
+    assert(s==expected_server&&u==expected_update&&flags==expected_flags);
+    assert(*flags==7&&test_errno==13&&render_order==2&&render_backend==backend);
+    ++original_calls;render_order=3;
+    /* A post-call context dereference would fault. The result marker must
+     * also retain the entry frame/flags, while the caller sees these changes. */
+    store64(s,0xc0,1);store32(u,0xe0,88);*flags=0x13579bdfu;
+    test_errno=47;return raw_return;
+}
+static uintptr_t original_ri(void *s,void *u,uint32_t *flags)
+{return original_r(s,u,flags,1);}
+static uintptr_t original_re(void *s,void *u,uint32_t *flags)
+{return original_r(s,u,flags,2);}
+static void check_render(int eagl,int contexts,int matching_table)
+{
+    /* A base instance stops at c8; ASan catches any accidental +318 read. */
+    size_t server_bytes=eagl&&matching_table?0x320:0xc8;
+    void *server=calloc(1,server_bytes);assert(server);
+    uint64_t update[0xe8/8]={0};uint32_t flags=7;
+    uint64_t sw[]={UINT64_C(0x1d57e5618)},hardware[]={UINT64_C(0x1d57e3e48)};
+    uintptr_t vptr=eagl&&matching_table?eagl_vtable:UINT64_C(0x1d57dda98);
+    store64(server,0,vptr);store32(update,0xe0,77);
+    if(contexts)ptr(server,0xc0,sw);
+    if(eagl&&matching_table&&contexts)ptr(server,0x318,hardware);
+    expected_server=server;expected_update=update;expected_flags=&flags;render_backend=eagl?2:1;
+    server_render_fn wrapper=eagl?traced_eagl_render:traced_iomfb_render;
+    test_errno=13;assert(wrapper(server,update,&flags)==raw_return&&test_errno==47);
+    assert(flags==0x13579bdfu&&word(update,0xe0)==88&&wide(server,0xc0)==1);
+    assert(last[NabuCaRenderEnter][0]==(uintptr_t)update&&last[NabuCaRenderEnter][1]==(uintptr_t)server);
+    assert(last[NabuCaRenderEnter][2]==pair(77,7));
+    assert(last[NabuCaRenderEnter][3]==(uintptr_t)(eagl?original_re:original_ri));
+    assert(last[NabuCaRenderLeave][0]==(uintptr_t)update&&last[NabuCaRenderLeave][1]==(uintptr_t)server);
+    assert(last[NabuCaRenderLeave][2]==pair(77,7)&&last[NabuCaRenderLeave][3]==raw_return);
+    assert(last[NabuCaServerState][0]==(uintptr_t)server&&last[NabuCaServerState][1]==vptr);
+    assert(last[NabuCaServerState][2]==(contexts?sw[0]:0));
+    assert(last[NabuCaServerState][3]==(eagl&&matching_table&&contexts?hardware[0]:0));
+    assert(render_order==0);free(server);
+}
 
 int main(void)
 {
@@ -105,9 +150,11 @@ int main(void)
     struct site sites[]={{(uintptr_t)&slots[0],11,33},{(uintptr_t)&slots[512],22,44}};
     fail_page=2;protect_calls=restore_calls=0;assert(install_sites(sites,2)==-4&&slots[0]==11&&slots[512]==22&&restore_calls==1);
     fail_page=0;protect_calls=restore_calls=0;sites[1].target=23;assert(install_sites(sites,2)==-3&&protect_calls==0);sites[1].target=22;
-    assert(install_sites(sites,2)==5&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
+    assert(install_sites(sites,2)==13&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
+    original_iomfb_render=original_ri;original_eagl_render=original_re;eagl_vtable=UINT64_C(0x1d57edc68);
+    check_render(0,0,0);check_render(0,1,0);check_render(1,0,1);check_render(1,1,1);check_render(1,1,0);
     assert(nabu_ca_frame_trace_install(sink)==0);process="backboardd";installation=0;test_errno=13;
     assert(nabu_ca_frame_trace_install(sink)==0&&test_errno==13);
-    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; UUID and all-slot validation; COW failure rollback; %u markers\n",marks);
+    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch, pre-call context state and marker order; UUID and all-slot validation; COW failure rollback; %u markers\n",marks);
     return 0;
 }

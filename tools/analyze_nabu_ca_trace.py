@@ -66,8 +66,13 @@ def analyze(rows, metadata):
         elif e in (108,109):r['decoded']=dict(swap_id=lo(a),flags=hi(a),status=b if e==109 else None)
         elif e==110:r['decoded']=dict(swap_id=a,requested_timestamp=b,caller=c)
         elif e==112:r['decoded']=dict(surface_ids=[lo(a),hi(a),lo(b),hi(b)],set=lo(c),clear=hi(c))
+        elif e in (116,117):
+            r['decoded']=dict(server=a,frame=lo(b),entry_flags=hi(b),
+                              **({'original_target':c} if e==116 else {'result':c}))
+        elif e==118:
+            r['decoded']=dict(server_vtable=a,software_context_vtable=b,egl_context_vtable=c)
     wrappers=[];stacks=defaultdict(list)
-    pairs={81:82,96:97,98:99,100:101,108:109,110:111};reverse={v:k for k,v in pairs.items()}
+    pairs={81:82,96:97,98:99,100:101,108:109,110:111,116:117};reverse={v:k for k,v in pairs.items()}
     for r in users:
         event=r['event'];entry=reverse.get(event,event)
         if entry not in pairs:continue
@@ -80,10 +85,14 @@ def analyze(rows, metadata):
     diagnostics['wrapper_missing_leave']=sum(len(s) for s in stacks.values())
     updates=[]
     begin_calls=defaultdict(list);snapshots_by_thread=defaultdict(list)
+    render_calls=defaultdict(list);server_states=defaultdict(list)
     for p in wrappers:
         if p['event']==98:begin_calls[(p['pid'],p['identity'],p['begin']['b'],p['begin']['a'])].append(p)
+        if p['event']==116:
+            render_calls[(p['pid'],p['thread'],p['identity'],lo(p['begin']['b']))].append(p)
     for r in users:
         if r['event'] in (104,105,106,107,114,115):snapshots_by_thread[(r['pid'],r['thread'])].append(r)
+        if r['event']==118:server_states[(r['pid'],r['thread'],r['identity'])].append(r)
     snapshot_times={k:[r['time_us'] for r in v] for k,v in snapshots_by_thread.items()}
     finish_calls=[p for p in wrappers if p['event']==100]
     for finish in finish_calls:
@@ -99,6 +108,18 @@ def analyze(rows, metadata):
                             begin_enter_to_finish_leave_ms=delta(start['begin'] if start else None,finish['end']),
                             finish_enter_us=first['time_us'],finish_leave_us=finish['end']['time_us'],snapshots=snapshots))
         row=updates[-1]
+        row.update(begin_return_to_render_ms=None,render_call_ms=None,render_return_to_finish_ms=None,
+                   render=None)
+        renders=[p for p in render_calls.get((finish['pid'],finish['thread'],finish['identity'],frame),[])
+                 if start and start['end']['time_us']<=p['begin']['time_us']<=p['end']['time_us']<=first['time_us']]
+        if len(renders)==1:
+            render=renders[0]
+            states=[r for r in server_states[(render['pid'],render['thread'],render['begin']['a'])]
+                    if render['begin']['time_us']<=r['time_us']<=render['end']['time_us']]
+            row.update(begin_return_to_render_ms=delta(start['end'],render['begin']),
+                       render_call_ms=render['duration_ms'],render_return_to_finish_ms=delta(render['end'],first),
+                       render=dict(render,server_states=states))
+        elif len(renders)>1:diagnostics['ca_render_ambiguous']+=1
         row['begin_return_to_finish_cpu_ms']=None
         row['begin_return_to_finish_off_cpu_ms']=None
         if start and start['thread']==finish['thread']:
@@ -216,7 +237,8 @@ def analyze(rows, metadata):
                 ipc=dict(messages=sends,by_message={msg:metrics([s for s in sends if s['message_id']==msg],names) for msg in (40205,40402)}),
                 ca=dict(calls=wrappers,call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
                         updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms',
-                            'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms')),
+                            'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms',
+                            'begin_return_to_render_ms','render_call_ms','render_return_to_finish_ms')),
                         can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96)),
                         wait_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==108)),
                         swap_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==110)),
