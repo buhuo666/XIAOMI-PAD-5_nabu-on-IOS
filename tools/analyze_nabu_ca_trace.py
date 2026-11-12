@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Decompose the short CA trace; retain missing and ambiguous lifecycle edges."""
 import argparse
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 import json
 import math
@@ -12,10 +13,12 @@ from nabu_frame_trace import FIELDS, WIRE, validate_export
 
 def analyze(rows, metadata):
     diagnostics=Counter(); events=Counter(r['event'] for r in rows)
-    indexed=defaultdict(list)
-    for r in rows:indexed[(r['event'],r['identity'])].append(r)
+    indexed=defaultdict(list);user_payloads=defaultdict(list)
+    for r in rows:
+        indexed[(r['event'],r['identity'])].append(r)
+        if 81<=r['event']<=127:user_payloads[r['identity']].append(r)
     def single(event,identity):
-        items=indexed[(event,identity)]
+        items=indexed.get((event,identity),[])
         if len(items)>1:diagnostics['duplicate_event_identity']+=1
         return items[0] if len(items)==1 else None
     def delta(left,right):
@@ -29,9 +32,9 @@ def analyze(rows, metadata):
     # The two records from one syscall can be separated by any other producer.
     users=[];tokens={r['identity'] for r in rows if 80<=r['event']<=127}
     for token in tokens:
-        context=indexed[(80,token)]
+        context=indexed.get((80,token),[])
         # Avoid relying on adjacent records or timestamp equality.
-        candidates=[r for event in range(81,128) for r in indexed[(event,token)]]
+        candidates=user_payloads.get(token,[])
         if len(context)!=1 or len(candidates)!=1:
             diagnostics['user_marker_half_or_duplicate_pair']+=1;continue
         p,c=candidates[0],context[0]
@@ -71,16 +74,21 @@ def analyze(rows, metadata):
                              begin=first,end=r,duration_ms=delta(first,r)))
     diagnostics['wrapper_missing_leave']=sum(len(s) for s in stacks.values())
     updates=[]
-    begin_calls=[p for p in wrappers if p['event']==98]
+    begin_calls=defaultdict(list);snapshots_by_thread=defaultdict(list)
+    for p in wrappers:
+        if p['event']==98:begin_calls[(p['pid'],p['identity'],p['begin']['b'],p['begin']['a'])].append(p)
+    for r in users:
+        if r['event'] in (104,105,106,107,114,115):snapshots_by_thread[(r['pid'],r['thread'])].append(r)
+    snapshot_times={k:[r['time_us'] for r in v] for k,v in snapshots_by_thread.items()}
     finish_calls=[p for p in wrappers if p['event']==100]
     for finish in finish_calls:
         first=finish['begin'];frame=lo(first['b'])
-        starts=[p for p in begin_calls if p['pid']==finish['pid'] and p['identity']==finish['identity'] and
-                p['begin']['b']==frame and p['begin']['a']==first['a'] and p['end']['time_us']<=first['time_us']]
+        starts=[p for p in begin_calls.get((finish['pid'],finish['identity'],frame,first['a']),[])
+                if p['end']['time_us']<=first['time_us']]
         start=starts[0] if len(starts)==1 else None
         if len(starts)!=1:diagnostics['ca_update_begin_unmatched_or_ambiguous']+=1
-        snapshots=[r for r in users if r['pid']==finish['pid'] and r['thread']==finish['thread'] and
-                   first['time_us']<=r['time_us']<=finish['end']['time_us'] and r['event'] in (104,105,106,107,114,115)]
+        key=(finish['pid'],finish['thread']);times=snapshot_times.get(key,[])
+        snapshots=snapshots_by_thread.get(key,[])[bisect_left(times,first['time_us']):bisect_right(times,finish['end']['time_us'])]
         updates.append(dict(pid=finish['pid'],update=finish['identity'],frame=frame,display=first['a'],
                             begin_return_to_finish_enter_ms=delta(start['end'] if start else None,first),
                             begin_enter_to_finish_leave_ms=delta(start['begin'] if start else None,finish['end']),
@@ -98,12 +106,13 @@ def analyze(rows, metadata):
                   send_ms=delta(r,result),send_return_ms=delta(r,returned))
         by_cookie[r['a']].append(item);sends.append(item)
     for group in by_cookie.values():group.sort(key=lambda r:r['begin']['time_us'])
+    cookie_times={k:[s['begin']['time_us'] for s in v] for k,v in by_cookie.items()}
     def owner(cookie,row,signature=None):
-        candidates=[s for s in by_cookie[cookie] if s['begin']['time_us']<=row['time_us']]
-        if not candidates:
+        times=cookie_times.get(cookie,[]);at=bisect_right(times,row['time_us'])-1
+        if at<0:
             diagnostics['ipc_missing_send_begin']+=1;return None
-        s=candidates[-1]
-        if len([v for v in candidates if v['begin']['time_us']==s['begin']['time_us']])!=1:
+        s=by_cookie[cookie][at]
+        if at and times[at-1]==times[at]:
             diagnostics['ipc_same_tick_cookie_reuse']+=1;return None
         if signature is not None and signature!=(s['begin']['b'],s['begin']['c']):
             diagnostics['ipc_cookie_signature_mismatch']+=1;return None
@@ -142,15 +151,27 @@ def analyze(rows, metadata):
                            drawable_pointer=acquired['c'],stages=stages,
                            acquire_ms=delta(stages.get(83),acquired),
                            submit_to_completion_ms=delta(stages.get(85),stages.get(87))))
+    frame_times=defaultdict(list);present_index=defaultdict(list);dpu_index=defaultdict(list);ping_index=defaultdict(list)
+    for f in frames:frame_times[(f['pid'],f['surface_id'])].append(f['stages'][84]['time_us'])
+    for values in frame_times.values():values.sort()
+    for p in wrappers:
+        if p['event']==81:present_index[(p['pid'],p['identity'],p['begin']['a'],p['begin']['b'])].append(p)
+    for r in rows:
+        if r['event']==32:dpu_index[r['a']].append(r)
+    for values in dpu_index.values():values.sort(key=lambda r:r['time_us'])
+    dpu_times={k:[r['time_us'] for r in v] for k,v in dpu_index.items()}
+    for s in sends:
+        if s['message_id']==40205:ping_index[s['sender_pid']].append(s)
+    for values in ping_index.values():values.sort(key=lambda s:s['begin']['time_us'])
+    ping_times={k:[s['begin']['time_us'] for s in v] for k,v in ping_index.items()}
     for frame in frames:
         stages=frame['stages'];acquired=stages[84];end=metadata['end_us']
-        successors=[f['stages'][84]['time_us'] for f in frames if f['pid']==frame['pid'] and
-                    f['surface_id']==frame['surface_id'] and f['stages'][84]['time_us']>acquired['time_us']]
-        if successors:end=min(successors)
-        present=[p for p in wrappers if p['event']==81 and p['pid']==frame['pid'] and
-                 p['identity']==frame['drawable_id'] and p['begin']['a']==frame['surface_id'] and
-                 p['begin']['b']==frame['drawable_pointer'] and acquired['time_us']<=p['begin']['time_us']<end]
-        outputs=[r for r in rows if r['event']==32 and r['a']==frame['surface_id'] and acquired['time_us']<=r['time_us']<end]
+        times=frame_times[(frame['pid'],frame['surface_id'])];at=bisect_right(times,acquired['time_us'])
+        if at<len(times):end=times[at]
+        present=[p for p in present_index.get((frame['pid'],frame['drawable_id'],frame['surface_id'],frame['drawable_pointer']),[])
+                 if acquired['time_us']<=p['begin']['time_us']<end]
+        times=dpu_times.get(frame['surface_id'],[])
+        outputs=dpu_index.get(frame['surface_id'],[])[bisect_left(times,acquired['time_us']):bisect_left(times,end)]
         p=present[0] if len(present)==1 else None;d=outputs[0] if len(outputs)==1 else None
         if len(present)!=1:diagnostics['app_present_unmatched_or_ambiguous']+=1
         if len(outputs)!=1:diagnostics['app_dpu_unmatched_or_ambiguous']+=1
@@ -162,8 +183,8 @@ def analyze(rows, metadata):
                      association='same surface, unique interval before reacquisition; no cross-layer frame ID')
         # IPC captures PID but not sender TID: synchronous pings inside this
         # call form a candidate set, without claiming thread causality.
-        candidates=[s for s in sends if p and s['message_id']==40205 and s['sender_pid']==frame['pid'] and
-                    p['begin']['time_us']<=s['begin']['time_us']<=p['end']['time_us']]
+        times=ping_times.get(frame['pid'],[])
+        candidates=ping_index.get(frame['pid'],[])[bisect_left(times,p['begin']['time_us']):bisect_right(times,p['end']['time_us'])] if p else []
         frame['ping_send_candidates']=[s['token'] for s in candidates]
         if len(candidates)==1 and d:
             received=candidates[0]['receive_result']
