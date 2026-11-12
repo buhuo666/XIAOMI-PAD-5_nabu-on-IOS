@@ -108,7 +108,8 @@ class Device:
         require((self.partition['last_lba'] - self.partition['first_lba'] + 1) * BLOCK_BYTES == self.geometry.partition_bytes,
                 'partition sector range differs')
         installed = json.loads(args.installation_receipt.read_text(encoding='utf-8'))
-        require(installed['status'] == 'installed-and-readback-verified' and
+        require(installed['status'] in ('installed-and-readback-verified',
+                                       'existing-installation-verified-data-preserved') and
                 installed['device_serial_sha256'] == self.inventory['device_serial_sha256'] and
                 installed['partition'] == self.partition and
                 installed['layout_sha256'] == file_sha256(self.layout_path),
