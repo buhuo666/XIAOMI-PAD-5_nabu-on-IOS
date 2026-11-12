@@ -28,6 +28,9 @@ static std::atomic<uint32_t> active{0};
 static std::atomic<unsigned> stopAfterRecord{0};
 static std::mutex guard;
 static std::vector<Row> rows;
+static uint64_t cpuTicks=0;
+extern "C" uint64_t thread_get_runtime_self(void){return ++cpuTicks;}
+extern "C" void absolutetime_to_nanoseconds(uint64_t t,uint64_t *ns){*ns=t*125/3;}
 static uint32_t window(){return active.load();}
 static void record(uint32_t w,uint32_t e,uint64_t id,uint64_t a,uint64_t b,uint64_t c){
  std::lock_guard<std::mutex> lock(guard);
@@ -56,6 +59,13 @@ int main(){
  assert(errno==EAGAIN&&rows.size()==2);
  assert(rows[0].event==81&&rows[0].a==0xf123456789abcdefull&&rows[0].b==0x8123456789abcdefull&&rows[0].c==0x923456789abcdef0ull);
  assert(rows[1].event==80&&rows[1].a==123&&rows[1].b==0xfedcba9876543210ull&&rows[1].c==0xa3456789abcdef01ull&&rows[0].id==rows[1].id);
+ rows.clear();
+ for(uint32_t event=98;event<=101;++event){
+  rows.clear();const uint64_t before=cpuTicks;
+  nabu_ca_trace_user_marker(0x31ca8000u|(event<<2),12,13,14,15,16,17);
+  assert(rows.size()==3&&cpuTicks==before+1);
+  assert(rows[2].event==76&&rows[2].id==rows[0].id&&rows[2].a==cpuTicks*125/3&&rows[2].b==event);
+ }
  rows.clear();
  std::vector<std::thread> threads;
  for(unsigned t=0;t<8;t++)threads.emplace_back([t]{for(unsigned i=0;i<1000;i++)nabu_ca_trace_user_marker(0x31ca81fc,t*1000+i,i,t,44,55,66);});

@@ -50,6 +50,26 @@ def check():
     assert not ambiguous['complete_record_stream']
     assert ambiguous['app']['frames'][0]['dpu_transaction'] is None
     assert ambiguous['diagnostics']['app_dpu_unmatched_or_ambiguous']==1
+    marker(1000,98,1000,0xa,0xb,99,0xc)
+    marker(1010,99,1001,0xa,0xb,99,0)
+    marker(7010,100,1002,0xa,0xb,99,0xc)
+    marker(8010,101,1003,0xa,0xb,99,0)
+    r(1011,76,1001,1000000,99)
+    runtime=r(7011,76,1002,3000000,100)
+    measured=analyze(rows,metadata)['ca']['updates'][0]
+    assert measured['begin_return_to_finish_enter_ms']==6
+    assert measured['begin_return_to_finish_cpu_ms']==2
+    assert measured['begin_return_to_finish_off_cpu_ms']==4
+    runtime['b']=101 # the same token with the wrong event is not a sample
+    invalid=analyze(rows,metadata)
+    assert invalid['ca']['updates'][0]['begin_return_to_finish_cpu_ms'] is None
+    assert invalid['diagnostics']['cpu_marker_invalid_pair']==1
+    runtime['b']=100;runtime['a']=500000
+    backwards=analyze(rows,metadata)
+    assert backwards['ca']['updates'][0]['begin_return_to_finish_cpu_ms'] is None
+    assert backwards['diagnostics']['cpu_runtime_reversed']==1
+    rows.remove(runtime)
+    assert analyze(rows,metadata)['ca']['updates'][0]['begin_return_to_finish_cpu_ms'] is None
     print(json.dumps(dict(passed=True,interleaved_markers=True,cookie_reuse=True,
                          missing_pairs=True,ambiguous_surface=True,short_diagnostic_only=True)))
 

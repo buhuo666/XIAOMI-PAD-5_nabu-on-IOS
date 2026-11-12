@@ -40,6 +40,12 @@ GPU219 保留 675MHz、120Hz、3 drawable、共享 IOSurface、DPU NC/live ident
 
 本地主机 ASan/UBSan：19 组生命周期、20 组实际 Display/Scanout/PageTable/Mapper 翻帧、7 组空层清理通过。ARM64 `NabuDpuDisplay.cpp` 编译通过。本地 staging 最初误取旧事件头，已修为与 NabuDpuProducer.h 同目录的当前头；生产安装器原本即如此。
 
+进一步按同一 626 帧拆分：begin 函数平均 0.01454ms、begin 返回→finish 入口 6.58598ms、成功 can_update 返回→begin 0.38192ms；present→首次 can_update 为 4.96832ms。所有 begin/finish 均为 backboardd 的线程 839。证据 `log/host/gpu-v219/ca-deeper-breakdown.json`。
+
+GPU220 同时在现有 begin/finish 的 98–101 marker 中记录 XNU `thread_get_runtime_self()`，经真实 timebase 转换为 ns；事件 76 的 identity 是原 marker token，a=累计线程 CPU ns，b=原事件号。窗口关闭时不取 CPU 时间，不更改用户态或渲染策略。分析只配对同线程、同 token 和同窗口，缺失保持未知。墙钟减 CPU 是离开 CPU 的总时间，不能直接等同 sleep、锁等待或 GPU 等待。
+
+原版 `Server::render_for_time` 的 begin 调用在 `0x18846cd24`，render_update 在 `0x18846ce5c`，finish 在 `0x18846d144`。IOMFBServer 的 render_update vtable 指向基础 Server 软件路径，EAGLServer 指向另一实现；尚未读取运行实例的 server vtable，不能据静态表断言本轮使用软件渲染。相关有界 Capstone 解码在 `analysis/ca-update-gap-20f66-v220/`，来自本地 20F66 cache 字节，不是 REA 运行结果。
+
 这些仅证明编译和模拟时序，GPU220 尚需完整 CI、链接检查与实机 15 秒对照。不能预先宣称已省掉 7.83ms，更不能宣称已到 5ms/120fps。
 
 ## 后续工作与验收

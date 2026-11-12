@@ -43,6 +43,11 @@ def analyze(rows, metadata):
         users.append(dict(time_us=p['time_us'],event=p['event'],identity=p['a'],
                           a=p['b'],b=p['c'],c=c['c'],pid=c['a'],thread=c['b'],
                           transport_us=c['time_us']-p['time_us']))
+        runtime=indexed.get((76,token),[])
+        if len(runtime)==1 and runtime[0]['window']==p['window'] and runtime[0]['b']==p['event']:
+            users[-1]['cpu_ns']=runtime[0]['a']
+        elif runtime:
+            diagnostics['cpu_marker_invalid_pair']+=1
     users.sort(key=lambda r:r['time_us'])
     def lo(value):return value&0xffffffff
     def hi(value):return value>>32
@@ -93,6 +98,16 @@ def analyze(rows, metadata):
                             begin_return_to_finish_enter_ms=delta(start['end'] if start else None,first),
                             begin_enter_to_finish_leave_ms=delta(start['begin'] if start else None,finish['end']),
                             finish_enter_us=first['time_us'],finish_leave_us=finish['end']['time_us'],snapshots=snapshots))
+        row=updates[-1]
+        row['begin_return_to_finish_cpu_ms']=None
+        row['begin_return_to_finish_off_cpu_ms']=None
+        if start and start['thread']==finish['thread']:
+            left,right=start['end'].get('cpu_ns'),first.get('cpu_ns')
+            if left is not None and right is not None:
+                if right>=left:
+                    row['begin_return_to_finish_cpu_ms']=(right-left)/1e6
+                    row['begin_return_to_finish_off_cpu_ms']=row['begin_return_to_finish_enter_ms']-(right-left)/1e6
+                else:diagnostics['cpu_runtime_reversed']+=1
 
     # A kmsg address is reused. Only SendBegin owns a new cookie lifetime;
     # send/receive result pairs are joined by unique tokens, never that address.
@@ -200,7 +215,8 @@ def analyze(rows, metadata):
                 marker_pair_transport_ms=distribution([r['transport_us']/1000 for r in users]),
                 ipc=dict(messages=sends,by_message={msg:metrics([s for s in sends if s['message_id']==msg],names) for msg in (40205,40402)}),
                 ca=dict(calls=wrappers,call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
-                        updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms')),
+                        updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms',
+                            'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms')),
                         can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96)),
                         wait_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==108)),
                         swap_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==110)),
