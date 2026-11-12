@@ -105,6 +105,10 @@ def main():
                         (args.output / 'request-result.json').write_bytes(data)
                         report['request_result_collected'] = True
                         break
+                except json.JSONDecodeError:
+                    # GPU226 read the matching report while the helper was
+                    # still publishing it. Retry this same request's reply.
+                    report['partial_json_reads'] = report.get('partial_json_reads', 0) + 1
                 except RuntimeError as error:
                     # Run68 returned status 1 during report publication; the
                     # same request's complete result was readable afterward.

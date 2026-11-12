@@ -52,6 +52,21 @@ def main():
     physical=dict(event=38,time_us=1300,identity=44,a=40,b=66,c=45)
     retired=decompose(pending,[physical],run)
     assert retired['late_retire_frames']==1 and retired['late_transaction_handoff_frames']==0
+    assert retired['late_retire_with_prior_can_success_frames']==0
+    # GPU226 had flags1 admission before retirement, but that earlier update
+    # did not select this App sample. Do not imply continuous admission failure.
+    early=deepcopy(pending)
+    admitted=dict(event=96,pid=7,thread=9,identity=20,duration_ms=.01,
+                  begin=dict(time_us=1210,a=1),end=dict(time_us=1220,a=1))
+    early['ca']['calls'].append(admitted)
+    observed=decompose(early,[physical],run)
+    assert observed['late_retire_with_prior_can_success_frames']==1
+    ef=observed['frames'][0]
+    assert [c['flags'] for c in ef['successful_can_calls']]==[1,0]
+    assert ef['successful_can_flags'] is None and ef['first_can_to_success_ms'] is None
+    assert ef['present_to_first_successful_can_ms']==.22
+    assert ef['first_successful_can_to_selected_begin_ms']==.78
+    assert ef['present_to_dpu_ms']==frame['present_to_dpu_ms']
     assert not decompose(pending,[handoff,handoff],run)['late_transaction_handoff_frames']
     assert not decompose(pending,[dict(handoff,time_us=1000)],run)['late_transaction_handoff_frames']
 

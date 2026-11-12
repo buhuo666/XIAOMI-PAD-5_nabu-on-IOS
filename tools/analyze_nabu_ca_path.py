@@ -98,6 +98,7 @@ def decompose(ca, rows, run, benchmark_rows=None):
                     later=[q for q in cans if q['begin']['time_us']>=rt]
                     if retired_event['event']==38:
                         late.append(dict(old_swap=swap,busy_end_us=c['end']['time_us'],retired_us=rt,
+                            successful_can_before_retire=any(c['end']['time_us']<q['end']['time_us']<rt for q in good),
                             retire_after_busy_ms=(rt-c['end']['time_us'])/1000,
                             retire_to_next_can_ms=(later[0]['begin']['time_us']-rt)/1000 if later else None))
                     else:
@@ -120,6 +121,8 @@ def decompose(ca, rows, run, benchmark_rows=None):
             metal_buffer_current_ms=u.get('metal_buffer_current_ms'),
             render_outside_context_calls_ms=u.get('render_outside_context_calls_ms'),
             present_to_first_can_ms=(cans[0]['begin']['time_us']-p)/1000 if cans else None,
+            present_to_first_successful_can_ms=(good[0]['end']['time_us']-p)/1000 if good else None,
+            first_successful_can_to_selected_begin_ms=(bt-good[0]['end']['time_us'])/1000 if good else None,
             first_can_to_success_ms=(good[0]['end']['time_us']-cans[0]['begin']['time_us'])/1000 if len(good)==1 else None,
             successful_can_to_begin_ms=(bt-good[0]['end']['time_us'])/1000 if len(good)==1 else None)
         # CPU counters are thread-local. Older kernels have no CanLeave CPU
@@ -147,6 +150,8 @@ def decompose(ca, rows, run, benchmark_rows=None):
             selected_sample_match=True,failed_can=len(busy),late_retire=late,
             late_transaction_handoff=late_handoff,
             can_update_flags=dict(Counter(c['begin']['a'] for c in cans)),
+            successful_can_calls=[dict(begin_us=c['begin']['time_us'],end_us=c['end']['time_us'],
+                flags=c['begin']['a'],thread=c['thread']) for c in good],
             successful_can_flags=good[0]['begin']['a'] if len(good)==1 else None,
             render=u.get('render'),**values))
     path_values=metrics['present_to_dpu_ms']
@@ -167,9 +172,10 @@ def decompose(ca, rows, run, benchmark_rows=None):
         selected_samples_matched=len(frames),metrics={k:dict(distribution(v),over_5ms=sum(x>5 for x in v)) for k,v in metrics.items()},
         busy_count_distribution=dict(Counter(f['failed_can'] for f in frames)),
         late_retire_frames=sum(bool(f['late_retire']) for f in frames),
+        late_retire_with_prior_can_success_frames=sum(any(r['successful_can_before_retire'] for r in f['late_retire']) for f in frames),
         late_transaction_handoff_frames=sum(bool(f['late_transaction_handoff']) for f in frames),
         diagnostics=dict(diagnostics),frames=frames,
-        limits='Diagnostic App/CA/DPU interval association and selected snapshot; no claim of panel scan time. IPC is nested in the total path. Off-CPU time does not distinguish sleep, lock or scheduler delay. Event56 is transaction ownership handoff only; active physical resources remain held and it is not a new hardware acceptance.')
+        limits='Diagnostic App/CA/DPU interval association and selected snapshot; no claim of panel scan time. IPC is nested in the total path. Late retirement after a busy query is a timing correlation, not proof of continuous admission failure: an earlier successful update can omit this App sample. Off-CPU time does not distinguish sleep, lock or scheduler delay. Event56 is transaction ownership handoff only; active physical resources remain held and it is not a new hardware acceptance.')
 
 
 def main():

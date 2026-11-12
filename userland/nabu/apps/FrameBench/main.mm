@@ -49,9 +49,9 @@ NSDictionary *distribution(std::vector<double> values) {
 @interface FrameBenchController : UIViewController {
     std::vector<Row> rows;
     uint32_t rowCount, pending, epoch, missedAdmission, nullDrawable, failures, displayLinkCallbacks;
-    unsigned scene, repetition, rate, sequenceIndex, sequenceCount;
+    unsigned scene, repetition, rate, sequenceIndex, sequenceCount, requestedDrawableCount;
     double sampleStart, sampleEnd, stoppedAt, duration, presentationDrainDeadline;
-    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual;
+    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual, freshDrawablePool;
     NSInteger initialThermal;
 }
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
@@ -85,6 +85,7 @@ NSDictionary *distribution(std::vector<double> values) {
     self.controls.axis = UILayoutConstraintAxisVertical; self.controls.spacing = 24;
     for (NSArray *option in @[@[@"CA等待定位（15秒）", NSStringFromSelector(@selector(startDiagnostic))],
                               @[@"低延时定位（15秒）", NSStringFromSelector(@selector(startLowLatencyDiagnostic))],
+                              @[@"双缓冲低延时（15秒）", NSStringFromSelector(@selector(startDoubleBufferedDiagnostic))],
                               @[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
                               @[@"60帧场景对照", NSStringFromSelector(@selector(start60))],
                               @[@"120帧持续10分钟", NSStringFromSelector(@selector(startSoak))]]) {
@@ -126,22 +127,39 @@ NSDictionary *distribution(std::vector<double> values) {
     if (!self.opaquePipeline || !self.blendPipeline || !self.queue) {
         self.label.text = error.localizedDescription ?: @"图形初始化失败"; return NO;
     }
+    [self replaceMetalLayerWithDrawableCount:3];
+    return YES;
+}
+- (void)replaceMetalLayerWithDrawableCount:(NSUInteger)count {
+    // The native setter does not shrink an existing three-surface free list.
+    // Set the requested count before first use; trace still verifies the
+    // surfaces actually allocated by the original implementation.
+    CAMetalLayer *previous = self.metalLayer;
     self.metalLayer = [CAMetalLayer layer]; self.metalLayer.device = self.device;
     self.metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     self.metalLayer.framebufferOnly = YES; self.metalLayer.opaque = YES;
-    self.metalLayer.maximumDrawableCount = 3;
+    self.metalLayer.maximumDrawableCount = count;
     self.metalLayer.drawableSize = CGSizeMake(Width, Height);
     self.metalLayer.frame = self.view.bounds;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     [self.view.layer insertSublayer:self.metalLayer atIndex:0];
-    return YES;
+    [previous removeFromSuperlayer];
+    [CATransaction commit];
+    requestedDrawableCount = unsigned(count);
+    freshDrawablePool = true;
 }
 - (void)start120 { [self beginSequence:120 soak:NO]; }
 - (void)start60 { [self beginSequence:60 soak:NO]; }
 - (void)startSoak { [self beginSequence:120 soak:YES]; }
-- (void)startDiagnostic { [self startDiagnosticWithLowLatency:NO]; }
-- (void)startLowLatencyDiagnostic { [self startDiagnosticWithLowLatency:YES]; }
-- (void)startDiagnosticWithLowLatency:(BOOL)enabled {
+- (void)startDiagnostic { [self startDiagnosticWithLowLatency:NO drawableCount:3]; }
+- (void)startLowLatencyDiagnostic { [self startDiagnosticWithLowLatency:YES drawableCount:3]; }
+- (void)startDoubleBufferedDiagnostic { [self startDiagnosticWithLowLatency:YES drawableCount:2]; }
+- (void)startDiagnosticWithLowLatency:(BOOL)enabled drawableCount:(NSUInteger)count {
     if (running || draining || ![self prepareRenderer]) return;
+    if (count == 2 || self.metalLayer.maximumDrawableCount != count)
+        [self replaceMetalLayerWithDrawableCount:count];
+    requestedDrawableCount = unsigned(count);
     lowLatencyRequested = enabled;
     diagnostic = true; rate = 120; duration = 15;
     sequenceIndex = 0; sequenceCount = 1; automated = true;
@@ -149,6 +167,8 @@ NSDictionary *distribution(std::vector<double> values) {
 }
 - (void)beginSequence:(unsigned)targetRate soak:(BOOL)soak {
     if (running || draining || ![self prepareRenderer]) return;
+    if (self.metalLayer.maximumDrawableCount != 3) [self replaceMetalLayerWithDrawableCount:3];
+    requestedDrawableCount = 3;
     lowLatencyRequested = false;
     diagnostic = false; rate = targetRate; duration = soak ? 600 : 60;
     sequenceIndex = 0; sequenceCount = soak ? 1 : 6; automated = true;
@@ -371,8 +391,11 @@ NSDictionary *distribution(std::vector<double> values) {
     const bool completeInterval = stoppedAt >= sampleEnd;
     const bool validPerformance = !diagnostic && completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @5, @"diagnostic_only": @(diagnostic),
+        @"run_id": self.runID, @"benchmark_revision": @6, @"diagnostic_only": @(diagnostic),
         @"low_latency_requested": @(lowLatencyRequested), @"low_latency_actual": @(lowLatencyActual),
+        @"maximum_drawable_count_requested": @(requestedDrawableCount),
+        @"maximum_drawable_count_actual": @(self.metalLayer.maximumDrawableCount),
+        @"fresh_drawable_pool": @(freshDrawablePool),
         @"presentation_drain_seconds": @(diagnostic ? PresentationDrainSeconds : 0),
         @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
@@ -402,6 +425,7 @@ NSDictionary *distribution(std::vector<double> values) {
     if (![data writeToURL:[self.documents URLByAppendingPathComponent:[self.runID stringByAppendingString:@".json"]] options:NSDataWritingAtomic error:&error]) {
         ++failures; self.failureReason = error.localizedDescription ?: @"Cannot save report";
     }
+    freshDrawablePool = false;
 }
 - (void)stopForBackground {
     automated = false;

@@ -53,7 +53,7 @@ def main():
              ROOT / 'userland/nabu/apps/LocalTest/LaunchScreen.storyboard'])
         info = {'CFBundleIdentifier': BUNDLE, 'CFBundleName': 'FrameBench', 'CFBundleExecutable': 'FrameBench',
                 'CFBundleDisplayName': 'GPU帧率基准', 'CFBundlePackageType': 'APPL',
-                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '5', 'CFBundleShortVersionString': '1.4',
+                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '6', 'CFBundleShortVersionString': '1.5',
                 'MinimumOSVersion': '16.5', 'CFBundleSupportedPlatforms': ['iPhoneOS'],
                 'LSRequiresIPhoneOS': True, 'UIDeviceFamily': [2], 'UIRequiresFullScreen': True,
                 'UILaunchStoryboardName': 'LaunchScreen', 'UIFileSharingEnabled': True,
@@ -78,7 +78,8 @@ def main():
         report.update(result='signed_not_run', ipa=ipa.name, ipa_bytes=ipa.stat().st_size,
                       width=1600, height=2560, scenes=['opaque_motion', 'eight_layer_alpha'],
                       repetitions=3, seconds_per_run=60, soak_seconds=600, diagnostic_seconds=15,
-                      diagnostic_modes=['default', 'low_latency'], readback_during_capture=False)
+                      diagnostic_modes=['default', 'low_latency', 'double_buffered_low_latency'],
+                      diagnostic_drawable_counts=[3, 3, 2], readback_during_capture=False)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         report.update(result='failed', error=str(error))
     (output / 'build-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
