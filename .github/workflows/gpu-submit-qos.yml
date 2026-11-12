@@ -1,5 +1,16 @@
 name: nabu16 - iOS Metal QoS and submission waits
 on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-submit-qos.yml'
+      - 'tools/build_nabu_gpu_submit.py'
+      - 'tools/nabu_metal_ios_qos.py'
+      - 'tools/nabu_metal_submit_trace.py'
+      - 'tools/check_nabu_metal_ios_qos.py'
+      - 'tools/check_nabu_metal_submit_trace.py'
+      - 'patches/nabu-metal/0030-nabu-ios-thread-qos.patch'
+      - 'patches/nabu-metal/NativeMetalSubmitTrace.inc'
   workflow_dispatch:
 permissions:
   contents: read
