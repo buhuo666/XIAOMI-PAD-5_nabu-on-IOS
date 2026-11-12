@@ -20,6 +20,7 @@ def main():
     (a.output/'host-test.log').write_text(r.stdout+r.stderr,encoding='utf-8');r.check_returncode()
     report={'passed':True,'test':r.stdout.strip(),'device_executed':False,
         'executable_function_entries_modified':False,'executable_pages_modified':False,
-        'render_update_data_vtable_slots':2,'server_state_pre_call_only':True}
+        'render_update_data_vtable_slots':2,'metal_context_data_vtable_slots':2,
+        'server_state_pre_call_only':True,'context_state_pre_call_only':True}
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 if __name__=='__main__':main()

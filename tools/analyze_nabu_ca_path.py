@@ -85,6 +85,9 @@ def decompose(ca, rows, run):
             begin_return_to_render_ms=u.get('begin_return_to_render_ms'),
             render_call_ms=u.get('render_call_ms'),
             render_return_to_finish_ms=u.get('render_return_to_finish_ms'),
+            metal_collect_ms=u.get('metal_collect_ms'),
+            metal_buffer_current_ms=u.get('metal_buffer_current_ms'),
+            render_outside_context_calls_ms=u.get('render_outside_context_calls_ms'),
             present_to_first_can_ms=(cans[0]['begin']['time_us']-p)/1000 if cans else None,
             first_can_to_success_ms=(good[0]['end']['time_us']-cans[0]['begin']['time_us'])/1000 if len(good)==1 else None,
             successful_can_to_begin_ms=(bt-good[0]['end']['time_us'])/1000 if len(good)==1 else None)

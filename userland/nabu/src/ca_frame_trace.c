@@ -9,6 +9,8 @@ typedef uintptr_t (*display_update_fn)(void *, void *, uint32_t);
 typedef uintptr_t (*display_begin_fn)(void *, void *);
 typedef uint32_t (*display_can_fn)(void *, uint32_t);
 typedef uintptr_t (*server_render_fn)(void *, void *, uint32_t *);
+typedef uintptr_t (*context_collect_fn)(void *, uint32_t);
+typedef uintptr_t (*context_buffer_fn)(void *, void *);
 typedef int32_t (*swap_end_fn)(void *);
 typedef int32_t (*swap_wait_fn)(void *, uint32_t, uint32_t);
 
@@ -30,6 +32,8 @@ static display_update_fn original_finish;
 static display_begin_fn original_begin;
 static display_can_fn original_can;
 static server_render_fn original_iomfb_render,original_eagl_render;
+static context_collect_fn original_collect;
+static context_buffer_fn original_make_buffer;
 static uintptr_t eagl_vtable;
 static swap_end_fn original_swap;
 static swap_wait_fn original_wait;
@@ -232,6 +236,32 @@ static uintptr_t traced_iomfb_render(void *server,void *update,uint32_t *flags)
 static uintptr_t traced_eagl_render(void *server,void *update,uint32_t *flags)
 {return traced_render(server,update,flags,original_eagl_render,1);}
 
+static uintptr_t traced_collect(void *context,uint32_t all)
+{
+    int saved=*__error();
+    uintptr_t vtable=(uintptr_t)pointer(context,0);
+    /* 20F66 Renderer::collect sets w1 with cset at 1882a3b44 before
+     * dispatch through context vslot+c0. MetalContext::collect saves x1,
+     * tests w19, then tail-calls Context::collect with the same argument. */
+    mark(NabuCaCollectEnter,context,all,vtable,(uintptr_t)original_collect);
+    *__error()=saved;
+    uintptr_t result=original_collect(context,all);
+    mark(NabuCaCollectLeave,context,all,vtable,result);
+    return result;
+}
+static uintptr_t traced_make_buffer(void *context,void *surface)
+{
+    int saved=*__error();
+    uintptr_t vtable=(uintptr_t)pointer(context,0);
+    /* 20F66 188258f04 tests x1 directly: a Surface pointer or null to
+     * unbind. Do not read Surface or context after the original returns. */
+    mark(NabuCaMakeBufferEnter,context,(uintptr_t)surface,vtable,(uintptr_t)original_make_buffer);
+    *__error()=saved;
+    uintptr_t result=original_make_buffer(context,surface);
+    mark(NabuCaMakeBufferLeave,context,(uintptr_t)surface,vtable,result);
+    return result;
+}
+
 static int uuid_matches(const void *image,const unsigned char expected[16])
 {
     if(!image||word(image,0)!=0xfeedfacf)return 0;
@@ -266,7 +296,7 @@ struct page_change {uint64_t address;int32_t protection;};
  * There is deliberately no restoration/unload race with active render calls. */
 static int install_sites(struct site *sites,unsigned count)
 {
-    struct page_change changed[14];unsigned pages_count=0;
+    struct page_change changed[16];unsigned pages_count=0;
     uint64_t page_size=(uint64_t)getpagesize();
     if(!page_size||(page_size&(page_size-1)))return -2;
     for(unsigned i=0;i<count;++i)
@@ -284,7 +314,7 @@ static int install_sites(struct site *sites,unsigned count)
     }
     for(unsigned i=0;i<count;++i)__atomic_store_n((uintptr_t *)sites[i].address,sites[i].replacement,__ATOMIC_RELEASE);
     {
-        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks);
+        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks|NabuCaMetalContextHooks);
         for(unsigned i=0;i<pages_count;++i)
             if(vm_protect(mach_task_self_,changed[i].address,page_size,0,changed[i].protection))result=-5;
         return result;
@@ -315,13 +345,15 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     original_finish=(display_update_fn)(uintptr_t)(qc+0x188248568ULL);
     original_iomfb_render=(server_render_fn)(uintptr_t)(qc+0x18846bc6cULL);
     original_eagl_render=(server_render_fn)(uintptr_t)(qc+0x1882d770cULL);
+    original_collect=(context_collect_fn)(uintptr_t)(qc+0x1882c5be0ULL);
+    original_make_buffer=(context_buffer_fn)(uintptr_t)(qc+0x188258ef0ULL);
     eagl_vtable=(uintptr_t)(qc+0x1d57edc68ULL);
     if(have_fb){
         original_swap=(swap_end_fn)(uintptr_t)(fb+0x1af12c530ULL);
         original_wait=(swap_wait_fn)(uintptr_t)(fb+0x1af12c648ULL);
     }
     static const uintptr_t tables[]={0x1d57ddc60ULL,0x1d57de420ULL,0x1d57ebd00ULL,0x1d57ec520ULL};
-    struct site sites[14];unsigned n=0;
+    struct site sites[16];unsigned n=0;
     for(unsigned i=0;i<4;++i){
         uintptr_t table=tables[i]+qc+16;
         sites[n++]=(struct site){table+0x140,(uintptr_t)original_can,(uintptr_t)traced_can};
@@ -330,6 +362,8 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     }
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57ddc10ULL),(uintptr_t)original_iomfb_render,(uintptr_t)traced_iomfb_render};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57edde0ULL),(uintptr_t)original_eagl_render,(uintptr_t)traced_eagl_render};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e3f08ULL),(uintptr_t)original_collect,(uintptr_t)traced_collect};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e41a0ULL),(uintptr_t)original_make_buffer,(uintptr_t)traced_make_buffer};
     trace_sink=sink;
     capabilities=have_fb?NabuCaFramebufferHooksSupported:0;
     int result=install_sites(sites,n);

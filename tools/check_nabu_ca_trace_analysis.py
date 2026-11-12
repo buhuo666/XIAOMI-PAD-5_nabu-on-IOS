@@ -82,6 +82,19 @@ def check():
     assert measured['render']['end']['decoded']['result']==0xffffffffffffffff
     state,=measured['render']['server_states']
     assert state['decoded']['software_context_vtable']==0x1d57e5618
+    assert measured['metal_collect_ms'] is None
+    marker(1200,121,1020,0x200,0x300,0x400,0x500)
+    marker(2200,119,1021,0x200,1,0x400,0x600)
+    marker(4200,120,1022,0x200,1,0x400,0xffffffffffffffff)
+    marker(5200,122,1023,0x200,0x300,0x400,1)
+    measured=analyze(rows,metadata)['ca']['updates'][0]
+    assert measured['metal_collect_ms']==2 and measured['metal_buffer_current_ms']==4
+    assert abs(measured['render_outside_context_calls_ms']-1.9)<1e-9
+    # Missing a leave marker must not classify its body as unobserved renderer work.
+    truncated=[r for r in rows if r['identity']!=1022 or r['event'] not in (120,80)]
+    incomplete=analyze(truncated,metadata)
+    assert incomplete['ca']['updates'][0]['metal_collect_ms'] is None
+    assert incomplete['diagnostics']['ca_context_call_boundary_missing']==1
     # A matching pointer on another thread is not the measured render.
     for item in rows:
         if item['event']==80 and item['identity'] in (1010,1011,1012):item['b']=8

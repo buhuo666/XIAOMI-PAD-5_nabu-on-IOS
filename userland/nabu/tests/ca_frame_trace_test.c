@@ -15,6 +15,9 @@ static int fail_page;
 static void *expected_server,*expected_update;
 static uint32_t *expected_flags;
 static unsigned render_backend,render_order;
+static void *expected_context,*expected_surface;
+static uint32_t expected_collect_all;
+static unsigned context_entry,context_order;
 int *__error(void){return &test_errno;}
 const char *getprogname(void){return process;}
 uint32_t _dyld_image_count(void){return 0;}
@@ -41,10 +44,16 @@ static void store64(void *b,size_t o,uint64_t v){memcpy((unsigned char *)b+o,&v,
 static void ptr(void *b,size_t o,const void *p){store64(b,o,(uintptr_t)p);}
 static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
 {
-    assert(event>=96&&event<=118);++marks;++seen[event];
+    assert(event>=96&&event<=122);++marks;++seen[event];
     if(event==NabuCaRenderEnter){assert(render_order==0);render_order=1;}
     if(event==NabuCaServerState){assert(render_order==1);render_order=2;}
     if(event==NabuCaRenderLeave){assert(render_order==3);render_order=0;}
+    if(event==NabuCaCollectEnter||event==NabuCaMakeBufferEnter){
+        assert(context_order==0);context_order=1;context_entry=event;
+    }
+    if(event==NabuCaCollectLeave||event==NabuCaMakeBufferLeave){
+        assert(context_order==2&&event==context_entry+1);context_order=0;
+    }
     last[event][0]=id;last[event][1]=a;last[event][2]=b;last[event][3]=c;
     test_errno=99;
 }
@@ -96,6 +105,56 @@ static void check_render(int eagl,int contexts,int matching_table)
     assert(last[NabuCaServerState][2]==(contexts?sw[0]:0));
     assert(last[NabuCaServerState][3]==(eagl&&matching_table&&contexts?hardware[0]:0));
     assert(render_order==0);free(server);
+}
+static uintptr_t original_mc(void *context,uint32_t all)
+{
+    assert(context==expected_context&&all==expected_collect_all&&test_errno==13);
+    assert(context_order==1&&context_entry==NabuCaCollectEnter);
+    ++original_calls;context_order=2;
+    free(context); /* ASan verifies that the leave path does not reread context. */
+    test_errno=47;return raw_return;
+}
+static uintptr_t original_mb(void *context,void *surface)
+{
+    assert(context==expected_context&&surface==expected_surface&&test_errno==13);
+    assert(context_order==1&&context_entry==NabuCaMakeBufferEnter);
+    ++original_calls;context_order=2;
+    free(context);
+    test_errno=47;return raw_return;
+}
+static void check_context_call(int make_buffer,int nonzero)
+{
+    uint64_t *context=malloc(sizeof(*context));assert(context);
+    const uint64_t vptr=UINT64_C(0x1d57e3e48);*context=vptr;
+    const uintptr_t identity=(uintptr_t)context;
+    expected_context=context;expected_collect_all=(uint32_t)nonzero;
+    /* This opaque argument is deliberately unreadable. Only the original
+     * implementation owns its interpretation; null is the unbind case. */
+    expected_surface=nonzero?(void *)(uintptr_t)UINT64_C(0xfedcba9876543000):0;
+    const uint64_t argument=make_buffer?(uintptr_t)expected_surface:expected_collect_all;
+    const uint32_t event=make_buffer?NabuCaMakeBufferEnter:NabuCaCollectEnter;
+    test_errno=13;
+    uintptr_t result=make_buffer?traced_make_buffer(context,expected_surface):traced_collect(context,expected_collect_all);
+    assert(result==raw_return&&test_errno==47&&context_order==0);
+    assert(last[event][0]==identity&&last[event][1]==argument&&last[event][2]==vptr);
+    assert(last[event][3]==(make_buffer?(uintptr_t)original_mb:(uintptr_t)original_mc));
+    assert(last[event+1][0]==identity&&last[event+1][1]==argument&&last[event+1][2]==vptr);
+    assert(last[event+1][3]==raw_return);
+}
+static void sixteen_slot_install(void)
+{
+    uintptr_t *slots=aligned_alloc(4096,16*4096);assert(slots);
+    struct site sites[16];
+    for(unsigned i=0;i<16;++i){slots[i*512]=i+1;sites[i]=(struct site){(uintptr_t)&slots[i*512],i+1,i+101};}
+    sites[15].target=99;protect_calls=restore_calls=0;
+    assert(install_sites(sites,16)==-3&&protect_calls==0);sites[15].target=16;
+    fail_page=16;protect_calls=restore_calls=0;
+    assert(install_sites(sites,16)==-4&&protect_calls==16&&restore_calls==15);
+    for(unsigned i=0;i<16;++i)assert(slots[i*512]==i+1);
+    fail_page=0;protect_calls=restore_calls=0;
+    assert(install_sites(sites,16)==29&&protect_calls==16&&restore_calls==16);
+    for(unsigned i=0;i<16;++i)assert(slots[i*512]==i+101);
+    free(slots);
 }
 
 int main(void)
@@ -150,11 +209,14 @@ int main(void)
     struct site sites[]={{(uintptr_t)&slots[0],11,33},{(uintptr_t)&slots[512],22,44}};
     fail_page=2;protect_calls=restore_calls=0;assert(install_sites(sites,2)==-4&&slots[0]==11&&slots[512]==22&&restore_calls==1);
     fail_page=0;protect_calls=restore_calls=0;sites[1].target=23;assert(install_sites(sites,2)==-3&&protect_calls==0);sites[1].target=22;
-    assert(install_sites(sites,2)==13&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
+    assert(install_sites(sites,2)==29&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
     original_iomfb_render=original_ri;original_eagl_render=original_re;eagl_vtable=UINT64_C(0x1d57edc68);
     check_render(0,0,0);check_render(0,1,0);check_render(1,0,1);check_render(1,1,1);check_render(1,1,0);
+    original_collect=original_mc;original_make_buffer=original_mb;
+    check_context_call(0,0);check_context_call(0,1);check_context_call(1,0);check_context_call(1,1);
+    sixteen_slot_install();
     assert(nabu_ca_frame_trace_install(sink)==0);process="backboardd";installation=0;test_errno=13;
     assert(nabu_ca_frame_trace_install(sink)==0&&test_errno==13);
-    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch, pre-call context state and marker order; UUID and all-slot validation; COW failure rollback; %u markers\n",marks);
+    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch and pre-call context state; Metal collect/buffer ABI, null unbind, no reads after return; UUID and all 16-slot validation; COW failure rollback; %u markers\n",marks);
     return 0;
 }

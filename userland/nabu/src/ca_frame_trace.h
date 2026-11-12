@@ -21,11 +21,14 @@ enum nabu_ca_trace_event {
     NabuCaSwapLayers = 112, NabuCaFramebufferHooks = 113,
     NabuCaSnapshotLimit = 114, NabuCaSampleWords = 115,
     NabuCaRenderEnter = 116, NabuCaRenderLeave = 117,
-    NabuCaServerState = 118
+    NabuCaServerState = 118,
+    NabuCaCollectEnter = 119, NabuCaCollectLeave = 120,
+    NabuCaMakeBufferEnter = 121, NabuCaMakeBufferLeave = 122
 };
 enum nabu_ca_trace_capability {
     NabuCaDisplayHooks = 1, NabuCaFramebufferHooksSupported = 2,
-    NabuCaSelectedQueueSnapshot = 4, NabuCaRenderHooks = 8
+    NabuCaSelectedQueueSnapshot = 4, NabuCaRenderHooks = 8,
+    NabuCaMetalContextHooks = 16
 };
 /* Call once from an explicitly opted-in backboardd startup path. Returns a
  * capability mask, zero for wrong process/images, or negative on installation

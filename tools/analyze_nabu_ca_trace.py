@@ -71,8 +71,11 @@ def analyze(rows, metadata):
                               **({'original_target':c} if e==116 else {'result':c}))
         elif e==118:
             r['decoded']=dict(server_vtable=a,software_context_vtable=b,egl_context_vtable=c)
+        elif e in (119,120,121,122):
+            r['decoded']=dict(argument=a,context_vtable=b,
+                **({'original_target':c} if e in (119,121) else {'result':c}))
     wrappers=[];stacks=defaultdict(list)
-    pairs={81:82,96:97,98:99,100:101,108:109,110:111,116:117};reverse={v:k for k,v in pairs.items()}
+    pairs={81:82,96:97,98:99,100:101,108:109,110:111,116:117,119:120,121:122};reverse={v:k for k,v in pairs.items()}
     for r in users:
         event=r['event'];entry=reverse.get(event,event)
         if entry not in pairs:continue
@@ -85,14 +88,17 @@ def analyze(rows, metadata):
     diagnostics['wrapper_missing_leave']=sum(len(s) for s in stacks.values())
     updates=[]
     begin_calls=defaultdict(list);snapshots_by_thread=defaultdict(list)
-    render_calls=defaultdict(list);server_states=defaultdict(list)
+    render_calls=defaultdict(list);server_states=defaultdict(list);context_calls=defaultdict(list)
     for p in wrappers:
         if p['event']==98:begin_calls[(p['pid'],p['identity'],p['begin']['b'],p['begin']['a'])].append(p)
         if p['event']==116:
             render_calls[(p['pid'],p['thread'],p['identity'],lo(p['begin']['b']))].append(p)
+        if p['event'] in (119,121):context_calls[(p['pid'],p['thread'])].append(p)
+    context_edges=defaultdict(list)
     for r in users:
         if r['event'] in (104,105,106,107,114,115):snapshots_by_thread[(r['pid'],r['thread'])].append(r)
         if r['event']==118:server_states[(r['pid'],r['thread'],r['identity'])].append(r)
+        if 119<=r['event']<=122:context_edges[(r['pid'],r['thread'])].append(r)
     snapshot_times={k:[r['time_us'] for r in v] for k,v in snapshots_by_thread.items()}
     finish_calls=[p for p in wrappers if p['event']==100]
     for finish in finish_calls:
@@ -109,7 +115,8 @@ def analyze(rows, metadata):
                             finish_enter_us=first['time_us'],finish_leave_us=finish['end']['time_us'],snapshots=snapshots))
         row=updates[-1]
         row.update(begin_return_to_render_ms=None,render_call_ms=None,render_return_to_finish_ms=None,
-                   render=None)
+                   metal_collect_ms=None,metal_buffer_current_ms=None,
+                   render_outside_context_calls_ms=None,render=None)
         renders=[p for p in render_calls.get((finish['pid'],finish['thread'],finish['identity'],frame),[])
                  if start and start['end']['time_us']<=p['begin']['time_us']<=p['end']['time_us']<=first['time_us']]
         if len(renders)==1:
@@ -119,6 +126,25 @@ def analyze(rows, metadata):
             row.update(begin_return_to_render_ms=delta(start['end'],render['begin']),
                        render_call_ms=render['duration_ms'],render_return_to_finish_ms=delta(render['end'],first),
                        render=dict(render,server_states=states))
+            nested=[p for p in context_calls[(render['pid'],render['thread'])]
+                    if render['begin']['time_us']<=p['begin']['time_us']<=p['end']['time_us']<=render['end']['time_us']]
+            edges=[r for r in context_edges[(render['pid'],render['thread'])]
+                   if render['begin']['time_us']<=r['time_us']<=render['end']['time_us']]
+            row['render']['context_calls']=nested
+            if any(context_edges.values()) and len(edges)==2*len(nested):
+                row['metal_collect_ms']=sum(p['duration_ms'] for p in nested if p['event']==119)
+                row['metal_buffer_current_ms']=sum(p['duration_ms'] for p in nested if p['event']==121)
+                # collect can occur inside make_buffer_current. Subtract the
+                # union of nested wall intervals, never their double-counted sum.
+                covered=0;left=right=None
+                for p in sorted(nested,key=lambda p:p['begin']['time_us']):
+                    a,b=p['begin']['time_us'],p['end']['time_us']
+                    if left is None:left,right=a,b
+                    elif a<=right:right=max(right,b)
+                    else:covered+=right-left;left,right=a,b
+                if left is not None:covered+=right-left
+                row['render_outside_context_calls_ms']=render['duration_ms']-covered/1000
+            elif edges:diagnostics['ca_context_call_boundary_missing']+=1
         elif len(renders)>1:diagnostics['ca_render_ambiguous']+=1
         row['begin_return_to_finish_cpu_ms']=None
         row['begin_return_to_finish_off_cpu_ms']=None
@@ -238,7 +264,8 @@ def analyze(rows, metadata):
                 ca=dict(calls=wrappers,call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
                         updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms',
                             'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms',
-                            'begin_return_to_render_ms','render_call_ms','render_return_to_finish_ms')),
+                            'begin_return_to_render_ms','render_call_ms','render_return_to_finish_ms',
+                            'metal_collect_ms','metal_buffer_current_ms','render_outside_context_calls_ms')),
                         can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96)),
                         wait_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==108)),
                         swap_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==110)),
