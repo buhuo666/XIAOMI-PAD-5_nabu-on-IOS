@@ -9,7 +9,11 @@ on:
       - 'tools/nabu_metal_submit_trace.py'
       - 'tools/check_nabu_metal_ios_qos.py'
       - 'tools/check_nabu_metal_submit_trace.py'
+      - 'tools/nabu_metal_runtime_trace.py'
+      - 'tools/check_nabu_runtime_submit_trace.py'
       - 'patches/nabu-metal/0030-nabu-ios-thread-qos.patch'
+      - 'patches/nabu-metal/0031-nabu-runtime-submit-spans.patch'
+      - 'patches/nabu-metal/NativeMetalRuntimeTrace.rs'
       - 'patches/nabu-metal/NativeMetalSubmitTrace.inc'
   workflow_dispatch:
 permissions:
@@ -42,6 +46,7 @@ jobs:
         run: |
           python3 tools/check_nabu_metal_ios_qos.py --output artifacts/ios-qos-check
           python3 tools/check_nabu_metal_submit_trace.py --input inputs/qualified/nabu-family-cache --output artifacts/submit-trace-check
+          python3 tools/check_nabu_runtime_submit_trace.py --input inputs/qualified/nabu-family-cache --output artifacts/runtime-submit-check
       - name: Build iOS runtime and frontend
         run: >-
           python3 tools/build_nabu_gpu_submit.py --input inputs/qualified/nabu-family-cache

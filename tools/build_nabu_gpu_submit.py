@@ -12,6 +12,7 @@ from build_nabu_gpu_metal_probe import FRONTEND, RUST, replace_once
 from build_nabu_gpu_vulkan_probe import TARGET, macho_target, sign
 from nabu_metal_submit_trace import stage_submit_trace
 from nabu_metal_ios_qos import stage_ios_qos
+from nabu_metal_runtime_trace import stage_runtime_trace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,6 +50,7 @@ def main():
 
     try:
         report['ios_thread_qos'] = stage_ios_qos(ROOT,metal)
+        report['runtime_submission_trace'] = stage_runtime_trace(ROOT,metal)
         report['runtime_patches'] = [line.strip() for line in (metal/'bridge/patches/series').read_text().splitlines()
                                      if line.strip() and not line.lstrip().startswith('#')]
         pins = {x['name']:x for x in json.loads((ROOT/'configs/sources.lock.json').read_text())['sources']}

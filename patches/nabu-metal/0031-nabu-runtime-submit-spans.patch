@@ -1,0 +1,171 @@
+diff --git a/crates/metal2vulkan-runtime/src/lib.rs b/crates/metal2vulkan-runtime/src/lib.rs
+--- a/crates/metal2vulkan-runtime/src/lib.rs
++++ b/crates/metal2vulkan-runtime/src/lib.rs
+@@ -23,6 +23,7 @@
+ // warnings-denied gates.
+ #![warn(missing_docs)]
+ 
++mod nabu_submit_trace;
+ mod address;
+ mod address_map;
+ mod address_pool;
+diff --git a/crates/metal2vulkan-runtime/src/command_buffer/mod.rs b/crates/metal2vulkan-runtime/src/command_buffer/mod.rs
+--- a/crates/metal2vulkan-runtime/src/command_buffer/mod.rs
++++ b/crates/metal2vulkan-runtime/src/command_buffer/mod.rs
+@@ -1779,6 +1779,12 @@
+ }
+ 
+ impl CommandBuffer {
++    /// Diagnostic identity of this live runtime object, without retaining it. No Metal counterpart.
++    #[doc(hidden)]
++    pub fn nabu_trace_identity(&self) -> u64 {
++        Arc::as_ptr(&self.0) as usize as u64
++    }
++
+     /// A new command buffer of `queue`, holding `slot` of it.
+     pub(super) fn new(queue: &CommandQueue, slot: Slot) -> CommandBuffer {
+         CommandBuffer(Arc::new(CommandBufferShared {
+diff --git a/crates/metal2vulkan-runtime/src/scheduler/mod.rs b/crates/metal2vulkan-runtime/src/scheduler/mod.rs
+--- a/crates/metal2vulkan-runtime/src/scheduler/mod.rs
++++ b/crates/metal2vulkan-runtime/src/scheduler/mod.rs
+@@ -684,6 +684,7 @@
+         queue: u64,
+         batches: Vec<BatchSync>,
+     ) {
++        let _nabu_trace = crate::nabu_submit_trace::Span::new(42, 43, Arc::as_ptr(buffer) as usize as u64, queue);
+         let shared = &*self.shared;
+         let committed = Committed {
+             buffer: buffer.hold(),
+diff --git a/crates/metal2vulkan-runtime/src/command_buffer/submit.rs b/crates/metal2vulkan-runtime/src/command_buffer/submit.rs
+--- a/crates/metal2vulkan-runtime/src/command_buffer/submit.rs
++++ b/crates/metal2vulkan-runtime/src/command_buffer/submit.rs
+@@ -344,6 +344,8 @@
+         event_waits: &[(vk::Semaphore, u64)],
+         scheduler: &mut scheduler::State,
+     ) -> Result<Submitting, CommandBufferError> {
++        let trace_identity = Arc::as_ptr(self) as usize as u64;
++        let _nabu_submit = crate::nabu_submit_trace::Span::new(32, 33, trace_identity, index as u64);
+         let device = &self.device;
+         if device.is_lost() {
+             return Err(CommandBufferError::DeviceLost);
+@@ -383,6 +385,7 @@
+         // Its first submission resolves what its commands reach as Metal's does, before any of
+         // its batches goes to the `VkQueue` (`first_submission.rs`).
+         if !state.submitted {
++            let _nabu_first = crate::nabu_submit_trace::Span::new(34, 35, trace_identity, index as u64);
+             let first = state
+                 .first_submission(device, self)
+                 .map_err(|error| recording_error(device, error))?;
+@@ -597,9 +600,10 @@
+         if internal_exports {
+             host_writes = host_writes.union(Barrier::to_host().src);
+         }
+-        let plan = scheduler
+-            .tracker
+-            .plan(entry.iter().chain(summaries).chain(&exit), at);
++        let plan = {
++            let _nabu_plan = crate::nabu_submit_trace::Span::new(36, 37, trace_identity, index as u64);
++            scheduler.tracker.plan(entry.iter().chain(summaries).chain(&exit), at)
++        };
+         // One barrier per summary planned: the entry's, the encoders', the exit's.
+         let mut barriers = plan.barriers();
+         let mut entry_barrier = None;
+@@ -642,6 +646,7 @@
+         if index == 0 {
+             state.times.prefixed = prefixed;
+         }
++        let nabu_prepare = crate::nabu_submit_trace::Span::new(38, 39, trace_identity, index as u64);
+         let mut work = Vec::with_capacity(2 * (end - start) + 1);
+         // Whether a command buffer of barriers goes before the first encoder.
+         let mut started = false;
+@@ -942,6 +947,7 @@
+             (false, true) => &infos[..1],
+             (false, false) => &infos[..],
+         };
++        drop(nabu_prepare);
+         let submits = infos;
+         let buffers = (submits.iter())
+             .map(|info| info.command_buffer_count as usize)
+@@ -992,10 +998,10 @@
+                 fence,
+                 relayed: &self.relayed,
+             };
+-            let submitted =
+-                scheduler
+-                    .group
+-                    .submit(device, &mut scheduler.waited[queue], Some(after));
++            let submitted = {
++                let _nabu_queue = crate::nabu_submit_trace::Span::new(40, 41, trace_identity, index as u64);
++                scheduler.group.submit(device, &mut scheduler.waited[queue], Some(after))
++            };
+             if let Err(error) = submitted {
+                 if let Some(fence) = fence {
+                     // SAFETY: the failed submission is not pending; inside the section.
+diff --git a/crates/metal2vulkan-runtime/src/nabu_submit_trace.rs b/crates/metal2vulkan-runtime/src/nabu_submit_trace.rs
+new file mode 100644
+--- /dev/null
++++ b/crates/metal2vulkan-runtime/src/nabu_submit_trace.rs
+@@ -0,0 +1,63 @@
++//! Optional GPU230 submission spans. The kernel retains only active trace windows.
++
++#[cfg(any(target_os = "macos", target_os = "ios"))]
++fn enabled() -> bool {
++    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    // Preserve the caller's errno even during the first environment lookup.
++    let saved = unsafe { *libc::__error() };
++    let enabled = *ENABLED.get_or_init(|| {
++        std::env::var_os("NABU_METAL_SUBMIT_TRACE").is_some_and(|value| value == "1")
++    });
++    unsafe { *libc::__error() = saved };
++    enabled
++}
++
++#[cfg(not(any(target_os = "macos", target_os = "ios")))]
++fn enabled() -> bool {
++    false
++}
++
++#[cfg(any(target_os = "macos", target_os = "ios"))]
++fn mark(stage: u64, identity: u64, argument: u64) {
++    // Same BSD179 ABI as the existing nabu CA marker. This emits observations,
++    // never a scheduling transition, and never retains a command buffer.
++    unsafe {
++        let saved = *libc::__error();
++        let mut cpu = libc::timespec { tv_sec: 0, tv_nsec: 0 };
++        let ns = if libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut cpu) == 0 {
++            cpu.tv_sec as u64 * 1_000_000_000 + cpu.tv_nsec as u64
++        } else {
++            0
++        };
++        libc::syscall(179, 0x31ca81fc_u64, identity, stage, argument, ns);
++        *libc::__error() = saved;
++    }
++}
++
++#[cfg(not(any(target_os = "macos", target_os = "ios")))]
++fn mark(_stage: u64, _identity: u64, _argument: u64) {}
++
++pub(crate) struct Span {
++    enabled: bool,
++    end: u64,
++    identity: u64,
++    argument: u64,
++}
++
++impl Span {
++    pub(crate) fn new(begin: u64, end: u64, identity: u64, argument: u64) -> Self {
++        let span = Self { enabled: enabled(), end, identity, argument };
++        if span.enabled {
++            mark(begin, identity, argument);
++        }
++        span
++    }
++}
++
++impl Drop for Span {
++    fn drop(&mut self) {
++        if self.enabled {
++            mark(self.end, self.identity, self.argument);
++        }
++    }
++}
