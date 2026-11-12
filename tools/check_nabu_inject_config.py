@@ -14,6 +14,7 @@ def main():
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--ca-timer',action='store_true')
+    p.add_argument('--ca-combined',action='store_true',help='Observer is linked into the context timer library')
     p.add_argument('--tree',type=Path,default=ROOT/'build/xnu8796-capacity/tree')
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     init=body((ROOT/'src/hakios-8796/userland/src/init.c').read_text(), 'static void\nconfigure_inject(')
@@ -69,13 +70,21 @@ int main(int argc,char **argv){
         source=source.replace('assert(contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));',
             'assert(contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));\n'
             ' assert(contains("backboardd","/redwood/lib/libnabu.ca-timer.dylib"));',1)
+    if a.ca_combined:
+        if not a.ca_timer:p.error('--ca-combined requires --ca-timer')
+        source=source.replace('assert(contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));',
+                              'assert(!contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));',1)
+        source=source.replace('assert(!contains("lockdownd","/redwood/lib/libnabu.lockdown-timeout.dylib"));',
+            'assert(!contains("lockdownd","/redwood/lib/libnabu.lockdown-timeout.dylib"));\n'
+            ' assert(!contains("backboardd","/redwood/lib/libnabu.ca-timer.dylib"));',1)
     path=out/'injection.c';path.write_text(source);binary=out/'injection'
     for label,cmd in [('compile',['clang','-std=c11','-O1','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',host_path(path),'-o',host_path(binary)]),('run',[host_path(binary),host_path(a.config.resolve())])]:
         r=subprocess.run(host_command(cmd),capture_output=True,timeout=120)
         (out/(label+'.log')).write_bytes(r.stdout+r.stderr)
         if r.returncode:raise RuntimeError((r.stdout+r.stderr).decode(errors='replace')[-5000:])
     report=dict(passed=True,actual_init_and_kernel_parsers=True,baseline_injections=6,ca_observer=True,
-                ca_context_timer=a.ca_timer,crlf_regression_reproduced=True,config=str(a.config),device_executed=False)
+                ca_context_timer=a.ca_timer,ca_observer_combined=a.ca_combined,
+                crlf_regression_reproduced=True,config=str(a.config),device_executed=False)
     (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 
 if __name__=='__main__':main()

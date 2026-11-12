@@ -41,6 +41,9 @@ enum nabu_ca_trace_capability {
  * Kernel trace gating belongs in the supplied sink. */
 int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink);
 uint32_t nabu_ca_frame_trace_capabilities(void);
+/* Installed can observer for explicit chaining inside the same lifetime dylib.
+ * Zero unless this observer installed successfully. No installation or writes. */
+uintptr_t nabu_ca_frame_trace_can_predecessor(void);
 #ifdef __cplusplus
 }
 #endif

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 /* Test the actual production core, with only its external platform calls
  * replaced. These names avoid interposing the sanitizer runtime's libc calls. */
@@ -10,12 +11,34 @@
 #define getprogname test_getprogname
 #define __error test_error
 #include "../src/ca_context_timer.c"
+/* Include the unchanged observer core as well, renaming only file-local names
+ * that collide. Chaining checks execute its actual can wrapper and sink path. */
+#define installation trace_installation
+#define word trace_word
+#define byte trace_byte
+#define pointer trace_pointer
+#define same trace_same
+#define uuid_matches trace_uuid_matches
+#define site trace_site
+#define page_change trace_page_change
+#define install_sites trace_install_sites
+#include "../src/ca_frame_trace.c"
+#undef installation
+#undef word
+#undef byte
+#undef pointer
+#undef same
+#undef uuid_matches
+#undef site
+#undef page_change
+#undef install_sites
 #undef getenv
 #undef getprogname
 #undef __error
 
-static int test_errno;
+static _Thread_local int test_errno;
 static char *setting="1";
+static char *single_setting;
 static const char *process="backboardd";
 static uint32_t image_count;
 static uint64_t image_header[7];
@@ -23,14 +46,23 @@ static intptr_t image_offset;
 static unsigned queried_images,regions,prepares,restores,deallocates;
 static unsigned fail_prepare,fail_restore,fail_region,executable_region;
 static int test_page_size=4096;
-static uintptr_t *check_slots[2];
+static uintptr_t *check_slots[6];
+static uintptr_t check_before[6];
+static unsigned checked_slots;
 static uintptr_t expected_slot;
-static uint64_t changed_pages[2],restored_pages[2];
-static int32_t initial_protections[2],restored_protections[2];
+static uint64_t changed_pages[6],restored_pages[6];
+static int32_t initial_protections[6],restored_protections[6];
 
 int *test_error(void){return &test_errno;}
 char *test_getenv(const char *name)
-{assert(!strcmp(name,"NABU_CA_CONTEXT_TIMER"));test_errno=90;return setting;}
+{
+    test_errno=90;
+    if(!strcmp(name,"NABU_CA_CONTEXT_TIMER"))return setting;
+    assert(!strcmp(name,"NABU_CA_SINGLE_FREE_PAGE"));return single_setting;
+}
+uint64_t mach_absolute_time(void){return 123456;}
+static void unchanged_slots(void)
+{for(unsigned i=0;i<checked_slots;++i)assert(*check_slots[i]==check_before[i]);}
 const char *test_getprogname(void){test_errno=91;return process;}
 uint32_t _dyld_image_count(void){++queried_images;test_errno=92;return image_count;}
 const char *_dyld_get_image_name(uint32_t i)
@@ -45,7 +77,7 @@ int32_t vm_region_64(uint32_t task,uint64_t *address,uint64_t *size,int32_t flav
     assert(task==43&&flavor==9&&*count==9);
     ++regions;*size=4096;*object=89;test_errno=93;
     assert(*address%4096==0);
-    assert(!check_slots[0]||(*check_slots[0]==expected_slot&&*check_slots[1]==expected_slot));
+    unchanged_slots();
     if(regions==fail_region)return 5;
     info[0]=regions==executable_region?5:(regions==2?3:1);
     initial_protections[regions-1]=info[0];return 0;
@@ -56,7 +88,7 @@ int32_t vm_protect(uint32_t task,uint64_t address,uint64_t size,int32_t maximum,
     if(prot&16){
         assert(prot==(1|2|16));
         changed_pages[prepares++]=address;
-        assert(!check_slots[0]||(*check_slots[0]==expected_slot&&*check_slots[1]==expected_slot));
+        unchanged_slots();
         return prepares==fail_prepare?5:0;
     }
     assert(prot==1||prot==3);
@@ -212,22 +244,23 @@ static void check_no_post_call_reads(void)
 
 static void reset_install(void)
 {
-    installation=installation_result=active=0;
+    installation=installation_result=active=single_free_page=0;installed_slots=0;
+    trace_installation=0;capabilities=0;
     queried_images=regions=prepares=restores=deallocates=0;
     fail_prepare=fail_restore=fail_region=executable_region=0;test_page_size=4096;
-    setting="1";process="backboardd";image_count=1;
+    setting="1";single_setting=0;process="backboardd";image_count=1;
     memset(image_header,0,sizeof(image_header));store32(image_header,0,0xfeedfacf);
     store32(image_header,16,1);store32(image_header,20,24);
     store32(image_header,32,27);store32(image_header,36,24);
     const unsigned char uuid[16]={0xdc,0x2d,0xd4,0xc1,0x78,0x66,0x34,0x43,0x80,0x50,0xfc,0x91,0x5a,0x02,0x04,0xc1};
     memcpy((unsigned char *)image_header+40,uuid,16);
-    check_slots[0]=check_slots[1]=0;
+    memset(check_slots,0,sizeof(check_slots));checked_slots=0;
 }
 static void check_gates(void)
 {
     char *settings[]={0,"0","true","01","1 "};
     for(unsigned i=0;i<sizeof(settings)/sizeof(settings[0]);++i){
-        reset_install();setting=settings[i];test_errno=13;
+        reset_install();setting=settings[i];single_setting="1";test_errno=13;
         assert(nabu_ca_context_timer_install()==0&&!nabu_ca_context_timer_active()&&test_errno==13&&!queried_images);
     }
     const char *processes[]={0,"BackBoardd","SpringBoard","FrameBench"};
@@ -250,13 +283,14 @@ static void check_installer(void)
      * slide. This exercises the production UUID/slide/installation path. */
     const size_t size=0x12000;
     void *mapping=aligned_alloc(4096,size);assert(mapping);
-    for(unsigned scenario=0;scenario<7;++scenario){
+    for(unsigned scenario=0;scenario<12;++scenario){
         reset_install();memset(mapping,0,size);
         image_offset=(intptr_t)mapping-(intptr_t)UINT64_C(0x1d57dd000);
         check_slots[0]=(uintptr_t *)((unsigned char *)mapping+0xb48);
         check_slots[1]=(uintptr_t *)((unsigned char *)mapping+0x10d18);
         expected_slot=(uintptr_t)(image_offset+UINT64_C(0x188478040));
         *check_slots[0]=*check_slots[1]=expected_slot;
+        checked_slots=2;check_before[0]=check_before[1]=expected_slot;
         int expected=1;
         if(scenario==1){*check_slots[1]^=8;expected=-3;}
         if(scenario==2){fail_prepare=2;expected=-4;}
@@ -264,10 +298,13 @@ static void check_installer(void)
         if(scenario==4){fail_region=2;expected=-4;}
         if(scenario==5){executable_region=2;expected=-4;}
         if(scenario==6){test_page_size=3000;expected=-2;}
+        if(scenario>=7){char *disabled[]={"0","true","01","1 ",""};single_setting=disabled[scenario-7];}
         const uintptr_t before[2]={*check_slots[0],*check_slots[1]};
         test_errno=13;assert(nabu_ca_context_timer_install()==expected&&test_errno==13);
         const int installed=expected==1||expected==-5;
         assert(nabu_ca_context_timer_active()==installed);
+        assert(!nabu_ca_single_free_page_active());
+        assert(nabu_ca_context_timer_slots()==(installed?2u:0u));
         for(unsigned i=0;i<2;++i)
             assert(*check_slots[i]==(installed?(uintptr_t)context_next:before[i]));
         if(installed){
@@ -296,16 +333,205 @@ static void check_installer(void)
             }
         }
     }
-    free(mapping);check_slots[0]=check_slots[1]=0;
+    free(mapping);memset(check_slots,0,sizeof(check_slots));checked_slots=0;
 }
 static void check_shared_page(void)
 {
     void *mapping=aligned_alloc(4096,4096);assert(mapping);reset_install();
     uintptr_t *slots=mapping;slots[0]=slots[1]=17;
     const struct site sites[2]={{(uintptr_t)&slots[0],17,19},{(uintptr_t)&slots[1],17,23}};
-    assert(install_sites(sites)==1&&regions==1&&prepares==1&&restores==1);
+    assert(install_sites(sites,2)==1&&regions==1&&prepares==1&&restores==1);
     assert(slots[0]==19&&slots[1]==23);free(mapping);
 }
+static void check_six_slot_install(void)
+{
+    void *mapping=aligned_alloc(4096,0x12000);assert(mapping);
+    const size_t offsets[]={0xb48,0x10d18,0xdb0,0x1570,0xee50,0xf670};
+    const context_can_fn wrappers[]={single_free_can0,single_free_can1,single_free_can2,single_free_can3};
+    for(unsigned chain=0;chain<3;++chain)for(unsigned scenario=0;scenario<24;++scenario){
+        reset_install();single_setting="1";memset(mapping,0,0x12000);
+        image_offset=(intptr_t)mapping-(intptr_t)UINT64_C(0x1d57dd000);
+        const uintptr_t next=(uintptr_t)(image_offset+UINT64_C(0x188478040));
+        const uintptr_t native=(uintptr_t)(image_offset+UINT64_C(0x18829cd88));
+        trace_installation=2;capabilities=NabuCaDisplayHooks;
+        assert(nabu_ca_frame_trace_can_predecessor()==(uintptr_t)traced_can);
+        for(unsigned i=0;i<6;++i){
+            check_slots[i]=(uintptr_t *)((unsigned char *)mapping+offsets[i]);
+            *check_slots[i]=i<2?next:chain==1||(chain==2&&(i&1))?(uintptr_t)traced_can:native;
+        }
+        int expected=1;
+        if(scenario>=1&&scenario<=5){fail_prepare=scenario;expected=-4;}
+        if(scenario>=6&&scenario<=10){fail_region=scenario-5;expected=-4;}
+        if(scenario>=11&&scenario<=15){fail_restore=scenario-10;expected=-5;}
+        if(scenario>=16&&scenario<=20){*check_slots[scenario-15]^=8;expected=-3;}
+        if(scenario==21){trace_installation=3;*check_slots[2]=(uintptr_t)traced_can;expected=-3;}
+        if(scenario==22){executable_region=3;expected=-4;}
+        if(scenario==23){test_page_size=3000;expected=-2;}
+        checked_slots=6;
+        for(unsigned i=0;i<6;++i)check_before[i]=*check_slots[i];
+        test_errno=13;assert(nabu_ca_context_timer_install()==expected&&test_errno==13);
+        const int installed=expected==1||expected==-5;
+        assert(nabu_ca_context_timer_active()==installed);
+        assert(nabu_ca_single_free_page_active()==installed);
+        assert(nabu_ca_context_timer_slots()==(installed?6u:0u));
+        for(unsigned i=0;i<6;++i){
+            const uintptr_t replacement=i<2?(uintptr_t)context_next:(uintptr_t)wrappers[i-2];
+            assert(*check_slots[i]==(installed?replacement:check_before[i]));
+            if(installed&&i>=2)assert((uintptr_t)can_predecessors[i-2]==check_before[i]);
+        }
+        if(installed){
+            assert(regions==5&&prepares==5&&restores==5&&deallocates==5);
+            for(unsigned i=0;i<5;++i){
+                assert(changed_pages[i]==restored_pages[i]);
+                assert(initial_protections[i]==restored_protections[i]);
+            }
+        }else if(expected==-4){
+            const unsigned prior=fail_prepare?fail_prepare-1:fail_region?fail_region-1:executable_region-1;
+            assert(restores==prior);
+            for(unsigned i=0;i<prior;++i)assert(changed_pages[i]==restored_pages[i]);
+        }else assert(!regions&&!prepares&&!restores);
+        const unsigned reads=regions;test_errno=13;
+        assert(nabu_ca_context_timer_install()==expected&&test_errno==13&&regions==reads);
+    }
+    free(mapping);checked_slots=0;
+    /* Disabled new opt-in retains the original two hooks. Getter never invents
+     * a predecessor when the observer failed (including its live -5 state). */
+    reset_install();trace_installation=2;capabilities=0;
+    assert(!nabu_ca_frame_trace_can_predecessor());
+    capabilities=NabuCaDisplayHooks;trace_installation=3;
+    assert(!nabu_ca_frame_trace_can_predecessor());
+}
+
+static pthread_mutex_t page_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t change_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t change_condition=PTHREAD_COND_INITIALIZER;
+static unsigned gate_locks,gate_unlocks,page_locked,can_calls,can_flags[4];
+static uint32_t first_result,second_result;
+static unsigned can_marks,mark_event[32];
+static uint64_t mark_flags[32];
+static int mutate_after_check,change_started,change_done,free_first,clear_first;
+static void *can_display;
+static void page_lock(void *mutex)
+{
+    assert(mutex==(unsigned char *)can_display+0x368);
+    assert(!pthread_mutex_lock(&page_mutex));assert(!page_locked);page_locked=1;
+    ++gate_locks;test_errno=95;
+}
+static void page_unlock(void *mutex)
+{
+    assert(mutex==(unsigned char *)can_display+0x368&&page_locked);page_locked=0;
+    ++gate_unlocks;assert(!pthread_mutex_unlock(&page_mutex));test_errno=96;
+    if(mutate_after_check){
+        assert(!pthread_mutex_lock(&change_mutex));change_started=1;
+        assert(!pthread_cond_broadcast(&change_condition));
+        while(!change_done)assert(!pthread_cond_wait(&change_condition,&change_mutex));
+        assert(!pthread_mutex_unlock(&change_mutex));
+    }
+}
+static void *concurrent_page_change(void *unused)
+{
+    (void)unused;assert(!pthread_mutex_lock(&change_mutex));
+    while(!change_started)assert(!pthread_cond_wait(&change_condition,&change_mutex));
+    assert(!pthread_mutex_unlock(&change_mutex));
+    assert(!pthread_mutex_lock(&page_mutex));
+    store32(can_display,0x3a8+2*0x30,17);store32(can_display,0x3c0+2*0x30,19);
+    assert(!pthread_mutex_unlock(&page_mutex));
+    assert(!pthread_mutex_lock(&change_mutex));change_done=1;
+    assert(!pthread_cond_broadcast(&change_condition));
+    assert(!pthread_mutex_unlock(&change_mutex));return 0;
+}
+static uint32_t fixture_can(void *display,uint32_t flags)
+{
+    assert(display==can_display&&!page_locked&&can_calls<2);
+    assert(test_errno==(can_calls?47:13));can_flags[can_calls]=flags;
+    if(can_calls++==0){
+        if(clear_first)store32(display,0x3a8+2*0x30,0);
+        if(free_first)free(display);
+        test_errno=47;return first_result;
+    }
+    /* A platform-boundary substitute rechecks the state under the same lock.
+     * The real can_update implementation is not reimplemented in this test. */
+    assert(!pthread_mutex_lock(&page_mutex));
+    const int changed=word(display,0x3a8+2*0x30)!=0;
+    assert(!pthread_mutex_unlock(&page_mutex));
+    test_errno=59;return changed?0:second_result;
+}
+static void can_sink(uint32_t event,uint64_t identity,uint64_t a,uint64_t b,uint64_t c)
+{
+    (void)c;assert(identity==(uintptr_t)can_display&&can_marks<32);
+    if(event==NabuCaCanEnter||event==NabuCaCanLeave){
+        mark_event[can_marks]=event;mark_flags[can_marks++]=event==NabuCaCanEnter?a:b;
+    }
+    test_errno=201;
+}
+static void initialize_can(void *display)
+{
+    memset(display,0,0x450);store32(display,0x358,2);store32(display,0x35c,1);store32(display,0x360,3);
+    /* The other page remains busy. Its descriptor and swap are never modified. */
+    store32(display,0x3a8,7);store32(display,0x3c0,9);store64(display,0x3b8,UINT64_C(0x123456789));
+    can_display=display;gate_locks=gate_unlocks=page_locked=can_calls=can_marks=0;
+    first_result=0;second_result=1;mutate_after_check=change_started=change_done=free_first=clear_first=0;
+    server_lock=page_lock;server_unlock=page_unlock;
+    capabilities=NabuCaDisplayHooks;trace_sink=can_sink;original_can=fixture_can;
+}
+static unsigned check_single_free(void)
+{
+    unsigned cases=0;
+    const context_can_fn wrappers[]={single_free_can0,single_free_can1,single_free_can2,single_free_can3};
+    for(unsigned observed=0;observed<2;++observed)for(unsigned slot=0;slot<4;++slot){
+        for(unsigned scenario=0;scenario<18;++scenario){
+            uint64_t display[0x450/8];initialize_can(display);
+            uint32_t flags=0;int retry=1;uint32_t result=1;
+            if(scenario==1){first_result=77;retry=0;result=77;}
+            if(scenario==2){second_result=0;result=0;}
+            if(scenario==3){second_result=73;result=73;}
+            if(scenario==4){flags=1;retry=0;result=0;}
+            if(scenario==5){flags=2;retry=0;result=0;}
+            if(scenario==6){flags=UINT32_MAX;retry=0;result=0;}
+            if(scenario==7){store32(display,0x360,2);retry=0;result=0;}
+            if(scenario==8){store32(display,0x360,4);retry=0;result=0;}
+            if(scenario==9){store32(display,0x358,3);retry=0;result=0;}
+            if(scenario==10){store32(display,0x358,1);retry=0;result=0;}
+            if(scenario>=11&&scenario<=15){
+                const unsigned resource[]={0x3a8,0x3c0,0x3b0,0x3b8,0x3c8};
+                if(scenario<13)store32(display,resource[scenario-11]+2*0x30,5);
+                else store64(display,resource[scenario-11]+2*0x30,UINT64_C(1)<<40);
+                retry=0;result=0;
+            }
+            if(scenario==16){store32(display,0x3a8+2*0x30,17);clear_first=1;}
+            if(scenario==17){store32(display,0x3d0+2*0x30,2);}
+            can_predecessors[slot]=observed?traced_can:fixture_can;
+            unsigned char before[sizeof(display)];memcpy(before,display,sizeof(display));
+            test_errno=13;assert(wrappers[slot](display,flags)==result);
+            assert(can_calls==(retry?2u:1u)&&can_flags[0]==flags);
+            assert(test_errno==(retry?59:47)&&!page_locked);
+            assert(gate_locks==((first_result||flags)?0u:1u)&&gate_unlocks==gate_locks);
+            if(retry)assert(can_flags[1]==1);
+            if(clear_first)store32(before,0x3a8+2*0x30,0);
+            assert(!memcmp(before,display,sizeof(display)));
+            if(observed){
+                assert(can_marks==can_calls*2);
+                for(unsigned call=0;call<can_calls;++call){
+                    assert(mark_event[call*2]==NabuCaCanEnter&&mark_event[call*2+1]==NabuCaCanLeave);
+                    assert(mark_flags[call*2]==can_flags[call]&&mark_flags[call*2+1]==can_flags[call]);
+                }
+            }else assert(!can_marks);
+            ++cases;
+        }
+        uint64_t display[0x450/8];initialize_can(display);
+        can_predecessors[slot]=observed?traced_can:fixture_can;mutate_after_check=1;
+        pthread_t writer;assert(!pthread_create(&writer,0,concurrent_page_change,0));
+        test_errno=13;assert(wrappers[slot](display,0)==0&&can_calls==2&&test_errno==59);
+        assert(!pthread_join(writer,0));assert(word(display,0x3a8+2*0x30)==17);
+        assert(word(display,0x3c0+2*0x30)==19&&word(display,0x3c0)==9);++cases;
+    }
+    /* A successful original can return without any wrapper object access. */
+    void *display=malloc(0x450);assert(display);initialize_can(display);free_first=1;first_result=91;
+    can_predecessors[0]=fixture_can;test_errno=13;
+    assert(single_free_can0(display,0)==91&&test_errno==47&&!gate_locks);++cases;
+    return cases;
+}
+
 int main(void)
 {
     const uint64_t values[]={0,UINT64_C(0x8000000000000000),UINT64_C(0x3ff0000000000000),
@@ -325,6 +551,8 @@ int main(void)
     check_case(0,0,7,1,1,1,1);++cases;
     check_case(0,0,7,1,1,3,0);++cases;
     check_keepalive();check_no_post_call_reads();check_gates();check_installer();check_shared_page();
+    check_six_slot_install();const unsigned single_cases=check_single_free();
     printf("PASS: %u scheduling/ABI cases; keepalive/idle/resume; opt-in/process/UUID; two-slot COW, rollback, live restore failure; no post-call reads\n",cases);
+    printf("PASS: %u single-free-page cases; original false/flags0/3-page/resource gates; raw return and errno; actual observer chaining; concurrent revalidation; 72 six-slot COW/install scenarios\n",single_cases);
     return 0;
 }

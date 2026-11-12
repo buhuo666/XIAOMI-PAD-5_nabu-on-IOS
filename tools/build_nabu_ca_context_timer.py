@@ -19,7 +19,8 @@ def main():
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     report={'result':'building','target':'arm64-apple-ios16.5','commands':[],
             'source':'userland/nabu/src/ca_context_timer.c',
-            'required_environment':{'NABU_CA_CONTEXT_TIMER':'1'},'process':'backboardd',
+            'required_environment':{'NABU_CA_CONTEXT_TIMER':'1','NABU_CA_SINGLE_FREE_PAGE':'1'},
+            'optional_observer_environment':{'NABU_CA_FRAME_TRACE':'1'},'process':'backboardd',
             'quartzcore_uuid':'dc2dd4c1-7866-3443-8050-fc915a0204c1',
             'device_executed':False,'executable_pages_modified':False,
             'ci':{'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')}}
@@ -34,13 +35,17 @@ def main():
         if not version.startswith('Xcode 16.4\n'):raise ValueError('Select Xcode16.4')
         test=out/'ca-context-timer-test'
         run(['xcrun','--sdk','macosx','clang','-std=c11','-O1','-g','-Wall','-Wextra','-Werror',
-             '-fsanitize=address,undefined',ROOT/'userland/nabu/tests/ca_context_timer_test.c','-o',test])
+             '-fsanitize=address,undefined','-pthread',ROOT/'userland/nabu/tests/ca_context_timer_test.c','-o',test])
         report['host_test']=run([test]).stdout.strip()
+        observer_test=out/'ca-frame-trace-test'
+        run(['xcrun','--sdk','macosx','clang','-std=c11','-O1','-g','-Wall','-Wextra','-Werror',
+             '-fsanitize=address,undefined',ROOT/'userland/nabu/tests/ca_frame_trace_test.c','-o',observer_test])
+        report['observer_host_test']=run([observer_test]).stdout.strip()
         sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path']).stdout.strip()
         base=['xcrun','--sdk','iphoneos','clang','-target',report['target'],'-isysroot',sdk,
               '-std=c11','-Os','-Wall','-Wextra','-Werror','-fno-omit-frame-pointer']
         objects=[]
-        for unit in ('ca_context_timer','ca_context_timer_entry'):
+        for unit in ('ca_context_timer','ca_frame_trace','ca_context_timer_entry'):
             obj=out/(unit+'.o');objects.append(obj)
             run([*base,'-c',ROOT/('userland/nabu/src/'+unit+'.c'),'-o',obj])
         install_name='/redwood/lib/libnabu.ca-timer.dylib'
@@ -59,9 +64,14 @@ def main():
         report.update(result='signed_not_run',binary=binary.name,bytes=binary.stat().st_size,
                       install_name=install_name,cdhash=cdhash[1],signature_page_bytes=4096,
                       core_object='ca_context_timer.o',constructor_object='ca_context_timer_entry.o',
-                      total_data_vtable_slots=2,observer_dependency=False,
-                      policy='zero last and zero next.time only; original native VSync keepalive',
+                      observer_object='ca_frame_trace.o',observer_bundled=True,observer_installed_first=True,
+                      total_data_vtable_slots=6,scheduler_data_vtable_slots=2,can_retry_data_vtable_slots=4,
+                      observer_data_vtable_slots=18,maximum_observer_capabilities=63,
+                      mode='original-can-false single-empty-next-page retry',
+                      policy='flags0 original false, count3, non-current next with no frame/swap/render/surface/fence; original flags1 retry',
                       limitations=['Requires process-start opt-in; no runtime toggle or unload',
+                                   'Resource-gated can retry, not exclusive attribution to the asynchronous context timer',
+                                   'Original render flags and requested times remain unchanged',
                                    'Runtime installation and both latency targets remain unverified'])
     finally:
         (out/'build-report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')

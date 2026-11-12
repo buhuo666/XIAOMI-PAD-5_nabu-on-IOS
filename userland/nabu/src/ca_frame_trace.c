@@ -365,6 +365,11 @@ undo:
 }
 uint32_t nabu_ca_frame_trace_capabilities(void)
 {return __atomic_load_n(&capabilities,__ATOMIC_ACQUIRE);}
+uintptr_t nabu_ca_frame_trace_can_predecessor(void)
+{
+    return __atomic_load_n(&installation,__ATOMIC_ACQUIRE)==2&&
+           (nabu_ca_frame_trace_capabilities()&NabuCaDisplayHooks)?(uintptr_t)traced_can:0;
+}
 int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
 {
     int saved=*__error();

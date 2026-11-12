@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/gpu-ca-context-timer.yml'
       - 'userland/nabu/src/ca_context_timer*'
+      - 'userland/nabu/src/ca_frame_trace.c'
+      - 'userland/nabu/src/ca_frame_trace.h'
+      - 'userland/nabu/src/ca_trace_marker.h'
+      - 'userland/nabu/tests/ca_frame_trace_test.c'
       - 'userland/nabu/tests/ca_context_timer_test.c'
       - 'tools/build_nabu_ca_context_timer.py'
       - 'tools/check_nabu_ca_context_timer.py'
@@ -21,9 +25,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Build opt-in native context scheduler
+      - name: Build native scheduler and restricted single-free-page retry
         run: python3 tools/build_nabu_ca_context_timer.py --output artifacts/nabu-ca-context-timer
-      - name: Check scheduler ABI and native VSync lifetime
+      - name: Check scheduler ABI, observer chain and page revalidation
         run: >-
           python3 tools/check_nabu_ca_context_timer.py
           --output artifacts/nabu-ca-context-timer/host-check

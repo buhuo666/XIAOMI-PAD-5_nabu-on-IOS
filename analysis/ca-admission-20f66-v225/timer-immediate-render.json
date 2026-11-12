@@ -1,0 +1,108 @@
+[
+  {
+    "name": "____ZN2CA12WindowServer6Server14timer_callbackEdPv_block_invoke",
+    "address": "0x18830dec8",
+    "next_local_symbol": "0x18830df00",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 23109320,
+    "bytes": 56,
+    "assembly": "18830dec8.asm",
+    "calls": [
+      {
+        "address": "0x18830ded8",
+        "target": "0x18db38fac",
+        "resolved_target": "0x1c0fe7290",
+        "target_name": "_mach_absolute_time",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x18830dedc",
+        "target": "0x188236490",
+        "resolved_target": "0x188236490",
+        "target_name": "_CATimeWithHostTime",
+        "literal_registers": {}
+      }
+    ]
+  },
+  {
+    "name": "____ZN2CA12WindowServer11IOMFBServer16immediate_renderEv_block_invoke",
+    "address": "0x188478624",
+    "next_local_symbol": "0x1884787d4",
+    "cache_file": "OS\\ipados\\16.5-20F66-iPad7_11\\userland\\systemos\\System\\Library\\Caches\\com.apple.dyld\\dyld_shared_cache_arm64.03",
+    "file_offset": 24593956,
+    "bytes": 432,
+    "assembly": "188478624.asm",
+    "calls": [
+      {
+        "address": "0x18847865c",
+        "target": "0x18db39534",
+        "resolved_target": "0x1d03245ec",
+        "target_name": "_os_unfair_lock_lock",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188478668",
+        "target": "0x18db3954c",
+        "resolved_target": "0x1d032461c",
+        "target_name": "_os_unfair_lock_unlock",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188478670",
+        "target": "0x18822afc0",
+        "resolved_target": "0x18822afc0",
+        "target_name": "_CAHostTimeWithTime",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188478678",
+        "target": "0x18db38fac",
+        "resolved_target": "0x1c0fe7290",
+        "target_name": "_mach_absolute_time",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188478718",
+        "target": "0x188236490",
+        "resolved_target": "0x188236490",
+        "target_name": "_CATimeWithHostTime",
+        "literal_registers": {}
+      },
+      {
+        "address": "0x188478778",
+        "target": "0x18846bf04",
+        "resolved_target": "0x18846bf04",
+        "target_name": "__ZN2CA12WindowServer6Server15render_for_timeEdPK11CVTimeStampyPK17CATimingReferencej",
+        "literal_registers": {
+          "x3": {
+            "value": "0x0",
+            "label": null
+          },
+          "x4": {
+            "value": "0x1",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1884787c8",
+        "target": "0x18db38f70",
+        "resolved_target": "0x1c0fe6dd8",
+        "target_name": "_kdebug_trace",
+        "literal_registers": {
+          "x4": {
+            "value": "0x0",
+            "label": null
+          }
+        }
+      },
+      {
+        "address": "0x1884787d0",
+        "target": "0x18db38a60",
+        "resolved_target": "0x18dc05300",
+        "target_name": "___stack_chk_fail",
+        "literal_registers": {}
+      }
+    ]
+  }
+]
