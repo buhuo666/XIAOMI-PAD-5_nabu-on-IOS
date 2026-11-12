@@ -100,6 +100,14 @@ def analyze(rows, metadata):
         if r['event']==118:server_states[(r['pid'],r['thread'],r['identity'])].append(r)
         if 119<=r['event']<=122:context_edges[(r['pid'],r['thread'])].append(r)
     snapshot_times={k:[r['time_us'] for r in v] for k,v in snapshots_by_thread.items()}
+    state_times={k:[r['time_us'] for r in v] for k,v in server_states.items()}
+    edge_times={k:[r['time_us'] for r in v] for k,v in context_edges.items()}
+    for v in context_calls.values():v.sort(key=lambda p:p['begin']['time_us'])
+    context_times={k:[p['begin']['time_us'] for p in v] for k,v in context_calls.items()}
+    have_context_edges=bool(context_edges)
+    def interval_items(index,times,key,begin,end):
+        t=times.get(key,[])
+        return index.get(key,[])[bisect_left(t,begin):bisect_right(t,end)]
     finish_calls=[p for p in wrappers if p['event']==100]
     for finish in finish_calls:
         first=finish['begin'];frame=lo(first['b'])
@@ -121,17 +129,17 @@ def analyze(rows, metadata):
                  if start and start['end']['time_us']<=p['begin']['time_us']<=p['end']['time_us']<=first['time_us']]
         if len(renders)==1:
             render=renders[0]
-            states=[r for r in server_states[(render['pid'],render['thread'],render['begin']['a'])]
-                    if render['begin']['time_us']<=r['time_us']<=render['end']['time_us']]
+            render_begin,render_end=render['begin']['time_us'],render['end']['time_us']
+            render_thread=(render['pid'],render['thread'])
+            states=interval_items(server_states,state_times,(*render_thread,render['begin']['a']),render_begin,render_end)
             row.update(begin_return_to_render_ms=delta(start['end'],render['begin']),
                        render_call_ms=render['duration_ms'],render_return_to_finish_ms=delta(render['end'],first),
                        render=dict(render,server_states=states))
-            nested=[p for p in context_calls[(render['pid'],render['thread'])]
-                    if render['begin']['time_us']<=p['begin']['time_us']<=p['end']['time_us']<=render['end']['time_us']]
-            edges=[r for r in context_edges[(render['pid'],render['thread'])]
-                   if render['begin']['time_us']<=r['time_us']<=render['end']['time_us']]
+            nested=[p for p in interval_items(context_calls,context_times,render_thread,render_begin,render_end)
+                    if p['end']['time_us']<=render_end]
+            edges=interval_items(context_edges,edge_times,render_thread,render_begin,render_end)
             row['render']['context_calls']=nested
-            if any(context_edges.values()) and len(edges)==2*len(nested):
+            if have_context_edges and len(edges)==2*len(nested):
                 row['metal_collect_ms']=sum(p['duration_ms'] for p in nested if p['event']==119)
                 row['metal_buffer_current_ms']=sum(p['duration_ms'] for p in nested if p['event']==121)
                 # collect can occur inside make_buffer_current. Subtract the
@@ -267,6 +275,7 @@ def analyze(rows, metadata):
                             'begin_return_to_render_ms','render_call_ms','render_return_to_finish_ms',
                             'metal_collect_ms','metal_buffer_current_ms','render_outside_context_calls_ms')),
                         can_update_results=dict(Counter(p['end']['a'] for p in wrappers if p['event']==96)),
+                        can_update_flags=dict(Counter(p['begin']['a'] for p in wrappers if p['event']==96)),
                         wait_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==108)),
                         swap_statuses=dict(Counter(p['end']['b'] for p in wrappers if p['event']==110)),
                         selected_snapshots=[r for r in users if r['event'] in (102,103,104,105,106,107,114,115)]),

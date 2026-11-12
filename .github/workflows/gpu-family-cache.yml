@@ -1,0 +1,48 @@
+name: nabu16 - Metal device family answer cache
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-family-cache.yml'
+      - 'patches/nabu-metal/NativeMetalFamilyAnswers.inc'
+      - 'tools/build_nabu_surface_import_cache.py'
+      - 'tools/check_nabu_family_answers.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  family-cache:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Retrieve qualified GPU221 frontend and Rust archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 43142617452 --name nabu-ca-trace-3
+          --dir inputs/qualified
+      - name: Exercise production family cache through Objective-C IMP and ARC
+        run: >-
+          python3 tools/check_nabu_family_answers.py
+          --source-input inputs/qualified/nabu-ca-present/frontend-source
+          --output artifacts/nabu-family-cache-check
+      - name: Relink the cached family query frontend
+        run: >-
+          python3 tools/build_nabu_surface_import_cache.py
+          --input inputs/qualified/nabu-ca-present
+          --output artifacts/nabu-family-cache --family-cache
+      - name: Check trace interval analysis
+        run: python3 tools/check_nabu_ca_trace_analysis.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-family-cache-${{ github.run_number }}
+          path: artifacts/nabu-family-*/
+          retention-days: 14

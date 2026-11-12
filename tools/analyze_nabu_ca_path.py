@@ -121,6 +121,8 @@ def decompose(ca, rows, run, benchmark_rows=None):
         frames.append(dict(frame_id=frame['frame_id'],surface=frame['surface_id'],swap=frame['dpu_transaction'],
             ca_frame=ca_frame,present_return_us=p,begin_us=bt,finish_us=ft,dpu_us=dpu,
             selected_sample_match=True,failed_can=len(busy),late_retire=late,
+            can_update_flags=dict(Counter(c['begin']['a'] for c in cans)),
+            successful_can_flags=good[0]['begin']['a'] if len(good)==1 else None,
             render=u.get('render'),**values))
     path_values=metrics['present_to_dpu_ms']
     complete=(bool(frames) and len(frames)==run['frames_submitted']
@@ -134,6 +136,7 @@ def decompose(ca, rows, run, benchmark_rows=None):
         verdict='failed' if within<len(frames) else 'passed_short_capture' if complete else 'incomplete',
         panel_scan_qualified=False,sustained_120fps_qualified=False)
     return dict(run_id=run['run_id'],matched_frames=len(frames),submitted_frames=run['frames_submitted'],
+        low_latency_requested=run.get('low_latency_requested'),low_latency_actual=run.get('low_latency_actual'),
         frame_selection='recorded run epoch and measured CSV rows' if measured is not None else 'submit time interval; measured CSV not supplied',
         target=target,
         selected_samples_matched=len(frames),metrics={k:dict(distribution(v),over_5ms=sum(x>5 for x in v)) for k,v in metrics.items()},
