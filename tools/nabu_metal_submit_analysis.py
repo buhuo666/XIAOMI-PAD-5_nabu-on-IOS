@@ -12,6 +12,12 @@ PHASES = {
     22: ('runtime_wait_scheduled', 23),
     24: ('scheduled_group_wait', 25),
     26: ('scheduled_callback', 27),
+    32: ('runtime_submit_batch', 33),
+    34: ('runtime_first_submission', 35),
+    36: ('runtime_tracker_plan', 37),
+    38: ('runtime_prepare_buffers', 39),
+    40: ('runtime_group_submit', 41),
+    42: ('runtime_scheduler_commit', 43),
 }
 
 
@@ -34,6 +40,8 @@ def analyze_extended_phases(users, wrappers):
     diagnostics = Counter()
     for r in markers:
         stage = r['a']
+        if stage == 30:
+            continue # Explicit frontend-to-runtime identity edge, not a CPU span.
         start = reverse.get(stage, stage)
         if start not in PHASES:
             diagnostics['unknown_stage'] += 1
@@ -76,7 +84,7 @@ def analyze_extended_phases(users, wrappers):
         if r['a'] == 16:
             publications[r['pid'],r['identity'],r['b']].append(r)
     for c in calls:
-        if c['stage'] != 1:
+        if 16 <= c['stage'] <= 26:
             commands[c['pid'], c['identity'], c['argument']].append(c)
     command_records = []
     for (pid, identity, pointer), group in commands.items():
@@ -91,6 +99,39 @@ def analyze_extended_phases(users, wrappers):
         command_records.append(dict(pid=pid,commit=identity,pointer=pointer,
             identity_qualified=valid,publication_us=started['time_us'] if started else None,
             calls=group))
+
+    position = lambda r:(r['time_us'],r['marker_token'])
+    runtime_calls = [c for c in calls if c['stage'] >= 32]
+    mappings = defaultdict(list)
+    by_runtime = defaultdict(list)
+    by_command = defaultdict(list)
+    for r in markers:
+        if r['a'] == 30:
+            mappings[r['pid'],r['c']].append(r)
+            by_command[r['pid'],r['identity'],r['b']].append(r)
+    for c in runtime_calls:
+        by_runtime[c['pid'],c['identity']].append(c)
+    owned = {}
+    for key, edges in mappings.items():
+        group=by_runtime[key]
+        starts=[position(c['begin']) for c in group]
+        for at, edge in enumerate(edges):
+            lo=position(edge)
+            hi=position(edges[at+1]) if at+1<len(edges) else (float('inf'),0)
+            candidates=group[bisect_left(starts,lo):bisect_left(starts,hi)]
+            valid=[c for c in candidates if position(c['end'])<hi]
+            diagnostics['runtime_span_crosses_identity_reuse']+=len(candidates)-len(valid)
+            owned[edge['marker_token']]=valid
+    attributed=0
+    for cmd in command_records:
+        edges=by_command[cmd['pid'],cmd['commit'],cmd['pointer']]
+        valid=cmd['identity_qualified'] and len(edges)==1 and edges[0]['c']!=0
+        cmd['runtime_identity_qualified']=valid
+        cmd['runtime_identity']=edges[0]['c'] if valid else None
+        cmd['runtime_calls']=owned[edges[0]['marker_token']] if valid else []
+        attributed+=len(cmd['runtime_calls'])
+    if runtime_calls:
+        diagnostics['runtime_calls_unattributed']=len(runtime_calls)-attributed
 
     # Same-thread containment connects CA flush to its native caller. A callback
     # on another thread remains a command span, never part of this thread's CPU.
@@ -123,7 +164,7 @@ def analyze_extended_phases(users, wrappers):
             identity=p['identity'],begin_us=lo,end_us=hi,duration_ms=p['duration_ms'],
             flush_boundaries_complete=complete,flush_union_ms=covered,
             outside_flush_ms=p['duration_ms']-covered if covered is not None else None,
-            flushes=flushes,frontend_calls=[c for c in nested if c['stage'] != 1]))
+            flushes=flushes,frontend_calls=[c for c in nested if 16 <= c['stage'] <= 26]))
     parent_metrics = {}
     for event in (100,116):
         group = [p for p in parents if p['event'] == event]
@@ -131,8 +172,11 @@ def analyze_extended_phases(users, wrappers):
                                 for k in ('duration_ms','flush_union_ms','outside_flush_ms')}
     return dict(marker_count=len(markers),diagnostics=dict(diagnostics),calls=calls,
         by_phase={name:summary([c for c in calls if c['phase']==name]) for name,_ in PHASES.values()},
-        commands=command_records,ca_parents=parents,ca_parent_metrics=parent_metrics,
+        commands=command_records,runtime_identity_edge_count=sum(map(len,mappings.values())),
+        ca_parents=parents,ca_parent_metrics=parent_metrics,
         limits='Event127 CPU comes from payload c on the same PID/thread, not the kernel CPU side record. '
                'Phase durations are inclusive and must not be summed. Parent residuals subtract the interval union. '
                'Commit identity is scoped by PID, pointer and one observed publication; callback CPU stays on its thread. '
+               'Stage30 explicitly links frontend and runtime pointers; later publication of the same runtime address bounds reuse. '
+               'Microsecond wall timestamps and pre-marker CPU sampling can yield small signed wall-minus-CPU residuals. '
                'Missing boundaries remain unqualified. These spans alone do not identify an App input frame or GPU job.')

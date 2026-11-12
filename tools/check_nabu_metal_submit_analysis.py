@@ -35,6 +35,16 @@ def check():
     phase(910,17,identity=10,cpu=0)
     phase(920,16,pid=43)
     phase(930,17,pid=43,cpu=1002000)
+    phase(205,30,cpu=0xabc) # c carries a runtime identity, not CPU time.
+    phase(225,42,identity=0xabc,pointer=3)
+    phase(228,43,identity=0xabc,pointer=3,cpu=1001000)
+    phase(260,32,identity=0xabc,pointer=0,thread=9)
+    phase(270,36,identity=0xabc,pointer=0,thread=9,cpu=1001000)
+    phase(560,37,identity=0xabc,pointer=0,thread=9,cpu=1100000)
+    phase(580,33,identity=0xabc,pointer=0,thread=9,cpu=1101000)
+    phase(850,30,identity=10,cpu=0xabc) # Later object at the same runtime address.
+    phase(902,32,identity=0xabc,pointer=0,thread=9)
+    phase(909,33,identity=0xabc,pointer=0,thread=9,cpu=1001000)
     def result(data=rows):
         return analyze(list(reversed(data)),dict(window=1,start_us=0,end_us=2000,dropped=0))['ca']['submission']
     r=result()
@@ -48,6 +58,11 @@ def check():
     callback,=[c for c in r['calls'] if c['phase']=='scheduled_callback']
     assert callback['cpu_ms']==.005 and callback['thread']==8
     assert r['diagnostics']['cpu_unavailable']==1
+    assert r['runtime_identity_edge_count']==2 and r['diagnostics']['runtime_calls_unattributed']==0
+    linked={c['commit']:c for c in r['commands'] if c['pid']==42}
+    assert len(linked[9]['runtime_calls'])==3 and len(linked[10]['runtime_calls'])==1
+    assert linked[9]['runtime_identity']==linked[10]['runtime_identity']==0xabc
+    assert linked[9]['runtime_calls'][-1]['end']['time_us']<850
     # Truncated entry cannot be silently paired across threads, even for the same CB.
     phase(1000,22,identity=11,thread=8)
     phase(1100,23,identity=11,thread=7)
