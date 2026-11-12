@@ -74,8 +74,22 @@ def analyze(rows, metadata):
         elif e in (119,120,121,122):
             r['decoded']=dict(argument=a,context_vtable=b,
                 **({'original_target':c} if e in (119,121) else {'result':c}))
+        elif e==123:
+            r['decoded']=dict(now_host_ticks=a,entry_target_seconds=floating(b),
+                              previous_immediate_target_ticks=c)
+        elif e==124:
+            r['decoded']=dict(native_timestamp_ticks=a,server_flags160=lo(b)&0xffff,
+                server_flags30d=(lo(b)>>16)&255,display_flags22c=(lo(b)>>24)&255,
+                display_flags220=hi(b),display_mode230=c)
+        elif e==125:
+            r['decoded']=dict(runloop_pointer=a,arbitration_once_token=b,
+                arbitration_supported=c&255,arbitration_forced=(c>>8)&255,
+                low_latency_disabled=(c>>16)&255)
+        elif e==126:
+            r['decoded']=dict(entry_target_seconds=floating(a),
+                entry_previous_immediate_target_ticks=b,result=c,state_scope='entry snapshot repeated, not post-call state')
     wrappers=[];stacks=defaultdict(list)
-    pairs={81:82,96:97,98:99,100:101,108:109,110:111,116:117,119:120,121:122};reverse={v:k for k,v in pairs.items()}
+    pairs={81:82,96:97,98:99,100:101,108:109,110:111,116:117,119:120,121:122,123:126};reverse={v:k for k,v in pairs.items()}
     for r in users:
         event=r['event'];entry=reverse.get(event,event)
         if entry not in pairs:continue
@@ -86,6 +100,18 @@ def analyze(rows, metadata):
         wrappers.append(dict(event=entry,pid=r['pid'],thread=r['thread'],identity=r['identity'],
                              begin=first,end=r,duration_ms=delta(first,r)))
     diagnostics['wrapper_missing_leave']=sum(len(s) for s in stacks.values())
+    immediate_states=defaultdict(list)
+    for r in users:
+        if r['event'] in (124,125):immediate_states[(r['pid'],r['thread'],r['identity'])].append(r)
+    immediate_attempts=[]
+    for call in wrappers:
+        if call['event']!=123:continue
+        first,last=call['begin'],call['end']
+        states=[r for r in immediate_states[(call['pid'],call['thread'],call['identity'])]
+                if first['time_us']<=r['time_us']<=last['time_us']]
+        immediate_attempts.append(dict(call,entry_state_records=states,
+            entry_state_complete=Counter(r['event'] for r in states)==Counter({124:1,125:1}),
+            execution_proven_by_wrapper_return=False))
     updates=[]
     begin_calls=defaultdict(list);snapshots_by_thread=defaultdict(list)
     render_calls=defaultdict(list);server_states=defaultdict(list);context_calls=defaultdict(list)
@@ -269,7 +295,8 @@ def analyze(rows, metadata):
                 event_counts=dict(events),diagnostics=dict(diagnostics),user_markers=users,
                 marker_pair_transport_ms=distribution([r['transport_us']/1000 for r in users]),
                 ipc=dict(messages=sends,by_message={msg:metrics([s for s in sends if s['message_id']==msg],names) for msg in (40205,40402)}),
-                ca=dict(calls=wrappers,call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
+                ca=dict(calls=wrappers,immediate_attempts=immediate_attempts,
+                        call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
                         updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms',
                             'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms',
                             'begin_return_to_render_ms','render_call_ms','render_return_to_finish_ms',

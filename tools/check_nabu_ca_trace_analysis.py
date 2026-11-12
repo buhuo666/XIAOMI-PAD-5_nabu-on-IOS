@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check trace joins against interleaving, cookie reuse and missing boundaries."""
 import json
+import struct
 from analyze_nabu_ca_trace import analyze
 
 def check():
@@ -99,6 +100,23 @@ def check():
     for item in rows:
         if item['event']==80 and item['identity'] in (1010,1011,1012):item['b']=8
     assert analyze(rows,metadata)['ca']['updates'][0]['render_call_ms'] is None
+    # Immediate wrapper return is not proof of its asynchronously queued work.
+    target=struct.unpack('<Q',struct.pack('<d',3.25))[0]
+    marker(9000,123,2000,0x700,0xffffffffffffffff,target,0x8000000000000001)
+    marker(9002,124,2001,0x700,0x9000000000000001,0x81234567fedc9876,0xabcdef0123456789)
+    marker(9004,125,2002,0x700,0x12345678,0xffffffffffffffff,0x030201)
+    marker(9010,126,2003,0x700,target,0x8000000000000001,0xffffffffffffffff)
+    attempt,=analyze(rows,metadata)['ca']['immediate_attempts']
+    assert attempt['entry_state_complete'] and not attempt['execution_proven_by_wrapper_return']
+    assert attempt['begin']['decoded']['entry_target_seconds']==3.25
+    state=attempt['entry_state_records'][0]['decoded']
+    assert state['server_flags160']==0x9876 and state['server_flags30d']==0xdc
+    assert state['display_flags22c']==0xfe and state['display_flags220']==0x81234567
+    assert state['display_mode230']==0xabcdef0123456789
+    assert attempt['entry_state_records'][1]['decoded']['low_latency_disabled']==3
+    assert attempt['end']['decoded']['result']==0xffffffffffffffff
+    incomplete=[r for r in rows if r['identity']!=2001 or r['event'] not in (124,80)]
+    assert not analyze(incomplete,metadata)['ca']['immediate_attempts'][0]['entry_state_complete']
     print(json.dumps(dict(passed=True,interleaved_markers=True,cookie_reuse=True,
                          missing_pairs=True,ambiguous_surface=True,short_diagnostic_only=True)))
 

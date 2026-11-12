@@ -9,6 +9,7 @@ typedef uintptr_t (*display_update_fn)(void *, void *, uint32_t);
 typedef uintptr_t (*display_begin_fn)(void *, void *);
 typedef uint32_t (*display_can_fn)(void *, uint32_t);
 typedef uintptr_t (*server_render_fn)(void *, void *, uint32_t *);
+typedef uintptr_t (*server_immediate_fn)(void *);
 typedef uintptr_t (*context_collect_fn)(void *, uint32_t);
 typedef uintptr_t (*context_buffer_fn)(void *, void *);
 typedef int32_t (*swap_end_fn)(void *);
@@ -16,6 +17,7 @@ typedef int32_t (*swap_wait_fn)(void *, uint32_t, uint32_t);
 
 extern const char *getprogname(void);
 extern int *__error(void);
+extern uint64_t mach_absolute_time(void);
 extern uint32_t _dyld_image_count(void);
 extern const char *_dyld_get_image_name(uint32_t);
 extern const void *_dyld_get_image_header(uint32_t);
@@ -32,6 +34,8 @@ static display_update_fn original_finish;
 static display_begin_fn original_begin;
 static display_can_fn original_can;
 static server_render_fn original_iomfb_render,original_eagl_render;
+static server_immediate_fn original_immediate;
+static const void *arbitration_once,*arbitration_supported,*arbitration_forced,*low_latency_disabled;
 static context_collect_fn original_collect;
 static context_buffer_fn original_make_buffer;
 static uintptr_t eagl_vtable;
@@ -44,6 +48,13 @@ static uint32_t word(const void *base, size_t offset)
 {
     return *(const volatile uint32_t *)((const unsigned char *)base+offset);
 }
+static uint8_t byte(const void *base,size_t offset)
+{ return *((const volatile uint8_t *)base+offset); }
+static uint16_t half(const void *base,size_t offset)
+{ return *(const volatile uint16_t *)((const unsigned char *)base+offset); }
+/* The immediate path's original ldr x/d fields are all eight-byte aligned. */
+static uint64_t aligned_wide(const void *base,size_t offset)
+{ return *(const volatile uint64_t *)((const unsigned char *)base+offset); }
 static uint64_t wide(const void *base, size_t offset)
 {
     return word(base,offset)|((uint64_t)word(base,offset+4)<<32);
@@ -196,6 +207,32 @@ static uintptr_t traced_begin(void *display,void *update)
     mark(NabuCaBeginLeave,update,(uintptr_t)display,frame,result);
     return result;
 }
+static uintptr_t traced_immediate(void *server)
+{
+    int saved=*__error();
+    const uint64_t now=mach_absolute_time();
+    const uint64_t target=aligned_wide(server,0x118);
+    const uint64_t immediate_target=aligned_wide(server,0x2d0);
+    const uint64_t native_time=aligned_wide(server,0x2e0);
+    const void *display=(const void *)(uintptr_t)aligned_wide(server,0x60);
+    const uint64_t state=pair(half(server,0x160)|((uint32_t)byte(server,0x30d)<<16)|
+                             ((uint32_t)byte(display,0x22c)<<24),word(display,0x220));
+    const uint64_t mode=aligned_wide(display,0x230);
+    const uint64_t runloop=aligned_wide(server,0x258);
+    const uint64_t once=aligned_wide(arbitration_once,0);
+    const uint64_t config=byte(arbitration_supported,0)|
+                          ((uint64_t)byte(arbitration_forced,0)<<8)|
+                          ((uint64_t)byte(low_latency_disabled,0)<<16);
+    mark(NabuCaImmediateEnter,server,now,target,immediate_target);
+    mark(NabuCaImmediateState,server,native_time,state,mode);
+    mark(NabuCaImmediateConfig,server,runloop,once,config);
+    *__error()=saved;
+    uintptr_t result=original_immediate(server);
+    /* No post-call dereference: an attempted immediate call can be rejected,
+     * or can enqueue a block whose later gate/actual can flags remain distinct. */
+    mark(NabuCaImmediateLeave,server,target,immediate_target,result);
+    return result;
+}
 static uintptr_t traced_finish(void *display,void *update,uint32_t flags)
 {
     int saved=*__error();observe_framebuffer(display);
@@ -290,13 +327,14 @@ static int image_slide(const char *name,const unsigned char uuid[16],intptr_t *s
 }
 struct site {uintptr_t address,target,replacement;};
 struct page_change {uint64_t address;int32_t protection;};
+enum { CaTraceSlotCount = 18 };
 
 /* Validate every slot before any write, then privatize only data pages. The
  * library is process-lifetime; installed wrappers call the original addresses.
  * There is deliberately no restoration/unload race with active render calls. */
 static int install_sites(struct site *sites,unsigned count)
 {
-    struct page_change changed[16];unsigned pages_count=0;
+    struct page_change changed[CaTraceSlotCount];unsigned pages_count=0;
     uint64_t page_size=(uint64_t)getpagesize();
     if(!page_size||(page_size&(page_size-1)))return -2;
     for(unsigned i=0;i<count;++i)
@@ -314,7 +352,8 @@ static int install_sites(struct site *sites,unsigned count)
     }
     for(unsigned i=0;i<count;++i)__atomic_store_n((uintptr_t *)sites[i].address,sites[i].replacement,__ATOMIC_RELEASE);
     {
-        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks|NabuCaMetalContextHooks);
+        int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks|
+                         NabuCaMetalContextHooks|NabuCaImmediateHooks);
         for(unsigned i=0;i<pages_count;++i)
             if(vm_protect(mach_task_self_,changed[i].address,page_size,0,changed[i].protection))result=-5;
         return result;
@@ -345,6 +384,11 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     original_finish=(display_update_fn)(uintptr_t)(qc+0x188248568ULL);
     original_iomfb_render=(server_render_fn)(uintptr_t)(qc+0x18846bc6cULL);
     original_eagl_render=(server_render_fn)(uintptr_t)(qc+0x1882d770cULL);
+    original_immediate=(server_immediate_fn)(uintptr_t)(qc+0x1884782c8ULL);
+    arbitration_once=(const void *)(uintptr_t)(qc+0x1e1b9c3d0ULL);
+    arbitration_supported=(const void *)(uintptr_t)(qc+0x1e1b9b7c8ULL);
+    arbitration_forced=(const void *)(uintptr_t)(qc+0x1e1b9cde2ULL);
+    low_latency_disabled=(const void *)(uintptr_t)(qc+0x1e1b9cd95ULL);
     original_collect=(context_collect_fn)(uintptr_t)(qc+0x1882c5be0ULL);
     original_make_buffer=(context_buffer_fn)(uintptr_t)(qc+0x188258ef0ULL);
     eagl_vtable=(uintptr_t)(qc+0x1d57edc68ULL);
@@ -353,7 +397,7 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
         original_wait=(swap_wait_fn)(uintptr_t)(fb+0x1af12c648ULL);
     }
     static const uintptr_t tables[]={0x1d57ddc60ULL,0x1d57de420ULL,0x1d57ebd00ULL,0x1d57ec520ULL};
-    struct site sites[16];unsigned n=0;
+    struct site sites[CaTraceSlotCount];unsigned n=0;
     for(unsigned i=0;i<4;++i){
         uintptr_t table=tables[i]+qc+16;
         sites[n++]=(struct site){table+0x140,(uintptr_t)original_can,(uintptr_t)traced_can};
@@ -362,6 +406,8 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     }
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57ddc10ULL),(uintptr_t)original_iomfb_render,(uintptr_t)traced_iomfb_render};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57edde0ULL),(uintptr_t)original_eagl_render,(uintptr_t)traced_eagl_render};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57ddc08ULL),(uintptr_t)original_immediate,(uintptr_t)traced_immediate};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57eddd8ULL),(uintptr_t)original_immediate,(uintptr_t)traced_immediate};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e3f08ULL),(uintptr_t)original_collect,(uintptr_t)traced_collect};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e41a0ULL),(uintptr_t)original_make_buffer,(uintptr_t)traced_make_buffer};
     trace_sink=sink;

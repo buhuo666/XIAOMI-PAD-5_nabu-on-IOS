@@ -18,7 +18,11 @@ static unsigned render_backend,render_order;
 static void *expected_context,*expected_surface;
 static uint32_t expected_collect_all;
 static unsigned context_entry,context_order;
+static unsigned immediate_order,clock_calls;
+static void *expected_immediate,*expected_immediate_display;
+static uint64_t test_clock=UINT64_C(0x123456789abcdef0);
 int *__error(void){return &test_errno;}
+uint64_t mach_absolute_time(void){++clock_calls;test_errno=88;return test_clock;}
 const char *getprogname(void){return process;}
 uint32_t _dyld_image_count(void){return 0;}
 const char *_dyld_get_image_name(uint32_t i){(void)i;return 0;}
@@ -44,7 +48,7 @@ static void store64(void *b,size_t o,uint64_t v){memcpy((unsigned char *)b+o,&v,
 static void ptr(void *b,size_t o,const void *p){store64(b,o,(uintptr_t)p);}
 static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
 {
-    assert(event>=96&&event<=122);++marks;++seen[event];
+    assert(event>=96&&event<=126);++marks;++seen[event];
     if(event==NabuCaRenderEnter){assert(render_order==0);render_order=1;}
     if(event==NabuCaServerState){assert(render_order==1);render_order=2;}
     if(event==NabuCaRenderLeave){assert(render_order==3);render_order=0;}
@@ -54,6 +58,10 @@ static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
     if(event==NabuCaCollectLeave||event==NabuCaMakeBufferLeave){
         assert(context_order==2&&event==context_entry+1);context_order=0;
     }
+    if(event>=NabuCaImmediateEnter&&event<=NabuCaImmediateConfig){
+        assert(immediate_order==event-NabuCaImmediateEnter);++immediate_order;
+    }
+    if(event==NabuCaImmediateLeave){assert(immediate_order==4);immediate_order=0;}
     last[event][0]=id;last[event][1]=a;last[event][2]=b;last[event][3]=c;
     test_errno=99;
 }
@@ -141,19 +149,59 @@ static void check_context_call(int make_buffer,int nonzero)
     assert(last[event+1][0]==identity&&last[event+1][1]==argument&&last[event+1][2]==vptr);
     assert(last[event+1][3]==raw_return);
 }
-static void sixteen_slot_install(void)
+static uintptr_t original_im(void *server)
 {
-    uintptr_t *slots=aligned_alloc(4096,16*4096);assert(slots);
-    struct site sites[16];
-    for(unsigned i=0;i<16;++i){slots[i*512]=i+1;sites[i]=(struct site){(uintptr_t)&slots[i*512],i+1,i+101};}
-    sites[15].target=99;protect_calls=restore_calls=0;
-    assert(install_sites(sites,16)==-3&&protect_calls==0);sites[15].target=16;
-    fail_page=16;protect_calls=restore_calls=0;
-    assert(install_sites(sites,16)==-4&&protect_calls==16&&restore_calls==15);
-    for(unsigned i=0;i<16;++i)assert(slots[i*512]==i+1);
+    assert(server==expected_immediate&&test_errno==13&&immediate_order==3);
+    ++original_calls;immediate_order=4;
+    /* Even the server may not be reread on leave. This also makes any
+     * post-call display/global traversal visible to the sanitizers. */
+    free(expected_immediate_display);free(server);
+    test_errno=47;return raw_return;
+}
+static void check_immediate(int eagl)
+{
+    void *server=calloc(1,0x310),*display=calloc(1,0x238);assert(server&&display);
+    const uint64_t target=UINT64_C(0x40a23456789abcde);
+    const uint64_t immediate_target=UINT64_C(0x1122334455667788);
+    const uint64_t native_time=UINT64_C(0x9988776655443322);
+    const uint64_t mode=UINT64_C(0xabcdef0187654321);
+    const uint64_t runloop=UINT64_C(0xfedc012398765432);
+    uint64_t once=eagl?UINT64_MAX:0;
+    uint8_t supported=0x12,forced=0x34,disabled=0x56;
+    ptr(server,0,eagl?(void *)eagl_vtable:(void *)(uintptr_t)UINT64_C(0x1d57dda98));
+    ptr(server,0x60,display);store64(server,0x118,target);store64(server,0x2d0,immediate_target);
+    store64(server,0x2e0,native_time);store64(server,0x258,runloop);
+    store32(server,0x160,0xbbaa9182u);*((unsigned char *)server+0x30d)=0xa5;
+    store32(display,0x220,0x89abcdefu);*((unsigned char *)display+0x22c)=2;
+    store64(display,0x230,mode);
+    arbitration_once=&once;arbitration_supported=&supported;arbitration_forced=&forced;low_latency_disabled=&disabled;
+    expected_immediate=server;expected_immediate_display=display;
+    const uintptr_t identity=(uintptr_t)server;
+    const unsigned calls_before=original_calls,clock_before=clock_calls;
+    test_errno=13;assert(traced_immediate(server)==raw_return&&test_errno==47);
+    assert(original_calls==calls_before+1&&clock_calls==clock_before+1&&immediate_order==0);
+    assert(last[NabuCaImmediateEnter][0]==identity&&last[NabuCaImmediateEnter][1]==test_clock);
+    assert(last[NabuCaImmediateEnter][2]==target&&last[NabuCaImmediateEnter][3]==immediate_target);
+    assert(last[NabuCaImmediateState][0]==identity&&last[NabuCaImmediateState][1]==native_time);
+    assert(last[NabuCaImmediateState][2]==pair(0x02a59182u,0x89abcdefu)&&last[NabuCaImmediateState][3]==mode);
+    assert(last[NabuCaImmediateConfig][0]==identity&&last[NabuCaImmediateConfig][1]==runloop);
+    assert(last[NabuCaImmediateConfig][2]==once&&last[NabuCaImmediateConfig][3]==0x563412u);
+    assert(last[NabuCaImmediateLeave][0]==identity&&last[NabuCaImmediateLeave][1]==target);
+    assert(last[NabuCaImmediateLeave][2]==immediate_target&&last[NabuCaImmediateLeave][3]==raw_return);
+}
+static void eighteen_slot_install(void)
+{
+    uintptr_t *slots=aligned_alloc(4096,18*4096);assert(slots);
+    struct site sites[18];
+    for(unsigned i=0;i<18;++i){slots[i*512]=i+1;sites[i]=(struct site){(uintptr_t)&slots[i*512],i+1,i+101};}
+    sites[17].target=99;protect_calls=restore_calls=0;
+    assert(install_sites(sites,18)==-3&&protect_calls==0);sites[17].target=18;
+    fail_page=18;protect_calls=restore_calls=0;
+    assert(install_sites(sites,18)==-4&&protect_calls==18&&restore_calls==17);
+    for(unsigned i=0;i<18;++i)assert(slots[i*512]==i+1);
     fail_page=0;protect_calls=restore_calls=0;
-    assert(install_sites(sites,16)==29&&protect_calls==16&&restore_calls==16);
-    for(unsigned i=0;i<16;++i)assert(slots[i*512]==i+101);
+    assert(install_sites(sites,18)==61&&protect_calls==18&&restore_calls==18);
+    for(unsigned i=0;i<18;++i)assert(slots[i*512]==i+101);
     free(slots);
 }
 
@@ -209,14 +257,15 @@ int main(void)
     struct site sites[]={{(uintptr_t)&slots[0],11,33},{(uintptr_t)&slots[512],22,44}};
     fail_page=2;protect_calls=restore_calls=0;assert(install_sites(sites,2)==-4&&slots[0]==11&&slots[512]==22&&restore_calls==1);
     fail_page=0;protect_calls=restore_calls=0;sites[1].target=23;assert(install_sites(sites,2)==-3&&protect_calls==0);sites[1].target=22;
-    assert(install_sites(sites,2)==29&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
+    assert(install_sites(sites,2)==61&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
     original_iomfb_render=original_ri;original_eagl_render=original_re;eagl_vtable=UINT64_C(0x1d57edc68);
     check_render(0,0,0);check_render(0,1,0);check_render(1,0,1);check_render(1,1,1);check_render(1,1,0);
     original_collect=original_mc;original_make_buffer=original_mb;
     check_context_call(0,0);check_context_call(0,1);check_context_call(1,0);check_context_call(1,1);
-    sixteen_slot_install();
+    original_immediate=original_im;check_immediate(0);check_immediate(1);
+    eighteen_slot_install();
     assert(nabu_ca_frame_trace_install(sink)==0);process="backboardd";installation=0;test_errno=13;
     assert(nabu_ca_frame_trace_install(sink)==0&&test_errno==13);
-    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch and pre-call context state; Metal collect/buffer ABI, null unbind, no reads after return; UUID and all 16-slot validation; COW failure rollback; %u markers\n",marks);
+    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch and pre-call context state; Metal collect/buffer ABI, null unbind, no reads after return; immediate pre-call fields, clock/errno, no reads after server/display release; UUID and all 18-slot validation; COW failure rollback; %u markers\n",marks);
     return 0;
 }

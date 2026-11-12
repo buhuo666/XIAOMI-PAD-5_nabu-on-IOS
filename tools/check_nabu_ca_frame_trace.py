@@ -21,6 +21,9 @@ def main():
     report={'passed':True,'test':r.stdout.strip(),'device_executed':False,
         'executable_function_entries_modified':False,'executable_pages_modified':False,
         'render_update_data_vtable_slots':2,'metal_context_data_vtable_slots':2,
-        'server_state_pre_call_only':True,'context_state_pre_call_only':True}
+        'immediate_render_data_vtable_slots':2,'total_data_vtable_slots':18,
+        'server_state_pre_call_only':True,'context_state_pre_call_only':True,
+        'immediate_state_pre_call_only':True,'immediate_events':[123,126],
+        'immediate_original_calls_per_wrapper':1,'scheduler_conditions_modified':False}
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 if __name__=='__main__':main()

@@ -23,6 +23,6 @@
 
 剩余默认路径为 present→第一次 can 4.536 ms、can 本体 0.063 ms、成功 can→begin 0.382 ms、CA 主体 0.223 ms、finish→DPU 0.122 ms。本轮已无 busy can；继续定位目标时间 / 原生 VSync 调度的等待，不能靠提前释放正在扫描的表面、伪造时间戳或改变统计起点达标。
 
-统计请求 `5f4c9dedd96045f9aebd40e47c0762a6` 已返回 submit_status=0，完整计数以 Android 回收日志中的配对 begin/end 为准。
+统计请求 `5f4c9dedd96045f9aebd40e47c0762a6` 的配对 begin/end 已回收：累计 GPU 提交与完成均 4610，fault、timeout、poison 均 0；2 条交错明细行被解析器拒绝并保留。8,609,515 字节连续日志与完整 64 MiB 槽已保存，清槽读回通过；无封口记录，不声称覆盖复位前全部输出。
 
 证据：`log/host/gpu-v222/default-ca-path.json`、`low-ca-path.json`、两套 `*-ca-analysis.json`、`bench-default/`、`bench-low/`、`trace-default/`、`trace-low/`。动态设备 / 日志槽状态见 `log/host/gpu-v222/continuation.json`。
