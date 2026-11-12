@@ -16,7 +16,7 @@ def main():
     assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()==REV
     shim=ROOT/'patches/apfsprogs-windows'
     for name in ('mkapfs','apfsck'):
-        (source/name/'version.h').write_text('#define GIT_COMMIT "'+REV[:8]+'-winfile"\n')
+        (source/name/'version.h').write_text('#define GIT_COMMIT "'+REV[:8]+'"\n')
         command=['x86_64-w64-mingw32-gcc','-O2','-static','-D_FILE_OFFSET_BITS=64',
                  '-Wno-address-of-packed-member','-fno-strict-aliasing','-include',str(shim/'compat.h'),
                  '-I'+str(shim),'-I'+str(source/'include'),
