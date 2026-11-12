@@ -1,0 +1,47 @@
+name: GPU224 DarwinBoot handoff analysis
+on:
+  push:
+    branches: [codex/gpu224-early-handoff]
+    paths:
+      - '.github/workflows/gpu224-handoff-analysis.yml'
+      - 'analysis/gpu224-handoff/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  decompile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Download the pinned Ghidra release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build log/ci/gpu224-handoff
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > log/ci/gpu224-handoff/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('log/ci/gpu224-handoff/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          if 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()!=asset['digest']:
+              raise RuntimeError('Ghidra download digest mismatch')
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Decompile the shipped GPU224 PE and replay its ADT parser
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          mkdir -p build/ghidra-gpu224
+          build/ghidra_12.2_PUBLIC/support/analyzeHeadless build/ghidra-gpu224 Handoff -import analysis/gpu224-handoff/DarwinBoot.efi -analysisTimeoutPerFile 300 -scriptPath analysis/gpu224-handoff -postScript ExportHandoff.java log/ci/gpu224-handoff -log log/ci/gpu224-handoff/ghidra.log
+          python3 -m pip install --disable-pip-version-check unicorn==2.1.4
+          python3 analysis/gpu224-handoff/replay_parser.py --output log/ci/gpu224-handoff/parser-replay.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: gpu224-handoff-analysis
+          path: log/ci/gpu224-handoff/
+          retention-days: 14
