@@ -908,6 +908,19 @@ IOReturn NativeAdrenoA6xxPower::enableGx()
     }
     IOLog("NativeAdrenoA6xx: GMU owns GX domain=%08x status=%08x fence=%08x clock=%08x\n",
         gxDomain, gxStatus, fence, gxClock);
+    /* Read only, as the GMU left them for the acknowledged vote (vendor
+     * gpucc-sm8150.c): gpu_cc_pll0 mode, L and alpha (VCO = 19.2 MHz * L.alpha),
+     * gpu_cc_gx_gfx3d_clk_src command and source/divider, gpu_cc_gx_gfx3d_clk. */
+    static constexpr uint32_t gfxOffsets[] = {0x0, 0x4, 0x40, 0x101c, 0x1020, 0x1054};
+    uint32_t gfx[6];
+    for (unsigned i = 0; i < 6; ++i) {
+        result = read(NativeAdrenoA6xxGpuCc, gfxOffsets[i], &gfx[i]);
+        if (result) {
+            return result;
+        }
+    }
+    IOLog("NativeAdrenoA6xx: GX clock readback pll0 mode=%08x l=%u alpha=%08x gfx3d rcg=%08x/%08x branch=%08x\n",
+        gfx[0], gfx[1], gfx[2], gfx[3], gfx[4], gfx[5]);
 
     gxReady_ = true;
     report_.phase = GxReady;

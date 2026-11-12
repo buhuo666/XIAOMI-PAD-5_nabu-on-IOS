@@ -23,10 +23,16 @@ void nabu_slpi_start(void);
 #ifdef NABU_HALL_SERVICE
 void nabu_hall_start(void);
 #endif
+#ifdef NABU_CPUFREQ_SERVICE
+void nabu_cpufreq_start(void);
+#endif
 static kern_return_t nabu_data_module_start(kmod_info_t *, void *)
 {
     if (nabu_aes_start()) return KERN_FAILURE;
     if (nabu_data_block_start()) return KERN_FAILURE;
+#ifdef NABU_CPUFREQ_SERVICE
+    nabu_cpufreq_start();
+#endif
 #ifdef NABU_HALL_SERVICE
     nabu_hall_start();
 #endif
