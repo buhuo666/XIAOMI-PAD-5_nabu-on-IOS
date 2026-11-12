@@ -18,6 +18,8 @@ PHASES = {
     38: ('runtime_prepare_buffers', 39),
     40: ('runtime_group_submit', 41),
     42: ('runtime_scheduler_commit', 43),
+    44: ('driver_collect_resources', 45),
+    46: ('driver_native_submit', 47),
 }
 
 
@@ -40,8 +42,8 @@ def analyze_extended_phases(users, wrappers):
     diagnostics = Counter()
     for r in markers:
         stage = r['a']
-        if stage == 30:
-            continue # Explicit frontend-to-runtime identity edge, not a CPU span.
+        if stage in (30,48,49,50):
+            continue # Identity/counter/result metadata, not a CPU span.
         start = reverse.get(stage, stage)
         if start not in PHASES:
             diagnostics['unknown_stage'] += 1
@@ -101,7 +103,7 @@ def analyze_extended_phases(users, wrappers):
             calls=group))
 
     position = lambda r:(r['time_us'],r['marker_token'])
-    runtime_calls = [c for c in calls if c['stage'] >= 32]
+    runtime_calls = [c for c in calls if 32 <= c['stage'] <= 42]
     mappings = defaultdict(list)
     by_runtime = defaultdict(list)
     by_command = defaultdict(list)
@@ -173,6 +175,8 @@ def analyze_extended_phases(users, wrappers):
     return dict(marker_count=len(markers),diagnostics=dict(diagnostics),calls=calls,
         by_phase={name:summary([c for c in calls if c['phase']==name]) for name,_ in PHASES.values()},
         commands=command_records,runtime_identity_edge_count=sum(map(len,mappings.values())),
+        driver_calls=[c for c in calls if c['stage'] in (44,46)],
+        driver_metadata=[r for r in markers if r['a'] in (48,49,50)],
         ca_parents=parents,ca_parent_metrics=parent_metrics,
         limits='Event127 CPU comes from payload c on the same PID/thread, not the kernel CPU side record. '
                'Phase durations are inclusive and must not be summed. Parent residuals subtract the interval union. '

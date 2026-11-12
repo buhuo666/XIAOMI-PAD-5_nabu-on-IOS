@@ -1,0 +1,44 @@
+name: nabu16 - Turnip submission resource deduplication
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-turnip-submit.yml'
+      - 'tools/build_nabu_turnip_submit.py'
+      - 'tools/nabu_turnip_submit_dedup.py'
+      - 'tools/check_nabu_turnip_range_dedup.py'
+      - 'tools/fixtures/nabu_turnip_range_dedup.cpp'
+      - 'patches/nabu-vulkan/turnip-submit-range-dedup.patch'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  turnip-submit:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch pinned Turnip and nabu ABI
+        run: >-
+          python3 tools/fetch_sources.py --only nabu UniXNU-turnip-reference
+          --report artifacts/turnip-submit-sources.json
+      - name: Install Mesa build tools
+        run: brew install ninja glslang
+      - name: Check resource equivalence and build iOS Turnip
+        run: >-
+          python3 -u tools/build_nabu_turnip_submit.py
+          --work build/turnip-submit --output artifacts/nabu-turnip-submit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-turnip-submit-${{ github.run_number }}
+          path: |
+            artifacts/nabu-turnip-submit/
+            artifacts/turnip-submit-sources.json
+          retention-days: 14

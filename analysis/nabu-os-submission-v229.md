@@ -27,6 +27,8 @@
 - callback退出→wait退出：平均0.044660ms，最大0.122ms。
 - 此597组render CPU与wait wall的相关系数为0.979096。它支持继续核对随工作量增长的提交成本，但不能独自证明某个资源循环或重复编码是原因。
 
+同597组的GPUAccepted marker记录每次48–584项资源。资源数与wait wall相关系数0.980106，与render CPU相关系数0.980923；资源数量也随画面复杂度变化，此相关性不能把某个资源循环直接定为原因。
+
 因此下一步优先细分runtime scheduler和submit_batch内的资源解析、依赖规划及Vulkan提交。前端dispatch group和调用者的surface flush（平均0.004595ms）不支持解释几十毫秒长尾。保留真实提交、原生回调、fence及资源生命周期。
 
 总begin→DPU硬件接受为28.051935ms，但它不是App提交→硬件接受：本轮是合成输出，尚无完整输入App帧关联。CA<5ms和App整链<8.32ms仍未达标，未宣称120个不同新画面/秒。

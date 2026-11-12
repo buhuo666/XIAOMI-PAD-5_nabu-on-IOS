@@ -1,0 +1,160 @@
+diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl_darwin.cc
+--- a/src/freedreno/vulkan/tu_knl_darwin.cc
++++ b/src/freedreno/vulkan/tu_knl_darwin.cc
+@@ -11,6 +11,7 @@
+ #include <string.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
++#include <time.h>
+ 
+ #include <IOKit/IOKitLib.h>
+ #include <mach/mach.h>
+@@ -35,6 +36,55 @@
+ #include "tu_knl.h"
+ #include "tu_queue.h"
+ #include "tu_rmv.h"
++
++
++/* Same optional project marker ABI as CA/runtime event127. The kernel stores
++ * only an explicitly opened window. No identity survives this submit object. */
++static bool
++nabuTurnipSubmitTraceEnabled()
++{
++   const int saved = errno;
++   static const bool enabled = [] {
++      const char *value = getenv("NABU_METAL_SUBMIT_TRACE");
++      return value && value[0] == '1' && value[1] == '\0';
++   }();
++   errno = saved;
++   return enabled;
++}
++
++static void
++nabuTurnipSubmitMarker(uint64_t identity, uint64_t stage, uint64_t b, uint64_t c)
++{
++   const int saved = errno;
++   if (nabuTurnipSubmitTraceEnabled()) {
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++      (void)syscall(179, UINT64_C(0x31ca81fc), identity, stage, b, c);
++#pragma clang diagnostic pop
++   }
++   errno = saved;
++}
++
++class NabuTurnipSubmitSpan {
++   bool enabled;
++   uint64_t identity, end, argument;
++   void mark(uint64_t stage) const {
++      const int saved = errno;
++      struct timespec cpu = {};
++      const uint64_t ns = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu) == 0 ?
++         (uint64_t)cpu.tv_sec * UINT64_C(1000000000) + cpu.tv_nsec : 0;
++      nabuTurnipSubmitMarker(identity, stage, argument, ns);
++      errno = saved;
++   }
++public:
++   NabuTurnipSubmitSpan(uint64_t begin, uint64_t end_stage, const void *object, uint64_t b)
++      : enabled(nabuTurnipSubmitTraceEnabled()), identity((uintptr_t)object), end(end_stage), argument(b) {
++      if (enabled) mark(begin);
++   }
++   ~NabuTurnipSubmitSpan() { if (enabled) mark(end); }
++   NabuTurnipSubmitSpan(const NabuTurnipSubmitSpan &) = delete;
++   NabuTurnipSubmitSpan &operator=(const NabuTurnipSubmitSpan &) = delete;
++};
+ 
+ /* 'NTNL': first word of a tunnelled call, as served by the driver (NativeAdrenoPublish.cpp). */
+ #define DW_TUNNEL_MAGIC 0x4e544e4cu
+@@ -2221,10 +2271,48 @@
+    return VK_SUCCESS;
+ }
+ 
++
++/* Exact source ranges can recur in several CS/descriptor-set records. Remove
++ * duplicates while the existing BO retirement lock protects resolution. Do not
++ * merge adjacent/overlapping IOVAs here: they may belong to different BOs. The
++ * native same-handle/access overlap merge remains after reference acquisition. */
++static int
++darwin_raw_range_compare(const void *left, const void *right)
++{
++   const struct tu_resource_range *a = (const struct tu_resource_range *)left;
++   const struct tu_resource_range *b = (const struct tu_resource_range *)right;
++   if (a->iova != b->iova)
++      return a->iova < b->iova ? -1 : 1;
++   if (a->size != b->size)
++      return a->size < b->size ? -1 : 1;
++   return a->access < b->access ? -1 : a->access > b->access;
++}
++
++static uint32_t
++darwin_deduplicate_submit_ranges(struct tu_darwin_queue_submit *submit)
++{
++   const uint32_t count = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);
++   if (count < 2)
++      return count;
++   struct tu_resource_range *ranges = (struct tu_resource_range *)submit->ranges.data;
++   qsort(ranges, count, sizeof(*ranges), darwin_raw_range_compare);
++   uint32_t unique = 1;
++   for (uint32_t at = 1; at < count; at++) {
++      const struct tu_resource_range *previous = &ranges[unique - 1];
++      if (previous->iova == ranges[at].iova && previous->size == ranges[at].size &&
++          previous->access == ranges[at].access)
++         continue;
++      ranges[unique++] = ranges[at];
++   }
++   submit->ranges.size = unique * sizeof(*ranges);
++   return unique;
++}
++
+ static VkResult
+ darwin_collect_submit_resources(struct tu_device *dev, struct tu_darwin_queue_submit *submit,
+                                 bool legacy)
+ {
++   NabuTurnipSubmitSpan nabu_collect(44, 45, submit, 0);
+    struct darwin_retire_state *retire = (struct darwin_retire_state *)dev->darwin_retire;
+    uint16_t object_indices[DARWIN_NATIVE_BO_LIMIT + 1] = {};
+ 
+@@ -2238,7 +2326,9 @@
+    }
+ 
+    VkResult result = VK_SUCCESS;
++   const uint32_t raw_ranges = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);
+    pthread_mutex_lock(&retire->lock);
++   const uint32_t unique_ranges = darwin_deduplicate_submit_ranges(submit);
+    util_dynarray_foreach (&submit->ranges, struct tu_resource_range, range) {
+       if (!range->iova || !range->size)
+          continue;
+@@ -2282,6 +2372,7 @@
+       }
+    }
+    pthread_mutex_unlock(&retire->lock);
++   nabuTurnipSubmitMarker((uintptr_t)submit, 49, raw_ranges, unique_ranges);
+    if (result != VK_SUCCESS)
+       return result;
+ 
+@@ -2823,16 +2914,21 @@
+    for (;;) {
+       NativeAdrenoAbiSubmitV2Reply reply = {};
+       size_t output_size = sizeof(reply);
+-      const kern_return_t status = IOConnectCallStructMethod(dw.conn,
+-         dw.tunnel ? dw.selector : method,
+-         dw.tunnel ? (void *)packet : (void *)(packet + 8), bytes + (dw.tunnel ? 8 : 0),
+-         &reply, &output_size);
++      const kern_return_t status = [&] {
++         NabuTurnipSubmitSpan nabu_call(46, 47, submit, queue->msm_queue_id);
++         return IOConnectCallStructMethod(dw.conn,
++            dw.tunnel ? dw.selector : method,
++            dw.tunnel ? (void *)packet : (void *)(packet + 8), bytes + (dw.tunnel ? 8 : 0),
++            &reply, &output_size);
++      }();
++      nabuTurnipSubmitMarker((uintptr_t)submit, 50, (uint32_t)status, output_size);
+       if (status == KERN_SUCCESS) {
+          if (reply.epoch != (asynchronous ? dw.async_caps.epoch : caps.epoch) ||
+              !reply.fence || reply.fence > INT32_MAX) {
+             result = vk_device_set_lost(&dev->vk, "native submit returned an invalid completion identity");
+          } else {
+             *fence = reply.fence;
++            nabuTurnipSubmitMarker((uintptr_t)submit, 48, reply.fence, queue->msm_queue_id);
+          }
+          break;
+       }

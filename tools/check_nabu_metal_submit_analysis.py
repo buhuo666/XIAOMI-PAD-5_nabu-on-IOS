@@ -42,6 +42,13 @@ def check():
     phase(270,36,identity=0xabc,pointer=0,thread=9,cpu=1001000)
     phase(560,37,identity=0xabc,pointer=0,thread=9,cpu=1100000)
     phase(580,33,identity=0xabc,pointer=0,thread=9,cpu=1101000)
+    phase(400,44,identity=0xddd,pointer=0,thread=9)
+    phase(410,49,identity=0xddd,pointer=400,thread=9,cpu=20)
+    phase(420,45,identity=0xddd,pointer=0,thread=9,cpu=1005000)
+    phase(430,46,identity=0xddd,pointer=3,thread=9)
+    phase(440,47,identity=0xddd,pointer=3,thread=9,cpu=1007000)
+    phase(441,50,identity=0xddd,pointer=0,thread=9,cpu=16)
+    phase(442,48,identity=0xddd,pointer=1234,thread=9,cpu=3)
     phase(850,30,identity=10,cpu=0xabc) # Later object at the same runtime address.
     phase(902,32,identity=0xabc,pointer=0,thread=9)
     phase(909,33,identity=0xabc,pointer=0,thread=9,cpu=1001000)
@@ -59,6 +66,7 @@ def check():
     assert callback['cpu_ms']==.005 and callback['thread']==8
     assert r['diagnostics']['cpu_unavailable']==1
     assert r['runtime_identity_edge_count']==2 and r['diagnostics']['runtime_calls_unattributed']==0
+    assert len(r['driver_calls'])==2 and len(r['driver_metadata'])==3
     linked={c['commit']:c for c in r['commands'] if c['pid']==42}
     assert len(linked[9]['runtime_calls'])==3 and len(linked[10]['runtime_calls'])==1
     assert linked[9]['runtime_identity']==linked[10]['runtime_identity']==0xabc
