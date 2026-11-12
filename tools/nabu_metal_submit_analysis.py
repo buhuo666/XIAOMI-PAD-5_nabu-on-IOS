@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict
 from bisect import bisect_left, bisect_right
 from analyze_nabu_a640_timestamps import distribution
+from nabu_metal_encode_analysis import analyze_encode_profiles
 
 
 PHASES = {
@@ -43,7 +44,7 @@ def analyze_extended_phases(users, wrappers):
     diagnostics = Counter()
     for r in markers:
         stage = r['a']
-        if stage in (30,48,49,50):
+        if stage in (30,48,49,50) or 64<=stage<=96:
             continue # Identity/counter/result metadata, not a CPU span.
         start = reverse.get(stage, stage)
         if start not in PHASES:
@@ -173,9 +174,11 @@ def analyze_extended_phases(users, wrappers):
         group = [p for p in parents if p['event'] == event]
         parent_metrics[event] = {k:distribution([p[k] for p in group if p[k] is not None])
                                 for k in ('duration_ms','flush_union_ms','outside_flush_ms')}
+    encoding_profiles=analyze_encode_profiles(markers,command_records,wrappers)
     return dict(marker_count=len(markers),diagnostics=dict(diagnostics),calls=calls,
         by_phase={name:summary([c for c in calls if c['phase']==name]) for name,_ in PHASES.values()},
         commands=command_records,runtime_identity_edge_count=sum(map(len,mappings.values())),
+        encoding_profiles=encoding_profiles,
         driver_calls=[c for c in calls if c['stage'] in (44,46,51)],
         driver_metadata=[r for r in markers if r['a'] in (48,49,50)],
         ca_parents=parents,ca_parent_metrics=parent_metrics,
