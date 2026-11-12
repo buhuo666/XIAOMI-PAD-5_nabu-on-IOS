@@ -202,6 +202,8 @@ def main():
     original = (a.inventory/'nabu_system-head.bin').read_bytes()
     require(len(original) == 4096, 'Missing original target header')
     committed = head == header
+    require(head[:8] != b'SHNGROOT' or committed,
+            'An installed layout already exists. Capacity selection cannot resize or recreate its Data.')
     require(committed or head == original or head == marker, 'Unrecognized target contents; refuse reinitialization')
     report['committed_installation_found'] = committed
     report['ranges'] = [{'name': name, 'offset': start, 'bytes': size}

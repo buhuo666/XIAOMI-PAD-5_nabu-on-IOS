@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 from nabu_storage_layout import receipt_geometry, geometry, default_layout
+from install_ipados_windows import root_header
 ROOT = Path(__file__).resolve().parents[1]
 
 def main():
@@ -11,7 +12,8 @@ def main():
     p.add_argument('--scan', type=Path, required=True)
     p.add_argument('--accept-existing-layout', action='store_true', required=True)
     a = p.parse_args()
-    storage=geometry(json.loads(default_layout(ROOT).read_text(encoding='utf-8')))
+    cfg=json.loads(default_layout(ROOT).read_text(encoding='utf-8'))
+    storage=geometry(cfg)
     plan = json.loads((a.scan/'partition-plan.json').read_text(encoding='utf-8'))
     inv = json.loads((a.scan/'inventory.json').read_text(encoding='utf-8'))
     if receipt_geometry(plan)!=storage:
@@ -22,6 +24,9 @@ def main():
         raise ValueError('Scan identities differ.')
     if inv['properties']['ro.boot.slot_suffix'] not in ('_a', '_b'):
         raise ValueError('Unrecognized target active slot.')
+    head=(a.scan/'nabu_system-head.bin').read_bytes()
+    if head[:8]==b'SHNGROOT' and head!=root_header(cfg):
+        raise ValueError('This tablet already has a different installed layout. New capacity selection cannot resize its Data.')
     region = ROOT/'device/reclaimed-region.json'
     if region.exists():
         raise FileExistsError('Existing target binding retained. Use a separate clean kit for each tablet.')

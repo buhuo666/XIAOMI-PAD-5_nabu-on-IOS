@@ -39,6 +39,23 @@ def allocated_ranges(file, size):
     return list(struct.iter_unpack('<qq', raw))
 
 
+def set_sparse_size(file, size):
+    import msvcrt
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    seek = kernel.SetFilePointerEx
+    seek.argtypes = [wintypes.HANDLE, ctypes.c_longlong,
+                     ctypes.POINTER(ctypes.c_longlong), wintypes.DWORD]
+    seek.restype = wintypes.BOOL
+    end = kernel.SetEndOfFile
+    end.argtypes = [wintypes.HANDLE]
+    end.restype = wintypes.BOOL
+    handle = msvcrt.get_osfhandle(file.fileno())
+    # Python's Windows truncate uses the CRT, which writes zeros when growing
+    # a file. SetEndOfFile grows the sparse logical size without those writes.
+    if not seek(handle, size, None, 0) or not end(handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def export_bundle(image, output, cfg, layout_path, tools):
     size = cfg['data']['bytes']
     with image.open('rb') as stream:
@@ -111,7 +128,7 @@ def main():
     args.output.mkdir(parents=True)
     with args.image.open('xb') as stream:
         control(stream, 0x900c4)  # FSCTL_SET_SPARSE before setting logical size.
-        stream.truncate(storage.data_bytes)
+        set_sparse_size(stream, storage.data_bytes)
     data = cfg['data']
     commands = [('mkapfs', ['-s', '-L', data['label'], '-U', data['container_uuid'],
                             '-u', data['volume_uuid'], str(args.image.resolve())]),
