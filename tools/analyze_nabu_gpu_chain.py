@@ -25,7 +25,7 @@ def analyze(ca, path, rows, run):
     inherited = set()
     for row in rows:
         index[(row['event'], row['identity'])].append(row)
-        if row['event'] in (50, 55):
+        if row['event'] in (50, 55, 56):
             inherited.add(row['identity'])
     diagnostics = Counter()
     frames = []

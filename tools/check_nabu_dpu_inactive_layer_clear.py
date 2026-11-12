@@ -87,7 +87,7 @@ struct NabuDpuProducerOps {};
 const NabuDpuProducerOps *producer=nullptr;
 MiniIOSurface surfaces[2];
 std::atomic<unsigned> copies{0},acquires{0},drops{0},producerWaits{0},flipCalls{0},acceptedTrace{0};
-std::atomic<unsigned> pixelPresents{0},pixelQueued{0},clearQueued{0},clearCompleted{0},clearFailed{0};
+std::atomic<unsigned> pixelPresents{0},pixelQueued{0},clearQueued{0},clearCompleted{0},clearFailed{0},ownershipTransfers{0};
 MiniIOSurface *MiniIOSurfaceCopy(uint32_t sid){
     ++copies;for(auto &s:surfaces)if(s.sid==sid){++s.refs;return &s;}return nullptr;
 }
@@ -104,6 +104,7 @@ void traceFrame(uint64_t,uint32_t event,uint64_t,uint64_t=0,uint64_t b=0,uint64_
     if(event==NabuGpuTrace::Present)++pixelPresents;
     if(event==NabuGpuTrace::Queued)++pixelQueued;
     if(event==NabuGpuTrace::InactiveLayerClearQueued)++clearQueued;
+    if(event==NabuGpuTrace::InactiveLayerClearOwnership)++ownershipTransfers;
     if(event==NabuGpuTrace::InactiveLayerClearComplete){if(b)++clearFailed;else ++clearCompleted;}
 }
 namespace NabuDpuCheckpoint {bool enabled(){return false;}void record(const char *,uint32_t=0){}}
@@ -117,7 +118,7 @@ struct Binding {
     MiniIOSurface *blank=nullptr;Scan::State scan{};NabuDpuVBlank::Binding *clock=nullptr;
     NabuDpuVBlank::Sample sample{};
     uint64_t accepted=0,inactiveLayer1Clears=0,producerWaitUs=0,lastPresentAt=0,lastDisplayTime=0;
-    WaitTiming waitTiming[4]{};IOReturn failure=0;bool firstWorkerTraced=false,powerOn=true;
+    WaitTiming waitTiming[4]{};IOReturn failure=0;bool firstWorkerTraced=false,powerOn=true,retirementPending=false;
 };
 __FINISH__
 static IOReturn acquire(Binding *,MiniIOSurface *s,Held &h){
@@ -131,17 +132,16 @@ static IOReturn waitProducer(Binding *,Held &h){
     ++producerWaits;if(h.surface->producerGate)h.surface->producerGate->block();return h.surface->producerResult;
 }
 static IOReturn flip(Binding *b,Held &h,bool){
-    ++flipCalls;const bool inherited=h.kind==Held::ClearInheritedLayer0;
-    auto gate=inherited?h.surface->inheritGate:h.surface->acceptGate;
+    ++flipCalls;assert(h.kind==Held::Pixels);
+    auto gate=h.surface->acceptGate;
     if(gate)gate->block();
-    const auto result=inherited?h.surface->inheritResult:h.surface->acceptResult;
+    const auto result=h.surface->acceptResult;
     if(result)return result;
     Held old;
     IOLockLock(b->stateLock);old=b->active;
-    if(inherited){assert(!h.read&&old.read);h.read=old.read;old.read=nullptr;}
-    b->active=h;h={};if(!inherited)++b->accepted;
+    b->active=h;h={};++b->accepted;
     b->active.mapping.token=b->scan.current_sequence+1;b->active.mapping.iova=b->active.surface->sid;
-    b->scan.current_iova=b->active.surface->sid;++b->scan.current_sequence;
+    b->scan.current_iova=b->active.surface->sid;++b->scan.current_sequence;b->scan.phase=Scan::Ready;
     b->lastDisplayTime=mach_absolute_time();IOLockUnlock(b->stateLock);
     finishRecord(b,b->active.swap,Swap::Displayed);
     traceFrame(nowUs(),NabuGpuTrace::Accepted,b->active.swap);
@@ -164,7 +164,7 @@ struct Fixture {
     Binding b;std::thread workerThread;
     Fixture(){
         copies=acquires=drops=producerWaits=flipCalls=acceptedTrace=0;
-        pixelPresents=pixelQueued=clearQueued=clearCompleted=clearFailed=0;
+        pixelPresents=pixelQueued=clearQueued=clearCompleted=clearFailed=ownershipTransfers=0;
         for(unsigned i=0;i<2;++i){auto &s=surfaces[i];assert(!s.refs&&!s.leases);
             s.sid=36+i;s.producerGate=s.acceptGate=s.inheritGate=nullptr;
             s.producerResult=s.acceptResult=s.inheritResult=0;assert(!s.displayUses);}
@@ -197,33 +197,30 @@ void shape_scope(){
     assert(copies==0&&acquires==0&&flipCalls==0&&drops==0);
 }
 void ordered_a_n_b(){
-    Fixture f;Gate producerA,acceptA,acceptClear,acceptB;surfaces[0].producerGate=&producerA;
+    Fixture f;Gate producerA,acceptA,acceptB;surfaces[0].producerGate=&producerA;
     surfaces[0].acceptGate=&acceptA;surfaces[1].acceptGate=&acceptB;
-    surfaces[0].inheritGate=&acceptClear;
     Request a(100),n(9),b(4);a.pixel(36);b.pixel(37);f.start();assert(f.send(a)==0);producerA.wait();
     assert(f.send(n)==0&&f.phase(9)==Swap::Queued);
-    assert(f.send(n)==kIOReturnBusy); // full-ID duplicate, independent of numeric order
+    assert(f.send(n)==kIOReturnBusy); // Full IDs need not increase numerically.
     assert(wait(&f.b,9,0x80000000,0)==kIOReturnBusy&&wait(&f.b,9,0x80000001,0)==kIOReturnBusy);
-    assert(wait(&f.b,0,0x80000002,0)==kIOReturnBusy);
     auto sleepCount=f.b.stateLock->timedSleeps.load();
     auto oldDrain=std::async(std::launch::async,[&]{return wait(&f.b,0,2,1000);});
     eventually([&]{return f.b.stateLock->timedSleeps>sleepCount;});
     assert(f.send(b)==0);producerA.release();acceptA.wait();
     assert(f.phase(9)==Swap::Queued&&oldDrain.wait_for(5ms)==std::future_status::timeout);
-    acceptA.release();acceptClear.wait();
-    assert(f.phase(100)==Swap::Displayed&&f.phase(9)==Swap::Queued);
-    assert(wait(&f.b,100,0x80000000,0)==kIOReturnBusy&&surfaces[0].leases==1);
-    assert(f.b.active.swap==100&&copies==3&&acquires==2&&producerWaits==1);
-    acceptClear.release();acceptB.wait();f.retired(100);f.displayed(9);
-    assert(oldDrain.wait_for(1s)==std::future_status::ready&&oldDrain.get()==0); // B was after entry
+    assert(!ownershipTransfers&&!acceptedTrace);
+    acceptA.release();acceptB.wait();f.retired(100);f.displayed(9);
+    assert(oldDrain.wait_for(1s)==std::future_status::ready&&oldDrain.get()==0); // B after entry.
     assert(wait(&f.b,9,0x80000000,0)==kIOReturnBusy&&wait(&f.b,9,0x80000001,0)==0);
     assert(wait(&f.b,100,0x80000000,0)==0&&wait(&f.b,100,0x80000001,0)==0);
-    assert(wait(&f.b,0,0x80000002,0)==kIOReturnBusy); // a new drain includes B
-    assert(f.b.active.swap==9&&f.b.active.mapping.token==2&&f.b.scan.current_iova==36);
-    assert(f.b.accepted==1&&f.b.inactiveLayer1Clears==1&&f.b.scan.current_sequence==2);
-    assert(surfaces[0].leases==1&&drops==1&&copies==3&&acquires==2&&producerWaits==2&&acceptedTrace==2);
-    acceptB.release();f.retired(9);
-    assert(wait(&f.b,0,2,1000)==0&&f.b.active.swap==4&&f.b.accepted==2&&drops==2);
+    assert(wait(&f.b,0,0x80000002,0)==kIOReturnBusy);
+    assert(f.b.active.swap==9&&f.b.active.mapping.token==1&&f.b.scan.current_iova==36);
+    assert(f.b.accepted==1&&f.b.inactiveLayer1Clears==1&&f.b.scan.current_sequence==1);
+    assert(surfaces[0].leases==1&&surfaces[0].displayUses==1&&drops==0&&copies==2&&acquires==2);
+    assert(producerWaits==2&&acceptedTrace==1&&ownershipTransfers==1);
+    acceptB.release();f.retired(9);f.displayed(4);
+    assert(wait(&f.b,0,2,1000)==0&&f.b.active.swap==4&&f.b.accepted==2&&drops==1);
+    assert(f.b.scan.current_sequence==2&&surfaces[0].leases==0&&surfaces[1].leases==1);
 }
 void failures(){
     for(bool producerFailure:{false,true}){
@@ -248,7 +245,8 @@ void backpressure(){
     gate.release();assert(third.get()==0);f.displayed(4);f.retired(3);
     eventually([&]{return clearCompleted==3;});
     assert(f.b.inactiveLayer1Clears==3&&f.b.accepted==1&&f.b.active.swap==4);
-    assert(copies==4&&acquires==1&&producerWaits==1&&flipCalls==4&&drops==3);
+    assert(copies==1&&acquires==1&&producerWaits==1&&flipCalls==1&&drops==0);
+    assert(ownershipTransfers==3&&acceptedTrace==1&&f.b.scan.current_sequence==1);
 }
 void ledger_capacity_and_reuse(){
     Fixture f;for(uint32_t id=1;id<=64;++id)assert(f.b.ledger.insert(id));
@@ -264,10 +262,11 @@ void active_pixel_and_clear_stream(){
     Fixture f;Request a(1);a.pixel(36);f.start();assert(f.send(a)==0);assert(wait(&f.b,1,1,1000)==0);
     const auto lastPixel=f.b.lastPresentAt;
     for(uint32_t id=2;id<=150;++id){Request n(id);assert(f.send(n)==0);f.displayed(id);f.retired(id-1);}
-    assert(f.b.active.swap==150&&f.b.active.mapping.token==150&&f.b.scan.current_sequence==150);
+    assert(f.b.active.swap==150&&f.b.active.mapping.token==1&&f.b.scan.current_sequence==1);
     assert(f.b.inactiveLayer1Clears==149&&f.b.accepted==1&&f.b.lastPresentAt==lastPixel);
     assert(wait(&f.b,150,0x80000000,0)==kIOReturnBusy&&wait(&f.b,0,0x80000002,0)==0);
-    assert(surfaces[0].leases==1&&copies==150&&acquires==1&&producerWaits==1&&flipCalls==150&&acceptedTrace==150&&drops==149);
+    assert(surfaces[0].leases==1&&surfaces[0].refs==1&&surfaces[0].displayUses==1);
+    assert(copies==1&&acquires==1&&producerWaits==1&&flipCalls==1&&acceptedTrace==1&&drops==0&&ownershipTransfers==149);
     eventually([&]{return clearCompleted==149;});
     assert(pixelPresents==1&&pixelQueued==1&&clearQueued==149&&clearFailed==0);
 }
@@ -275,20 +274,36 @@ void future_writer_and_inherited_failure(){
     for(bool fail:{false,true}){
         Fixture f;Request a(1),n(2);a.pixel(36);f.start();assert(f.send(a)==0);f.displayed(1);
         // A new producer snapshot would wait for a writer blocked by this old
-        // read. Inheritance must keep the same lease and never query it again.
-        Gate gate;surfaces[0].producerResult=kIOReturnBusy;surfaces[0].inheritGate=&gate;
-        surfaces[0].inheritResult=fail?kIOReturnIOError:0;
-        assert(f.send(n)==0);gate.wait();
-        assert(surfaces[0].leases==1&&acquires==1&&producerWaits==1&&f.b.active.swap==1);
-        gate.release();
-        if(fail){f.failed(2);assert(f.phase(1)==Swap::Displayed&&f.b.active.swap==1);}
-        else {f.displayed(2);f.retired(1);assert(f.b.active.swap==2);}
-        assert(surfaces[0].leases==1&&acquires==1&&producerWaits==1);
+        // read. Handoff must preserve it without a new acquire/status call.
+        surfaces[0].producerResult=kIOReturnBusy;
+        if(fail){IOLockLock(f.b.stateLock);f.b.failure=kIOReturnIOError;IOLockUnlock(f.b.stateLock);}
+        if(fail)assert(f.send(n)==kIOReturnIOError);
+        else {assert(f.send(n)==0);f.displayed(2);f.retired(1);assert(f.b.active.swap==2);}
+        assert(surfaces[0].leases==1&&acquires==1&&producerWaits==1&&copies==1&&!drops);
+        assert(f.b.scan.current_sequence==1&&acceptedTrace==1);
+    }
+}
+void ownership_failure_gates(){
+    for(unsigned failure=0;failure<4;++failure){
+        Fixture f;Request a(1);a.pixel(36);f.start();assert(f.send(a)==0);f.displayed(1);
+        IOLockLock(f.b.stateLock);
+        if(failure==0){auto old=f.b.ledger.insert(6);assert(old);old->phase=Swap::Failed;old->error=kIOReturnTimeout;}
+        assert(f.b.ledger.insert(7));
+        if(failure==1)f.b.failure=kIOReturnIOError;
+        if(failure==2)f.b.scan.phase=Scan::Submitted;
+        if(failure==3)f.b.retirementPending=true;
+        IOLockUnlock(f.b.stateLock);
+        Held clear{};clear.kind=Held::ClearInactiveLayer1;clear.swap=7;bool inherited=true;
+        auto status=inheritInactiveLayer1Clear(&f.b,clear,&inherited);
+        assert(status==(failure==0?kIOReturnTimeout:kIOReturnIOError)&&!inherited);
+        assert(f.b.active.swap==1&&f.phase(1)==Swap::Displayed&&f.phase(7)==Swap::Queued);
+        completeInactiveLayer1Clear(&f.b,7,status,inherited);f.failed(7);
+        assert(!ownershipTransfers&&!f.b.inactiveLayer1Clears&&copies==1&&!drops&&surfaces[0].leases==1);
     }
 }
 int main(){shape_scope();ordered_a_n_b();failures();backpressure();ledger_capacity_and_reuse();active_pixel_and_clear_stream();
-    future_writer_and_inherited_failure();
-    puts("PASS 9 actual SwapEnd/FIFO/clear/SwapWait groups: exact shape, real inherited A-N-B, failure origins, backpressure, ledger reuse, repeated clear, future-writer lease ownership");}
+    future_writer_and_inherited_failure();ownership_failure_gates();
+    puts("PASS 10 actual SwapEnd/FIFO/clear/SwapWait groups: exact shape, real inherited A-N-B, failure origins, backpressure, ledger reuse, repeated clear, future-writer lease ownership");}
 '''
 
 
@@ -323,8 +338,8 @@ def main():
     host_result = result.stdout.decode('utf-8', errors='replace').strip()
     report = dict(passed=True, actual_functions=['present', 'worker', 'clearsInactiveLayer1', 'inheritInactiveLayer1Clear',
                   'completeInactiveLayer1Clear', 'finishRecord', 'wait'], sanitizer=['address', 'undefined'],
-                  groups=9, exact_mask=2, software_pixel_boundaries=True, device_executed=False,
-                  separate_clear_trace_events=True, result=host_result)
+                  groups=10, exact_mask=2, software_pixel_boundaries=True, device_executed=False,
+                  separate_clear_trace_events=True, zero_scan_ownership_handoff=True, result=host_result)
     (out/'report.json').write_text(json.dumps(report, indent=2)+'\n');print(json.dumps(report))
 
 

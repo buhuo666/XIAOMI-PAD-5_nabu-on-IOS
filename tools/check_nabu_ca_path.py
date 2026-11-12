@@ -32,6 +32,29 @@ def main():
     assert frame['begin_return_to_finish_cpu_ms']==1
     assert not result['target']['panel_scan_qualified']
 
+    # An inert-layer transaction may hand off ownership without releasing any
+    # physical resource or accepting new pixels. Keep it out of retire metrics.
+    pending=deepcopy(ca)
+    busy=dict(event=96,pid=7,thread=9,identity=20,duration_ms=.1,
+              begin=dict(time_us=1100,a=0),end=dict(time_us=1200,a=0))
+    wait=dict(event=108,pid=7,thread=9,identity=60,duration_ms=.03,
+              begin=dict(time_us=1120,a=44),end=dict(time_us=1150,b=0xe00002d5))
+    pending['ca']['calls'] += [busy,wait]
+    handoff=dict(event=56,time_us=1300,identity=45,a=44,b=66,c=77)
+    handed=decompose(pending,[handoff],run)
+    assert handed['late_retire_frames']==0 and handed['late_transaction_handoff_frames']==1
+    hf=handed['frames'][0]['late_transaction_handoff'][0]
+    assert (hf['old_swap'],hf['new_swap'],hf['mapping_token'],hf['scan_sequence'])==(44,45,66,77)
+    assert not hf['physical_resources_retired']
+    assert 'last_busy_to_retired_ms' not in handed['metrics']
+    assert handed['metrics']['last_busy_to_transaction_handoff_ms']['mean_ms']==.1
+    assert handed['frames'][0]['present_to_dpu_ms']==frame['present_to_dpu_ms']
+    physical=dict(event=38,time_us=1300,identity=44,a=40,b=66,c=45)
+    retired=decompose(pending,[physical],run)
+    assert retired['late_retire_frames']==1 and retired['late_transaction_handoff_frames']==0
+    assert not decompose(pending,[handoff,handoff],run)['late_transaction_handoff_frames']
+    assert not decompose(pending,[dict(handoff,time_us=1000)],run)['late_transaction_handoff_frames']
+
     # CanLeave/BeginEnter CPU samples require both exact boundaries and the
     # same thread. A missing or foreign-thread CPU sample stays unknown.
     assert 'successful_can_to_begin_cpu_ms' not in result['metrics']

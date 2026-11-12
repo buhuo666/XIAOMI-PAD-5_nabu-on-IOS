@@ -22,9 +22,10 @@ def decompose(ca, rows, run, benchmark_rows=None):
     begins=defaultdict(list)
     for c in calls[98]:
         begins[(c['pid'],c['thread'],c['identity'],c['begin']['a'],c['begin']['b'])].append(c)
-    retire=defaultdict(list)
+    retire=defaultdict(list);handoffs=defaultdict(list)
     for r in rows:
         if r['event']==38:retire[r['identity']].append(r)
+        elif r['event']==56:handoffs[r['a']].append(r)
     updates=defaultdict(list)
     for u in ca['ca']['updates']:
         updates[(u['pid'],u['update'],u['display'],u['frame'],u['finish_enter_us'])].append(u)
@@ -83,20 +84,29 @@ def decompose(ca, rows, run, benchmark_rows=None):
               and p<=c['begin']['time_us']<=bt]
         good=[c for c in cans if c['end']['a']]
         busy=[c for c in cans if not c['end']['a']]
-        late=[]
+        late=[];late_handoff=[]
         for c in busy:
             waits=[w for w in calls[108] if w['pid']==c['pid'] and w['thread']==c['thread']
                    and c['begin']['time_us']<=w['begin']['time_us']<=w['end']['time_us']<=c['end']['time_us']
                    and w['end']['b']==0xe00002d5]
             for w in waits:
-                swap=w['begin']['a']&0xffffffff;retired=retire.get(swap,[])
+                swap=w['begin']['a']&0xffffffff
+                retired=retire.get(swap,[])+handoffs.get(swap,[])
                 if len(retired)!=1:continue
-                rt=retired[0]['time_us']
+                retired_event=retired[0];rt=retired_event['time_us']
                 if rt>c['end']['time_us'] and rt<=bt:
                     later=[q for q in cans if q['begin']['time_us']>=rt]
-                    late.append(dict(old_swap=swap,busy_end_us=c['end']['time_us'],retired_us=rt,
-                        retire_after_busy_ms=(rt-c['end']['time_us'])/1000,
-                        retire_to_next_can_ms=(later[0]['begin']['time_us']-rt)/1000 if later else None))
+                    if retired_event['event']==38:
+                        late.append(dict(old_swap=swap,busy_end_us=c['end']['time_us'],retired_us=rt,
+                            retire_after_busy_ms=(rt-c['end']['time_us'])/1000,
+                            retire_to_next_can_ms=(later[0]['begin']['time_us']-rt)/1000 if later else None))
+                    else:
+                        late_handoff.append(dict(old_swap=swap,new_swap=retired_event['identity'],
+                            busy_end_us=c['end']['time_us'],handoff_us=rt,
+                            mapping_token=retired_event['b'],scan_sequence=retired_event['c'],
+                            handoff_after_busy_ms=(rt-c['end']['time_us'])/1000,
+                            handoff_to_next_can_ms=(later[0]['begin']['time_us']-rt)/1000 if later else None,
+                            physical_resources_retired=False))
         values=dict(present_to_begin_ms=(bt-p)/1000,begin_to_finish_ms=(ft-bt)/1000,
             finish_to_dpu_ms=(dpu-ft)/1000,present_to_dpu_ms=(dpu-p)/1000,
             completion_to_dpu_ms=frame['completion_to_dpu_ms'],begin_call_ms=b['duration_ms'],
@@ -126,11 +136,16 @@ def decompose(ca, rows, run, benchmark_rows=None):
             last=max(late,key=lambda r:r['busy_end_us'])
             values['last_busy_to_retired_ms']=last['retire_after_busy_ms']
             values['retired_to_next_can_ms']=last['retire_to_next_can_ms']
+        if late_handoff:
+            last=max(late_handoff,key=lambda r:r['busy_end_us'])
+            values['last_busy_to_transaction_handoff_ms']=last['handoff_after_busy_ms']
+            values['transaction_handoff_to_next_can_ms']=last['handoff_to_next_can_ms']
         for name,value in values.items():
             if value is not None:metrics[name].append(value)
         frames.append(dict(frame_id=frame['frame_id'],surface=frame['surface_id'],swap=frame['dpu_transaction'],
             ca_frame=ca_frame,present_return_us=p,begin_us=bt,finish_us=ft,dpu_us=dpu,
             selected_sample_match=True,failed_can=len(busy),late_retire=late,
+            late_transaction_handoff=late_handoff,
             can_update_flags=dict(Counter(c['begin']['a'] for c in cans)),
             successful_can_flags=good[0]['begin']['a'] if len(good)==1 else None,
             render=u.get('render'),**values))
@@ -151,8 +166,10 @@ def decompose(ca, rows, run, benchmark_rows=None):
         target=target,
         selected_samples_matched=len(frames),metrics={k:dict(distribution(v),over_5ms=sum(x>5 for x in v)) for k,v in metrics.items()},
         busy_count_distribution=dict(Counter(f['failed_can'] for f in frames)),
-        late_retire_frames=sum(bool(f['late_retire']) for f in frames),diagnostics=dict(diagnostics),frames=frames,
-        limits='Diagnostic App/CA/DPU interval association and selected snapshot; no claim of panel scan time. IPC is nested in the total path. Off-CPU time does not distinguish sleep, lock or scheduler delay.')
+        late_retire_frames=sum(bool(f['late_retire']) for f in frames),
+        late_transaction_handoff_frames=sum(bool(f['late_transaction_handoff']) for f in frames),
+        diagnostics=dict(diagnostics),frames=frames,
+        limits='Diagnostic App/CA/DPU interval association and selected snapshot; no claim of panel scan time. IPC is nested in the total path. Off-CPU time does not distinguish sleep, lock or scheduler delay. Event56 is transaction ownership handoff only; active physical resources remain held and it is not a new hardware acceptance.')
 
 
 def main():

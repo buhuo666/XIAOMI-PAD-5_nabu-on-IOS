@@ -44,6 +44,10 @@ def main():
     assert analyze(ca,path,missing,run)['matched_frames']==1
     inherited=rows+[dict(event=55,identity=10)]
     assert analyze(ca,path,inherited,run)['diagnostics']['surface_or_inherited_content_mismatch']==1
+    assert analyze(ca,path,rows+[dict(event=56,identity=10,a=9)],run)['diagnostics']['surface_or_inherited_content_mismatch']==1
+    # The previous real pixel transaction keeps its original measured acceptance.
+    # A later ownership handoff is not a replacement acceptance timestamp.
+    assert analyze(ca,path,rows+[dict(event=56,identity=99,a=10)],run)['metrics']==r['metrics']
     stepped=deepcopy(rows);stepped[7]['c']+=1
     assert not analyze(ca,path,stepped,run)['cadence']['interface_counter_steps_all_one']
     reversed_rows=deepcopy(rows);reversed_rows[2]['time_us']=1000100

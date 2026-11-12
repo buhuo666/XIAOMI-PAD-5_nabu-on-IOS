@@ -51,7 +51,7 @@ using vm_offset_t=uintptr_t;
 constexpr IOReturn kIOReturnSuccess=0, kIOReturnNotReady=0xe00002d8,
     kIOReturnNoMemory=0xe00002bd, kIOReturnUnsupported=0xe00002c7,
     kIOReturnIOError=0xe00002ca, kIOReturnBadArgument=0xe00002c2,
-    kIOReturnNoResources=0xe00002be, kIOReturnTimeout=0xe00002d6, kIOReturnNotFound=0xe00002f0;
+    kIOReturnNoResources=0xe00002be, kIOReturnTimeout=0xe00002d6;
 constexpr unsigned kIODirectionOut=1, kIOMemoryMapperNone=0x10;
 constexpr unsigned PAGE_SIZE=16384, WaitMs=500, FlipMs=100;
 constexpr int THREAD_UNINT=0, THREAD_TIMED_OUT=1, kMillisecondScale=1000000;
@@ -74,6 +74,9 @@ struct Hardware {
     std::vector<uint64_t> apps=std::vector<uint64_t>(0x100000/8);
     std::vector<Mode> modes;
     std::vector<std::string> events;
+    struct Trace {uint32_t event;uint64_t id,a,b,c;};
+    std::vector<Trace> trace;
+    unsigned mmioWrites=0;
     std::vector<unsigned> sleeps;
     NabuDpuDisplay::Binding *display=nullptr;
     NabuDpuDisplay::DiagnosticSession *diagnostic=nullptr;
@@ -249,10 +252,6 @@ static MiniIOSurface *MiniIOSurfaceCreateSimple(unsigned width, unsigned height,
     hardware->surface=s; hardware->surfaces.push_back(s);hardware->publishedPattern=false;
     hardware->events.push_back("surface-created"); return s;
 }
-static MiniIOSurface *MiniIOSurfaceCopy(uint32_t sid) {
-    for(auto *s:hardware->surfaces)if(s->sid==sid){++s->references;return s;}
-    return nullptr;
-}
 static void MiniIOSurfaceDisplayUse(MiniIOSurface *s, int change) {
     assert(s && (change==1 || (change==-1 && s->displayUse)));
     s->displayUse+=change;
@@ -382,7 +381,10 @@ static void hostRelease(void *p) {
     ++hardware->leaseReleases; --hardware->liveLeases;
     hardware->events.push_back("lease-released"); delete lease;
 }
-static NabuDpuProducerOps hostProducer{hostAcquire,hostStatus,hostRelease};
+static void hostTrace(uint64_t,uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c) {
+    hardware->trace.push_back({event,id,a,b,c});
+}
+static NabuDpuProducerOps hostProducer{hostAcquire,hostStatus,hostRelease,hostTrace};
 static const NabuDpuProducerOps *producer=&hostProducer;
 '''
 
@@ -517,7 +519,7 @@ bool Hardware::read(void *p, SC::Region r, uint32_t at, uint32_t *out) {
     *out=(r==SC::Mdss ? h.mdss : h.vbif)[at/4]; return true;
 }
 bool Hardware::write(void *p, SC::Region r, uint32_t at, uint32_t value) {
-    auto &h=*static_cast<Hardware *>(p);
+    auto &h=*static_cast<Hardware *>(p);++h.mmioWrites;
     assert(SC::writable(r,at));
     assert(h.diagnostic->frozen && !h.diagnostic->drawing);
     (r==SC::Mdss ? h.mdss : h.vbif)[at/4]=value;
@@ -694,72 +696,83 @@ static void inheritedPrimary(unsigned failure) {
     Fixture f;f.h.inheritedTest=true;f.diagnostic.frozen=true;
     auto first=pixelRequest(f,100);Scan::Acceptance evidence{};
     assert(!flip(&f.display,first,false,&evidence));
-    auto *surface=f.display.held[f.mapper.state.active_slot].surface;
-    void *lease=f.display.held[f.mapper.state.active_slot].read;
+    const unsigned active=f.mapper.state.active_slot;
+    auto *surface=f.display.held[active].surface;
+    void *lease=f.display.held[active].read;
     f.h.futureWriterLease=lease;f.h.futureWriterBlocked=true;
     const auto initialStatusQueries=f.h.statusQueries;
-    const unsigned repeats=failure?1:3;
+    const auto oldMap=f.display.held[active].mapping;
+    const auto originalScan=f.display.scan;
+    const auto generation=f.mapper.state.generation;
+    const auto acceptedAt=f.display.held[active].acceptedAt,lastTime=f.display.lastDisplayTime;
+    const auto priorWrites=f.h.mmioWrites,frames0=f.h.frame[0],frames1=f.h.frame[1];
+    const auto registers=f.h.mdss;
+    const auto hardwareEvents=f.h.events.size();
+    const unsigned repeats=failure?1:149;
     uint32_t prior=100;
     for(unsigned i=0;i<repeats;++i){
-        const unsigned oldSlot=f.mapper.state.active_slot;
-        const auto oldMap=f.display.held[oldSlot].mapping;
         Held clear{};clear.kind=Held::ClearInactiveLayer1;clear.swap=101+i;
         assert(f.display.ledger.insert(clear.swap));
-        assert(!inheritInactiveLayer1Clear(&f.display,clear));
-        assert(clear.kind==Held::ClearInheritedLayer0&&clear.surface==surface&&!clear.read);
-        assert(surface->references==2&&surface->displayUse==2&&f.h.liveLeases==1);
-        assert(f.display.held[oldSlot].read==lease&&f.h.leaseAcquires==1);
-        f.h.priorSwap=prior;f.h.pendingSwap=clear.swap;
-        if(failure==1)surface->memory->failNextPrepare=true;
-        if(failure==2)f.h.modes={Hardware::Good,Hardware::FlushStuck};
-        if(failure==3)f.h.retirementTlbiFails=true;
-        const uint32_t id=clear.swap;
-        const auto result=flip(&f.display,clear,false,&evidence);
-        if(failure){
-            assert(result&&f.display.ledger.find(prior)->phase==Swap::Displayed);
-            assert(f.display.held[oldSlot].read==lease&&f.h.futureWriterBlocked&&!f.h.leaseReleases);
-            if(failure==1){
-                assert(clear.surface==surface&&!clear.read&&f.h.submissions==1);
-                drop(clear);assert(surface->references==1&&surface->displayUse==1);
-                assert(surface->memory->refs==2&&surface->memory->prepares==1);
-                assert(f.display.held[oldSlot].mapping.token==oldMap.token);
-            } else {
-                assert(!clear.surface&&surface->references==2&&surface->displayUse==2);
-                unsigned owners=0,borrowers=0;
-                for(const auto &held:f.display.held)if(held.surface){owners+=held.read!=nullptr;borrowers+=held.read==nullptr;}
-                assert(owners==1&&borrowers==1&&surface->memory->prepares==2);
-            }
-            f.display.failure=result;completeInactiveLayer1Clear(&f.display,id,result,true);
-            assert(f.display.ledger.find(id)->phase==Swap::Failed&&!f.display.inactiveLayer1Clears);
-            return; // Fixture removes hardware before testing unique-owner teardown.
-        }
-        const unsigned active=f.mapper.state.active_slot;
-        assert(active!=oldSlot&&evidence.accepted&&f.display.scan.current_iova!=oldMap.iova);
-        assert(f.display.ledger.find(prior)->phase==Swap::Retired&&f.display.ledger.find(id)->phase==Swap::Displayed);
-        assert(!f.display.held[oldSlot].surface&&f.display.held[active].surface==surface);
+        bool inherited=false;const auto traceBefore=f.h.trace.size();
+        assert(!inheritInactiveLayer1Clear(&f.display,clear,&inherited)&&inherited);
+        assert(!clear.surface&&!clear.read&&!clear.mapping.token);
+        assert(f.display.ledger.find(prior)->phase==Swap::Retired);
+        assert(f.display.ledger.find(clear.swap)->phase==Swap::Displayed);
+        assert(f.display.held[active].swap==clear.swap&&f.display.held[active].surface==surface);
         assert(f.display.held[active].read==lease&&surface->references==1&&surface->displayUse==1);
-        assert(f.h.futureWriterBlocked&&!f.h.leaseReleases&&f.h.leaseAcquires==1);
+        assert(f.display.held[active].mapping.token==oldMap.token&&f.mapper.state.generation==generation);
+        assert(f.mapper.state.active_slot==active&&f.mapper.state.slots[active].life==PT::Active);
+        assert(f.display.held[active].acceptedAt==acceptedAt&&f.display.lastDisplayTime==lastTime);
+        assert(!memcmp(&f.display.scan,&originalScan,sizeof(originalScan)));
+        assert(f.h.submissions==1&&f.h.mmioWrites==priorWrites&&f.h.frame[0]==frames0&&f.h.frame[1]==frames1);
+        assert(f.h.mdss==registers&&f.h.events.size()==hardwareEvents);
+        assert(f.h.futureWriterBlocked&&!f.h.leaseReleases&&f.h.leaseAcquires==1&&f.h.liveLeases==1);
         assert(f.h.statusQueries==initialStatusQueries&&surface->memory->refs==2&&surface->memory->prepares==1);
-        completeInactiveLayer1Clear(&f.display,id,0,true);
+        assert(!f.h.retirementAttempts&&!f.h.descriptorReleases&&!f.h.surfaceDrops);
+        assert(f.h.trace.size()==traceBefore+2);
+        const auto &inherit=f.h.trace[traceBefore],&handoff=f.h.trace[traceBefore+1];
+        assert(inherit.event==NabuGpuTrace::InactiveLayerClearInherited&&inherit.id==clear.swap&&inherit.a==prior&&inherit.b==surface->sid);
+        assert(handoff.event==NabuGpuTrace::InactiveLayerClearOwnership&&handoff.id==clear.swap&&handoff.a==prior);
+        assert(handoff.b==oldMap.token&&handoff.c==originalScan.current_sequence);
+        completeInactiveLayer1Clear(&f.display,clear.swap,0,true);
+        assert(f.h.trace.size()==traceBefore+3&&f.h.trace.back().event==NabuGpuTrace::InactiveLayerClearComplete);
         assert(f.display.inactiveLayer1Clears==i+1&&f.display.accepted==1);
-        prior=id;
+        prior=clear.swap;
     }
-    // A different ordinary primary really replaces the inherited pixels and
-    // releases the original lease exactly once; only then can its writer run.
-    f.h.priorSwap=prior;f.h.pendingSwap=200;
-    auto replacement=pixelRequest(f,200);assert(f.h.liveLeases==2&&f.h.futureWriterBlocked);
-    assert(!flip(&f.display,replacement,false,&evidence));
-    assert(!f.h.futureWriterBlocked&&f.h.leaseReleases==1&&f.h.liveLeases==1);
+    // Only a real new primary may advance scan sequence and release the read.
+    // Exercise failures on THAT replacement, never invent a failed no-op flip.
+    f.h.priorSwap=prior;f.h.pendingSwap=500;
+    auto replacement=pixelRequest(f,500);assert(f.h.liveLeases==2&&f.h.futureWriterBlocked);
+    if(failure==1)replacement.surface->memory->failNextPrepare=true;
+    if(failure==2)f.h.modes={Hardware::Good,Hardware::FlushStuck};
+    if(failure==3)f.h.retirementTlbiFails=true;
+    const auto result=flip(&f.display,replacement,false,&evidence);
+    if(failure){
+        assert(result&&f.display.ledger.find(prior)->phase==Swap::Displayed);
+        assert(f.display.held[active].read==lease&&f.h.futureWriterBlocked&&!f.h.leaseReleases);
+        if(failure==1){
+            assert(f.h.submissions==1&&replacement.surface);drop(replacement);
+            assert(f.h.liveLeases==1&&f.display.held[active].mapping.token==oldMap.token);
+        }else assert(!replacement.surface&&f.h.liveLeases==2);
+        return; // Host teardown removes all hardware before releasing anything.
+    }
+    assert(!result&&!f.h.futureWriterBlocked&&f.h.leaseReleases==1&&f.h.liveLeases==1);
     assert(f.display.ledger.find(prior)->phase==Swap::Retired&&f.display.accepted==2);
+    assert(f.display.scan.current_sequence==originalScan.current_sequence+1&&f.h.submissions==2);
+    const auto retired=std::find_if(f.h.trace.begin(),f.h.trace.end(),[&](const Hardware::Trace &r){
+        return r.event==NabuGpuTrace::Retired&&r.id==prior&&r.b==oldMap.token&&r.c==500;
+    });
+    assert(retired!=f.h.trace.end());
     f.h.pendingSwap=0;
-    const unsigned active=f.mapper.state.active_slot;const auto mapping=f.display.held[active].mapping;
+    const unsigned finalSlot=f.mapper.state.active_slot;const auto mapping=f.display.held[finalSlot].mapping;
     Scan::Frame gop{Scan::GopPhysical,Scan::GopStride,PT::GopBytes,f.display.scan.current_sequence+1,
                    1600,2560,Scan::BgraFourcc,4,0,true};
     assert(!submitFrame(&f.display,gop,evidence,false));
-    assert(!Mapper::acceptGop(&f.mapper,mapping)&&!Mapper::releaseRetired(&f.mapper,active,mapping.token));
-    drop(f.display.held[active]);finishRecord(&f.display,200,Swap::Retired);
+    assert(!Mapper::acceptGop(&f.mapper,mapping)&&!Mapper::releaseRetired(&f.mapper,finalSlot,mapping.token));
+    drop(f.display.held[finalSlot]);finishRecord(&f.display,500,Swap::Retired);
     assert(f.h.leaseReleases==2&&!f.h.liveLeases&&f.h.surfaces.empty());
 }
+
 int main() {
     unsigned groups=0;
     uint64_t checkedPixels=0;
@@ -1176,6 +1189,9 @@ def main():
             'device_accessed': False,
             'gpu_rendered': False,
             'hardware_acceptance_qualified': False,
+            'in_place_clear_transfers_without_scan': 149,
+            'real_replacement_failure_resources_retained': True,
+            'ownership_event': 56,
             'scope': ('Actual production flip/GOP, acceptance, lifetime and diagnostic finish code '
                       'under host IOKit/memory/fence/IRQ/register/visibility substitutes; '
                       'no physical DPU, SMMU, GPU or kernel execution'),

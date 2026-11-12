@@ -22,8 +22,12 @@ enum Event : uint32_t {
     // b=merged mapping ranges, c=initial reservation storage count.
     ProducerReadShape,
     // Non-pixel partial commit inherits layer0: id=new swap, a=old swap,
-    // b=surface, c=transferred lease. Its later scan acceptance is not new FPS.
-    InactiveLayerClearInherited
+    // b=surface, c=retained lease. This event is not a new pixel acceptance.
+    InactiveLayerClearInherited,
+    // Atomic no-pixel ownership handoff: id=new swap, a=old swap,
+    // b=unchanged mapping token, c=unchanged real scan sequence. Ends the old
+    // transaction, not its still-active resources; never substitutes for 38.
+    InactiveLayerClearOwnership
 };
 enum PresentRejection : uint32_t {
     ShortSwap = 0, ExtraLayers = 1, SourceRect = 2, DestinationRect = 3,
