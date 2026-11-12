@@ -1,0 +1,49 @@
+{
+  "source": "GPU226 trace-default; mach_absolute_time_us; event39",
+  "sample_range_us": [
+    134896093.07291666,
+    149896093.07291666
+  ],
+  "vblank_records": 1800,
+  "first": {
+    "time_us": 134898196,
+    "identity": 13262,
+    "a": 13262,
+    "b": 15957,
+    "c": 15957,
+    "event": 39,
+    "window": 1
+  },
+  "last": {
+    "time_us": 149890075,
+    "identity": 15061,
+    "a": 15061,
+    "b": 17756,
+    "c": 17756,
+    "event": 39,
+    "window": 1
+  },
+  "observed_interval_us": {
+    "mean": 8333.451361867705,
+    "median": 8333,
+    "min": 8296,
+    "max": 8370
+  },
+  "all_master_sequence_and_both_intf_steps_one": true,
+  "new_app_frame_acceptance_cadence": {
+    "accepted_interval_ms": {
+      "count": 1799,
+      "mean_ms": 8.33344747081712,
+      "p50_ms": 8.333,
+      "p95_ms": 8.345,
+      "p99_ms": 8.359,
+      "max_ms": 8.468,
+      "over_8_333ms": 890
+    },
+    "counter_step_count": 1799,
+    "interface_counter_steps_all_one": true,
+    "non_unit_counter_steps": {}
+  },
+  "sample_app_submitted": 1800,
+  "sample_displaylink_callbacks": 1800
+}

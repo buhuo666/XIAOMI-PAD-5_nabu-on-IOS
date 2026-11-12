@@ -21,9 +21,13 @@ def main():
     report={'passed':True,'test':r.stdout.strip(),'device_executed':False,
         'executable_function_entries_modified':False,'executable_pages_modified':False,
         'render_update_data_vtable_slots':2,'metal_context_data_vtable_slots':2,
-        'immediate_render_data_vtable_slots':2,'total_data_vtable_slots':18,
+        'immediate_render_data_vtable_slots':2,'metal_flush_data_vtable_slots':1,'total_data_vtable_slots':19,
         'server_state_pre_call_only':True,'context_state_pre_call_only':True,
         'immediate_state_pre_call_only':True,'immediate_events':[123,126],
-        'immediate_original_calls_per_wrapper':1,'scheduler_conditions_modified':False}
+        'immediate_original_calls_per_wrapper':1,'scheduler_conditions_modified':False,
+        'flush_event':127,'flush_subevents':[1,2],'flush_capability':64,'maximum_capabilities':127,
+        'flush_thread_cpu_clock':'clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID=16)',
+        'flush_original_calls_per_wrapper':1,'flush_post_call_object_reads':False,
+        'flush_slot':'0x1d57e3fb8','flush_original_target':'0x18825f288'}
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 if __name__=='__main__':main()

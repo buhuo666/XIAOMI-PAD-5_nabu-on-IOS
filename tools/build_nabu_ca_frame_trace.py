@@ -50,9 +50,10 @@ def main():
         if not cd or not re.search(r'^Page size=4096$',detail,re.M):raise ValueError('4KiB ad hoc signature missing')
         report.update(result='signed_not_run',binary=binary.name,bytes=binary.stat().st_size,
                       cdhash=cd[1],signature_page_bytes=4096,core_object='ca_frame_trace.o',
-                      constructor_object='ca_frame_trace_entry.o',events=[96,126],
-                      immediate_render_data_vtable_slots=2,total_data_vtable_slots=18,
-                      immediate_state_pre_call_only=True,maximum_capabilities=63,
+                      constructor_object='ca_frame_trace_entry.o',events=[96,127],
+                      immediate_render_data_vtable_slots=2,metal_flush_data_vtable_slots=1,total_data_vtable_slots=19,
+                      immediate_state_pre_call_only=True,maximum_capabilities=127,
+                      flush_event=127,flush_subevents=[1,2],flush_capability=64,
                       limitations=['No direct prepare_layer0/CopyImageInfo/did_display entry hook',
                                    'Snapshots are raw selected state, not atomic transition records',
                                    'Immediate leave repeats entry state; can flags prove later execution',

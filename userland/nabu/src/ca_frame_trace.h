@@ -27,12 +27,19 @@ enum nabu_ca_trace_event {
     /* All immediate state is captured before the original call. Leave repeats
      * the entry targets and carries raw x0; it does not report block execution. */
     NabuCaImmediateEnter = 123, NabuCaImmediateState = 124,
-    NabuCaImmediateConfig = 125, NabuCaImmediateLeave = 126
+    NabuCaImmediateConfig = 125, NabuCaImmediateLeave = 126,
+    /* Shared event127: a=1/2 identifies flush enter/leave; b=bool argument,
+     * c=current thread CPU ns. Frontend subevents start at16. */
+    NabuCaExtendedPhase = 127
+};
+enum nabu_ca_extended_phase {
+    NabuCaFlushEnter = 1, NabuCaFlushLeave = 2
 };
 enum nabu_ca_trace_capability {
     NabuCaDisplayHooks = 1, NabuCaFramebufferHooksSupported = 2,
     NabuCaSelectedQueueSnapshot = 4, NabuCaRenderHooks = 8,
-    NabuCaMetalContextHooks = 16, NabuCaImmediateHooks = 32
+    NabuCaMetalContextHooks = 16, NabuCaImmediateHooks = 32,
+    NabuCaMetalFlushHook = 64
 };
 /* Call once from an explicitly opted-in backboardd startup path. Returns a
  * capability mask, zero for wrong process/images, or negative on installation

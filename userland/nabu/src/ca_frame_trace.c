@@ -12,12 +12,16 @@ typedef uintptr_t (*server_render_fn)(void *, void *, uint32_t *);
 typedef uintptr_t (*server_immediate_fn)(void *);
 typedef uintptr_t (*context_collect_fn)(void *, uint32_t);
 typedef uintptr_t (*context_buffer_fn)(void *, void *);
+typedef uintptr_t (*context_flush_fn)(void *, uint32_t);
 typedef int32_t (*swap_end_fn)(void *);
 typedef int32_t (*swap_wait_fn)(void *, uint32_t, uint32_t);
 
 extern const char *getprogname(void);
 extern int *__error(void);
 extern uint64_t mach_absolute_time(void);
+/* iPhoneOS16.5 time.h: clockid_t is an int enum; THREAD_CPUTIME_ID is16.
+ * Keep the scalar declaration for the existing freestanding arm64 checks. */
+extern uint64_t clock_gettime_nsec_np(int);
 extern uint32_t _dyld_image_count(void);
 extern const char *_dyld_get_image_name(uint32_t);
 extern const void *_dyld_get_image_header(uint32_t);
@@ -38,6 +42,7 @@ static server_immediate_fn original_immediate;
 static const void *arbitration_once,*arbitration_supported,*arbitration_forced,*low_latency_disabled;
 static context_collect_fn original_collect;
 static context_buffer_fn original_make_buffer;
+static context_flush_fn original_flush;
 static uintptr_t eagl_vtable;
 static swap_end_fn original_swap;
 static swap_wait_fn original_wait;
@@ -299,6 +304,22 @@ static uintptr_t traced_make_buffer(void *context,void *surface)
     return result;
 }
 
+static uintptr_t traced_flush(void *context,uint32_t wait)
+{
+    int saved=*__error();
+    const uint64_t entered=clock_gettime_nsec_np(16);
+    mark(NabuCaExtendedPhase,context,NabuCaFlushEnter,wait,entered);
+    *__error()=saved;
+    uintptr_t result=original_flush(context,wait);
+    saved=*__error();
+    const uint64_t left=clock_gettime_nsec_np(16);
+    /* No context/command-buffer reads after the original. Per-thread event
+     * order preserves nested flushes; no global nesting or mutable state. */
+    mark(NabuCaExtendedPhase,context,NabuCaFlushLeave,wait,left);
+    *__error()=saved;
+    return result;
+}
+
 static int uuid_matches(const void *image,const unsigned char expected[16])
 {
     if(!image||word(image,0)!=0xfeedfacf)return 0;
@@ -327,7 +348,7 @@ static int image_slide(const char *name,const unsigned char uuid[16],intptr_t *s
 }
 struct site {uintptr_t address,target,replacement;};
 struct page_change {uint64_t address;int32_t protection;};
-enum { CaTraceSlotCount = 18 };
+enum { CaTraceSlotCount = 19 };
 
 /* Validate every slot before any write, then privatize only data pages. The
  * library is process-lifetime; installed wrappers call the original addresses.
@@ -353,7 +374,7 @@ static int install_sites(struct site *sites,unsigned count)
     for(unsigned i=0;i<count;++i)__atomic_store_n((uintptr_t *)sites[i].address,sites[i].replacement,__ATOMIC_RELEASE);
     {
         int result=(int)(NabuCaDisplayHooks|NabuCaSelectedQueueSnapshot|NabuCaRenderHooks|
-                         NabuCaMetalContextHooks|NabuCaImmediateHooks);
+                         NabuCaMetalContextHooks|NabuCaImmediateHooks|NabuCaMetalFlushHook);
         for(unsigned i=0;i<pages_count;++i)
             if(vm_protect(mach_task_self_,changed[i].address,page_size,0,changed[i].protection))result=-5;
         return result;
@@ -396,6 +417,7 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     low_latency_disabled=(const void *)(uintptr_t)(qc+0x1e1b9cd95ULL);
     original_collect=(context_collect_fn)(uintptr_t)(qc+0x1882c5be0ULL);
     original_make_buffer=(context_buffer_fn)(uintptr_t)(qc+0x188258ef0ULL);
+    original_flush=(context_flush_fn)(uintptr_t)(qc+0x18825f288ULL);
     eagl_vtable=(uintptr_t)(qc+0x1d57edc68ULL);
     if(have_fb){
         original_swap=(swap_end_fn)(uintptr_t)(fb+0x1af12c530ULL);
@@ -415,6 +437,7 @@ int nabu_ca_frame_trace_install(nabu_ca_trace_sink sink)
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57eddd8ULL),(uintptr_t)original_immediate,(uintptr_t)traced_immediate};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e3f08ULL),(uintptr_t)original_collect,(uintptr_t)traced_collect};
     sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e41a0ULL),(uintptr_t)original_make_buffer,(uintptr_t)traced_make_buffer};
+    sites[n++]=(struct site){(uintptr_t)(qc+0x1d57e3fb8ULL),(uintptr_t)original_flush,(uintptr_t)traced_flush};
     trace_sink=sink;
     capabilities=have_fb?NabuCaFramebufferHooksSupported:0;
     int result=install_sites(sites,n);

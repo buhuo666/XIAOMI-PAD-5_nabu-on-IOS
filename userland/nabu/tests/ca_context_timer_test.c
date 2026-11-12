@@ -22,6 +22,7 @@
 #define site trace_site
 #define page_change trace_page_change
 #define install_sites trace_install_sites
+#define clock_gettime_nsec_np test_clock_gettime_nsec_np
 #include "../src/ca_frame_trace.c"
 #undef installation
 #undef word
@@ -32,6 +33,7 @@
 #undef site
 #undef page_change
 #undef install_sites
+#undef clock_gettime_nsec_np
 #undef getenv
 #undef getprogname
 #undef __error
@@ -61,6 +63,8 @@ char *test_getenv(const char *name)
     assert(!strcmp(name,"NABU_CA_SINGLE_FREE_PAGE"));return single_setting;
 }
 uint64_t mach_absolute_time(void){return 123456;}
+uint64_t test_clock_gettime_nsec_np(int clock_id)
+{assert(clock_id==16);return 123456789;}
 static void unchanged_slots(void)
 {for(unsigned i=0;i<checked_slots;++i)assert(*check_slots[i]==check_before[i]);}
 const char *test_getprogname(void){test_errno=91;return process;}

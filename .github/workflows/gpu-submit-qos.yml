@@ -1,0 +1,49 @@
+name: nabu16 - iOS Metal QoS and submission waits
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  submit-qos:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch pinned runtime and bridge builder
+        run: >-
+          python3 tools/fetch_sources.py --only UniXNU-turnip-reference metal2vulkan
+          --report artifacts/gpu-submit-sources.json
+      - name: Retrieve qualified frontend with family cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 43148373620 --name nabu-family-cache-1 --dir inputs/qualified
+      - name: Install bridge compilers
+        run: |
+          brew install llvm@21
+          rustup toolchain install 1.98.1 --profile minimal --target aarch64-apple-ios
+      - name: Check native QoS and bounded submission observations
+        run: |
+          python3 tools/check_nabu_metal_ios_qos.py --output artifacts/ios-qos-check
+          python3 tools/check_nabu_metal_submit_trace.py --input inputs/qualified/nabu-family-cache --output artifacts/submit-trace-check
+      - name: Build iOS runtime and frontend
+        run: >-
+          python3 tools/build_nabu_gpu_submit.py --input inputs/qualified/nabu-family-cache
+          --work build/gpu-submit --output artifacts/nabu-gpu-submit
+          --llvm-as "$(brew --prefix llvm@21)/bin/llvm-as"
+      - name: Build combined native CA timer and flush observer
+        run: |
+          python3 tools/build_nabu_ca_context_timer.py --output artifacts/nabu-ca-context-timer
+          python3 tools/check_nabu_ca_context_timer.py --output artifacts/nabu-ca-context-timer/host-check
+          python3 tools/check_nabu_ca_frame_trace.py --output artifacts/nabu-ca-context-timer/observer-check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-gpu-submit-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 14

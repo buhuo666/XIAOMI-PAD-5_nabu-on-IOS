@@ -1,0 +1,45 @@
+{
+  "source": "analysis\\ca-finish-20f66-v229\\finish-runtime-frames.json",
+  "selection": "finish_wall_ms > 33.33",
+  "finish_count": 179,
+  "writer_count": 179,
+  "finish_wall_total_s": 8.492268,
+  "finish_cpu_total_s": 0.142540159,
+  "finish_to_writer_accepted": {
+    "count": 179,
+    "mean_ms": 46.04216201117318,
+    "p99_ms": 85.851,
+    "max_ms": 94.721
+  },
+  "writer_accepted_to_issued": {
+    "count": 179,
+    "mean_ms": 0.12828491620111732,
+    "p99_ms": 0.211,
+    "max_ms": 0.252
+  },
+  "kernel_ring_scope": {
+    "source": "log/host/gpu-v228/gpu-stats-after-os/kernel-stats.json",
+    "request_id": "59ac993ec4af40848ad21b34ceb5e058",
+    "paired_markers": true,
+    "job_count": 256,
+    "accepted_min_us": 446108768,
+    "accepted_max_us": 471508419,
+    "trace_window_us": [
+      199701633,
+      289701633
+    ],
+    "overlaps_trace": false
+  },
+  "qos_abi": {
+    "sdk": "build/nabu-ath10k/sdk-source/iPhoneOS16.5.sdk",
+    "pthread_qos_available_since_ios": "8.0",
+    "libc_version": "0.2.191",
+    "getter": "int pthread_get_qos_class_np(pthread_t, qos_class_t *, int *)",
+    "setter": "int pthread_set_qos_class_self_np(qos_class_t, int)",
+    "qos_class_width_bytes": 4,
+    "user_initiated": 25,
+    "user_interactive": 33,
+    "local_arm64_sdk_compilation_passed": true,
+    "local_rust_executed": false
+  }
+}

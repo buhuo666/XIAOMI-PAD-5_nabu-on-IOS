@@ -21,13 +21,22 @@ static unsigned context_entry,context_order;
 static unsigned immediate_order,clock_calls;
 static void *expected_immediate,*expected_immediate_display;
 static uint64_t test_clock=UINT64_C(0x123456789abcdef0);
+static unsigned cpu_clock_calls,flush_records,flush_depth,flush_nested;
+static uint64_t test_cpu_clock=UINT64_C(0x1122334400000000),flush_log[8][4];
+static unsigned test_image_count;
+static unsigned char test_headers[2][56];
+static intptr_t test_slides[2];
 int *__error(void){return &test_errno;}
 uint64_t mach_absolute_time(void){++clock_calls;test_errno=88;return test_clock;}
+uint64_t clock_gettime_nsec_np(int clock_id)
+{assert(clock_id==16);++cpu_clock_calls;test_errno=89;return test_cpu_clock+=1000;}
 const char *getprogname(void){return process;}
-uint32_t _dyld_image_count(void){return 0;}
-const char *_dyld_get_image_name(uint32_t i){(void)i;return 0;}
-const void *_dyld_get_image_header(uint32_t i){(void)i;return 0;}
-intptr_t _dyld_get_image_vmaddr_slide(uint32_t i){(void)i;return 0;}
+uint32_t _dyld_image_count(void){return test_image_count;}
+const char *_dyld_get_image_name(uint32_t i)
+{return i?"/System/Library/PrivateFrameworks/IOMobileFramebuffer.framework/IOMobileFramebuffer":
+          "/System/Library/Frameworks/QuartzCore.framework/QuartzCore";}
+const void *_dyld_get_image_header(uint32_t i){assert(i<2);return test_headers[i];}
+intptr_t _dyld_get_image_vmaddr_slide(uint32_t i){assert(i<2);return test_slides[i];}
 int getpagesize(void){return 4096;}
 uint32_t mach_task_self_=43;
 int32_t vm_region_64(uint32_t task,uint64_t *address,uint64_t *size,int32_t flavor,
@@ -48,7 +57,7 @@ static void store64(void *b,size_t o,uint64_t v){memcpy((unsigned char *)b+o,&v,
 static void ptr(void *b,size_t o,const void *p){store64(b,o,(uintptr_t)p);}
 static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
 {
-    assert(event>=96&&event<=126);++marks;++seen[event];
+    assert(event>=96&&event<=127);++marks;++seen[event];
     if(event==NabuCaRenderEnter){assert(render_order==0);render_order=1;}
     if(event==NabuCaServerState){assert(render_order==1);render_order=2;}
     if(event==NabuCaRenderLeave){assert(render_order==3);render_order=0;}
@@ -62,6 +71,11 @@ static void sink(uint32_t event,uint64_t id,uint64_t a,uint64_t b,uint64_t c)
         assert(immediate_order==event-NabuCaImmediateEnter);++immediate_order;
     }
     if(event==NabuCaImmediateLeave){assert(immediate_order==4);immediate_order=0;}
+    if(event==NabuCaExtendedPhase){
+        assert(flush_records<8&&(a==NabuCaFlushEnter||a==NabuCaFlushLeave));
+        flush_log[flush_records][0]=id;flush_log[flush_records][1]=a;
+        flush_log[flush_records][2]=b;flush_log[flush_records++][3]=c;
+    }
     last[event][0]=id;last[event][1]=a;last[event][2]=b;last[event][3]=c;
     test_errno=99;
 }
@@ -149,6 +163,43 @@ static void check_context_call(int make_buffer,int nonzero)
     assert(last[event+1][0]==identity&&last[event+1][1]==argument&&last[event+1][2]==vptr);
     assert(last[event+1][3]==raw_return);
 }
+static uintptr_t original_mf(void *context,uint32_t wait)
+{
+    assert(context==expected_context&&test_errno==13);
+    assert(flush_log[flush_records-1][1]==NabuCaFlushEnter);
+    assert(flush_log[flush_records-1][2]==wait);
+    ++original_calls;
+    if(flush_nested&&!flush_depth){
+        flush_depth=1;
+        assert(traced_flush(context,0)==raw_return&&test_errno==47);
+        flush_depth=0;
+    }
+    if(!flush_depth)free(context); /* Any post-call context read must fail ASan. */
+    test_errno=47;return raw_return;
+}
+static void check_flush(uint32_t wait,int nested)
+{
+    expected_context=malloc(1);assert(expected_context);
+    const uintptr_t identity=(uintptr_t)expected_context;
+    const unsigned before=original_calls,clocks=cpu_clock_calls;
+    const uint64_t first_clock=test_cpu_clock;
+    flush_records=0;flush_depth=0;flush_nested=(unsigned)nested;
+    test_errno=13;
+    assert(traced_flush(expected_context,wait)==raw_return&&test_errno==47);
+    assert(original_calls==before+1+(unsigned)nested);
+    assert(cpu_clock_calls==clocks+2+2*(unsigned)nested);
+    assert(flush_records==2+2*(unsigned)nested);
+    for(unsigned i=0;i<flush_records;++i){
+        assert(flush_log[i][0]==identity);
+        assert(flush_log[i][3]==first_clock+(i+1)*1000);
+    }
+    assert(flush_log[0][1]==1&&flush_log[0][2]==wait);
+    assert(flush_log[flush_records-1][1]==2&&flush_log[flush_records-1][2]==wait);
+    if(nested){
+        assert(flush_log[1][1]==1&&flush_log[1][2]==0);
+        assert(flush_log[2][1]==2&&flush_log[2][2]==0);
+    }
+}
 static uintptr_t original_im(void *server)
 {
     assert(server==expected_immediate&&test_errno==13&&immediate_order==3);
@@ -189,20 +240,58 @@ static void check_immediate(int eagl)
     assert(last[NabuCaImmediateLeave][0]==identity&&last[NabuCaImmediateLeave][1]==target);
     assert(last[NabuCaImmediateLeave][2]==immediate_target&&last[NabuCaImmediateLeave][3]==raw_return);
 }
-static void eighteen_slot_install(void)
+static void nineteen_slot_install(void)
 {
-    uintptr_t *slots=aligned_alloc(4096,18*4096);assert(slots);
-    struct site sites[18];
-    for(unsigned i=0;i<18;++i){slots[i*512]=i+1;sites[i]=(struct site){(uintptr_t)&slots[i*512],i+1,i+101};}
-    sites[17].target=99;protect_calls=restore_calls=0;
-    assert(install_sites(sites,18)==-3&&protect_calls==0);sites[17].target=18;
-    fail_page=18;protect_calls=restore_calls=0;
-    assert(install_sites(sites,18)==-4&&protect_calls==18&&restore_calls==17);
-    for(unsigned i=0;i<18;++i)assert(slots[i*512]==i+1);
+    uintptr_t *slots=aligned_alloc(4096,19*4096);assert(slots);
+    struct site sites[19];
+    for(unsigned i=0;i<19;++i){slots[i*512]=i+1;sites[i]=(struct site){(uintptr_t)&slots[i*512],i+1,i+101};}
+    sites[18].target=99;protect_calls=restore_calls=0;
+    assert(install_sites(sites,19)==-3&&protect_calls==0);sites[18].target=19;
+    fail_page=19;protect_calls=restore_calls=0;
+    assert(install_sites(sites,19)==-4&&protect_calls==19&&restore_calls==18);
+    for(unsigned i=0;i<19;++i)assert(slots[i*512]==i+1);
     fail_page=0;protect_calls=restore_calls=0;
-    assert(install_sites(sites,18)==61&&protect_calls==18&&restore_calls==18);
-    for(unsigned i=0;i<18;++i)assert(slots[i*512]==i+101);
+    assert(install_sites(sites,19)==125&&protect_calls==19&&restore_calls==19);
+    for(unsigned i=0;i<19;++i)assert(slots[i*512]==i+101);
     free(slots);
+}
+
+static void check_actual_install(void)
+{
+    static const unsigned char uuids[2][16]={
+        {0xdc,0x2d,0xd4,0xc1,0x78,0x66,0x34,0x43,0x80,0x50,0xfc,0x91,0x5a,0x02,0x04,0xc1},
+        {0xa8,0x51,0x78,0x01,0x7f,0x27,0x36,0x41,0xb9,0x77,0xc5,0x83,0x1e,0x37,0xfe,0x9f}};
+    static const uintptr_t tables[]={0x1d57ddc60ULL,0x1d57de420ULL,0x1d57ebd00ULL,0x1d57ec520ULL};
+    static const uintptr_t targets[]={0x18829cd88ULL,0x18825dda4ULL,0x188248568ULL};
+    static const uintptr_t offsets[]={0x140,0x170,0x178};
+    static const uintptr_t extra[][2]={
+        {0x1d57ddc10ULL,0x18846bc6cULL},{0x1d57edde0ULL,0x1882d770cULL},
+        {0x1d57ddc08ULL,0x1884782c8ULL},{0x1d57eddd8ULL,0x1884782c8ULL},
+        {0x1d57e3f08ULL,0x1882c5be0ULL},{0x1d57e41a0ULL,0x188258ef0ULL},
+        {0x1d57e3fb8ULL,0x18825f288ULL}};
+    void *data=aligned_alloc(4096,0x12000);assert(data);memset(data,0,0x12000);
+    const intptr_t slide=(intptr_t)data-(intptr_t)UINT64_C(0x1d57dd000);
+    for(unsigned i=0;i<2;++i){
+        store32(test_headers[i],0,0xfeedfacf);store32(test_headers[i],16,1);
+        store32(test_headers[i],20,24);store32(test_headers[i],32,27);
+        store32(test_headers[i],36,24);memcpy(test_headers[i]+40,uuids[i],16);
+    }
+    test_image_count=2;test_slides[0]=slide;test_slides[1]=0;
+    for(unsigned i=0;i<4;++i)for(unsigned j=0;j<3;++j)
+        *(uintptr_t *)(tables[i]+16+offsets[j]+slide)=targets[j]+slide;
+    for(unsigned i=0;i<7;++i)*(uintptr_t *)(extra[i][0]+slide)=extra[i][1]+slide;
+    uintptr_t *flush_slot=(uintptr_t *)(UINT64_C(0x1d57e3fb8)+slide);
+    ++*flush_slot;installation=0;capabilities=0;protect_calls=restore_calls=0;test_errno=13;
+    assert(nabu_ca_frame_trace_install(sink)==-3&&protect_calls==0&&test_errno==13);
+    assert(!(nabu_ca_frame_trace_capabilities()&NabuCaMetalFlushHook));
+    --*flush_slot;installation=0;test_errno=13;
+    assert(nabu_ca_frame_trace_install(sink)==127&&test_errno==13);
+    assert(nabu_ca_frame_trace_capabilities()==127);
+    assert(*flush_slot==(uintptr_t)traced_flush&&original_flush==(context_flush_fn)(extra[6][1]+slide));
+    assert(protect_calls==restore_calls&&protect_calls>0);
+    const unsigned writes=protect_calls;
+    assert(nabu_ca_frame_trace_install(sink)==127&&protect_calls==writes);
+    free(data);test_image_count=0;installation=0;capabilities=0;
 }
 
 int main(void)
@@ -257,15 +346,17 @@ int main(void)
     struct site sites[]={{(uintptr_t)&slots[0],11,33},{(uintptr_t)&slots[512],22,44}};
     fail_page=2;protect_calls=restore_calls=0;assert(install_sites(sites,2)==-4&&slots[0]==11&&slots[512]==22&&restore_calls==1);
     fail_page=0;protect_calls=restore_calls=0;sites[1].target=23;assert(install_sites(sites,2)==-3&&protect_calls==0);sites[1].target=22;
-    assert(install_sites(sites,2)==61&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
+    assert(install_sites(sites,2)==125&&slots[0]==33&&slots[512]==44&&protect_calls==2&&restore_calls==2);free(slots);
     original_iomfb_render=original_ri;original_eagl_render=original_re;eagl_vtable=UINT64_C(0x1d57edc68);
     check_render(0,0,0);check_render(0,1,0);check_render(1,0,1);check_render(1,1,1);check_render(1,1,0);
     original_collect=original_mc;original_make_buffer=original_mb;
     check_context_call(0,0);check_context_call(0,1);check_context_call(1,0);check_context_call(1,1);
     original_immediate=original_im;check_immediate(0);check_immediate(1);
-    eighteen_slot_install();
+    original_flush=original_mf;check_flush(0,0);check_flush(1,0);check_flush(1,1);
+    nineteen_slot_install();
     assert(nabu_ca_frame_trace_install(sink)==0);process="backboardd";installation=0;test_errno=13;
     assert(nabu_ca_frame_trace_install(sink)==0&&test_errno==13);
-    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch and pre-call context state; Metal collect/buffer ABI, null unbind, no reads after return; immediate pre-call fields, clock/errno, no reads after server/display release; UUID and all 18-slot validation; COW failure rollback; %u markers\n",marks);
+    check_actual_install();
+    printf("PASS: production wrappers preserve raw x0, exact arguments, errno, state; bounded pages/queues/samples; IOMFB/EAGL render dispatch and pre-call context state; Metal collect/buffer ABI, null unbind, no reads after return; immediate pre-call fields, clock/errno, no reads after server/display release; flush event127 subevents1/2, thread CPU, bool/nesting and released context; UUID and all 19-slot validation; actual flush slot/target, capability64 and idempotent install; COW failure rollback; %u markers\n",marks);
     return 0;
 }
