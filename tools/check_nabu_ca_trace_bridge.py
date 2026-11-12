@@ -60,7 +60,7 @@ int main(){
  assert(rows[0].event==81&&rows[0].a==0xf123456789abcdefull&&rows[0].b==0x8123456789abcdefull&&rows[0].c==0x923456789abcdef0ull);
  assert(rows[1].event==80&&rows[1].a==123&&rows[1].b==0xfedcba9876543210ull&&rows[1].c==0xa3456789abcdef01ull&&rows[0].id==rows[1].id);
  rows.clear();
- for(uint32_t event=98;event<=101;++event){
+ for(uint32_t event=97;event<=101;++event){
   rows.clear();const uint64_t before=cpuTicks;
   nabu_ca_trace_user_marker(0x31ca8000u|(event<<2),12,13,14,15,16,17);
   assert(rows.size()==3&&cpuTicks==before+1);

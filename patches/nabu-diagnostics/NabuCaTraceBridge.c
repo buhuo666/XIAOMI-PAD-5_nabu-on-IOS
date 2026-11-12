@@ -31,7 +31,9 @@ void nabu_ca_trace_user_marker(uint32_t code, uint64_t identity, uint64_t a,
     const uint32_t window = nabu_ca_ipc_trace_window();
     if (!window) return;
     const uint32_t event = (code - 0x31ca8000u) >> 2;
-    const int timed = event >= 98 && event <= 101;
+    // CanLeave pairs with BeginEnter on the same server thread to separate
+    // layer preparation CPU work from scheduling before the update begins.
+    const int timed = event >= 97 && event <= 101;
     uint64_t cpuNs = 0;
     if (timed) absolutetime_to_nanoseconds(thread_get_runtime_self(), &cpuNs);
     const uint64_t token = __atomic_add_fetch(&markerSequence, 1, __ATOMIC_RELAXED);

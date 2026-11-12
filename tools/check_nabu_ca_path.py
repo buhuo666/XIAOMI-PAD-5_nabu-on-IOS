@@ -32,6 +32,21 @@ def main():
     assert frame['begin_return_to_finish_cpu_ms']==1
     assert not result['target']['panel_scan_qualified']
 
+    # CanLeave/BeginEnter CPU samples require both exact boundaries and the
+    # same thread. A missing or foreign-thread CPU sample stays unknown.
+    assert 'successful_can_to_begin_cpu_ms' not in result['metrics']
+    timed=deepcopy(ca)
+    timed['ca']['calls'][2]['end']['cpu_ns']=1000000
+    timed['ca']['calls'][1]['begin']['cpu_ns']=1040000
+    timed_result=decompose(timed,[],run)
+    assert timed_result['frames'][0]['successful_can_to_begin_cpu_ms']==.04
+    assert abs(timed_result['frames'][0]['successful_can_to_begin_off_cpu_ms']-.05)<1e-9
+    timed['ca']['calls'][2]['thread']=8
+    assert 'successful_can_to_begin_cpu_ms' not in decompose(timed,[],run)['metrics']
+    timed['ca']['calls'][2]['thread']=9
+    timed['ca']['calls'][1]['begin']['cpu_ns']=999999
+    assert decompose(timed,[],run)['diagnostics']['can_to_begin_cpu_reversed']==1
+
     # A foreign display/update at exactly the same microsecond cannot replace ours.
     changed=deepcopy(ca)
     foreign=deepcopy(changed['ca']['updates'][0]);foreign.update(pid=99,snapshots=[])

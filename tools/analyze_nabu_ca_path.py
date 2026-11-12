@@ -112,6 +112,16 @@ def decompose(ca, rows, run, benchmark_rows=None):
             present_to_first_can_ms=(cans[0]['begin']['time_us']-p)/1000 if cans else None,
             first_can_to_success_ms=(good[0]['end']['time_us']-cans[0]['begin']['time_us'])/1000 if len(good)==1 else None,
             successful_can_to_begin_ms=(bt-good[0]['end']['time_us'])/1000 if len(good)==1 else None)
+        # CPU counters are thread-local. Older kernels have no CanLeave CPU
+        # record; preserve unknown rather than borrowing another call's sample.
+        if len(good)==1 and good[0]['thread']==b['thread']:
+            can_cpu=good[0]['end'].get('cpu_ns');begin_cpu=b['begin'].get('cpu_ns')
+            if can_cpu is not None and begin_cpu is not None:
+                if begin_cpu>=can_cpu:
+                    cpu=(begin_cpu-can_cpu)/1e6
+                    values['successful_can_to_begin_cpu_ms']=cpu
+                    values['successful_can_to_begin_off_cpu_ms']=max(0,values['successful_can_to_begin_ms']-cpu)
+                else:diagnostics['can_to_begin_cpu_reversed']+=1
         if late:
             last=max(late,key=lambda r:r['busy_end_us'])
             values['last_busy_to_retired_ms']=last['retire_after_busy_ms']
