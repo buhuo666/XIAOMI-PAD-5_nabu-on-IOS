@@ -9,6 +9,7 @@ import struct
 from pathlib import Path
 from analyze_nabu_a640_timestamps import distribution
 from nabu_frame_trace import FIELDS, WIRE, validate_export
+from nabu_metal_submit_analysis import analyze_extended_phases
 
 
 def analyze(rows, metadata):
@@ -40,7 +41,7 @@ def analyze(rows, metadata):
         p,c=candidates[0],context[0]
         if p['window']!=c['window']:
             diagnostics['user_marker_window_mismatch']+=1;continue
-        users.append(dict(time_us=p['time_us'],event=p['event'],identity=p['a'],
+        users.append(dict(time_us=p['time_us'],marker_token=token,event=p['event'],identity=p['a'],
                           a=p['b'],b=p['c'],c=c['c'],pid=c['a'],thread=c['b'],
                           transport_us=c['time_us']-p['time_us']))
         runtime=indexed.get((76,token),[])
@@ -48,7 +49,8 @@ def analyze(rows, metadata):
             users[-1]['cpu_ns']=runtime[0]['a']
         elif runtime:
             diagnostics['cpu_marker_invalid_pair']+=1
-    users.sort(key=lambda r:r['time_us'])
+    # Marker tokens preserve same-thread order when two calls share a microsecond.
+    users.sort(key=lambda r:(r['time_us'],r['marker_token']))
     def lo(value):return value&0xffffffff
     def hi(value):return value>>32
     def floating(value):
@@ -308,6 +310,7 @@ def analyze(rows, metadata):
                 marker_pair_transport_ms=distribution([r['transport_us']/1000 for r in users]),
                 ipc=dict(messages=sends,by_message={msg:metrics([s for s in sends if s['message_id']==msg],names) for msg in (40205,40402)}),
                 ca=dict(calls=wrappers,immediate_attempts=immediate_attempts,
+                        submission=analyze_extended_phases(users,wrappers),
                         call_metrics={e:metrics([p for p in wrappers if p['event']==e],('duration_ms',)) for e in pairs},
                         updates=updates,update_metrics=metrics(updates,('begin_return_to_finish_enter_ms','begin_enter_to_finish_leave_ms',
                             'begin_return_to_finish_cpu_ms','begin_return_to_finish_off_cpu_ms',
