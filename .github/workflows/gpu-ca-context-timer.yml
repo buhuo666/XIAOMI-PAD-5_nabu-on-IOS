@@ -1,0 +1,40 @@
+name: nabu16 - CA context commit timer
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-ca-context-timer.yml'
+      - 'userland/nabu/src/ca_context_timer*'
+      - 'userland/nabu/tests/ca_context_timer_test.c'
+      - 'tools/build_nabu_ca_context_timer.py'
+      - 'tools/check_nabu_ca_context_timer.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  context-timer:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build opt-in native context scheduler
+        run: python3 tools/build_nabu_ca_context_timer.py --output artifacts/nabu-ca-context-timer
+      - name: Check scheduler ABI and native VSync lifetime
+        run: >-
+          python3 tools/check_nabu_ca_context_timer.py
+          --output artifacts/nabu-ca-context-timer/host-check
+      - name: Check complete frame attribution and end-to-end latency
+        run: |
+          python3 tools/check_nabu_ca_trace_analysis.py
+          python3 tools/check_nabu_ca_path.py
+          python3 tools/check_nabu_gpu_chain.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-ca-context-timer-${{ github.run_number }}
+          path: artifacts/nabu-ca-context-timer/
+          retention-days: 14

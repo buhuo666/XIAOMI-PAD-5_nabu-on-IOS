@@ -13,6 +13,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--ca-timer',action='store_true')
     p.add_argument('--tree',type=Path,default=ROOT/'build/xnu8796-capacity/tree')
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     init=body((ROOT/'src/hakios-8796/userland/src/init.c').read_text(), 'static void\nconfigure_inject(')
@@ -32,7 +33,8 @@ struct image_params {struct nameidata *ip_ndp;};
 static const char *in_image(const char *s){return s;}
 static long read_whole(const char *p,void *out,size_t count){(void)p;assert(count>size);memcpy(out,bytes,size);return (long)size;}
 static int sysctlbyname(const char *name,void *old,size_t *oldn,const void *data,size_t n){
- (void)old;(void)oldn;assert(!strcmp(name,"kern.exec_inject")&&n<sizeof(exec_inject_conf));memcpy(exec_inject_conf,data,n);return 0;}
+ (void)old;(void)oldn;assert(!strcmp(name,"kern.exec_inject"));
+ if(n>=sizeof(exec_inject_conf)){errno=EINVAL;return -1;}memcpy(exec_inject_conf,data,n);return 0;}
 #ifndef __APPLE__
 static size_t strlcpy(char *out,const char *in,size_t n){size_t count=strlen(in);assert(count<n);memcpy(out,in,count+1);return count;}
 #endif
@@ -56,19 +58,24 @@ int main(int argc,char **argv){
  // Reproduce the Windows text writer regression through the actual parsers.
  unsigned char broken[4096];size_t j=0;
  for(size_t i=0;i<size;i++){if(bytes[i]=='\n')broken[j++]='\r';broken[j++]=bytes[i];}
- memcpy(bytes,broken,j);size=j;configure_inject();
+ memcpy(bytes,broken,j);size=j;memset(exec_inject_conf,0,sizeof(exec_inject_conf));configure_inject();
  assert(!contains("backboardd","/redwood/lib/libnabu.input.dylib"));
  assert(!contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));
  assert(!contains("lockdownd","/redwood/lib/libnabu.lockdown-timeout.dylib"));
  puts("PASS: actual init/kernel parsers select all baseline injections and CA observer; CRLF regression reproduced");
 }
 '''
+    if a.ca_timer:
+        source=source.replace('assert(contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));',
+            'assert(contains("backboardd","/redwood/lib/libnabu.ca-frame-trace.dylib"));\n'
+            ' assert(contains("backboardd","/redwood/lib/libnabu.ca-timer.dylib"));',1)
     path=out/'injection.c';path.write_text(source);binary=out/'injection'
     for label,cmd in [('compile',['clang','-std=c11','-O1','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',host_path(path),'-o',host_path(binary)]),('run',[host_path(binary),host_path(a.config.resolve())])]:
         r=subprocess.run(host_command(cmd),capture_output=True,timeout=120)
         (out/(label+'.log')).write_bytes(r.stdout+r.stderr)
         if r.returncode:raise RuntimeError((r.stdout+r.stderr).decode(errors='replace')[-5000:])
-    report=dict(passed=True,actual_init_and_kernel_parsers=True,baseline_injections=6,ca_observer=True,crlf_regression_reproduced=True,config=str(a.config),device_executed=False)
+    report=dict(passed=True,actual_init_and_kernel_parsers=True,baseline_injections=6,ca_observer=True,
+                ca_context_timer=a.ca_timer,crlf_regression_reproduced=True,config=str(a.config),device_executed=False)
     (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 
 if __name__=='__main__':main()
