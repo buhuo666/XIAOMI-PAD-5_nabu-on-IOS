@@ -213,7 +213,7 @@ def analyze(rows, metadata):
                            drawable_pointer=acquired['c'],stages=stages,
                            acquire_ms=delta(stages.get(83),acquired),
                            submit_to_completion_ms=delta(stages.get(85),stages.get(87))))
-    frame_times=defaultdict(list);present_index=defaultdict(list);dpu_index=defaultdict(list);ping_index=defaultdict(list)
+    frame_times=defaultdict(list);present_index=defaultdict(list);dpu_index=defaultdict(list);update_client_index=defaultdict(list)
     for f in frames:frame_times[(f['pid'],f['surface_id'])].append(f['stages'][84]['time_us'])
     for values in frame_times.values():values.sort()
     for p in wrappers:
@@ -223,9 +223,9 @@ def analyze(rows, metadata):
     for values in dpu_index.values():values.sort(key=lambda r:r['time_us'])
     dpu_times={k:[r['time_us'] for r in v] for k,v in dpu_index.items()}
     for s in sends:
-        if s['message_id']==40205:ping_index[s['sender_pid']].append(s)
-    for values in ping_index.values():values.sort(key=lambda s:s['begin']['time_us'])
-    ping_times={k:[s['begin']['time_us'] for s in v] for k,v in ping_index.items()}
+        if s['message_id']==40205:update_client_index[s['sender_pid']].append(s)
+    for values in update_client_index.values():values.sort(key=lambda s:s['begin']['time_us'])
+    update_client_times={k:[s['begin']['time_us'] for s in v] for k,v in update_client_index.items()}
     for frame in frames:
         stages=frame['stages'];acquired=stages[84];end=metadata['end_us']
         times=frame_times[(frame['pid'],frame['surface_id'])];at=bisect_right(times,acquired['time_us'])
@@ -243,20 +243,20 @@ def analyze(rows, metadata):
                      dpu_transaction=d['identity'] if d else None,
                      dpu_present_us=d['time_us'] if d else None,
                      association='same surface, unique interval before reacquisition; no cross-layer frame ID')
-        # IPC captures PID but not sender TID: synchronous pings inside this
+        # IPC captures PID but not sender TID: synchronous UpdateClient messages inside this
         # call form a candidate set, without claiming thread causality.
-        times=ping_times.get(frame['pid'],[])
-        candidates=ping_index.get(frame['pid'],[])[bisect_left(times,p['begin']['time_us']):bisect_right(times,p['end']['time_us'])] if p else []
-        frame['ping_send_candidates']=[s['token'] for s in candidates]
+        times=update_client_times.get(frame['pid'],[])
+        candidates=update_client_index.get(frame['pid'],[])[bisect_left(times,p['begin']['time_us']):bisect_right(times,p['end']['time_us'])] if p else []
+        frame['update_client_send_candidates']=[s['token'] for s in candidates]
         if len(candidates)==1 and d:
             received=candidates[0]['receive_result']
-            frame['ping_receive_return_to_dpu_ms']=delta(received,d)
+            frame['update_client_receive_return_to_dpu_ms']=delta(received,d)
         frame['present']=p
 
     names=('send_ms','send_return_ms','send_to_queue_ms','queue_residence_ms','send_to_delivery_ms',
            'delivery_to_receive_begin_ms','receive_copyout_ms','send_to_receive_return_ms')
     frame_names=('acquire_ms','submit_to_completion_ms','present_call_ms','present_return_to_dpu_ms',
-                 'completion_to_dpu_ms','ping_receive_return_to_dpu_ms')
+                 'completion_to_dpu_ms','update_client_receive_return_to_dpu_ms')
     return dict(window=metadata['window'],dropped=metadata['dropped'],complete_record_stream=not metadata['dropped'],
                 event_counts=dict(events),diagnostics=dict(diagnostics),user_markers=users,
                 marker_pair_transport_ms=distribution([r['transport_us']/1000 for r in users]),
@@ -273,7 +273,7 @@ def analyze(rows, metadata):
                 app=dict(frames=frames,metrics=metrics(frames,frame_names)),
                 unique_content_fps=None,
                 limits='Diagnostic short window. Native pointers are scoped to PID/lifetime; no fabricated seed in IPC. '
-                       'Ping within present is a PID/time candidate, not proven thread causality. '
+                       'UpdateClient within present is a PID/time candidate, not proven thread causality. '
                        'Surface-to-DPU association is unique-interval inference. CA snapshots are bounded observations, '
                        'not direct CopyImageInfo/did_display hooks or proof of panel scan time.')
 

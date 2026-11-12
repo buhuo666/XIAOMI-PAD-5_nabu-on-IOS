@@ -38,6 +38,8 @@ GPU220内核32ed2a5、完整CI43138438550；用户态194e69b、CI43140019560。6
 
 验收脚本还修正了样本选择：FrameBench的measured标记在display-link回调时决定，不是延后的GPU提交时决定。现按run marker的PID/epoch与CSV行号精确关联；GPU219实际measured626帧中625帧有完整DPU关联，最后一帧有present但无唯一DPU输出，保留缺失。旧按提交时间选出的626帧含一帧warmup跨边界，并漏掉该末帧。旧总路径约27.4ms的量级不变，但不能继续称实际measured626帧全部已匹配。
 
+另按原版MIG分发表纠正消息名称：40205为`__XUpdateClient`（表槽0x1d57dc840→0x188319a78），40200才是`__XPing`。`CAImageQueuePing_`虽有Ping函数名，实际写入消息ID0x9d0d；40205 stub从消息+0x20读取context/flags，从+0x28读取requested time，再调用0x188300880 CASUpdateClient。既有0.0871ms计时仍对应40205，只修正协议解释与分析字段名称。
+
 ## 证据保全
 
 5,904,778字节连续日志及完整64MiB槽已回收到 `log/device/nabu-boot-20261112-220/runtime-log/`，清空读回通过，Android引导分区未变。日志未封口，不声称覆盖复位前全部输出。设备Android/USB，GPU221尚未准备日志槽或部署。GPU/5ms目标仍未完成。

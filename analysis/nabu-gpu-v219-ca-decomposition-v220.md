@@ -17,7 +17,7 @@ GPU219 保留 675MHz、120Hz、3 drawable、共享 IOSurface、DPU NC/live ident
 
 第一至第三段的总和是 present 返回至 DPU 入口；第四行起点不同。finish 入口至 DPU 入口不等于 finish 函数完整执行时间，也不等于面板扫描。begin→finish 是墙钟区间，目前不能全算成 CPU 计算。
 
-40205 Ping 的 send→receive return 平均 0.0871ms（应用活动段 753 个样本，均 direct handoff），40402 collectable 为 0.1008ms。正式场景 DPU 排队平均 0.01377ms、producer 等待 0.00277ms，无 DPU 拒绝。窗口前后 UI 的真正双层拒绝不能混入正式不透明场景。
+40205 UpdateClient 的 send→receive return 平均 0.0871ms（应用活动段 753 个样本，均 direct handoff），40402 collectable 为 0.1008ms。正式场景 DPU 排队平均 0.01377ms、producer 等待 0.00277ms，无 DPU 拒绝。窗口前后 UI 的真正双层拒绝不能混入正式不透明场景。
 
 证据：`log/host/gpu-v219/ca-opaque-decomposition.json`、`opaque-software.json`、`ca-opaque-analysis.json`、`trace-ca-opaque/`、`frame-bench-documents/`。
 

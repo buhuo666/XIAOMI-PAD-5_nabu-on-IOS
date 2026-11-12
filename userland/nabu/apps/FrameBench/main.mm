@@ -9,8 +9,16 @@
 #include "FrameCompletion.h"
 #include "ca_trace_marker.h"
 
+// Original iPadOS 16.5 (20F66) CAMetalLayer methods. The property requests
+// UpdateClient's low-latency path; the server retains its timing gates.
+@interface CAMetalLayer (NabuLowLatency20F66)
+- (void)setLowLatency:(BOOL)enabled;
+- (BOOL)lowLatency;
+@end
+
 namespace {
 constexpr uint32_t Width = 1600, Height = 2560, Capacity = 80000;
+constexpr double PresentationDrainSeconds = 0.1;
 using TraceSetter = void (*)(bool);
 TraceSetter presentTraceSetter() {
     // The system factory loads this frontend RTLD_LOCAL. Resolve only the
@@ -42,8 +50,8 @@ NSDictionary *distribution(std::vector<double> values) {
     std::vector<Row> rows;
     uint32_t rowCount, pending, epoch, missedAdmission, nullDrawable, failures, displayLinkCallbacks;
     unsigned scene, repetition, rate, sequenceIndex, sequenceCount;
-    double sampleStart, sampleEnd, stoppedAt, duration;
-    bool running, draining, automated, diagnostic;
+    double sampleStart, sampleEnd, stoppedAt, duration, presentationDrainDeadline;
+    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual;
     NSInteger initialThermal;
 }
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
@@ -76,6 +84,7 @@ NSDictionary *distribution(std::vector<double> values) {
     self.controls = [[UIStackView alloc] initWithArrangedSubviews:@[self.label]];
     self.controls.axis = UILayoutConstraintAxisVertical; self.controls.spacing = 24;
     for (NSArray *option in @[@[@"CA等待定位（15秒）", NSStringFromSelector(@selector(startDiagnostic))],
+                              @[@"低延时定位（15秒）", NSStringFromSelector(@selector(startLowLatencyDiagnostic))],
                               @[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
                               @[@"60帧场景对照", NSStringFromSelector(@selector(start60))],
                               @[@"120帧持续10分钟", NSStringFromSelector(@selector(startSoak))]]) {
@@ -129,20 +138,27 @@ NSDictionary *distribution(std::vector<double> values) {
 - (void)start120 { [self beginSequence:120 soak:NO]; }
 - (void)start60 { [self beginSequence:60 soak:NO]; }
 - (void)startSoak { [self beginSequence:120 soak:YES]; }
-- (void)startDiagnostic {
+- (void)startDiagnostic { [self startDiagnosticWithLowLatency:NO]; }
+- (void)startLowLatencyDiagnostic { [self startDiagnosticWithLowLatency:YES]; }
+- (void)startDiagnosticWithLowLatency:(BOOL)enabled {
     if (running || draining || ![self prepareRenderer]) return;
+    lowLatencyRequested = enabled;
     diagnostic = true; rate = 120; duration = 15;
     sequenceIndex = 0; sequenceCount = 1; automated = true;
     [self beginRun];
 }
 - (void)beginSequence:(unsigned)targetRate soak:(BOOL)soak {
     if (running || draining || ![self prepareRenderer]) return;
+    lowLatencyRequested = false;
     diagnostic = false; rate = targetRate; duration = soak ? 600 : 60;
     sequenceIndex = 0; sequenceCount = soak ? 1 : 6; automated = true;
     [self beginRun];
 }
 - (void)beginRun {
     if (!automated) return;
+    [self.metalLayer setLowLatency:lowLatencyRequested];
+    lowLatencyActual = [self.metalLayer lowLatency];
+    presentationDrainDeadline = 0;
     ++epoch; rowCount = pending = missedAdmission = nullDrawable = failures = displayLinkCallbacks = 0;
     scene = duration == 600 ? 1 : sequenceIndex / 3;
     repetition = duration == 600 ? 1 : sequenceIndex % 3 + 1;
@@ -293,6 +309,18 @@ NSDictionary *distribution(std::vector<double> values) {
         }
         return;
     }
+    if (diagnostic) {
+        const double now = CACurrentMediaTime();
+        if (!presentationDrainDeadline) {
+            // Keep the last image visible after GPU completion so queued CA
+            // work can reach scanout before the controls replace the scene.
+            presentationDrainDeadline = now + PresentationDrainSeconds;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, int64_t(PresentationDrainSeconds * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ [self checkDeadline]; });
+            return;
+        }
+        if (now < presentationDrainDeadline) return;
+    }
     draining = false;
     if (diagnostic) {
         nabu_ca_trace_marker(89, epoch, rowCount, failures, nullDrawable);
@@ -343,7 +371,9 @@ NSDictionary *distribution(std::vector<double> values) {
     const bool completeInterval = stoppedAt >= sampleEnd;
     const bool validPerformance = !diagnostic && completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @4, @"diagnostic_only": @(diagnostic),
+        @"run_id": self.runID, @"benchmark_revision": @5, @"diagnostic_only": @(diagnostic),
+        @"low_latency_requested": @(lowLatencyRequested), @"low_latency_actual": @(lowLatencyActual),
+        @"presentation_drain_seconds": @(diagnostic ? PresentationDrainSeconds : 0),
         @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
         @"repetition": @(repetition), @"target_hz": @(rate), @"width": @(Width), @"height": @(Height),

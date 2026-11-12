@@ -41,8 +41,8 @@ def check():
     assert first['receive_result']['time_us']==204 and second['receive_result']['time_us']==308
     assert second['queue_residence_ms'] is None and second['send_to_delivery_ms']==.002
     frame,=result['app']['frames']
-    assert frame['completion_to_dpu_ms']==28 and frame['ping_send_candidates']==[1]
-    assert frame['ping_receive_return_to_dpu_ms']==27.911
+    assert frame['completion_to_dpu_ms']==28 and frame['update_client_send_candidates']==[1]
+    assert frame['update_client_receive_return_to_dpu_ms']==27.911
     assert result['unique_content_fps'] is None
     # Same surface duplicated within a lifetime cannot silently pick one DPU.
     r(28116,32,45,36)
