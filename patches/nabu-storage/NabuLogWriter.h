@@ -84,10 +84,10 @@ static bool nabuLogStart(unsigned slot, unsigned span = 1)
   gNabuLogWriter.extentBlocks = extentBlocks;
   if (!gNabuPublished || gNabuLayout.userdataLast < gNabuLayout.userdataFirst ||
       gNabuLayout.userdataLast >= gHost.blocks ||
-      gNabuLayout.userdataLast - gNabuLayout.userdataFirst + 1 != kNabuLogPartitionBytes / kNabuLogBlock)
+      gNabuLayout.userdataLast - gNabuLayout.userdataFirst + 1 != gNabuCapacity.partitionBytes / kNabuLogBlock)
     return nabuLogFail(kNabuLogLayout);
-  // The fixed slot arithmetic is bounded by the already validated partition.
-  uint64_t first = gNabuLayout.userdataFirst + kNabuLogReservedOffset / kNabuLogBlock +
+  // Slot units are fixed; the log reserve follows this installation's Data.
+  uint64_t first = gNabuLayout.userdataFirst + gNabuCapacity.logOffset / kNabuLogBlock +
       uint64_t(slot) * kNabuLogSlotBlocks;
   if (first <= gNabuLayout.userdataFirst || first > gNabuLayout.userdataLast ||
       extentBlocks - 1 > gNabuLayout.userdataLast - first ||
@@ -95,7 +95,8 @@ static bool nabuLogStart(unsigned slot, unsigned span = 1)
     return nabuLogFail(kNabuLogLayout);
   if (hostRead4k(0, first, 1, gNabuLogHeader) != kIOReturnSuccess)
     return nabuLogFail(kNabuLogRead);
-  if (!nabuLogManifestValid(gNabuLogHeader, slot, span)) return nabuLogFail(kNabuLogManifest);
+  if (!nabuLogManifestValid(gNabuLogHeader, slot, span,gNabuCapacity.partitionBytes,gNabuCapacity.dynamic))
+    return nabuLogFail(kNabuLogManifest);
   memcpy(gNabuLogWriter.uuid, gNabuLogHeader + 56, 16);
   gNabuLogWriter.first = first;
   // The host checked this before preparation. Recheck now before claiming it,

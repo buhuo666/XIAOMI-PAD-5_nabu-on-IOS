@@ -17,9 +17,13 @@ bool nabuContract(const char **why)
   if (!findRootLayout(&gNabuLayout,why)) return false;
   const auto &r=gNabuLayout;
   if (r.userdataLast>=gHost.blocks || r.userdataLast<r.userdataFirst ||
-      r.userdataLast-r.userdataFirst+1!=NABU_PARTITION_BYTES/4096 ||
       r.manifestStatus || r.windows!=2 || r.imageBytes!=NABU_IMAGE_BYTES) {
     *why="installed partition/manifest contract"; return false;
+  }
+  uint64_t partitionBytes=(r.userdataLast-r.userdataFirst+1)*4096;
+  if(hostRead4k(0,r.userdataFirst,1,gScratch)!=kIOReturnSuccess ||
+     !nabuReadStorageLayout(gScratch,partitionBytes,&gNabuCapacity)) {
+    *why="installed dynamic/legacy capacity contract"; return false;
   }
   for (unsigned i=0;i<2;i++) {
     const auto &actual=r.window[i]; const auto &expected=nabu_windows[i];
@@ -43,14 +47,18 @@ bool nabuContract(const char **why)
   }
   uint32_t dataEnabled=0;
   if (PE_parse_boot_argn("nabu-data",&dataEnabled,sizeof(dataEnabled)) && dataEnabled==1) {
-    gNabuDataFirst=r.userdataFirst+NABU_DATA_OFFSET/4096;
-    if (NABU_DATA_OFFSET+NABU_DATA_BYTES>NABU_PARTITION_BYTES ||
+    gNabuDataFirst=r.userdataFirst+gNabuCapacity.dataOffset/4096;
+    if (gNabuCapacity.dataOffset+gNabuCapacity.dataBytes>gNabuCapacity.logOffset ||
         hostRead4k(0,gNabuDataFirst,1,gScratch)!=kIOReturnSuccess ||
         !nabuDataIdentity(gScratch)) {
       *why="installed APFS Data identity/geometry/checksum"; return false;
     }
     gNabuDataWriteOpen=true;
-    loader_log_line("NABU DATA: installed 49 GiB APFS admitted read/write; OS/SystemOS remain read-only\n");
+    char line[192];
+    snprintf(line,sizeof(line),"NABU DATA: installed %llu GiB APFS admitted read/write; partition=%llu GiB layout=%s; OS/SystemOS read-only\n",
+      (unsigned long long)(gNabuCapacity.dataBytes/kNabuGiB),
+      (unsigned long long)(gNabuCapacity.partitionBytes/kNabuGiB),gNabuCapacity.dynamic?"dynamic-v2":"legacy-v1");
+    loader_log_line(line);
   }
   gNabuReadLock=IOLockAlloc();
   if (!gNabuReadLock) { *why="read lock allocation"; return false; }
@@ -70,6 +78,7 @@ extern "C" int nabu_storage_prepare(void)
     strlcpy(gNabuResult,why,sizeof(gNabuResult));
     strlcpy(gNabuCause,why,sizeof(gNabuCause)); return EIO;
   }
+  loader_log_line("NABU STORAGE ABI: NABUDYN2\n");
   int logError=nabuLogBeginConfigured();
   if (logError) {
     gNabuPublished=false;
@@ -84,14 +93,14 @@ extern "C" int nabu_storage_prepare(void)
 extern "C" uint64_t nabu_storage_size(unsigned window)
 {
   if (!gNabuPublished) return 0;
-  return window<2 ? nabu_windows[window].bytes : window==2 && gNabuDataWriteOpen ? NABU_DATA_BYTES:0;
+  return window<2 ? nabu_windows[window].bytes : window==2 && gNabuDataWriteOpen ? gNabuCapacity.dataBytes:0;
 }
 
 extern "C" int nabu_storage_writable(unsigned window)
 { return gNabuPublished && window==2 && gNabuDataWriteOpen; }
 
 static uint64_t nabuWindowOffset(unsigned window)
-{ return window==2 ? NABU_DATA_OFFSET:nabu_windows[window].offset; }
+{ return window==2 ? gNabuCapacity.dataOffset:nabu_windows[window].offset; }
 
 extern "C" int nabu_storage_read(unsigned window,uint64_t offset,void *out,uint64_t bytes)
 {

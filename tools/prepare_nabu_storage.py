@@ -165,7 +165,7 @@ static bool gRootDiagnosticEnabled;
     resources=(ROOT/'src/nabu/ufs/NabuUfsResources.h').read_text().replace('static bool ','static inline bool ')
     (dest/'NabuUfsResources.h').write_text(resources)
     for name in ('NabuStorageApi.h','NabuStoragePolicy.h','NabuLogFormat.h','NabuLogWriteCommands.h','NabuLogWriter.h',
-                 'NabuDataWriteCommands.h','NabuDataIdentity.h'):
+                 'NabuDataWriteCommands.h','NabuDataIdentity.h','NabuStorageLayout.h'):
         shutil.copy2(ROOT/'patches/nabu-storage'/name,dest/name)
     shutil.copy2(ROOT/'patches/nabu-storage/NabuLogCapture.h',a.tree/'osfmk/arm64/NabuLogCapture.h')
     cfg=json.loads((ROOT/'configs/nabu-storage-probe.json').read_text());(dest/'NabuStorageContract.h').write_text(contract_header(cfg))

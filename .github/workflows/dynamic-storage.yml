@@ -1,0 +1,98 @@
+name: Deployment-selected storage capacity
+on:
+  push:
+    branches: [codex/dynamic-deployment-storage]
+    paths:
+      - '.github/workflows/dynamic-storage.yml'
+      - 'patches/nabu-storage/**'
+      - 'tools/prepare_nabu_storage.py'
+      - 'tools/nabu_storage_layout.py'
+      - 'tools/nabu_log_format.py'
+      - 'tools/nabu_runtime_logs.py'
+      - 'tools/check_nabu_log_writer.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  xnu8796-reference:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Record build host
+        run: |
+          mkdir -p log/ci
+          {
+            sw_vers
+            xcodebuild -version
+            xcrun clang --version
+            python3 --version
+          } > log/ci/host.txt
+          cat log/ci/host.txt
+      - name: Check and compile the explicit SpringBoard UI compatibility library
+        run: |
+          python3 tools/check_nabu_setup_compat.py --output log/ci/nabu-setup-compat
+          python3 tools/build_nabu_setup_compat.py --output artifacts/nabu-setup-compat
+          cp log/ci/nabu-setup-compat/report.json artifacts/nabu-setup-compat/host-check.json
+      - name: Compile 8796 reference
+        run: bash tools/build_8796_reference.sh
+      - name: Compile the APFS Data block device
+        run: python3 tools/build_nabu_data_block.py --tree build/xnu8796-reference/tree --output artifacts/nabu-data-block
+      - name: Compile the Nabu ath10k native bridge and existing device services
+        run: |
+          python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
+          python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
+            --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace --gpu
+      - name: Compile A640 system Metal factory transport for 20F66
+        run: |
+          python3 tools/check_nabu_frame_trace.py --output log/ci/nabu-frame-trace
+          python3 tools/check_nabu_frame_trace_analysis.py
+          python3 tools/check_nabu_dpu_inactive_layer_clear.py --output log/ci/nabu-dpu-inactive-layer-clear
+          python3 tools/check_nabu_a640_timestamps.py --output log/ci/nabu-a640-timestamps
+          python3 tools/check_nabu_gpu_clear.py --output log/ci/nabu-gpu-clear
+          python3 tools/check_nabu_gpu_client_slots.py --output log/ci/nabu-gpu-client-slots
+          python3 tools/build_nabu_gpu.py --system-metal --compile-command artifacts/nabu-wireless-objects/compile-command.json --output artifacts/nabu-gpu
+      - name: Compile Nabu native speaker audio provider
+        run: python3 tools/build_nabu_audio_plugin.py --output artifacts/nabu-audio-plugin
+      - name: Verify linked kernel against the selected export contract
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_nabu_export_contract.py --tree build/xnu8796-reference/tree --verify-generated --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-export-contract-linked.json
+      - name: Analyze original and candidate interfaces with native LLDB
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: bash tools/analyze_20f66_ci.sh
+      - name: Verify compiled SMP and bootstrap capacity
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_capacity_kernel.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/capacity-native
+      - name: Verify return diagnostics with native LLDB
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_return_diagnostics.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/return-diagnostics-native
+      - name: Verify native storage policies and compiled probe
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_nabu_storage.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-storage/native
+      - name: Verify native display geometry and compiled consumers
+        if: always() && hashFiles('artifacts/8796-reference/mach.development.bcm2837.unstripped') != ''
+        run: python3 tools/check_nabu_display.py --tree build/xnu8796-reference/tree --candidate artifacts/8796-reference/mach.development.bcm2837.unstripped --output log/ci/nabu-display-native
+      - name: Retain build logs and source-built kernel
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xnu8796-reference-${{ github.run_number }}
+          path: |
+            log/ci/
+            artifacts/8796-reference/
+            artifacts/nabu-userland/
+            artifacts/nabu-setup-compat/
+            artifacts/nabu-input-bridge/
+            artifacts/nabu-data-block/
+            artifacts/nabu-wireless-objects/
+            artifacts/nabu-gpu/
+            artifacts/nabu-audio-plugin/
+            src/hakios-8796/xnu-deps/*build.log
+            src/hakios-8796/xnu-deps/exporthdrs.log
+          retention-days: 14
+          if-no-files-found: warn

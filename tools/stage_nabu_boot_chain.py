@@ -14,6 +14,7 @@ from nabu_log_format import parse_manifest, slot_offset, extent_bytes, BLOCK_BYT
 from nabu_runtime_logs import checked_receipt, zero_suffix_sha256
 from nabu_rmtfs_sparse import pack as pack_rmtfs
 from nabu_servreg import encode as encode_servreg
+from nabu_storage_layout import receipt_geometry, require_kernel_capacity
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL = ROOT/'artifacts/ci/41959293411-attempt-1/xnu8796-reference-38/artifacts/8796-reference/mach.development.bcm2837'
@@ -63,15 +64,16 @@ def verify_prepared_log(shell, prepared, kernel_sha, serial_sha):
     assert prepared['device_serial_sha256'] == serial_sha
     assert prepared['kernel_sha256'] == kernel_sha
     assert shell('readlink -f /dev/block/by-name/nabu_system').strip() == b'/dev/block/sda36'
-    assert int(shell('blockdev --getsize64 /dev/block/sda36')) == PARTITION_BYTES
-    offset = slot_offset(prepared['slot'])
+    storage=receipt_geometry(prepared)
+    assert int(shell('blockdev --getsize64 /dev/block/sda36')) == storage.partition_bytes
+    offset = slot_offset(prepared['slot'],storage)
     span = prepared.get('span', 1)
     size = extent_bytes(prepared['slot'], span)
     assert prepared.get('slot_bytes', size) == size
     raw = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} count=1 status=none')
     parse_manifest(raw, expected_slot=prepared['slot'], expected_run_uuid=prepared['run_uuid'],
                    expected_kernel_sha256=kernel_sha, expected_manifest_sha256=prepared['manifest_sha256'],
-                   expected_span=span)
+                   expected_span=span,expected_geometry=storage)
     expected = zero_suffix_sha256(raw, size)
     actual = shell(f'dd if=/dev/block/sda36 bs={BLOCK_BYTES} skip={offset//BLOCK_BYTES} '
                    f'count={size//BLOCK_BYTES} status=none | sha256sum').decode().split()[0]
@@ -227,6 +229,7 @@ def main():
     setup_compat_enabled = False
     log_args=[x for x in entry['args'].split() if x.startswith(('nabu-log-slot','nabu-log-span'))]
     log_prepared=checked_receipt(a.log_preparation) if a.log_preparation else None
+    if log_prepared: require_kernel_capacity(a.kernel,receipt_geometry(log_prepared))
     if log_args or log_prepared:
         assert log_prepared
         expected_log_args=[f"nabu-log-slot={log_prepared['slot']}"]
