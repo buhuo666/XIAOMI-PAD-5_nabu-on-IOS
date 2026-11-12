@@ -39,15 +39,19 @@ def main():
     output = args.output.resolve(); output.mkdir(parents=True, exist_ok=True)
     source = args.source.read_text(encoding='utf-8')
     supplied_candidate = '\ndarwin_deduplicate_submit_ranges(' in source
-    baseline = apply_range_dedup(source, reverse=True) if supplied_candidate else source
+    supplied_algorithm = 'hash' if '\ndarwin_raw_range_hash(' in source else 'qsort'
+    baseline = apply_range_dedup(source, reverse=True,algorithm=supplied_algorithm) if supplied_candidate else source
     candidate = apply_range_dedup(baseline)
-    if supplied_candidate and candidate != source:
+    sorted_candidate = apply_range_dedup(baseline,algorithm='qsort')
+    if supplied_candidate and apply_range_dedup(baseline,algorithm=supplied_algorithm) != source:
         raise ValueError('Candidate did not roundtrip through the qualified transform')
     shared_names = ['darwin_resource_handle_compare', 'darwin_native_range_compare',
                     'darwin_add_native_range', 'darwin_collect_submit_resources']
     previous = '\n\n'.join(function(baseline, n) for n in shared_names)
-    updated = '\n\n'.join(function(candidate, n) for n in
+    sorted_previous = '\n\n'.join(function(sorted_candidate, n) for n in
         ['darwin_raw_range_compare', 'darwin_deduplicate_submit_ranges', *shared_names])
+    updated = '\n\n'.join(function(candidate, n) for n in
+        ['darwin_raw_range_compare', 'darwin_raw_range_hash', 'darwin_deduplicate_submit_ranges', *shared_names])
     for name in shared_names[:-1]:
         assert function(baseline, name) == function(candidate, name), name
     fixture = (ROOT/'tools/fixtures/nabu_turnip_range_dedup.cpp').read_text(encoding='utf-8')
@@ -56,12 +60,13 @@ def main():
     cleanup = function(baseline, 'darwin_submit_finish')
     fixture = fixture.replace('/* ACTUAL_LOOKUP */', lookup)
     fixture = fixture.replace('/* ACTUAL_BASELINE */', previous)
+    fixture = fixture.replace('/* ACTUAL_QSORT */', sorted_previous)
     fixture = fixture.replace('/* ACTUAL_CANDIDATE */', updated)
     fixture = fixture.replace('/* ACTUAL_CLEANUP */', cleanup)
     target = output/'actual-collector.cpp'; target.write_text(fixture, encoding='utf-8', newline='\n')
     report = dict(result='running', source=str(args.source.resolve()),
-        input_already_patched=supplied_candidate, actual_source_functions=shared_names +
-        ['darwin_raw_range_compare','darwin_deduplicate_submit_ranges','darwin_lookup_bo_locked','darwin_submit_finish'],
+        input_already_patched=supplied_candidate, compared_algorithms=['original','qsort_all','hash_then_sort_unique'], actual_source_functions=shared_names +
+        ['darwin_raw_range_compare','darwin_raw_range_hash','darwin_deduplicate_submit_ranges','darwin_lookup_bo_locked','darwin_submit_finish'],
         adapter_scope='Minimal byte dynarray, balanced BO index, native pthread mutex, BO refcount and diagnostic transport only',
         commands=[])
     def run(command, label):

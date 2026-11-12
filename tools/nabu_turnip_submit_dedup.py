@@ -94,8 +94,65 @@ public:
 };
 '''
 
+HASH_DEDUP_SOURCE=DEDUP_SOURCE[:DEDUP_SOURCE.index('static uint32_t\ndarwin_deduplicate')] + r'''
+static uint64_t
+darwin_raw_range_hash(const struct tu_resource_range *range)
+{
+   uint64_t hash = range->iova ^ (range->size * UINT64_C(0x9e3779b97f4a7c15)) ^
+                   ((uint64_t)range->access * UINT64_C(0xbf58476d1ce4e5b9));
+   hash = (hash ^ (hash >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+   hash = (hash ^ (hash >> 27)) * UINT64_C(0x94d049bb133111eb);
+   return hash ^ (hash >> 31);
+}
 
-def apply_range_dedup(source: str,reverse: bool=False) -> str:
+static VkResult
+darwin_deduplicate_submit_ranges(struct tu_darwin_queue_submit *submit, uint32_t *unique_out)
+{
+   NabuTurnipSubmitSpan nabu_dedup(51, 52, submit, 0);
+   const uint32_t count = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);
+   *unique_out = count;
+   if (count < 2)
+      return VK_SUCCESS;
+
+   /* The dynarray byte size bounds count. Keep at most 50% load even when every
+    * range differs. Slots hold compacted indices plus one; equality always
+    * checks all three fields, so hash collisions cannot remove distinct ranges. */
+   size_t capacity = 1;
+   while (capacity < (size_t)count * 2)
+      capacity *= 2;
+   uint32_t *slots = (uint32_t *)calloc(capacity, sizeof(*slots));
+   if (!slots)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   struct tu_resource_range *ranges = (struct tu_resource_range *)submit->ranges.data;
+   uint32_t unique = 0;
+   for (uint32_t at = 0; at < count; at++) {
+      const struct tu_resource_range value = ranges[at];
+      size_t slot = darwin_raw_range_hash(&value) & (capacity - 1);
+      while (slots[slot]) {
+         const struct tu_resource_range *previous = &ranges[slots[slot] - 1];
+         if (previous->iova == value.iova && previous->size == value.size &&
+             previous->access == value.access)
+            break;
+         slot = (slot + 1) & (capacity - 1);
+      }
+      if (slots[slot])
+         continue;
+      ranges[unique] = value;
+      slots[slot] = ++unique;
+   }
+   free(slots);
+   /* Preserve GPU231's BO resolution order, sorting only the unique triples. */
+   qsort(ranges, unique, sizeof(*ranges), darwin_raw_range_compare);
+   submit->ranges.size = unique * sizeof(*ranges);
+   *unique_out = unique;
+   return VK_SUCCESS;
+}
+'''
+
+
+def apply_range_dedup(source: str,reverse: bool=False,algorithm: str='hash') -> str:
+    assert algorithm in ('hash','qsort')
     def replace(old,new):
         nonlocal source
         if reverse:
@@ -105,7 +162,8 @@ def apply_range_dedup(source: str,reverse: bool=False) -> str:
         source=source.replace(old,new,1)
     replace('#include <unistd.h>','#include <unistd.h>\n#include <time.h>')
     replace("/* 'NTNL':",TRACE_SOURCE+"\n/* 'NTNL':")
-    replace('static VkResult\ndarwin_collect_submit_resources(',DEDUP_SOURCE+'\nstatic VkResult\ndarwin_collect_submit_resources(')
+    dedup_source=HASH_DEDUP_SOURCE if algorithm=='hash' else DEDUP_SOURCE
+    replace('static VkResult\ndarwin_collect_submit_resources(',dedup_source+'\nstatic VkResult\ndarwin_collect_submit_resources(')
     replace('   struct darwin_retire_state *retire = (struct darwin_retire_state *)dev->darwin_retire;\n   uint16_t object_indices[DARWIN_NATIVE_BO_LIMIT + 1] = {};',
         '   NabuTurnipSubmitSpan nabu_collect(44, 45, submit, 0);\n'
         '   struct darwin_retire_state *retire = (struct darwin_retire_state *)dev->darwin_retire;\n'
@@ -114,7 +172,13 @@ def apply_range_dedup(source: str,reverse: bool=False) -> str:
         '   VkResult result = VK_SUCCESS;\n'
         '   const uint32_t raw_ranges = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);\n'
         '   pthread_mutex_lock(&retire->lock);\n'
-        '   const uint32_t unique_ranges = darwin_deduplicate_submit_ranges(submit);\n'
+        + ('   uint32_t unique_ranges = raw_ranges;\n'
+           '   result = darwin_deduplicate_submit_ranges(submit, &unique_ranges);\n'
+           '   if (result != VK_SUCCESS) {\n'
+           '      pthread_mutex_unlock(&retire->lock);\n'
+           '      return result;\n'
+           '   }\n' if algorithm=='hash' else
+           '   const uint32_t unique_ranges = darwin_deduplicate_submit_ranges(submit);\n') +
         '   util_dynarray_foreach (&submit->ranges, struct tu_resource_range, range) {')
     replace('   pthread_mutex_unlock(&retire->lock);\n   if (result != VK_SUCCESS)\n      return result;\n\n   NativeAdrenoAbiSubmitResourceV2 *ranges =',
         '   pthread_mutex_unlock(&retire->lock);\n'
@@ -150,10 +214,10 @@ def stage_submit_range_dedup(root: Path,work: Path):
     pins['patches'].append(rel)
     path.write_text(json.dumps(pins,indent=2)+'\n',encoding='utf-8',newline='\n')
     return dict(patch=rel,source='src/freedreno/vulkan/tu_knl_darwin.cc',
-        exact_raw_range_dedup=True,merge_key=['iova','size','access'],
+        exact_raw_range_dedup=True,algorithm='hash exact triples, then sort unique ranges',merge_key=['iova','size','access'],
         bounds='one submission only, under existing retirement lock before BO lookup; native overlap merge unchanged',
         trace_environment='NABU_METAL_SUBMIT_TRACE=1',event=127,
-        spans={44:'collect enter',45:'collect leave',46:'native IOKit submit enter',47:'native IOKit submit leave'},
+        spans={44:'collect enter',45:'collect leave',46:'native IOKit submit enter',47:'native IOKit submit leave',51:'dedup enter',52:'dedup leave'},
         span_identity='live tu_darwin_queue_submit pointer; link only within same PID/thread containing runtime group submit',
         span_b='logical queue ID for46/47, zero for44/45',span_c='thread CPU ns',
         metadata={48:'b=validated successful completion,c=logical queue',49:'b=raw ranges including IB,c=unique exact triples',50:'b=IOKit status,c=reply output size'})

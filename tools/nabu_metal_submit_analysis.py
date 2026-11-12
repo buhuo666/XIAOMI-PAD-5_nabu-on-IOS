@@ -20,6 +20,7 @@ PHASES = {
     42: ('runtime_scheduler_commit', 43),
     44: ('driver_collect_resources', 45),
     46: ('driver_native_submit', 47),
+    51: ('driver_range_dedup', 52),
 }
 
 
@@ -175,7 +176,7 @@ def analyze_extended_phases(users, wrappers):
     return dict(marker_count=len(markers),diagnostics=dict(diagnostics),calls=calls,
         by_phase={name:summary([c for c in calls if c['phase']==name]) for name,_ in PHASES.values()},
         commands=command_records,runtime_identity_edge_count=sum(map(len,mappings.values())),
-        driver_calls=[c for c in calls if c['stage'] in (44,46)],
+        driver_calls=[c for c in calls if c['stage'] in (44,46,51)],
         driver_metadata=[r for r in markers if r['a'] in (48,49,50)],
         ca_parents=parents,ca_parent_metrics=parent_metrics,
         limits='Event127 CPU comes from payload c on the same PID/thread, not the kernel CPU side record. '

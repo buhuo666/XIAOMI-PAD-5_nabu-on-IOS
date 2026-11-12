@@ -1,6 +1,7 @@
 """Check cross-thread callbacks, nested flushes, reused objects and partial windows."""
 import json
 from analyze_nabu_ca_trace import analyze
+from nabu_metal_submit_analysis import interval_union_ms
 
 
 def check():
@@ -43,6 +44,8 @@ def check():
     phase(560,37,identity=0xabc,pointer=0,thread=9,cpu=1100000)
     phase(580,33,identity=0xabc,pointer=0,thread=9,cpu=1101000)
     phase(400,44,identity=0xddd,pointer=0,thread=9)
+    phase(402,51,identity=0xddd,pointer=0,thread=9)
+    phase(407,52,identity=0xddd,pointer=0,thread=9,cpu=1003000)
     phase(410,49,identity=0xddd,pointer=400,thread=9,cpu=20)
     phase(420,45,identity=0xddd,pointer=0,thread=9,cpu=1005000)
     phase(430,46,identity=0xddd,pointer=3,thread=9)
@@ -66,7 +69,9 @@ def check():
     assert callback['cpu_ms']==.005 and callback['thread']==8
     assert r['diagnostics']['cpu_unavailable']==1
     assert r['runtime_identity_edge_count']==2 and r['diagnostics']['runtime_calls_unattributed']==0
-    assert len(r['driver_calls'])==2 and len(r['driver_metadata'])==3
+    assert len(r['driver_calls'])==3 and len(r['driver_metadata'])==3
+    assert r['by_phase']['driver_range_dedup']['duration_ms']['mean_ms']==.005
+    assert interval_union_ms(r['driver_calls'])==.03 # Nested dedup is not added twice.
     linked={c['commit']:c for c in r['commands'] if c['pid']==42}
     assert len(linked[9]['runtime_calls'])==3 and len(linked[10]['runtime_calls'])==1
     assert linked[9]['runtime_identity']==linked[10]['runtime_identity']==0xabc

@@ -65,7 +65,7 @@ diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl
  
  /* 'NTNL': first word of a tunnelled call, as served by the driver (NativeAdrenoPublish.cpp). */
  #define DW_TUNNEL_MAGIC 0x4e544e4cu
-@@ -2221,10 +2271,48 @@
+@@ -2221,10 +2271,83 @@
     return VK_SUCCESS;
  }
  
@@ -86,24 +86,59 @@ diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl
 +   return a->access < b->access ? -1 : a->access > b->access;
 +}
 +
-+static uint32_t
-+darwin_deduplicate_submit_ranges(struct tu_darwin_queue_submit *submit)
++
++static uint64_t
++darwin_raw_range_hash(const struct tu_resource_range *range)
 +{
++   uint64_t hash = range->iova ^ (range->size * UINT64_C(0x9e3779b97f4a7c15)) ^
++                   ((uint64_t)range->access * UINT64_C(0xbf58476d1ce4e5b9));
++   hash = (hash ^ (hash >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
++   hash = (hash ^ (hash >> 27)) * UINT64_C(0x94d049bb133111eb);
++   return hash ^ (hash >> 31);
++}
++
++static VkResult
++darwin_deduplicate_submit_ranges(struct tu_darwin_queue_submit *submit, uint32_t *unique_out)
++{
++   NabuTurnipSubmitSpan nabu_dedup(51, 52, submit, 0);
 +   const uint32_t count = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);
++   *unique_out = count;
 +   if (count < 2)
-+      return count;
++      return VK_SUCCESS;
++
++   /* The dynarray byte size bounds count. Keep at most 50% load even when every
++    * range differs. Slots hold compacted indices plus one; equality always
++    * checks all three fields, so hash collisions cannot remove distinct ranges. */
++   size_t capacity = 1;
++   while (capacity < (size_t)count * 2)
++      capacity *= 2;
++   uint32_t *slots = (uint32_t *)calloc(capacity, sizeof(*slots));
++   if (!slots)
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
++
 +   struct tu_resource_range *ranges = (struct tu_resource_range *)submit->ranges.data;
-+   qsort(ranges, count, sizeof(*ranges), darwin_raw_range_compare);
-+   uint32_t unique = 1;
-+   for (uint32_t at = 1; at < count; at++) {
-+      const struct tu_resource_range *previous = &ranges[unique - 1];
-+      if (previous->iova == ranges[at].iova && previous->size == ranges[at].size &&
-+          previous->access == ranges[at].access)
++   uint32_t unique = 0;
++   for (uint32_t at = 0; at < count; at++) {
++      const struct tu_resource_range value = ranges[at];
++      size_t slot = darwin_raw_range_hash(&value) & (capacity - 1);
++      while (slots[slot]) {
++         const struct tu_resource_range *previous = &ranges[slots[slot] - 1];
++         if (previous->iova == value.iova && previous->size == value.size &&
++             previous->access == value.access)
++            break;
++         slot = (slot + 1) & (capacity - 1);
++      }
++      if (slots[slot])
 +         continue;
-+      ranges[unique++] = ranges[at];
++      ranges[unique] = value;
++      slots[slot] = ++unique;
 +   }
++   free(slots);
++   /* Preserve GPU231's BO resolution order, sorting only the unique triples. */
++   qsort(ranges, unique, sizeof(*ranges), darwin_raw_range_compare);
 +   submit->ranges.size = unique * sizeof(*ranges);
-+   return unique;
++   *unique_out = unique;
++   return VK_SUCCESS;
 +}
 +
  static VkResult
@@ -114,17 +149,22 @@ diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl
     struct darwin_retire_state *retire = (struct darwin_retire_state *)dev->darwin_retire;
     uint16_t object_indices[DARWIN_NATIVE_BO_LIMIT + 1] = {};
  
-@@ -2238,7 +2326,9 @@
+@@ -2238,7 +2361,14 @@
     }
  
     VkResult result = VK_SUCCESS;
 +   const uint32_t raw_ranges = util_dynarray_num_elements(&submit->ranges, struct tu_resource_range);
     pthread_mutex_lock(&retire->lock);
-+   const uint32_t unique_ranges = darwin_deduplicate_submit_ranges(submit);
++   uint32_t unique_ranges = raw_ranges;
++   result = darwin_deduplicate_submit_ranges(submit, &unique_ranges);
++   if (result != VK_SUCCESS) {
++      pthread_mutex_unlock(&retire->lock);
++      return result;
++   }
     util_dynarray_foreach (&submit->ranges, struct tu_resource_range, range) {
        if (!range->iova || !range->size)
           continue;
-@@ -2282,6 +2372,7 @@
+@@ -2282,6 +2412,7 @@
        }
     }
     pthread_mutex_unlock(&retire->lock);
@@ -132,7 +172,7 @@ diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl
     if (result != VK_SUCCESS)
        return result;
  
-@@ -2823,16 +2914,21 @@
+@@ -2823,16 +2954,21 @@
     for (;;) {
        NativeAdrenoAbiSubmitV2Reply reply = {};
        size_t output_size = sizeof(reply);

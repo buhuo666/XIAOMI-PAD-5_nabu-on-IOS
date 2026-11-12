@@ -93,13 +93,32 @@ struct NabuTurnipSubmitSpan {
     NabuTurnipSubmitSpan(uint64_t, uint64_t, const void *, uint64_t) {}
 };
 static void nabuTurnipSubmitMarker(uintptr_t, uint64_t, uint64_t, uint64_t) {}
+static unsigned scratch_live;
+static void *collector_calloc(size_t count,size_t bytes) {
+    grows++;
+    if (allocation_fail_after == 0) return nullptr;
+    if (allocation_fail_after > 0) allocation_fail_after--;
+    void *p=std::calloc(count,bytes);
+    if (p) scratch_live++;
+    return p;
+}
+static void collector_free(void *p) {
+    assert(p && scratch_live); scratch_live--; std::free(p);
+}
 
 namespace before {
 /* ACTUAL_BASELINE */
 }
+namespace sorted {
+/* ACTUAL_QSORT */
+}
+#define calloc collector_calloc
+#define free collector_free
 namespace after {
 /* ACTUAL_CANDIDATE */
 }
+#undef free
+#undef calloc
 
 /* ACTUAL_CLEANUP */
 
@@ -170,6 +189,7 @@ static Observation run(const Fixture &f,Collector collect,int fail=-1) {
     allocation_fail_after=fail;
     VkResult result=collect(d.dev.get(),submit,f.legacy);
     allocation_fail_after=-1;
+    assert(scratch_live==0);
     assert(pthread_mutex_trylock(&d.retire->lock) == 0);
     assert(pthread_mutex_unlock(&d.retire->lock) == 0);
     Observation o{result,submit->fallback_reasons,{},{},range_lookups,references,grows,
@@ -225,7 +245,30 @@ static void semantic() {
         {"reused IOVA gem original",{{1,0x1000,0x1000,1}},{{0x1100,64,1},{0x1100,64,1}},{}},
         {"reused IOVA gem new handle",{{0x900000001ULL,0x1000,0x1000,1}},{{0x1100,64,1},{0x1100,64,1}},{}},
     };
-    for (const auto &f:cases) same(run(f,before::darwin_collect_submit_resources),run(f,after::darwin_collect_submit_resources));
+    Fixture collisions{"hash collisions",{{7,0x100000,0x100000,1}},{},{}};
+    for (uint64_t offset=0;collisions.ranges.size()<80;offset+=8) {
+        tu_resource_range r{0x100000+offset,8,1};
+        if ((after::darwin_raw_range_hash(&r)&255)!=0) continue;
+        assert(offset+8<=0x100000);
+        collisions.ranges.push_back(r); collisions.ranges.push_back(r);
+    }
+    cases.push_back(collisions);
+    uint32_t random=0x12345678;
+    for (unsigned run=0;run<32;run++) {
+        Fixture f{"random overlaps, permissions and duplicates",bos,{},{}};
+        for (unsigned n=0;n<250;n++) {
+            random=random*1664525U+1013904223U;
+            tu_resource_range r{0x1000+(random&0x7ff0),16+((random>>16)&0xff), (random>>24)&3U};
+            f.ranges.push_back(r);
+            if (random&1) f.ranges.push_back(r);
+        }
+        cases.push_back(f);
+    }
+    for (const auto &f:cases) {
+        auto original=run(f,before::darwin_collect_submit_resources);
+        same(original,run(f,sorted::darwin_collect_submit_resources));
+        same(original,run(f,after::darwin_collect_submit_resources));
+    }
     auto adjacent=run(cases[3],after::darwin_collect_submit_resources);
     assert(adjacent.native==std::vector<Native>({{0x100000001ULL,0xf00,256,1},{0x200000002ULL,0,256,1}}));
     assert(adjacent.handles==std::vector<uint64_t>({0x100000001ULL,0x200000002ULL}));
@@ -240,7 +283,7 @@ static void semantic() {
     const Fixture failure{"allocation cleanup",bos,{{0x1100,64,1},{0x2100,64,3},{0x8000,64,1}},
         {{0x100000001ULL,0x1100,64},{0x200000002ULL,0x2100,64}}};
     unsigned failures=0;
-    for (auto collector:{before::darwin_collect_submit_resources,after::darwin_collect_submit_resources}) {
+    for (auto collector:{before::darwin_collect_submit_resources,sorted::darwin_collect_submit_resources,after::darwin_collect_submit_resources}) {
         auto complete=run(failure,collector);
         for (unsigned at=0;at<complete.allocations;at++) {
             auto failed=run(failure,collector,int(at));
@@ -251,11 +294,14 @@ static void semantic() {
     for (unsigned repeat:{1U,32U,128U}) {
         auto f=workload(584,repeat);
         auto a=run(f,before::darwin_collect_submit_resources),b=run(f,after::darwin_collect_submit_resources);
+        same(a,run(f,sorted::darwin_collect_submit_resources));
         same(a,b); assert(a.lookups==584ULL*repeat && b.lookups==584);
         assert(a.native.size()==584 && b.native.size()==584);
     }
+    auto limit=workload(4096,2);
+    same(run(limit,before::darwin_collect_submit_resources),run(limit,after::darwin_collect_submit_resources));
     std::printf("{\"passed\":true,\"semantic_cases\":%zu,\"failure_cleanup_cases\":%u,"
-        "\"workloads\":3,\"actual_lookup\":true,\"native_ranges_equal\":true,\"references_balanced\":true}\n",cases.size(),failures);
+        "\"workloads\":4,\"hash_collision_chain\":40,\"actual_lookup\":true,\"native_ranges_equal\":true,\"references_balanced\":true}\n",cases.size(),failures);
 }
 static double benchmark_one(const Fixture &f,Collector collect,unsigned iterations) {
     Device d(f.bos);
@@ -277,22 +323,23 @@ static void benchmark() {
     for (unsigned repeat:{1U,32U,128U}) {
         auto f=workload(584,repeat);
         auto a=run(f,before::darwin_collect_submit_resources),b=run(f,after::darwin_collect_submit_resources); same(a,b);
-        std::vector<double> old,newer;
+        std::vector<double> original,old,newer;
         for (unsigned round=0;round<5;round++) {
+            original.push_back(benchmark_one(f,before::darwin_collect_submit_resources,12));
             if (round&1) {
                 newer.push_back(benchmark_one(f,after::darwin_collect_submit_resources,12));
-                old.push_back(benchmark_one(f,before::darwin_collect_submit_resources,12));
+                old.push_back(benchmark_one(f,sorted::darwin_collect_submit_resources,12));
             } else {
-                old.push_back(benchmark_one(f,before::darwin_collect_submit_resources,12));
+                old.push_back(benchmark_one(f,sorted::darwin_collect_submit_resources,12));
                 newer.push_back(benchmark_one(f,after::darwin_collect_submit_resources,12));
             }
         }
-        std::sort(old.begin(),old.end()); std::sort(newer.begin(),newer.end());
+        std::sort(original.begin(),original.end()); std::sort(old.begin(),old.end()); std::sort(newer.begin(),newer.end());
         std::printf("%s{\"distinct\":584,\"repetitions\":%u,\"raw_ranges\":%zu,"
-            "\"old_lookups\":%llu,\"new_lookups\":%llu,\"old_median_ms\":%.6f,"
-            "\"new_median_ms\":%.6f,\"old_max_ms\":%.6f,\"new_max_ms\":%.6f,\"speedup\":%.4f}",
+            "\"original_lookups\":%llu,\"new_lookups\":%llu,\"qsort_median_ms\":%.6f,"
+            "\"new_median_ms\":%.6f,\"old_max_ms\":%.6f,\"new_max_ms\":%.6f,\"speedup\":%.4f,\"original_median_ms\":%.6f}",
             first?"":",",repeat,f.ranges.size(),(unsigned long long)a.lookups,(unsigned long long)b.lookups,
-            old[2],newer[2],old.back(),newer.back(),old[2]/newer[2]); first=false;
+            old[2],newer[2],old.back(),newer.back(),old[2]/newer[2],original[2]); first=false;
     }
     std::puts("]}");
 }
