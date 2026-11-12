@@ -51,6 +51,20 @@ def check():
     assert not ambiguous['complete_record_stream']
     assert ambiguous['app']['frames'][0]['dpu_transaction'] is None
     assert ambiguous['diagnostics']['app_dpu_unmatched_or_ambiguous']==1
+    # A recorded scene end, rather than an arbitrary timeout, bounds the final
+    # drawable. Later menu redraws must not make a unique scene output ambiguous.
+    rows.remove(rows[-1])
+    marker(28200,89,8,0,101,0,0)
+    menu=r(28300,32,45,36)
+    assert analyze(rows,metadata)['app']['frames'][0]['dpu_transaction']==44
+    menu['time_us']=28116
+    assert analyze(rows,metadata)['app']['frames'][0]['dpu_transaction'] is None
+    menu['time_us']=28300
+    for item in rows:
+        if item['event']==80 and item['identity']==8:item['a']=43
+    assert analyze(rows,metadata)['app']['frames'][0]['dpu_transaction'] is None
+    for item in rows:
+        if item['event']==80 and item['identity']==8:item['a']=42
     marker(1000,98,1000,0xa,0xb,99,0xc)
     marker(1010,99,1001,0xa,0xb,99,0)
     marker(7010,100,1002,0xa,0xb,99,0xc)

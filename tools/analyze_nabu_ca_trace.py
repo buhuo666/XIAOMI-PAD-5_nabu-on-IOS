@@ -248,6 +248,9 @@ def analyze(rows, metadata):
                            acquire_ms=delta(stages.get(83),acquired),
                            submit_to_completion_ms=delta(stages.get(85),stages.get(87))))
     frame_times=defaultdict(list);present_index=defaultdict(list);dpu_index=defaultdict(list);update_client_index=defaultdict(list)
+    run_ends=defaultdict(list)
+    for r in users:
+        if r['event']==89:run_ends[(r['pid'],r['identity'])].append(r)
     for f in frames:frame_times[(f['pid'],f['surface_id'])].append(f['stages'][84]['time_us'])
     for values in frame_times.values():values.sort()
     for p in wrappers:
@@ -264,6 +267,14 @@ def analyze(rows, metadata):
         stages=frame['stages'];acquired=stages[84];end=metadata['end_us']
         times=frame_times[(frame['pid'],frame['surface_id'])];at=bisect_right(times,acquired['time_us'])
         if at<len(times):end=times[at]
+        # FrameBench's existing end marker precedes showing its controls. The
+        # last drawable has no later acquisition, so do not mix its scene with
+        # subsequent menu redraws of the retained surface. This never changes
+        # the measurement start or picks the nearest of ambiguous scene swaps.
+        endings=run_ends.get((frame['pid'],frame['frame_id']>>32),[])
+        scene_end=endings[0] if len(endings)==1 else None
+        if scene_end and scene_end['a']>(frame['frame_id']&0xffffffff) and scene_end['time_us']>acquired['time_us']:
+            end=min(end,scene_end['time_us'])
         present=[p for p in present_index.get((frame['pid'],frame['drawable_id'],frame['surface_id'],frame['drawable_pointer']),[])
                  if acquired['time_us']<=p['begin']['time_us']<end]
         times=dpu_times.get(frame['surface_id'],[])
@@ -276,7 +287,8 @@ def analyze(rows, metadata):
                      completion_to_dpu_ms=delta(stages.get(87),d),
                      dpu_transaction=d['identity'] if d else None,
                      dpu_present_us=d['time_us'] if d else None,
-                     association='same surface, unique interval before reacquisition; no cross-layer frame ID')
+                     association_end_us=end,
+                     association='same surface, unique interval before reacquisition or recorded scene end; no cross-layer frame ID')
         # IPC captures PID but not sender TID: synchronous UpdateClient messages inside this
         # call form a candidate set, without claiming thread causality.
         times=update_client_times.get(frame['pid'],[])
