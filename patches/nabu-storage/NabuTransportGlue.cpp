@@ -128,7 +128,7 @@ extern "C" int nabu_storage_read(unsigned window,uint64_t offset,void *out,uint6
 extern "C" int nabu_storage_write(unsigned window,uint64_t offset,const void *data,uint64_t bytes)
 {
   if (!nabu_storage_writable(window)) return EROFS;
-  if ((bytes && !data) || !nabuStorageRange(NABU_DATA_BYTES,offset,bytes)) return EINVAL;
+  if ((bytes && !data) || !nabuStorageRange(gNabuCapacity.dataBytes,offset,bytes)) return EINVAL;
   IOLockLock(gNabuReadLock);
   const uint8_t *src=static_cast<const uint8_t *>(data);
   int error=0;
