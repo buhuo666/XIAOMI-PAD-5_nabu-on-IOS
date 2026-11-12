@@ -24,13 +24,15 @@ static thread_local uint64_t wall=100,cpu=1000000,tid=101;
 static std::atomic<unsigned> clocks{0};
 static uint64_t nowUs(){++clocks;errno=EINVAL;return wall;}
 static int sampleCpu(clockid_t,struct timespec *value){++clocks;value->tv_sec=cpu/1000000000;value->tv_nsec=cpu%1000000000;errno=EINVAL;return 0;}
-static int pthread_threadid_np(void *,uint64_t *value){*value=tid;errno=EINVAL;return 0;}
+static int sampleThread(void *,uint64_t *value){*value=tid;errno=EINVAL;return 0;}
 struct Row{uint64_t id,stage,b,c;};
 static std::vector<Row> rows;
 static void nabu_ca_trace_marker(uint32_t event,uint64_t id,uint64_t stage,uint64_t b,uint64_t c){assert(event==127);rows.push_back({id,stage,b,c});errno=EINVAL;}
 #define clock_gettime sampleCpu
+#define pthread_threadid_np sampleThread
 #include "NativeMetalEncodeProfile.inc"
 #undef clock_gettime
+#undef pthread_threadid_np
 static unsigned originals;
 static bool encode(NabuMetalEncodeStats &stats,bool result){
  NabuMetalEncodeScope observation(stats,NabuEncodeDraw);
