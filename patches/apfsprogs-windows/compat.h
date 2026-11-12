@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/types.h>
+typedef int64_t loff_t;
 #ifndef S_IFLNK
 #define S_IFLNK 0120000
 #endif
