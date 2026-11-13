@@ -10,12 +10,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, required=True)
     parser.add_argument('--trial', required=True)
+    parser.add_argument('--profile-details', action='store_true',
+                        help='Use the common cohort with complete encoding and GPU-stage profiles')
     args = parser.parse_args()
     folder = args.input
     frames = json.loads((folder / 'os-chain-evidence-frames.json').read_text())
     runtime = {r['swap']: r for r in json.loads((folder / 'runtime-wait-writer-frames.json').read_text())}
     driver = {r['swap']: r for r in json.loads((folder / 'driver-spans-frames.json').read_text())}
     frames = [f for f in frames if f['swap'] in runtime and f['swap'] in driver and len(f['writers']) == 1]
+    input_frame_count = len(frames)
+    if args.profile_details:
+        encoding = {p['swap']: p for p in json.loads((folder / 'encode-profile-frames.json').read_text())
+                    if all(c['exact_output_region'] in ('render', 'finish', 'empty')
+                           and (not c['calls'] or c['cpu_ms'] is not None) for c in p['categories'])}
+        gpu_profiles = {p['swap']: p for p in json.loads((folder / 'gpu-stage-frames.json').read_text())
+                        if p['swap'] is not None}
+        frames = [f for f in frames if f['swap'] in encoding and f['swap'] in gpu_profiles]
     runtimes = [runtime[f['swap']] for f in frames]
     drivers = [driver[f['swap']] for f in frames]
     writers = [f['writers'][0] for f in frames]
@@ -60,6 +70,18 @@ def main():
         '墙钟时间，含下面三项', '需对照 8.333ms 预算', '可优化', 'nested')
     add('1.2a 其中调用线程 CPU 时间', frames, 'render_region_cpu_ms',
         '线程实际执行合成与编码的时间，已包含在上级', '需对照帧预算', '继续缩短合成与编码', 'nested')
+    if args.profile_details:
+        encode_frames = [encoding[f['swap']] for f in frames]
+        categories = ('创建渲染编码器', '结束编码', '绘制调用', '绑定资源',
+                      '绑定管线', '资源使用与同步', '计算派发', '设置渲染状态')
+        for index, label in enumerate(categories):
+            add(f'1.2a.{index + 1} {label} CPU', encode_frames,
+                lambda p, i=index: p['categories'][i]['cpu_ms'] if p['categories'][i]['exact_output_region'] == 'render' else 0,
+                '本帧同线程且完整落在 CA 渲染区间内的分类汇总', '需对照帧预算',
+                '按调用次数及单次成本优化', 'nested')
+        add('1.2a.9 分类以外 CPU', encode_frames, 'render_outside_profile_cpu_ms',
+            '未覆盖的合成调用及计时开销；时钟取样可产生微小有符号残差',
+            '需对照帧预算', '继续拆分未覆盖调用', 'nested')
     add('1.2.1 Metal 上下文资源回收', frames, 'metal_collect_ms',
         '原生上下文 collect 调用', '通常较小', '低优先级', 'nested')
     add('1.2.2 获取当前命令缓冲', frames, 'metal_buffer_current_ms',
@@ -118,8 +140,25 @@ def main():
         '硬件时间戳，含执行/同步/背压', '超过 8.333ms 的任务会限制供给', '优先绘制/复制等实际工作', 'parallel')
     add('G3 GPU 完成 → 生产就绪通知', writers, 'gpu_completed_to_producer_ready_ms',
         '完成后的 worker 调度及通知', '均值较小，需看长尾', '查唤醒长尾', 'parallel')
-    unknown('G2.1 子项：render pass / 复制 / 清图',
-            '本轮关闭 Mesa 阶段采样，不混用其他轮数值', '后续有同轮数据时继续展开')
+    if args.profile_details:
+        gpu_frames = [gpu_profiles[f['swap']] for f in frames]
+        labels = {'render_pass': ('绘制 pass', '绘制及附件读写', '减少绘制与附件搬运'),
+                  'copy_buffer_to_image': ('buffer → image', '将缓冲内容搬入图像', '结合复制来源减少搬运'),
+                  'copy_image_to_buffer': ('image → buffer', '将图像内容搬入缓冲', '结合复制来源减少搬运'),
+                  'copy_buffer': ('buffer → buffer', '缓冲复制', '结合复制来源减少搬运'),
+                  'copy_image': ('image → image', '图像复制', '核对复制范围与次数'),
+                  'clear_image': ('清图', '初始化图像内容', '核对清图范围与次数'),
+                  'compute': ('计算派发', '计算着色器执行', '查派发工作量'),
+                  'cache_flush': ('独立缓存同步', '绘制 pass 外的缓存同步', '核对同步成本'),
+                  'outside_stage_markers': ('阶段标记以外', '未覆盖操作和采样开销', '拆分未覆盖时间')}
+        names = sorted({name for p in gpu_frames for name in p['phases_ms']})
+        for index, name in enumerate(names):
+            label, reason, optimization = labels.get(name, (name, '同任务中的直接 GPU 阶段', '检查该阶段工作量'))
+            add(f'G2.1.{index + 1} {label}', gpu_frames, lambda p, n=name: p['phases_ms'].get(n, 0),
+                reason, '需对照帧预算', optimization, 'parallel')
+    else:
+        unknown('G2.1 子项：render pass / 复制 / 清图',
+                '本轮未启用同帧 GPU 阶段明细，不混用其他轮数值', '后续有同轮数据时继续展开')
 
     origin_note = ''
     slowest = max(drivers, key=lambda d: d['native_ioctl_ms'])
@@ -154,6 +193,10 @@ def main():
     intro = (f'同一批 {len(frames)} 个完整关联输出，单位 ms。起点为 CA 开始，末端为 DPU 硬件接受。\n\n'
              '第 1～8 项构成顺序主线；小数编号为上级已包含的子项。G 为并行 GPU 支路，'
              '与主线等待重叠，不能重复相加。各行极值未必来自同一帧。\n\n')
+    if args.profile_details:
+        intro += (f'原有 {input_frame_count} 个关联输出中，选择 CPU 分类和 GPU 阶段均完整的共同样本。'
+                  'CPU 分类仅计入同线程、完整位于本帧渲染区间的调用；GPU 子项按非嵌套阶段划分。'
+                  '采样本身增加开销，本表用于定位工作来源。\n\n')
     lines = [f'# {title}\n\n', intro,
              '| 阶段 | 最大 | 最小 | 平均 | 原因 | 是否合理 | 能否优化 |\n',
              '| --- | ---: | ---: | ---: | --- | --- | --- |\n']
