@@ -14,7 +14,7 @@
 
 本次最长IOKit提交0.930ms、线程CPU0.927ms，不存在前几轮的数十毫秒提交等待。修正报告生成器，不再给所有轮次固定套用“主要是等待”解释。
 
-两次完整表、对比与证据位于log/host/gpu-v245；第二次作为主报告。GPU245仍在iPadOS，持久化槽1未回收，替换前先回收。后续复制来源调查见log/host/gpu-v245/next-gpu-investigation.md，未部署新诊断。
+两次完整表、对比与证据位于log/host/gpu-v245；第二次作为主报告。GPU245持久化日志已回收13,402,282字节及完整64MiB槽，清槽读回通过；383条温度记录最高72.6°C，thermal均为0。设备已回到Android USB。后续复制来源调查见log/host/gpu-v245/next-gpu-investigation.md，未部署新诊断。
 
 # GPU244 / GPU245 同配置滑动观测对比
 
