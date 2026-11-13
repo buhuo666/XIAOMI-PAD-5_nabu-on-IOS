@@ -1,3 +1,4 @@
+diff --git a/src/freedreno/vulkan/tu_cs.cc b/src/freedreno/vulkan/tu_cs.cc
 --- a/src/freedreno/vulkan/tu_cs.cc
 +++ b/src/freedreno/vulkan/tu_cs.cc
 @@ -22,22 +22,9 @@
@@ -41,6 +42,7 @@
  
     if (cs->mode == TU_CS_MODE_EXTERNAL) {
        assert(!cs->read_only.bo_count && !cs->read_write.bo_count &&
+diff --git a/src/freedreno/vulkan/tu_cs.h b/src/freedreno/vulkan/tu_cs.h
 --- a/src/freedreno/vulkan/tu_cs.h
 +++ b/src/freedreno/vulkan/tu_cs.h
 @@ -11,6 +11,7 @@
@@ -59,6 +61,8 @@
  
     /* Optional BO that this CS is sub-allocated from for TU_CS_MODE_SUB_STREAM */
     struct tu_bo *refcount_bo;
+diff --git a/src/freedreno/vulkan/tu_resource_range_index.h b/src/freedreno/vulkan/tu_resource_range_index.h
+new file mode 100644
 --- /dev/null
 +++ b/src/freedreno/vulkan/tu_resource_range_index.h
 @@ -0,0 +1,89 @@
