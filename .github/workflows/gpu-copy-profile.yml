@@ -1,0 +1,53 @@
+name: nabu16 - Metal copy sources and encoding costs
+on:
+  push:
+    branches: [nabu16-bootstrap]
+    paths:
+      - '.github/workflows/gpu-copy-profile.yml'
+      - 'tools/build_nabu_metal_copy_profile.py'
+      - 'tools/nabu_metal_copy_profile.py'
+      - 'tools/check_nabu_metal_copy_profile.py'
+      - 'tools/fixtures/nabu_metal_copy_profile.rs'
+      - 'patches/nabu-metal/0032-nabu-copy-sites.patch'
+      - 'patches/nabu-metal/NativeMetalCopyProfile.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  copy-profile:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fetch pinned runtime and bridge builder
+        run: >-
+          python3 tools/fetch_sources.py --only UniXNU-turnip-reference metal2vulkan
+          --report artifacts/gpu-copy-sources.json
+      - name: Retrieve qualified GPU230 frontend and runtime sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download 43184629696 --name nabu-gpu-submit-3
+          --dir inputs/qualified
+      - name: Install bridge compilers
+        run: |
+          brew install llvm@21
+          rustup toolchain install 1.98.1 --profile minimal --target aarch64-apple-ios
+      - name: Build iOS copy-source and encoding observation frontend
+        run: >-
+          python3 tools/build_nabu_metal_copy_profile.py
+          --input inputs/qualified/nabu-gpu-submit
+          --work build/gpu-copy-profile --output artifacts/nabu-copy-profile
+          --llvm-as "$(brew --prefix llvm@21)/bin/llvm-as"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-copy-profile-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 14
