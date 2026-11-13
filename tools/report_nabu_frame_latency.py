@@ -35,6 +35,11 @@ def main():
 
     def add(stage, data, metric, reason, assessment, optimization, group='main'):
         values = [metric(r) if callable(metric) else r[metric] for r in data]
+        if not values:
+            rows.append(dict(stage=stage, group=group, count=0, min_ms=None, mean_ms=None,
+                             max_ms=None, reason='本窗口没有可关联的新画面',
+                             assessment='未测，不能判断', optimization='需有画面更新的采样'))
+            return
         if assessment in ('主要 CPU 成本', '需对照 8.333ms 预算', '需对照帧预算'):
             assessment = ('偏高' if statistics.mean(values) > 1000 / 120 else
                           '长尾偏高' if max(values) > 1000 / 120 else '在单帧预算内')
@@ -104,7 +109,7 @@ def main():
         f'处理 {raw_ranges:,} 条原始记录，得到 {unique_ranges:,} 条唯一记录',
         '仍可压缩', '可减少跨来源重复', 'nested')
     add('2.1.4.1a 最终范围去重', drivers, 'driver_dedup_ms',
-        f'原始/唯一记录比 {raw_ranges / unique_ranges:.2f}；散列去重后排序',
+        ('原始/唯一记录比 ' + (f'{raw_ranges / unique_ranges:.2f}' if unique_ranges else '未测') + '；散列去重后排序'),
         '仍可压缩', '可进一步减少重复输入', 'nested')
     add('2.1.4.1b 收集中的其余处理', drivers, 'collect_outside_dedup_ms',
         'BO 查找、引用及范围处理', '次要成本', '可进一步优化', 'nested')
@@ -161,9 +166,9 @@ def main():
                 '本轮未启用同帧 GPU 阶段明细，不混用其他轮数值', '后续有同轮数据时继续展开')
 
     origin_note = ''
-    slowest = max(drivers, key=lambda d: d['native_ioctl_ms'])
+    slowest = max(drivers, key=lambda d: d['native_ioctl_ms']) if drivers else None
     for row in rows:
-        if row['stage'] == '2.1.4.2 原生 IOKit 提交':
+        if row['stage'] == '2.1.4.2 原生 IOKit 提交' and slowest is not None:
             wall = slowest['native_ioctl_ms']
             cpu = slowest['native_ioctl_cpu_ms']
             row['reason'] = (f'最长调用墙钟 {wall:.3f}ms、线程 CPU {cpu:.3f}ms；'
@@ -176,7 +181,7 @@ def main():
             else:
                 row['assessment'] = '执行长尾偏高'
                 row['optimization'] = '查调用内实际执行工作'
-    if 'cs_ranges' in drivers[0]:
+    if drivers and 'cs_ranges' in drivers[0]:
         origins = {key: sum(d[key] for d in drivers) for key in
                    ('cs_ranges', 'cmd_ranges', 'descriptor_ranges', 'ib_ranges')}
         total = sum(origins.values())
@@ -193,6 +198,8 @@ def main():
     intro = (f'同一批 {len(frames)} 个完整关联输出，单位 ms。起点为 CA 开始，末端为 DPU 硬件接受。\n\n'
              '第 1～8 项构成顺序主线；小数编号为上级已包含的子项。G 为并行 GPU 支路，'
              '与主线等待重叠，不能重复相加。各行极值未必来自同一帧。\n\n')
+    if not frames:
+        intro += '本窗口没有可用于此表的新画面；未测不代表耗时为零，也不能作为实际出帧率证据。\n\n'
     if args.profile_details:
         intro += (f'原有 {input_frame_count} 个关联输出中，选择 CPU 分类和 GPU 阶段均完整的共同样本。'
                   'CPU 分类仅计入同线程、完整位于本帧渲染区间的调用；GPU 子项按非嵌套阶段划分。'
