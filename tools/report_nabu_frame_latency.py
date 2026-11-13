@@ -19,6 +19,8 @@ def main():
     runtimes = [runtime[f['swap']] for f in frames]
     drivers = [driver[f['swap']] for f in frames]
     writers = [f['writers'][0] for f in frames]
+    raw_ranges = sum(d['raw_ranges'] for d in drivers)
+    unique_ranges = sum(d['unique_ranges'] for d in drivers)
     rows = []
 
     def add(stage, data, metric, reason, assessment, optimization, group='main'):
@@ -56,6 +58,8 @@ def main():
         'begin 包装及前处理', '通常较小', '低优先级', 'nested')
     add('1.2 渲染准备/编码区间', frames, 'render_wall_ms',
         '墙钟时间，含下面三项', '需对照 8.333ms 预算', '可优化', 'nested')
+    add('1.2a 其中调用线程 CPU 时间', frames, 'render_region_cpu_ms',
+        '线程实际执行合成与编码的时间，已包含在上级', '需对照帧预算', '继续缩短合成与编码', 'nested')
     add('1.2.1 Metal 上下文资源回收', frames, 'metal_collect_ms',
         '原生上下文 collect 调用', '通常较小', '低优先级', 'nested')
     add('1.2.2 获取当前命令缓冲', frames, 'metal_buffer_current_ms',
@@ -75,9 +79,11 @@ def main():
     add('2.1.4 驱动组提交', runtimes, 'runtime_group_submit_ms',
         '包含下列驱动步骤', '仍可压缩', '可优化', 'nested')
     add('2.1.4.1 资源收集', drivers, 'driver_collect_ms',
-        '去重并解析实际资源', '重复记录多，偏高', '优先减少重复输入', 'nested')
+        f'处理 {raw_ranges:,} 条原始记录，得到 {unique_ranges:,} 条唯一记录',
+        '仍可压缩', '可减少跨来源重复', 'nested')
     add('2.1.4.1a 最终范围去重', drivers, 'driver_dedup_ms',
-        '散列去重后排序唯一范围', '输入重复导致额外成本', '在来源处减少重复', 'nested')
+        f'原始/唯一记录比 {raw_ranges / unique_ranges:.2f}；散列去重后排序',
+        '仍可压缩', '可进一步减少重复输入', 'nested')
     add('2.1.4.1b 收集中的其余处理', drivers, 'collect_outside_dedup_ms',
         'BO 查找、引用及范围处理', '次要成本', '可进一步优化', 'nested')
     add('2.1.4.2 原生 IOKit 提交', drivers, 'native_ioctl_ms',
@@ -85,7 +91,7 @@ def main():
     add('2.1.4.2a 其中调用线程 CPU 时间', drivers, 'native_ioctl_cpu_ms',
         '仅线程实际运行时间，不另加到上级', '通常较小', '长尾优先查等待/调度', 'nested')
     add('2.1.4.3 组提交其余处理', drivers, 'group_outside_driver_spans_ms',
-        '含提交资源展开等未独立计时步骤', '仍有可见成本', '来源统计后定点优化', 'nested')
+        '含提交资源展开等未独立计时步骤', '仍有可见成本', '可按实测来源继续压缩', 'nested')
     add('2.1.5 批次中的其余处理', runtimes, 'submit_batch_outside_children_ms',
         '不在四个子步骤内的批次处理', '通常较小', '低优先级', 'nested')
     add('3 Swap 入口 → DPU 入口', frames, 'swap_to_dpu_entry_ms',
@@ -119,8 +125,18 @@ def main():
     slowest = max(drivers, key=lambda d: d['native_ioctl_ms'])
     for row in rows:
         if row['stage'] == '2.1.4.2 原生 IOKit 提交':
-            row['reason'] = (f"最长调用的线程 CPU 仅 {slowest['native_ioctl_cpu_ms']:.3f}ms；"
-                             '其余主要为等待/未获 CPU 时间')
+            wall = slowest['native_ioctl_ms']
+            cpu = slowest['native_ioctl_cpu_ms']
+            row['reason'] = (f'最长调用墙钟 {wall:.3f}ms、线程 CPU {cpu:.3f}ms；'
+                             f'差额 {wall - cpu:.3f}ms')
+            if wall <= 1000 / 120:
+                row['assessment'] = '本轮未见长等待'
+                row['optimization'] = '可，优先级较低'
+            elif cpu < wall / 2:
+                row['assessment'] = '等待或未获 CPU 时间的长尾待查'
+            else:
+                row['assessment'] = '执行长尾偏高'
+                row['optimization'] = '查调用内实际执行工作'
     if 'cs_ranges' in drivers[0]:
         origins = {key: sum(d[key] for d in drivers) for key in
                    ('cs_ranges', 'cmd_ranges', 'descriptor_ranges', 'ib_ranges')}
