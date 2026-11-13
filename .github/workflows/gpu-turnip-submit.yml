@@ -14,6 +14,11 @@ on:
       - 'tools/check_nabu_turnip_descriptor_sets.py'
       - 'tools/nabu_turnip_resource_origins.py'
       - 'patches/nabu-vulkan/turnip-resource-origins.patch'
+      - 'tools/nabu_turnip_cs_ranges.py'
+      - 'tools/check_nabu_turnip_cs_ranges.py'
+      - 'tools/fixtures/nabu_turnip_cs_ranges.cpp'
+      - 'patches/nabu-vulkan/tu_resource_range_index.h'
+      - 'patches/nabu-vulkan/turnip-cs-range-index.patch'
   workflow_dispatch:
 permissions:
   contents: read

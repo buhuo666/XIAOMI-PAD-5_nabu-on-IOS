@@ -18,6 +18,7 @@ from build_nabu_gpu_vulkan_probe import TARGET, macho_target, sign, stage_turnip
 from nabu_turnip_submit_dedup import stage_submit_range_dedup
 from nabu_turnip_descriptor_sets import stage_descriptor_set_dedup
 from nabu_turnip_resource_origins import stage_resource_origins
+from nabu_turnip_cs_ranges import stage_cs_range_index
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS_FILE = Path('scripts/data/adreno-compiler-inputs.json')
@@ -110,6 +111,7 @@ def main():
         report['submit_range_dedup'] = stage_submit_range_dedup(ROOT, work)
         report['descriptor_set_dedup'] = stage_descriptor_set_dedup(ROOT, work)
         report['resource_origins'] = stage_resource_origins(ROOT, work)
+        report['cs_range_index'] = stage_cs_range_index(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -137,6 +139,10 @@ def main():
             if check['result'] != 'pass':
                 raise ValueError('Turnip differential check did not pass')
             report['range_dedup_host_check'] = check['result']
+            run([sys.executable, ROOT/'tools/check_nabu_turnip_cs_ranges.py',
+                 '--source', source/'src/freedreno/vulkan', '--driver-source', source/TURNIP_SOURCE,
+                 '--output', out/'cs-range-check'], stream=True)
+            report['cs_range_host_check'] = 'pass'
             env = dict(os.environ,UNIXNU_RECORD_HASHES='0',PYTHONUNBUFFERED='1',
                        PATH=str(work/'.cache/mesa-tools/bin')+os.pathsep+os.environ['PATH'])
             run([sys.executable,'-u',script,'--target','ios','--abi-directory',
@@ -168,6 +174,9 @@ def main():
             (out/'source').mkdir(exist_ok=True)
             shutil.copyfile(source,out/'source'/source.name)
             shutil.copyfile(source.with_name('tu_cmd_buffer.cc'),out/'source/tu_cmd_buffer.cc')
+            for name in ('tu_cs.cc', 'tu_cs.h', 'tu_resource_range_index.h'):
+                if source.with_name(name).is_file():
+                    shutil.copyfile(source.with_name(name), out/'source'/name)
         (out/'build-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k] for k in ('result','target','turnip_rebuilt','rust_rebuilt','gpu_exercised')}))
     return 0 if report['result'] in ('signed_not_run','staged_not_run') else 1
