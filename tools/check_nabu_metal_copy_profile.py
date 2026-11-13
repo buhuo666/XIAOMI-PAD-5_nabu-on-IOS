@@ -23,7 +23,7 @@ def main():
     actual = (args.runtime / 'crates/metal2vulkan-runtime/src/nabu_copy_profile.rs').read_text(encoding='utf-8')
     assert actual == (ROOT / 'patches/nabu-metal/NativeMetalCopyProfile.rs').read_text(encoding='utf-8')
     submit = (args.runtime / 'crates/metal2vulkan-runtime/src/command_buffer/submit.rs').read_text(encoding='utf-8')
-    assert submit.count('crate::nabu_copy_profile::emit(device, trace_identity);') == 1
+    assert submit.count('crate::nabu_copy_profile::emit(device.shared(), trace_identity);') == 1
     assert 'deferred.lower_all' not in actual and '.work_counts(' not in actual
     harness, checks = (ROOT / 'tools/fixtures/nabu_metal_copy_profile.rs').read_text(encoding='utf-8').split('/* SNAPSHOT_CHECKS */')
     case = out / 'case'

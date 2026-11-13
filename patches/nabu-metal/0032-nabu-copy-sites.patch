@@ -45,7 +45,7 @@ diff --git a/crates/metal2vulkan-runtime/src/command_buffer/submit.rs b/crates/m
          if device.is_lost() {
              return Err(CommandBufferError::DeviceLost);
          }
-+        crate::nabu_copy_profile::emit(device, trace_identity);
++        crate::nabu_copy_profile::emit(device.shared(), trace_identity);
          let shared = device.shared();
          let raw = shared.vk();
          let queue = self.queue.vk_queue();
