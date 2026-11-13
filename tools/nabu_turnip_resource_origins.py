@@ -28,11 +28,13 @@ def transform(source, reverse=False):
         ('      memcpy(target, set->resources, set->resource_count * sizeof(*set->resources));',
          '      memcpy(target, set->resources, set->resource_count * sizeof(*set->resources));\n'
          '      submit->source_descriptor_ranges += set->resource_count;'),
-        ('      VkResult collected = darwin_collect_submit_resources(dev, submit, caps.version == 0);',
-         '      nabuTurnipSubmitMarker((uintptr_t)submit, 53, submit->source_cs_ranges, submit->source_cmd_ranges);\n'
-         '      nabuTurnipSubmitMarker((uintptr_t)submit, 54, submit->source_descriptor_ranges, submit->source_descriptor_sets);\n'
-         '      nabuTurnipSubmitMarker((uintptr_t)submit, 55, total, submit->source_command_buffers);\n'
-         '      VkResult collected = darwin_collect_submit_resources(dev, submit, caps.version == 0);'),
+        ('   if (submit->result != VK_SUCCESS)\n      return submit->result;\n\n   if (dw.async_caps.version) {',
+         '   if (submit->result != VK_SUCCESS)\n      return submit->result;\n\n'
+         '   nabuTurnipSubmitMarker((uintptr_t)submit, 53, submit->source_cs_ranges, submit->source_cmd_ranges);\n'
+         '   nabuTurnipSubmitMarker((uintptr_t)submit, 54, submit->source_descriptor_ranges, submit->source_descriptor_sets);\n'
+         '   nabuTurnipSubmitMarker((uintptr_t)submit, 55,\n'
+         '      util_dynarray_num_elements(&submit->commands, NativeAdrenoAbiSubmitBuffer), submit->source_command_buffers);\n\n'
+         '   if (dw.async_caps.version) {'),
     )
     for old, new in replacements:
         if reverse:

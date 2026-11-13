@@ -46,13 +46,15 @@
     }
     return submit->result;
  }
-@@ -3062,6 +3069,9 @@
-    const unsigned total = util_dynarray_num_elements(&submit->commands, NativeAdrenoAbiSubmitBuffer);
-    if (total) {
+@@ -3026,6 +3033,11 @@
+ 
+    if (submit->result != VK_SUCCESS)
+       return submit->result;
++
++   nabuTurnipSubmitMarker((uintptr_t)submit, 53, submit->source_cs_ranges, submit->source_cmd_ranges);
++   nabuTurnipSubmitMarker((uintptr_t)submit, 54, submit->source_descriptor_ranges, submit->source_descriptor_sets);
++   nabuTurnipSubmitMarker((uintptr_t)submit, 55,
++      util_dynarray_num_elements(&submit->commands, NativeAdrenoAbiSubmitBuffer), submit->source_command_buffers);
+ 
+    if (dw.async_caps.version) {
        const NativeAdrenoAbiSubmitCaps caps = darwin_submit_caps(dev);
-+      nabuTurnipSubmitMarker((uintptr_t)submit, 53, submit->source_cs_ranges, submit->source_cmd_ranges);
-+      nabuTurnipSubmitMarker((uintptr_t)submit, 54, submit->source_descriptor_ranges, submit->source_descriptor_sets);
-+      nabuTurnipSubmitMarker((uintptr_t)submit, 55, total, submit->source_command_buffers);
-       VkResult collected = darwin_collect_submit_resources(dev, submit, caps.version == 0);
-       if (collected != VK_SUCCESS)
-          return collected;
