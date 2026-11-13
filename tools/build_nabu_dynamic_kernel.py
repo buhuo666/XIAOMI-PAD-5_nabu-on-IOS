@@ -1,4 +1,4 @@
-"""Package the source-built dynamic storage core with GPU224's recorded driver objects."""
+"""Link a source-built dynamic storage core with a recorded GPU driver baseline."""
 import argparse
 import hashlib
 import json
@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--bundle', type=Path, required=True)
     parser.add_argument('--baseline-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--driver-command', type=Path, default=Path('log/host/gpu-v238/link-command.json'))
     args = parser.parse_args()
     args.bundle = args.bundle.resolve()
     args.baseline_root = args.baseline_root.resolve()
@@ -58,7 +59,7 @@ def main():
     (expanded / 'kernel.native-apfs.macho').write_bytes(image)
     prelink_report['candidate_bytes'] = len(image)
     (expanded / 'prelink-report.json').write_text(json.dumps(prelink_report, indent=2) + '\n')
-    baseline = json.loads((args.baseline_root / 'log/host/gpu-v223/link-command.json').read_text())
+    baseline = json.loads((args.baseline_root / args.driver_command).read_text())
     command = list(baseline)
     command[0] = str(ROOT / 'tools/link_nabu_data_block.py')
     for i, value in enumerate(command):
@@ -72,7 +73,7 @@ def main():
     for key, value in updates.items():
         command[command.index(key) + 1] = str(value)
     objects = [Path(command[i + 1]) for i, value in enumerate(command) if value == '--object']
-    assert len(objects) == 65 and all(path.is_file() for path in objects)
+    assert len(objects) == 66 and all(path.is_file() for path in objects)
     run('link', command)
     run('branches', [ROOT / 'tools/check_nabu_link_branches.py', '--command', args.output / 'link-command.json',
                      '--output', args.output / 'branch-check.json'])
@@ -84,7 +85,7 @@ def main():
                          '--output', args.output / 'loader-window'])
     final = args.output / 'kernel.native-apfs.macho'
     assert b'NABU STORAGE ABI: NABUDYN2' in final.read_bytes()
-    report = {'source_kernel_bundle': str(args.bundle), 'driver_baseline': 'GPU223 core/GPU224 bootstrap',
+    report = {'source_kernel_bundle': str(args.bundle), 'driver_baseline': 'GPU238 drivers/GPU242 bootstrap',
               'driver_objects': [str(path) for path in objects], 'driver_object_count': len(objects),
               'kernel_bytes': final.stat().st_size, 'legacy_layout_supported': True,
               'deployment_selected_capacity_supported': True, 'branches_and_loader_passed': True,
