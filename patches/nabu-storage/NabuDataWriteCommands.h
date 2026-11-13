@@ -2,6 +2,7 @@
 // Include after NabuLogWriteCommands.h. Only the installed Data window is writable.
 #pragma once
 #include "NabuDataContract.h"
+#include "NabuStorageLayout.h"
 
 static bool gNabuDataWriteOpen;
 static uint64_t gNabuDataFirst;
@@ -9,8 +10,8 @@ static uint64_t gNabuDataFirst;
 static bool nabuDataWriteRange(uint64_t lba, uint32_t blocks)
 {
   return gNabuDataWriteOpen && blocks && blocks <= kDataMax / 4096 &&
-      lba >= gNabuDataFirst && lba - gNabuDataFirst < NABU_DATA_BYTES / 4096 &&
-      blocks <= NABU_DATA_BYTES / 4096 - (lba - gNabuDataFirst) &&
+      lba >= gNabuDataFirst && lba - gNabuDataFirst < gNabuCapacity.dataBytes / 4096 &&
+      blocks <= gNabuCapacity.dataBytes / 4096 - (lba - gNabuDataFirst) &&
       lba <= UINT32_MAX && blocks - 1 <= UINT32_MAX - lba &&
       lba < gHost.blocks && blocks <= gHost.blocks - lba;
 }

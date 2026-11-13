@@ -127,9 +127,9 @@ static bool gNabuPublished;
 static void manifest(unsigned slot=0,unsigned span=1)
 {
   uint8_t *p=medium.data();memset(p,0,4096);memcpy(p,"NABULG01",8);
-  nabuLogPut32(p+8,span==1?1:2);nabuLogPut32(p+12,slot);
-  nabuLogPut64(p+16,kNabuLogSlotBytes*span);nabuLogPut64(p+24,kNabuLogPartitionBytes);
-  nabuLogPut64(p+32,kNabuLogReservedOffset);nabuLogPut64(p+40,kNabuLogReservedBytes);
+  nabuLogPut32(p+8,gNabuCapacity.dynamic?3:span==1?1:2);nabuLogPut32(p+12,slot);
+  nabuLogPut64(p+16,kNabuLogSlotBytes*span);nabuLogPut64(p+24,gNabuCapacity.partitionBytes);
+  nabuLogPut64(p+32,gNabuCapacity.logOffset);nabuLogPut64(p+40,kNabuLogReservedBytes);
   nabuLogPut32(p+48,4096);nabuLogPut32(p+52,65536);
   for(unsigned i=0;i<16;++i)p[56+i]=uint8_t(i+1);
   nabuLogPut64(p+72,1793808000);
@@ -138,6 +138,7 @@ static void manifest(unsigned slot=0,unsigned span=1)
 }
 static void reset(bool clearDisk=true, unsigned slot=0,unsigned span=1)
 {
+  gNabuCapacity={60*kNabuGiB,10*kNabuGiB,49*kNabuGiB,59*kNabuGiB,kNabuGiB,false};
   activeSlotFirst=slotFirst+uint64_t(slot)*16384;
   if(clearDisk) {medium.assign(kNabuLogSlotBytes*span,0);manifest(slot,span);}
   memset(memory,0xa5,sizeof(memory));device.fill(0);registers.fill(0);
@@ -337,6 +338,6 @@ int main(int argc,char **argv)
   (void)hostNop;(void)hostQueryRead; // Retained read-only production helpers.
   testCommands();testWriter(argc>1?argv[1]:nullptr);testFailures();
   testExtent(argc>2?argv[2]:nullptr);
-  testData();
+  testData();testDynamicCapacity();
   puts("PASS all actual writer/command scenarios; hardware and medium effects simulated");
 }

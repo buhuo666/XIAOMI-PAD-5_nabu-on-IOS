@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+from nabu_storage_layout import geometry, default_layout, extension
 
 ROOT = Path(__file__).resolve().parents[1]
 REMOTE = '/data/local/tmp/nabu16/20F66'
@@ -33,10 +34,7 @@ def require(value, message):
 
 
 def validate_layout(cfg):
-    require(cfg['id'] == 'nabu-20F66-persistent-v1' and cfg['partition_name'] == 'nabu_system',
-            'Unexpected layout or partition')
-    require(cfg['partition_bytes'] == 60*1024**3 and cfg['logical_block_bytes'] == 4096,
-            'Unexpected partition size')
+    geometry(cfg)
     require([w['name'] for w in cfg['system_windows']] == ['OS', 'SystemOS'], 'Unexpected root windows')
     ranges = [(0, MIB, 'metadata')]
     for w in cfg['system_windows']:
@@ -70,6 +68,8 @@ def root_header(cfg):
                            separators=(',', ':')).encode()
     require(len(extension) < 3000, 'Layout extension too large')
     b[1024:1024+len(extension)] = extension
+    from nabu_storage_layout import extension as layout_extension
+    b[512:560] = layout_extension(cfg)
     b[4064:] = hashlib.sha256(b[:4064]).digest()
     return bytes(b)
 
@@ -105,10 +105,11 @@ def main():
     p.add_argument('--data-bundle', type=Path, required=True)
     p.add_argument('--staging-receipt', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--layout',type=Path,default=default_layout(ROOT))
     p.add_argument('--adb', default='D:/platform-tools/adb.exe')
     p.add_argument('--apply', action='store_true')
     a = p.parse_args()
-    layout_path = ROOT/'configs/nabu-storage-layout.json'
+    layout_path = a.layout
     cfg = json.loads(layout_path.read_text())
     layout_hash = digest(layout_path)
     validate_layout(cfg)
@@ -201,6 +202,8 @@ def main():
     original = (a.inventory/'nabu_system-head.bin').read_bytes()
     require(len(original) == 4096, 'Missing original target header')
     committed = head == header
+    require(head[:8] != b'SHNGROOT' or committed,
+            'An installed layout already exists. Capacity selection cannot resize or recreate its Data.')
     require(committed or head == original or head == marker, 'Unrecognized target contents; refuse reinitialization')
     report['committed_installation_found'] = committed
     report['ranges'] = [{'name': name, 'offset': start, 'bytes': size}
@@ -262,7 +265,7 @@ def main():
                 require(actual == w['sha256'], 'System window readback mismatch: '+w['name'])
                 record('readback-verified-'+w['name'], w['offset'], w['bytes'], actual)
             data = cfg['data']
-            print('Initializing 49 GiB Data window...', flush=True)
+            print(f'Initializing {data["bytes"]//1024**3} GiB Data window...', flush=True)
             write_from('/dev/zero', data['offset'], data['bytes'])
             for e in bundle['extents']:
                 remote = upload(a.data_bundle/e['filename'], e['filename'])

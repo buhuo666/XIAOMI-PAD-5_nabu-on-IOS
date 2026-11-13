@@ -1,0 +1,32 @@
+name: Native Windows APFS deployment tools
+on:
+  push:
+    branches: [codex/dynamic-deployment-storage]
+    paths:
+      - '.github/workflows/apfs-windows.yml'
+      - 'patches/apfsprogs-windows/**'
+      - 'tools/build_apfsprogs_windows.py'
+      - 'tools/prepare_selected_data.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -q && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: Build pinned formatter and read-only checker
+        run: |
+          git clone https://github.com/linux-apfs/apfsprogs.git build/apfsprogs
+          git -C build/apfsprogs checkout --detach 1bd1c1c2140d13d1b6d2e03379316572bee70aa3
+          python3 tools/build_apfsprogs_windows.py --source build/apfsprogs --output artifacts/apfs-windows
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: apfs-windows
+          path: artifacts/apfs-windows/
+          retention-days: 14

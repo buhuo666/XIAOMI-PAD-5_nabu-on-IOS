@@ -8,6 +8,7 @@ import hashlib
 import io
 import struct
 import zlib
+from nabu_storage_layout import Geometry, LEGACY
 
 BLOCK_BYTES = 4096
 SLOT_BYTES = 64 * 1024 * 1024
@@ -32,9 +33,9 @@ def require(condition, message):
         raise LogFormatError(message)
 
 
-def slot_offset(slot):
+def slot_offset(slot, geometry=LEGACY):
     require(type(slot) is int and 0 <= slot < SLOT_COUNT, 'slot index out of bounds')
-    return RESERVED_OFFSET + slot * SLOT_BYTES
+    return geometry.reserved_offset + slot * SLOT_BYTES
 
 
 def extent_bytes(slot, span=1):
@@ -74,14 +75,14 @@ def _check_block(block, magic, reserved_at, versions=(1,)):
             'nonzero reserved metadata bytes')
 
 
-def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds, span=1):
+def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds, span=1, geometry=LEGACY):
     size = extent_bytes(slot, span)
     require(type(created_unix_seconds) is int and 0 <= created_unix_seconds < 2**64,
             'invalid preparation timestamp')
     block = bytearray(BLOCK_BYTES)
     block[:8] = MANIFEST_MAGIC
-    struct.pack_into('<IIQQQQII', block, 8, 1 if span == 1 else 2, slot, size, PARTITION_BYTES,
-                     RESERVED_OFFSET, RESERVED_BYTES, BLOCK_BYTES, MAX_PAYLOAD)
+    struct.pack_into('<IIQQQQII', block, 8, geometry.manifest_version(span), slot, size, geometry.partition_bytes,
+                     geometry.reserved_offset, RESERVED_BYTES, BLOCK_BYTES, MAX_PAYLOAD)
     block[56:72] = _fixed_bytes(run_uuid, 16, 'run UUID')
     struct.pack_into('<Q', block, 72, created_unix_seconds)
     block[80:112] = _fixed_bytes(kernel_sha256, 32, 'kernel SHA-256')
@@ -89,19 +90,26 @@ def make_manifest(slot, run_uuid, kernel_sha256, created_unix_seconds, span=1):
 
 
 def parse_manifest(block, expected_slot=None, expected_run_uuid=None,
-                   expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None):
-    _check_block(block, MANIFEST_MAGIC, 112, (1, 2))
+                   expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None,
+                   expected_geometry=None):
+    _check_block(block, MANIFEST_MAGIC, 112, (1, 2, 3))
     version, slot, size, partition, reserved, reserve_size, block_size, payload = \
         struct.unpack_from('<IIQQQQII', block, 8)
     slot_offset(slot)
     require(size % SLOT_BYTES == 0, 'extent size is not a whole allocation unit')
     span = size // SLOT_BYTES
     require(size == extent_bytes(slot, span), 'extent size mismatch')
-    require((version == 1 and span == 1) or (version == 2 and span > 1),
+    require((version == 1 and span == 1) or (version == 2 and span > 1) or version==3,
             'manifest version/span mismatch')
-    require((partition, reserved, reserve_size, block_size, payload) ==
-            (PARTITION_BYTES, RESERVED_OFFSET, RESERVED_BYTES,
+    try:
+        geometry=Geometry(partition,version==3)
+    except ValueError as error:
+        raise LogFormatError(str(error)) from error
+    require((reserved, reserve_size, block_size, payload) ==
+            (geometry.reserved_offset, RESERVED_BYTES,
              BLOCK_BYTES, MAX_PAYLOAD), 'manifest geometry mismatch')
+    if expected_geometry is not None:
+        require(geometry==expected_geometry,'manifest belongs to a different installation geometry')
     if expected_slot is not None:
         require(slot == expected_slot, 'manifest slot differs from selected slot')
     if expected_span is not None:
@@ -175,7 +183,8 @@ def parse_record_header(block):
 
 
 def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None,
-                 expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None):
+                 expected_kernel_sha256=None, expected_manifest_sha256=None, expected_span=None,
+                 expected_geometry=None):
     """Recover the strict valid prefix from one exact manifest-bounded snapshot.
 
     Metadata and payload are read in bounded chunks. Any bad record stops
@@ -205,7 +214,7 @@ def inspect_slot(source, output=None, expected_slot=None, expected_run_uuid=None
         return result
     try:
         manifest = parse_manifest(block, expected_slot, expected_run_uuid,
-                                  expected_kernel_sha256, expected_manifest_sha256, expected_span)
+                                  expected_kernel_sha256, expected_manifest_sha256, expected_span, expected_geometry)
     except LogFormatError as error:
         result['reason'] = str(error)
         return result

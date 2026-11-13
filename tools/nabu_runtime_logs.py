@@ -15,6 +15,8 @@ import re
 import subprocess
 import time
 import uuid
+from nabu_storage_layout import (geometry, receipt_geometry, default_layout, LEGACY,
+                                 require_kernel_capacity)
 
 from install_ipados_windows import root_header, validate_layout
 from nabu_log_format import (BLOCK_BYTES, SLOT_BYTES, SLOT_COUNT, PARTITION_BYTES,
@@ -69,15 +71,16 @@ def zero_suffix_sha256(prefix, size):
 def checked_receipt(path):
     receipt = json.loads(path.read_text(encoding='utf-8'))
     require(receipt.get('status') == 'prepared-and-readback-verified', 'receipt does not describe verified preparation')
-    slot_offset(receipt.get('slot'))
+    storage=receipt_geometry(receipt)
+    slot_offset(receipt.get('slot'),storage)
     require(re.fullmatch(r'[0-9a-f]{32}', receipt.get('run_uuid', '')) is not None, 'receipt UUID invalid')
     require(re.fullmatch(r'[0-9a-f]{64}', receipt.get('kernel_sha256', '')) is not None, 'receipt kernel hash invalid')
     require(re.fullmatch(r'[0-9a-f]{64}', receipt.get('manifest_sha256', '')) is not None, 'receipt manifest hash invalid')
-    require(receipt.get('slot_offset') == slot_offset(receipt['slot']) and
+    require(receipt.get('slot_offset') == slot_offset(receipt['slot'],storage) and
             receipt.get('slot_bytes') == extent_bytes(receipt['slot'], receipt.get('span', 1)),
             'receipt geometry differs')
     span = receipt.get('span', 1)
-    require(receipt.get('format_version', 1 if span == 1 else 2) == (1 if span == 1 else 2),
+    require(receipt.get('format_version', 1 if span == 1 else 2) == storage.manifest_version(span),
             'receipt version/span differs')
     return receipt
 
@@ -89,26 +92,24 @@ class Device:
             inventory = inventory / 'inventory.json'
         self.inventory = json.loads(inventory.read_text(encoding='utf-8'))
         self.gpt = json.loads((args.gpt_backup / 'gpt-report.json').read_text(encoding='utf-8'))
-        self.layout_path = ROOT / 'configs/nabu-storage-layout.json'
+        self.layout_path = args.layout
         self.layout = json.loads(self.layout_path.read_text(encoding='utf-8'))
         validate_layout(self.layout)
-        require(self.layout['partition_bytes'] == PARTITION_BYTES and
-                self.layout['reserved']['offset'] == RESERVED_OFFSET and
-                self.layout['reserved']['bytes'] == RESERVED_BYTES,
-                'installed layout differs from log format geometry')
+        self.geometry=geometry(self.layout)
         permitted = json.loads((ROOT / 'device/reclaimed-region.json').read_text(encoding='utf-8'))
         lun = next(unit for unit in self.gpt['luns'] if unit['name'] == 'sda')
         parts = [part for part in lun['partitions'] if part['number'] in (35, 36)]
         require(parts == permitted['partitions'], 'authorized partition geometry differs')
         self.partition = next(part for part in parts if part['number'] == 36)
         require(self.partition['name'] == 'nabu_system' and
-                self.partition['bytes'] == PARTITION_BYTES and
+                self.partition['bytes'] == self.geometry.partition_bytes and
                 lun['logical_block_bytes'] == BLOCK_BYTES,
                 'wrong native log partition')
-        require((self.partition['last_lba'] - self.partition['first_lba'] + 1) * BLOCK_BYTES == PARTITION_BYTES,
+        require((self.partition['last_lba'] - self.partition['first_lba'] + 1) * BLOCK_BYTES == self.geometry.partition_bytes,
                 'partition sector range differs')
         installed = json.loads(args.installation_receipt.read_text(encoding='utf-8'))
-        require(installed['status'] == 'installed-and-readback-verified' and
+        require(installed['status'] in ('installed-and-readback-verified',
+                                       'existing-installation-verified-data-preserved') and
                 installed['device_serial_sha256'] == self.inventory['device_serial_sha256'] and
                 installed['partition'] == self.partition and
                 installed['layout_sha256'] == file_sha256(self.layout_path),
@@ -131,10 +132,10 @@ class Device:
             'test "$(getprop ro.product.device)" = nabu; '
             'test "$(getprop ro.boot.slot_suffix)" = _a; '
             'test "$(readlink -f /dev/block/by-name/nabu_system)" = /dev/block/sda36; '
-            f'test "$(blockdev --getsize64 {TARGET})" = {PARTITION_BYTES}; '
+            f'test "$(blockdev --getsize64 {TARGET})" = {self.geometry.partition_bytes}; '
             f'test "$(blockdev --getss {TARGET})" = {BLOCK_BYTES}; '
             f'test "$(cat /sys/class/block/sda36/start)" = {self.partition["first_lba"] * 8}; '
-            f'test "$(cat /sys/class/block/sda36/size)" = {PARTITION_BYTES // 512}; '
+            f'test "$(cat /sys/class/block/sda36/size)" = {self.geometry.partition_bytes // 512}; '
             f'test "$(cat /sys/class/block/sda36/dev)" = {dev}; '
             'test -z "$(ls -A /sys/class/block/sda36/holders)"; '
             'for mi in /proc/self/mountinfo /proc/1/mountinfo; do '
@@ -170,7 +171,7 @@ class Device:
 
     def read_range(self, offset, size):
         require(type(offset) is int and type(size) is int and offset >= 0 and
-                0 < size <= READ_CHUNK and size <= PARTITION_BYTES - offset and
+                0 < size <= READ_CHUNK and size <= self.geometry.partition_bytes - offset and
                 offset % BLOCK_BYTES == size % BLOCK_BYTES == 0, 'invalid bounded partition read')
         raw = self.shell(f'dd if={TARGET} bs={BLOCK_BYTES} skip={offset // BLOCK_BYTES} '
                          f'count={size // BLOCK_BYTES} status=none')
@@ -197,7 +198,7 @@ class Device:
 
     def range_sha256(self, offset, size):
         require(offset >= 0 and size > 0 and offset % BLOCK_BYTES == size % BLOCK_BYTES == 0 and
-                size <= PARTITION_BYTES - offset, 'invalid partition hash range')
+                size <= self.geometry.partition_bytes - offset, 'invalid partition hash range')
         raw = self.shell(self.guard + f'dd if={TARGET} bs={BLOCK_BYTES} skip={offset // BLOCK_BYTES} '
                          f'count={size // BLOCK_BYTES} status=none | sha256sum', 180)
         token = raw.decode('ascii').split()[0]
@@ -205,10 +206,10 @@ class Device:
         return token
 
 
-def choose_slot(read_range, requested=None, span=1):
+def choose_slot(read_range, requested=None, span=1, storage=LEGACY):
     """Find an entirely zero extent; v2 reservations also own their zero tail."""
     extent_bytes(0 if requested is None else requested, span)
-    headers = [read_range(slot_offset(slot), BLOCK_BYTES) for slot in range(SLOT_COUNT)]
+    headers = [read_range(slot_offset(slot,storage), BLOCK_BYTES) for slot in range(SLOT_COUNT)]
     reserved = []
     for slot, header in enumerate(headers):
         require(len(header) == BLOCK_BYTES, 'short allocation-unit header read')
@@ -218,12 +219,12 @@ def choose_slot(read_range, requested=None, span=1):
             # Unknown/corrupt declarations must not make their still-zero tail
             # look available to a later preparation. Legacy foreign slot zero
             # is simply occupied and never grants write permission.
-            manifest = parse_manifest(header, expected_slot=slot)
+            manifest = parse_manifest(header, expected_slot=slot,expected_geometry=storage)
             reserved.append((slot, slot + manifest['span']))
     scanned = []
     choices = range(SLOT_COUNT - span + 1) if requested is None else (requested,)
     for slot in choices:
-        offset, size = slot_offset(slot), extent_bytes(slot, span)
+        offset, size = slot_offset(slot,storage), extent_bytes(slot, span)
         if headers[slot] != bytes(BLOCK_BYTES):
             scanned.append({'slot': slot, 'state': 'occupied-manifest'})
             continue
@@ -259,24 +260,25 @@ def prepare(args, output):
     write_json(receipt_path, report)
     try:
         device = Device(args)
+        require_kernel_capacity(args.kernel,device.geometry)
         report.update(device_serial_sha256=device.serial_hash,
                       partition=device.partition, gpt_before_verified=device.gpt_before,
                       root_header_sha256=device.root_header_sha256,
                       system_superblocks=device.superblocks)
         span = 1 if args.span is None else args.span
-        slot, empty_digest, scanned = choose_slot(device.read_range, args.slot, span)
+        slot, empty_digest, scanned = choose_slot(device.read_range, args.slot, span,device.geometry)
         size = extent_bytes(slot, span)
         run_uuid = uuid.uuid4().bytes
         kernel_hash = file_sha256(args.kernel)
-        manifest = make_manifest(slot, run_uuid, kernel_hash, int(time.time()), span)
+        manifest = make_manifest(slot, run_uuid, kernel_hash, int(time.time()), span,device.geometry)
         local = output / 'manifest.bin'
         local.write_bytes(manifest)
         manifest_hash = hashlib.sha256(manifest).hexdigest()
-        offset = slot_offset(slot)
+        offset = slot_offset(slot,device.geometry)
         report.update(status='zero-slot-verified', slot=slot, run_uuid=run_uuid.hex(),
                       kernel_sha256=kernel_hash, kernel_path=str(args.kernel.resolve()),
                       manifest_sha256=manifest_hash, slot_offset=offset, slot_bytes=size, span=span,
-                      format_version=1 if span == 1 else 2,
+                      format_version=device.geometry.manifest_version(span),storage_geometry=device.geometry.record(),
                       zero_slot_sha256=empty_digest, scanned_slots=scanned,
                       boot_arg=f'nabu-log-slot={slot}' + (f' nabu-log-span={span}' if span > 1 else ''))
         write_json(receipt_path, report)
@@ -332,7 +334,8 @@ def recover(raw_path, output, slot=None, receipt=None, span=None):
         require(span is None or span == receipt.get('span', 1), 'selected span differs from receipt')
         expected.update(expected_slot=receipt['slot'], expected_run_uuid=receipt['run_uuid'],
                         expected_kernel_sha256=receipt['kernel_sha256'],
-                        expected_manifest_sha256=receipt['manifest_sha256'], expected_span=receipt.get('span', 1))
+                        expected_manifest_sha256=receipt['manifest_sha256'], expected_span=receipt.get('span', 1),
+                        expected_geometry=receipt_geometry(receipt))
     with raw_path.open('rb') as stream, (output / 'runtime.log').open('wb') as recovered:
         result = inspect_slot(stream, recovered, **expected)
     result.update(raw_snapshot_path=str(raw_path.resolve()),
@@ -347,7 +350,7 @@ def clear_collected(device, collection, output):
     captured=json.loads((collection/'collection.json').read_text())
     recovered=json.loads((collection/'report.json').read_text())
     slot,span=captured['slot'],captured.get('span',1)
-    offset,size=slot_offset(slot),extent_bytes(slot,span)
+    offset,size=slot_offset(slot,device.geometry),extent_bytes(slot,span)
     raw=collection/f'slot-{slot:02d}.bin'
     require(captured['status']=='snapshot-collected' and captured['bytes_read']==size and
         captured['slot_offset']==offset and captured['slot_bytes']==size and
@@ -357,7 +360,7 @@ def clear_collected(device, collection, output):
     digest=file_sha256(raw)
     require(digest==recovered['raw_snapshot_sha256'],'raw backup changed since collection')
     with raw.open('rb') as stream:
-        manifest=parse_manifest(stream.read(BLOCK_BYTES),expected_slot=slot,expected_span=span)
+        manifest=parse_manifest(stream.read(BLOCK_BYTES),expected_slot=slot,expected_span=span,expected_geometry=device.geometry)
     require(manifest==recovered['manifest'],'saved manifest differs from recovery report')
     require(device.range_sha256(offset,size)==digest,'device log changed after collection; not cleared')
     report={'timestamp':now(),'status':'backup-verified','slot':slot,'span':span,'offset':offset,'bytes':size,
@@ -380,9 +383,10 @@ def clear_collected(device, collection, output):
 def collect(args, output, receipt):
     slot = args.slot if args.slot is not None else receipt['slot'] if receipt is not None else None
     require(slot is not None, 'collect requires --slot or --receipt')
-    offset = slot_offset(slot)
     device = Device(args)
+    offset = slot_offset(slot,device.geometry)
     if receipt is not None:
+        require(receipt_geometry(receipt)==device.geometry,'receipt geometry differs from installed layout')
         require(receipt.get('device_serial_sha256') == device.serial_hash, 'receipt device differs')
     if receipt is not None:
         span = receipt.get('span', 1)
@@ -390,7 +394,7 @@ def collect(args, output, receipt):
     elif args.span is not None:
         span = args.span
     else:
-        span = parse_manifest(device.read_range(offset, BLOCK_BYTES), expected_slot=slot)['span']
+        span = parse_manifest(device.read_range(offset, BLOCK_BYTES), expected_slot=slot,expected_geometry=device.geometry)['span']
     # A receipt or explicit extent keeps even a damaged manifest recoverable as
     # a raw bounded snapshot. With no geometry supplied, a valid header is needed.
     size = extent_bytes(slot, span)
@@ -436,6 +440,7 @@ def main():
     action.add_argument('--inspect', type=Path, metavar='RAW_SLOT')
     action.add_argument('--clear-collected',type=Path,metavar='COLLECTION_DIR',help='Clear a previously collected extent after exact backup/device verification')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--layout',type=Path,default=default_layout(ROOT))
     parser.add_argument('--slot', type=int)
     parser.add_argument('--span', type=int, help='Explicit count of adjacent 64 MiB allocation units')
     parser.add_argument('--kernel', type=Path)

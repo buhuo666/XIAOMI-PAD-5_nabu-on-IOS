@@ -3,6 +3,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include "NabuStorageLayout.h"
 
 enum : uint32_t {
   kNabuLogBlock = 4096, kNabuLogPayloadMax = 65536,
@@ -39,14 +40,16 @@ static inline uint32_t nabuLogCrc(const uint8_t *p, size_t n)
 static inline bool nabuLogExtentValid(unsigned slot, unsigned span)
 { return slot < kNabuLogSlots && span && span <= kNabuLogSlots - slot; }
 
-static inline bool nabuLogManifestValid(const uint8_t *p, unsigned slot, unsigned span = 1)
+static inline bool nabuLogManifestValid(const uint8_t *p, unsigned slot, unsigned span = 1,
+                                      uint64_t partitionBytes = kNabuLogPartitionBytes, bool dynamic = false)
 {
   static const uint8_t magic[8] = {'N','A','B','U','L','G','0','1'};
   return nabuLogExtentValid(slot, span) && nabuLogEqual(p, magic, 8) &&
-      nabuLogLe32(p + 8) == (span == 1 ? 1U : 2U) && nabuLogLe32(p + 12) == slot &&
+      nabuCapacityValid(partitionBytes) &&
+      nabuLogLe32(p + 8) == (dynamic ? 3U : span == 1 ? 1U : 2U) && nabuLogLe32(p + 12) == slot &&
       nabuLogLe64(p + 16) == uint64_t(span) * kNabuLogSlotBytes &&
-      nabuLogLe64(p + 24) == kNabuLogPartitionBytes &&
-      nabuLogLe64(p + 32) == kNabuLogReservedOffset &&
+      nabuLogLe64(p + 24) == partitionBytes &&
+      nabuLogLe64(p + 32) == partitionBytes-kNabuLogReservedBytes &&
       nabuLogLe64(p + 40) == kNabuLogReservedBytes &&
       nabuLogLe32(p + 48) == kNabuLogBlock && nabuLogLe32(p + 52) == kNabuLogPayloadMax &&
       nabuLogZero(p + 112, 4092 - 112) && nabuLogLe32(p + 4092) == nabuLogCrc(p, 4092);
