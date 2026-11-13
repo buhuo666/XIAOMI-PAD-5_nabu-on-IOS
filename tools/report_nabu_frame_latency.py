@@ -82,6 +82,8 @@ def main():
         'BO 查找、引用及范围处理', '次要成本', '可进一步优化', 'nested')
     add('2.1.4.2 原生 IOKit 提交', drivers, 'native_ioctl_ms',
         '墙钟含内核执行及线程等待', '均值与长尾须分开看', '查高耗时调用的等待', 'nested')
+    add('2.1.4.2a 其中调用线程 CPU 时间', drivers, 'native_ioctl_cpu_ms',
+        '仅线程实际运行时间，不另加到上级', '通常较小', '长尾优先查等待/调度', 'nested')
     add('2.1.4.3 组提交其余处理', drivers, 'group_outside_driver_spans_ms',
         '含提交资源展开等未独立计时步骤', '仍有可见成本', '来源统计后定点优化', 'nested')
     add('2.1.5 批次中的其余处理', runtimes, 'submit_batch_outside_children_ms',
@@ -114,6 +116,11 @@ def main():
             '本轮关闭 Mesa 阶段采样，不混用其他轮数值', '后续有同轮数据时继续展开')
 
     origin_note = ''
+    slowest = max(drivers, key=lambda d: d['native_ioctl_ms'])
+    for row in rows:
+        if row['stage'] == '2.1.4.2 原生 IOKit 提交':
+            row['reason'] = (f"最长调用的线程 CPU 仅 {slowest['native_ioctl_cpu_ms']:.3f}ms；"
+                             '其余主要为等待/未获 CPU 时间')
     if 'cs_ranges' in drivers[0]:
         origins = {key: sum(d[key] for d in drivers) for key in
                    ('cs_ranges', 'cmd_ranges', 'descriptor_ranges', 'ib_ranges')}
