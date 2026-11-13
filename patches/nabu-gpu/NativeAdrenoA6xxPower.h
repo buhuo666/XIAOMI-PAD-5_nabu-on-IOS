@@ -64,7 +64,7 @@ struct NativeAdrenoA6xxOpp {
 inline bool nativeAdrenoA640Opp(uint32_t gpuKhz, NativeAdrenoA6xxOpp *out)
 {
     static constexpr NativeAdrenoA6xxOpp levels[] = {
-        {257000, 64, 1799000},
+        {257000, 64, 15000000},  // MODIFIED: 1799000->15000000 KB/s to eliminate DDR bandwidth bottleneck
         {499200, 224, 6215000},
         {585000, 256, 7211000},
         {675000, 320, 8363000}
