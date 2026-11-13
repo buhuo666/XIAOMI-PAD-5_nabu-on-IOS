@@ -12,6 +12,8 @@ on:
       - 'patches/nabu-vulkan/turnip-descriptor-set-dedup.patch'
       - 'tools/nabu_turnip_descriptor_sets.py'
       - 'tools/check_nabu_turnip_descriptor_sets.py'
+      - 'tools/nabu_turnip_resource_origins.py'
+      - 'patches/nabu-vulkan/turnip-resource-origins.patch'
   workflow_dispatch:
 permissions:
   contents: read

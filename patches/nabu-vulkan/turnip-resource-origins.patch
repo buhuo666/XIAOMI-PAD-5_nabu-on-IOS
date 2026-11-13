@@ -1,0 +1,58 @@
+--- a/src/freedreno/vulkan/tu_knl_darwin.cc
++++ b/src/freedreno/vulkan/tu_knl_darwin.cc
+@@ -2075,6 +2075,8 @@
+    struct util_dynarray ranges; /* tu_resource_range */
+    struct util_dynarray resources; /* darwin_submit_resource */
+    struct util_dynarray native_ranges; /* NativeAdrenoAbiSubmitResourceV2 */
++   uint64_t source_cs_ranges, source_cmd_ranges, source_descriptor_ranges;
++   uint64_t source_descriptor_sets, source_command_buffers;
+    VkResult result;
+    uint32_t fallback_reasons;
+ };
+@@ -2147,6 +2149,7 @@
+       return submit->result = VK_ERROR_OUT_OF_HOST_MEMORY;
+ 
+    memcpy(target, cs->resource_ranges.data, count * sizeof(struct tu_resource_range));
++   submit->source_cs_ranges += count;
+    return submit->result;
+ }
+ 
+@@ -2156,6 +2159,7 @@
+ {
+    struct tu_darwin_queue_submit *submit = (struct tu_darwin_queue_submit *)_submit;
+    submit->fallback_reasons |= cmd->resource_fallback_reasons;
++   submit->source_command_buffers++;
+ 
+    const struct tu_cs *streams[] = {
+       &cmd->cs, &cmd->draw_cs, &cmd->tile_store_cs, &cmd->draw_epilogue_cs,
+@@ -2174,10 +2178,12 @@
+          return submit->result = VK_ERROR_OUT_OF_HOST_MEMORY;
+ 
+       memcpy(target, cmd->resource_ranges.data, count * sizeof(struct tu_resource_range));
++      submit->source_cmd_ranges += count;
+    }
+ 
+    util_dynarray_foreach (&cmd->resource_descriptor_sets, struct tu_descriptor_set *, set_ptr) {
+       const struct tu_descriptor_set *set = *set_ptr;
++      submit->source_descriptor_sets++;
+       if (set->layout->binding_flags & (VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                                         VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT)) {
+          submit->fallback_reasons |= TU_RESOURCE_FALLBACK_UPDATE_AFTER_BIND;
+@@ -2193,6 +2199,7 @@
+          return submit->result = VK_ERROR_OUT_OF_HOST_MEMORY;
+ 
+       memcpy(target, set->resources, set->resource_count * sizeof(*set->resources));
++      submit->source_descriptor_ranges += set->resource_count;
+    }
+    return submit->result;
+ }
+@@ -3062,6 +3069,9 @@
+    const unsigned total = util_dynarray_num_elements(&submit->commands, NativeAdrenoAbiSubmitBuffer);
+    if (total) {
+       const NativeAdrenoAbiSubmitCaps caps = darwin_submit_caps(dev);
++      nabuTurnipSubmitMarker((uintptr_t)submit, 53, submit->source_cs_ranges, submit->source_cmd_ranges);
++      nabuTurnipSubmitMarker((uintptr_t)submit, 54, submit->source_descriptor_ranges, submit->source_descriptor_sets);
++      nabuTurnipSubmitMarker((uintptr_t)submit, 55, total, submit->source_command_buffers);
+       VkResult collected = darwin_collect_submit_resources(dev, submit, caps.version == 0);
+       if (collected != VK_SUCCESS)
+          return collected;

@@ -44,7 +44,7 @@ def analyze_extended_phases(users, wrappers):
     diagnostics = Counter()
     for r in markers:
         stage = r['a']
-        if stage in (30,48,49,50) or 64<=stage<=96:
+        if stage in (30,48,49,50,53,54,55) or 64<=stage<=96:
             continue # Identity/counter/result metadata, not a CPU span.
         start = reverse.get(stage, stage)
         if start not in PHASES:
@@ -180,7 +180,7 @@ def analyze_extended_phases(users, wrappers):
         commands=command_records,runtime_identity_edge_count=sum(map(len,mappings.values())),
         encoding_profiles=encoding_profiles,
         driver_calls=[c for c in calls if c['stage'] in (44,46,51)],
-        driver_metadata=[r for r in markers if r['a'] in (48,49,50)],
+        driver_metadata=[r for r in markers if r['a'] in (48,49,50,53,54,55)],
         ca_parents=parents,ca_parent_metrics=parent_metrics,
         limits='Event127 CPU comes from payload c on the same PID/thread, not the kernel CPU side record. '
                'Phase durations are inclusive and must not be summed. Parent residuals subtract the interval union. '

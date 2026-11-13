@@ -17,6 +17,7 @@ import sys
 from build_nabu_gpu_vulkan_probe import TARGET, macho_target, sign, stage_turnip
 from nabu_turnip_submit_dedup import stage_submit_range_dedup
 from nabu_turnip_descriptor_sets import stage_descriptor_set_dedup
+from nabu_turnip_resource_origins import stage_resource_origins
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS_FILE = Path('scripts/data/adreno-compiler-inputs.json')
@@ -108,6 +109,7 @@ def main():
         report.update(mesa_commit=base['mesa']['commit'], baseline_patches=list(base['patches']))
         report['submit_range_dedup'] = stage_submit_range_dedup(ROOT, work)
         report['descriptor_set_dedup'] = stage_descriptor_set_dedup(ROOT, work)
+        report['resource_origins'] = stage_resource_origins(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
