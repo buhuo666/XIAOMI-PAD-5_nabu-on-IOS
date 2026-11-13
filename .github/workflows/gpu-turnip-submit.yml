@@ -9,6 +9,9 @@ on:
       - 'tools/check_nabu_turnip_range_dedup.py'
       - 'tools/fixtures/nabu_turnip_range_dedup.cpp'
       - 'patches/nabu-vulkan/turnip-submit-range-dedup.patch'
+      - 'patches/nabu-vulkan/turnip-descriptor-set-dedup.patch'
+      - 'tools/nabu_turnip_descriptor_sets.py'
+      - 'tools/check_nabu_turnip_descriptor_sets.py'
   workflow_dispatch:
 permissions:
   contents: read

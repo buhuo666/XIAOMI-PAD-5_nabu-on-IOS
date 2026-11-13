@@ -1,0 +1,40 @@
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -8,20 +8,31 @@
+          tu_cmd_use_range(cmd, set->resources[i]);
+       }
+       if (set->resource_addresses_unknown) {
+          cmd->resource_fallback_reasons |= TU_RESOURCE_FALLBACK_DEVICE_ADDRESS;
+       }
+    } else {
+-      struct tu_descriptor_set **record = (struct tu_descriptor_set **)
+-         util_dynarray_grow(&cmd->resource_descriptor_sets, struct tu_descriptor_set *, 1);
+-      if (!record) {
+-         vk_command_buffer_set_error(&cmd->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+-         return;
++      /* Submission reads each ordinary set's current resource table. Rebinding
++       * the same set needs no second copy of that table in the submission. */
++      bool recorded = false;
++      util_dynarray_foreach (&cmd->resource_descriptor_sets, struct tu_descriptor_set *, previous) {
++         if (*previous == set) {
++            recorded = true;
++            break;
++         }
+       }
++      if (!recorded) {
++         struct tu_descriptor_set **record = (struct tu_descriptor_set **)
++            util_dynarray_grow(&cmd->resource_descriptor_sets, struct tu_descriptor_set *, 1);
++         if (!record) {
++            vk_command_buffer_set_error(&cmd->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
++            return;
++         }
+ 
+-      *record = set;
++         *record = set;
++      }
+    }
+ 
+    if (set->layout->binding_flags & (VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                                      VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT)) {
+       cmd->resource_fallback_reasons |= TU_RESOURCE_FALLBACK_UPDATE_AFTER_BIND;
+    }

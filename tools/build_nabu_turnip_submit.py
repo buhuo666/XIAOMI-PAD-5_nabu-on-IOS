@@ -16,6 +16,7 @@ import sys
 
 from build_nabu_gpu_vulkan_probe import TARGET, macho_target, sign, stage_turnip
 from nabu_turnip_submit_dedup import stage_submit_range_dedup
+from nabu_turnip_descriptor_sets import stage_descriptor_set_dedup
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS_FILE = Path('scripts/data/adreno-compiler-inputs.json')
@@ -106,6 +107,7 @@ def main():
         base = stage_turnip(reference, device, work)
         report.update(mesa_commit=base['mesa']['commit'], baseline_patches=list(base['patches']))
         report['submit_range_dedup'] = stage_submit_range_dedup(ROOT, work)
+        report['descriptor_set_dedup'] = stage_descriptor_set_dedup(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -124,6 +126,9 @@ def main():
             producer.mesa(work,pins)
             source = work/'.cache/mesa-work'
             report['recorded_patch_sequence_passed'] = True
+            run([sys.executable, ROOT/'tools/check_nabu_turnip_descriptor_sets.py',
+                 '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc',
+                 '--output', out/'descriptor-set-check'], stream=True)
             run([sys.executable,ROOT/'tools/check_nabu_turnip_range_dedup.py',
                  '--source',source/TURNIP_SOURCE,'--output',out/'range-dedup-check'],stream=True)
             check = json.loads((out/'range-dedup-check/report.json').read_text())
@@ -160,6 +165,7 @@ def main():
         if source.is_file():
             (out/'source').mkdir(exist_ok=True)
             shutil.copyfile(source,out/'source'/source.name)
+            shutil.copyfile(source.with_name('tu_cmd_buffer.cc'),out/'source/tu_cmd_buffer.cc')
         (out/'build-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k] for k in ('result','target','turnip_rebuilt','rust_rebuilt','gpu_exercised')}))
     return 0 if report['result'] in ('signed_not_run','staged_not_run') else 1
