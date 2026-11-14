@@ -25,14 +25,14 @@ def main():
     app.mkdir(parents=True, exist_ok=False)
     identifier = 'org.nabu.JailbreakProbe'
     entitlements = {key: True for key in ['platform-application', 'com.apple.private.security.no-sandbox',
-        'com.apple.private.persona-mgmt', 'task_for_pid-allow', 'get-task-allow',
+        'com.apple.private.persona-mgmt', 'task_for_pid-allow',
         'com.apple.security.cs.allow-jit', 'dynamic-codesigning']}
     entitlements['application-identifier'] = identifier
     entitlement_file = out/'entitlements.plist'
     entitlement_file.write_bytes(plistlib.dumps(entitlements))
     (app/'Info.plist').write_bytes(plistlib.dumps(dict(
         CFBundleIdentifier=identifier, CFBundleExecutable='JailbreakProbe', CFBundleName='JailbreakProbe',
-        CFBundleDisplayName='越狱能力验证', CFBundlePackageType='APPL', CFBundleVersion='1',
+        CFBundleDisplayName='越狱能力验证', CFBundlePackageType='APPL', CFBundleVersion='2',
         CFBundleShortVersionString='1.0', MinimumOSVersion='16.5', UIDeviceFamily=[2],
         CFBundleSupportedPlatforms=['iPhoneOS'], LSRequiresIPhoneOS=True, UIRequiresFullScreen=True,
         UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],
