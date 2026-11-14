@@ -1,8 +1,8 @@
 diff --git a/TrollApps/TrollApps/Functions/Apps.swift b/TrollApps/TrollApps/Functions/Apps.swift
-index b44e9f9..1bd9c1e 100644
+index b44e9f9..9da4a84 100644
 --- a/TrollApps/TrollApps/Functions/Apps.swift
 +++ b/TrollApps/TrollApps/Functions/Apps.swift
-@@ -7,6 +7,17 @@
+@@ -7,6 +7,47 @@
  
  import Combine
  
@@ -15,12 +15,42 @@ index b44e9f9..1bd9c1e 100644
 +        guard let app = SBFApplication(applicationBundleIdentifier: bundleIdentifier) else { return nil }
 +        return app.bundleURL.appendingPathComponent("trollstorehelper").path
 +    }
++
++    static func recordEnvironment() {
++        let fm = FileManager.default
++        let directory = URL(fileURLWithPath: "/var/mobile/Media/NabuStore", isDirectory: true)
++        var record: [String: Any] = ["timestamp": Date().timeIntervalSince1970,
++                                     "callerUID": getuid(), "callerEUID": geteuid(),
++                                     "build": Bundle.main.infoDictionary?["CFBundleVersion"] ?? ""]
++        if let app = SBFApplication(applicationBundleIdentifier: bundleIdentifier) {
++            let paths = [app.bundleURL.deletingLastPathComponent(), app.bundleURL,
++                         app.bundleURL.appendingPathComponent("trollstorehelper"),
++                         app.bundleURL.appendingPathComponent("ldid")]
++            record["paths"] = paths.map { url -> [String: Any] in
++                var item: [String: Any] = ["path": url.path,
++                                          "readable": fm.isReadableFile(atPath: url.path),
++                                          "executable": fm.isExecutableFile(atPath: url.path)]
++                do {
++                    let attributes = try fm.attributesOfItem(atPath: url.path)
++                    for key in [FileAttributeKey.posixPermissions, .ownerAccountID, .groupOwnerAccountID, .size, .type] {
++                        item[key.rawValue] = attributes[key]
++                    }
++                } catch { item["error"] = error.localizedDescription }
++                return item
++            }
++        } else { record["error"] = "TrollStore Lite not found" }
++        do {
++            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
++            try JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
++                .write(to: directory.appendingPathComponent("backend-environment.json"), options: .atomic)
++        } catch { print("NabuStore: could not save backend environment: \(error)") }
++    }
 +}
 +
  struct BundledApp: Identifiable, Hashable {
      let id: String
      var name: String
-@@ -26,7 +37,7 @@ func GetApps() -> [BundledApp] {
+@@ -26,7 +67,7 @@ func GetApps() -> [BundledApp] {
          let appDict = NSDictionary(contentsOfFile: "\(app.bundleURL.path)/Info.plist")
          
          let parentDirectory = app.bundleURL.deletingLastPathComponent()
@@ -223,6 +253,18 @@ index caf1708..7564218 100644
  "INSTALLATION_RETURNED_ERROR %@" = "安装返回错误: %@";
  
  "ERROR_REMOVING_IPA_FILE_AFTER_INSTALL" = "安装后删除IPA时出错";
+diff --git a/TrollApps/TrollApps/TrollAppsApp.swift b/TrollApps/TrollApps/TrollAppsApp.swift
+index 0fb465d..c632b0c 100644
+--- a/TrollApps/TrollApps/TrollAppsApp.swift
++++ b/TrollApps/TrollApps/TrollAppsApp.swift
+@@ -32,6 +32,7 @@ struct TrollAppsApp: App {
+             .environmentObject(queueManager)
+             .environmentObject(userSettings)
+             .onAppear {
++                TrollStoreBackend.recordEnvironment()
+                 if !repoManager.hasFetchedRepos {
+                     repoManager.fetchRepos()
+                 }
 diff --git a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift b/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
 index 9e9d827..53a930e 100644
 --- a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
