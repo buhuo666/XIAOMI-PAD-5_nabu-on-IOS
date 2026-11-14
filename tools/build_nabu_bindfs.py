@@ -22,11 +22,25 @@ def generate(tree,out):
     vfs=(source/'bind_vfsops.c').read_text()
     vfs=vfs.replace('if (!IOCurrentTaskHasEntitlement(BINDFS_ENTITLEMENT)) {',
         'if (!IOCurrentTaskHasEntitlement(BINDFS_ENTITLEMENT) && proc_getpid(current_proc()) != 1) {')
+    vfs=once(vfs,'proc_getpid(current_proc())','proc_selfpid()')
+    # vnode_getalways was inlined in the qualified kernel. Keep its exact
+    # implementation, including VNODE_ALWAYS during forced unmount.
+    assert vfs.count('vnode_getalways(')==2
+    vfs=re.sub(r'vnode_getalways\(([^)]+)\)', r'vget_internal(\1, 0, VNODE_ALWAYS)', vfs)
     vfs=once(vfs,'(MNT_LOCAL | MNT_QUARANTINE | MNT_IGNORE_OWNERSHIP | MNT_NOEXEC)',
         '(MNT_LOCAL | MNT_QUARANTINE | MNT_IGNORE_OWNERSHIP | MNT_NOEXEC | MNT_NOSUID | MNT_RDONLY)')
     vfs=once(vfs,'flags |= (MNT_DONTBROWSE | MNT_MULTILABEL | MNT_NOSUID | MNT_RDONLY);',
         'flags |= (MNT_DONTBROWSE | MNT_MULTILABEL);\n'
         '\tif (flags & MNT_RDONLY) flags |= MNT_NOSUID;')
+    vfs=once(vfs,'bindfs_sync(__unused struct mount * mp, __unused int waitfor, __unused vfs_context_t ctx)\n{\n\treturn 0;\n}',
+        'bindfs_sync(struct mount * mp, int waitfor, vfs_context_t ctx)\n{\n'
+        '\tif (vfs_isrdonly(mp)) return 0;\n'
+        '\tstruct mount *lower = vnode_mount(MOUNTTOBINDMOUNT(mp)->bindm_lowerrootvp);\n'
+        '\tint error = vfs_busy(lower, 0);\n'
+        '\tif (error) return error;\n'
+        '\terror = VFS_SYNC(lower, waitfor, ctx);\n'
+        '\tvfs_unbusy(lower);\n'
+        '\treturn error;\n}')
     names=['bindfs_vfs_getlowerattr','bindfs_mount','bindfs_unmount','bindfs_root','bindfs_vfs_getattr',
         'bindfs_sync','bindfs_vfs_start','bindfs_vfsops','bindfs_vnodeopv_descs','bindfs_vnodeop_opv_desc']
     for name in names:vfs=re.sub(r'\b'+name+r'\b','nabu_'+name,vfs)
@@ -42,6 +56,9 @@ def generate(tree,out):
     vnode=once(vnode,'\t\t\t*ap->a_vpp = vp;\n\t\t}\n\t\t/* if we got lvp,',
         '\t\t\tnabu_bind_size(vp, lvp);\n\t\t\t*ap->a_vpp = vp;\n\t\t}\n\t\t/* if we got lvp,')
     start=vnode.index('static int\nbindfs_fsync(')
+    end=vnode.index('static int\nbindfs_mmap(',start)
+    vnode=vnode[:start]+vnode[end:]
+    start=vnode.index('static int\nbindfs_pathconf(')
     end=vnode.index('static int\nbindfs_mmap(',start)
     vnode=vnode[:start]+vnode[end:]
     names=['bindfs_default','bindfs_getattr','bindfs_open','bindfs_close','bind_lookup','bind_inactive',

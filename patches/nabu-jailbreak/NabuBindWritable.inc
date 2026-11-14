@@ -3,6 +3,7 @@
  * Writable file mappings use the lower vnode's VM object via the mmap calldown below.
  */
 extern memory_object_control_t ubc_getobject(vnode_t, int);
+#include <sys/proc.h>
 
 static int
 nabu_bind_lower(vnode_t upper, vnode_t *lower)
@@ -38,6 +39,7 @@ NABU_BIND_ONE(allocate, a_vp, 1, VNOP_ALLOCATE(lower, ap->a_length, ap->a_flags,
 NABU_BIND_ONE(ioctl, a_vp, 0, VNOP_IOCTL(lower, ap->a_command, ap->a_data, ap->a_fflag, ap->a_context))
 NABU_BIND_ONE(advlock, a_vp, 0, VNOP_ADVLOCK(lower, ap->a_id, ap->a_op, ap->a_fl, ap->a_flags, ap->a_context, ap->a_timeout))
 NABU_BIND_ONE(fsync, a_vp, 0, VNOP_FSYNC(lower, ap->a_waitfor, ap->a_context))
+NABU_BIND_ONE(pathconf, a_vp, 0, VNOP_PATHCONF(lower, ap->a_name, ap->a_retval, ap->a_context))
 #undef NABU_BIND_ONE
 
 static int
@@ -160,5 +162,6 @@ nabu_bindfs_mmap_getobject(vnode_t vp, int flags)
         vnode_put(lower);
         return control;
     }
+    (void)ubc_setthreadcred(vp, current_proc(), current_thread());
     return ubc_getobject(vp, flags);
 }
