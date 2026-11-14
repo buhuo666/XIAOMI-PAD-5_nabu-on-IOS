@@ -1,7 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
 #import <libkern/OSCacheControl.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -9,10 +8,16 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/mman.h>
-#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+// Darwin 8796 interfaces exist on the device but are omitted from the public iOS SDK.
+extern kern_return_t mach_vm_read_overwrite(vm_map_t, mach_vm_address_t, mach_vm_size_t, mach_vm_address_t, mach_vm_size_t *);
+extern kern_return_t mach_vm_write(vm_map_t, mach_vm_address_t, vm_offset_t, mach_msg_type_number_t);
+extern int ptrace(int, pid_t, caddr_t, int);
+#define PT_ATTACH 10
+#define PT_DETACH 11
 
 extern int posix_spawnattr_set_persona_np(const posix_spawnattr_t *, uid_t, uint32_t);
 extern int posix_spawnattr_set_persona_uid_np(const posix_spawnattr_t *, uid_t);
