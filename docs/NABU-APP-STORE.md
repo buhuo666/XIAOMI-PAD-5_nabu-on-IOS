@@ -41,8 +41,8 @@ python3 tools/build_nabu_app_store.py --sources build/nabu-app-store/sources --o
 
 成功时输出：
 
-- `TrollStoreLite-Nabu.ipa`，`com.opa334.TrollStoreLite`，build `21101`。
-- `TrollApps-Nabu.ipa`，`org.resonance.store`，build `2302`。
+- `TrollStoreLite-Nabu.ipa`，`com.opa334.TrollStoreLite`，build `21102`。
+- `TrollApps-Nabu.ipa`，`org.resonance.store`，build `2303`。
 - `build-report.json`：必须是 `result=signed-not-run` 且 `ipa_ready=true`，并包含两款应用。
 
 应用和 helper 使用 ad hoc 签名；逐项读回签名 entitlements，检查 ARM64 / iOS 16.5 目标。`ldid` 保持已下载的官方原始字节。IPA ZIP 中保留可执行权限。
@@ -76,3 +76,7 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 `store-02` / TrollApps build `2302` 显示本地化错误标题与完整详情；失败队列新增“重试失败的安装”，复用当前队列下载的 IPA。应用重开仍遵循上游清理缓存的行为，不能保留旧队列。安装返回码保存到 `/var/mobile/Media/NabuStore/last-install-result.json`，启动错误与原始等待状态保存到 `last-spawn-result.json`，helper 标准输出/错误保存到 `last-helper-output.log`，可通过 AFC 读取。此版本用于取得真实错误，尚不代表安装故障已修复。
 
 随后在仍持续采集的 syslog 中捕获到 14:45:58 的 `posix_spawn error 13`，表明 helper 未成功启动，尚不能归因为缺少 root 或内核能力。新版应用打开时只读记录 helper、ldid 和父目录的实际权限、所有者及可执行状态到 `backend-environment.json`。使用 `python tools/read_nabu_app_store_diagnostics.py --output <新目录>` 回收四项诊断与安装版本；不会启动 helper 或修改设备文件。先确认实际执行权限，再决定下一步修复。
+
+`store-02` 的 CI `43568790727` 成功，TrollApps 2302 已更新并由用户打开。实际记录确认 helper 与 ldid 都为 `0644`、uid/gid 33，两个父目录为 `0755`，应用进程为 uid/euid 501；安装包中的执行位在原生安装后未保留。这解释了 helper 启动时报 EACCES。证据为 `log/host/app-store-20261114/store-02/environment-01/backend-environment.json`。
+
+`store-03` 在两端的 `spawnRoot` 中为这个实际问题增加准备步骤：当本包 helper 或 ldid 无法执行时，通过已有执行权限的 Lite 主程序运行 `--nabu-prepare-helper`，保留 persona root 要求。该专用入口在进入 UIKit 前检查真实 uid/euid 均为 0，只 chmod 同一包中的 `trollstorehelper` 与 `ldid` 为 `0755`，记录实际身份、前后权限和 errno 到 `helper-preparation.json`。成功后继续原来的 helper 调用，失败则返回真实错误。普通打开 Lite 不执行准备操作；不修改内核或启动包。诊断读取脚本新增第五项准备记录。root 准备与应用安装仍须实机验证。
