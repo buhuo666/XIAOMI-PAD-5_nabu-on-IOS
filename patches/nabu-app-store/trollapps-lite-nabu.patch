@@ -1,5 +1,5 @@
 diff --git a/TrollApps/TrollApps/Functions/Apps.swift b/TrollApps/TrollApps/Functions/Apps.swift
-index b44e9f9..b722ea5 100644
+index b44e9f9..a2850f1 100644
 --- a/TrollApps/TrollApps/Functions/Apps.swift
 +++ b/TrollApps/TrollApps/Functions/Apps.swift
 @@ -7,6 +7,48 @@
@@ -22,10 +22,10 @@ index b44e9f9..b722ea5 100644
 +        var record: [String: Any] = ["timestamp": Date().timeIntervalSince1970,
 +                                     "callerUID": getuid(), "callerEUID": geteuid(),
 +                                     "build": Bundle.main.infoDictionary?["CFBundleVersion"] ?? ""]
-+        if let app = SBFApplication(applicationBundleIdentifier: bundleIdentifier) {
-+            let paths = [app.bundleURL.deletingLastPathComponent(), app.bundleURL,
-+                         app.bundleURL.appendingPathComponent("trollstorehelper"),
-+                         app.bundleURL.appendingPathComponent("ldid")]
++        if let app = SBFApplication(applicationBundleIdentifier: bundleIdentifier), let bundleURL = app.bundleURL {
++            let paths = [bundleURL.deletingLastPathComponent(), bundleURL,
++                         bundleURL.appendingPathComponent("trollstorehelper"),
++                         bundleURL.appendingPathComponent("ldid")]
 +            record["paths"] = paths.map { url -> [String: Any] in
 +                var item: [String: Any] = ["path": url.path,
 +                                          "readable": fm.isReadableFile(atPath: url.path),
