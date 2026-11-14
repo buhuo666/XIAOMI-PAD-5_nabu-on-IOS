@@ -1,4 +1,4 @@
-完整越狱目标 active（2026-11-14）：当前为 jailbreak-02 临时 iPadOS，i4-10 内核+i4-12 启动包，槽1占用不可覆盖；store-01 日志已回收清空。Probe build 3 / CI43575012169已实测：开发者模式false且无get-task-allow，root、task_for_pid、内存读写、线程查询、PT_ATTACHEXC附加/停止/分离、JIT返回42、DYLD注入全部通过，四份结果齐全。此前PT_ATTACH错误45是测试接口选错，非内核能力缺失；本次仅更新App，无重启。/var/jb、apt/dpkg/Sileo/ElleKit尚未部署，完整越狱未完成；爱思仍显示未越狱。商店root/ldid/安装已通过；Unity Metal修复CI43571625934已审查未部署。爱思安装/FairPlay继续暂停。详见docs/NABU-JAILBREAK.md及log/host/jailbreak-20261114/continuation.json；设备资料D:/github-IOS/XIAOMI_PAD5-NABU；以下为历史。
+完整越狱目标 active（2026-11-14）：设备仍 jailbreak-02 临时 iPadOS，i4-10 内核+i4-12 启动包，槽1占用不可覆盖。Probe build 3 已在开发者模式false下通过root、task_for_pid/内存读写/线程、PT_ATTACHEXC、JIT和DYLD注入。setup build 1/CI43576184745已安装，root将6,527个基础文件解包到Data的/var/db/nabu-jailbreak/procursus；创建/var/jb/var/mobile遇EROFS，未执行包脚本或安装Sileo/ElleKit。根因当前bindfs强制RDONLY/NOSUID且缺写操作，需补真实可写映射和缓存/写回；不能只清标志或返回成功。包输入已审查且依赖原样保留，libkrw/shshd等依赖仍待处理。未有新内核候选，不需恢复Android。详见analysis/nabu-jailbreak-bindfs-rw-20261114.md及log/host/jailbreak-20261114/continuation.json。商店安装通过，Unity Metal修复已审查未部署；爱思安装/FairPlay继续暂停；设备资料D:/github-IOS/XIAOMI_PAD5-NABU；以下为历史。
 
 # 项目工作规则
 

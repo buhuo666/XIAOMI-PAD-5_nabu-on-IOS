@@ -22,7 +22,7 @@ def main():
     app=out/'Payload/JailbreakSetup.app'; app.mkdir(parents=True)
     identifier='org.nabu.JailbreakSetup'
     info=dict(CFBundleIdentifier=identifier,CFBundleExecutable='JailbreakSetup',CFBundleName='JailbreakSetup',
-        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='1',CFBundleShortVersionString='1.0',
+        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='2',CFBundleShortVersionString='1.0',
         MinimumOSVersion='16.5',UIDeviceFamily=[2],CFBundleSupportedPlatforms=['iPhoneOS'],LSRequiresIPhoneOS=True,
         UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -31,7 +31,7 @@ def main():
     entitlements['application-identifier']=identifier
     (out/'entitlements.plist').write_bytes(plistlib.dumps(entitlements))
     report=dict(result='building',ci={'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')},
-        commands=[],device_executed=False,bundle_id=identifier,build='1')
+        commands=[],device_executed=False,bundle_id=identifier,build='2')
     def run(cmd):
         cmd=list(map(str,cmd)); report['commands'].append(cmd)
         value=subprocess.run(cmd,capture_output=True,text=True)

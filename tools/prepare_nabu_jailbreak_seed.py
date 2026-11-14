@@ -101,7 +101,8 @@ def main():
     expected = next(line.split(': ',1)[1] for line in sileo.splitlines() if line.startswith('SHA256: '))
     assert expected == review['inputs'][1]['sha256']
     review['sileo_matches_downloaded_packages_index'] = True
-    review['known_unresolved_dependencies'] = ['libkrw0-plugin', 'shshd requires libdimentio0 >= 99', 'firmware runtime package not generated yet']
+    review['known_unresolved_dependencies'] = ['libkrw0-plugin', 'firmware runtime package not generated yet']
+    review['dependency_notes'] = ['libdimentio0 1:0~20230202.7ffffff satisfies >= 99 because its epoch is 1; shshd is not started']
     review['services_not_started'] = ['us.diatr.shshd', 'com.apple.atrun', 'ElleKit pspawn/launchd injection']
     review['ownership_preserved_in_tar'] = True
     (args.output/'input-review.json').write_text(json.dumps(review, indent=2)+'\n')

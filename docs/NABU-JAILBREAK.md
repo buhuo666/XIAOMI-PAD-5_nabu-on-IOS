@@ -63,7 +63,9 @@ python tools/read_nabu_jailbreak_probe.py --output log/host/jailbreak-20261114/p
 
 ## 后续完整环境
 
-Procursus rootless 1800、Sileo 2.5.1 和 ElleKit 0.4.5 是已下载的固定参考输入，来源在 `artifacts/nabu-jailbreak-inputs/download-requests.json`。尚未完成审查、安装、真实包安装卸载或 tweak 测试。
+Procursus rootless 1800、Sileo 2.5.1 和 ElleKit 0.4.5 是已下载的固定参考输入，来源在 `artifacts/nabu-jailbreak-inputs/download-requests.json`。三项输入已完成一次审查，Sileo 与下载的 Packages 索引一致，Unix 权限在重打包中保留。记录为 `artifacts/nabu-jailbreak-seed-02/input-review.json` 与 `seed-metadata-check.json`。没有执行原始 prep_bootstrap.sh，也没有修改包依赖声明。
+
+原生安装 App 提交 `81b2377` / CI `43576184745` 编译签名通过，经审查后安装到设备（`org.nabu.JailbreakSetup` build 1）。用户打开后，root 已将 6,527 个基础文件解包到持久化 Data，三个输入通过新 USB 会话确认传输成功。配置在创建 `/var/jb/var/mobile` 时返回 EROFS；Sileo/ElleKit 尚未通过 dpkg 安装，也没有运行包脚本。当前 bindfs 强制只读/NOSUID，且没有写操作，因此下一步是补齐真实的可写映射。详情见 [bindfs 诊断](../analysis/nabu-jailbreak-bindfs-rw-20261114.md)。
 
 部署应沿用现有持久化 APFS。上游 `src/hakios-8796/tools/mk-jb.sh` 和 `userland/src/init.c` 的每次重建 `/var/jb`、RAMFS 前缀和删除依赖方案不能直接用于本项目。必须保留文件 UID/GID/mode、Sileo helper 的 setuid，验证 LaunchServices 的真实应用路径，并按实际依赖处理固件包与 libkrw 等组件。
 

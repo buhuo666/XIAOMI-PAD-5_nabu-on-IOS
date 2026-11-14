@@ -54,6 +54,10 @@ def main():
                 report['files'][source.name]={'bytes':source.stat().st_size,'remote_size_equal':True}
                 print('Staged '+source.name,flush=True)
         else:
+            report['staged_inputs']={}
+            for name in ['prefix.tar.gz','sileo-2.5.1.deb','ellekit-0.4.5.deb']:
+                values=afc.command(0x0A,('/NabuJailbreak/Inputs/'+name).encode()+b'\0').rstrip(b'\0').split(b'\0')
+                report['staged_inputs'][name]=int(dict(zip(values[::2],values[1::2]))[b'st_size'])
             try:
                 names=afc.command(0x03,b'/NabuJailbreak/Setup\0').decode().split('\0')
             except Exception as error:
@@ -67,7 +71,11 @@ def main():
             report['lookup']=exchange(install,{'Command':'Lookup','ClientOptions':{
                 'BundleIDs':['org.nabu.JailbreakSetup','org.coolstar.SileoStore'],
                 'ReturnAttributes':['CFBundleIdentifier','CFBundleVersion','CFBundleShortVersionString','Path']}})
-        exchange(connection,{'Request':'StopSession','SessionID':start['SessionID']})
+        try:
+            exchange(connection,{'Request':'StopSession','SessionID':start['SessionID']})
+        except OSError as error:
+            # A long AFC transfer can outlive Lockdown's idle control session.
+            report['stop_session_error']=str(error)
     except Exception as error:report['error']=str(error)
     finally:
         for stream in reversed(streams):stream.close()

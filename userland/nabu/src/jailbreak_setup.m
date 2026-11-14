@@ -37,7 +37,11 @@ static BOOL makeDirectory(NSString *path) {
     NSError *error = nil;
     BOOL ok = [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES
         attributes:@{NSFilePosixPermissions:@0755} error:&error];
-    if (!ok) report[@"error"] = [NSString stringWithFormat:@"mkdir %@: %@",path,error];
+    if (!ok) {
+        report[@"error"] = [NSString stringWithFormat:@"mkdir %@: %@",path,error];
+        NSError *underlying=error.userInfo[NSUnderlyingErrorKey];
+        if ([underlying.domain isEqualToString:NSPOSIXErrorDomain]) errno=(int)underlying.code;
+    }
     return ok;
 }
 
@@ -151,6 +155,11 @@ static BOOL mountPrefix(void) {
         if (sysctlbyname("kern.apfs_synthetic",NULL,NULL,(void *)path,strlen(path))) return failure(@"synthetic_preboot_mountpoint");
     }
     if (!bindDirectory(base,visible,0)) return NO;
+    struct statfs mapped;
+    if (statfs(visible.fileSystemRepresentation,&mapped)) return failure(@"prefix_statfs");
+    report[@"prefix_mount_flags"]=@(mapped.f_flags);
+    report[@"prefix_mount_readonly"]=@((mapped.f_flags & MNT_RDONLY)!=0);
+    report[@"prefix_mount_nosuid"]=@((mapped.f_flags & MNT_NOSUID)!=0);
     const char *target="/private/preboot/nabu-jb/procursus";
     if (symlink(target,"/var/jb")) {
         char previous[1024]={0};
@@ -191,7 +200,7 @@ static BOOL configureDirectories(void) {
 
 static int setup(void) {
     steps=[NSMutableArray new];
-    report=[@{@"uid":@(getuid()),@"euid":@(geteuid()),@"build":@"1",@"steps":steps,
+    report=[@{@"uid":@(getuid()),@"euid":@(geteuid()),@"build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"],@"steps":steps,
         @"started":@([[NSDate date] timeIntervalSince1970]),@"standard_jailbreak_complete":@NO} mutableCopy];
     if (getuid()!=0 || geteuid()!=0) return 1;
     if (!makeDirectory(output)) return 1;
