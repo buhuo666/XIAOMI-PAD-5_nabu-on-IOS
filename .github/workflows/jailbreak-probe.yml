@@ -1,0 +1,30 @@
+name: nabu16 - Jailbreak capability probe
+on:
+  push:
+    branches: [codex/nabu-app-store]
+    paths:
+      - '.github/workflows/jailbreak-probe.yml'
+      - 'tools/build_nabu_jailbreak_probe.py'
+      - 'userland/nabu/src/jailbreak_probe.m'
+      - 'userland/nabu/src/jailbreak_probe_injection.c'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build signed device capability probe
+        run: python3 tools/build_nabu_jailbreak_probe.py --output artifacts/nabu-jailbreak-probe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-jailbreak-probe-${{ github.run_number }}
+          path: artifacts/nabu-jailbreak-probe/
+          retention-days: 14
