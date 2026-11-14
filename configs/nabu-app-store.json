@@ -1,0 +1,22 @@
+{
+  "target": "arm64-apple-ios16.5",
+  "revision": "store-01",
+  "sources": [
+    {"name": "TrollStore", "cache": "src/trollstore-roothide-lansonsam", "url": "https://github.com/lansonsam/TrollStore-roothide.git", "commit": "763b9768241384ea490c119d37173204ad634918", "patch": "trollstore-lite-nabu.patch"},
+    {"name": "TrollStore/ChOma", "cache": "src/trollstore-roothide-lansonsam/ChOma", "url": "https://github.com/opa334/ChOma.git", "commit": "964023ddac2286ef8e843f90df64d44ac6a673df"},
+    {"name": "TrollApps", "cache": "src/trollapps-2.3", "url": "https://github.com/TheResonanceTeam/TrollApps.git", "commit": "91e9469a80bd1a22756b7b691d8b556a9863f3d7", "patch": "trollapps-lite-nabu.patch"},
+    {"name": "Headers", "cache": "src/nabu-app-store-headers", "url": "https://github.com/theos/headers.git", "commit": "25ef5c99a31d600cf3a7b88922c1f7a4029c1417"}
+  ],
+  "sdk": {"url": "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz", "cache": "artifacts/nabu-app-store-inputs/iPhoneOS16.5.sdk.tar.xz", "directory": "iPhoneOS16.5.sdk"},
+  "files": [
+    {"name": "ldid", "cache": "artifacts/nabu-app-store-inputs/ldid", "url": "https://github.com/opa334/ldid/releases/download/v2.1.5-procursus7-new/ldid"},
+    {"name": "ArchiveHeaders/archive.h", "cache": "artifacts/nabu-app-store-inputs/archive.h", "url": "https://raw.githubusercontent.com/libarchive/libarchive/v3.6.2/libarchive/archive.h"},
+    {"name": "ArchiveHeaders/archive_entry.h", "cache": "artifacts/nabu-app-store-inputs/archive_entry.h", "url": "https://raw.githubusercontent.com/libarchive/libarchive/v3.6.2/libarchive/archive_entry.h"}
+  ],
+  "apps": [
+    {"ipa": "TrollStoreLite-Nabu.ipa", "app": "TrollStoreLite", "bundle_id": "com.opa334.TrollStoreLite", "version": "2.1.1", "build": "21101"},
+    {"ipa": "TrollApps-Nabu.ipa", "app": "TrollApps", "bundle_id": "org.resonance.store", "version": "2.3", "build": "2301"}
+  ],
+  "ldid_version": "v2.1.5-procursus7-new",
+  "build_accesses_device": false
+}

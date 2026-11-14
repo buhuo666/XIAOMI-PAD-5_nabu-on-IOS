@@ -1,0 +1,193 @@
+diff --git a/RootHelper/main.m b/RootHelper/main.m
+index 51472bc..13132ca 100644
+--- a/RootHelper/main.m
++++ b/RootHelper/main.m
+@@ -24,7 +24,9 @@
+ #import <SpringBoardServices/SpringBoardServices.h>
+ #import <FrontBoardServices/FBSSystemService.h>
+ #import <Security/Security.h>
+-#ifdef THEOS_PACKAGE_SCHEME_ROOTHIDE
++#if defined(NABU_APP_STORE)
++#define LDID_ARG_PATH(x) (x)
++#elif defined(THEOS_PACKAGE_SCHEME_ROOTHIDE)
+ #import <roothide.h>
+ #define JBROOT_PATH(x) jbroot(x)
+ // roothide bootstrap tools (e.g. ldid) resolve paths against the jbroot vroot,
+@@ -257,13 +259,21 @@ void setTSURLSchemeState(BOOL newState, NSString* customAppPath)
+ 
+ BOOL isLdidInstalled(void)
+ {
++#ifdef NABU_APP_STORE
++	return [[NSFileManager defaultManager] isExecutableFileAtPath:[trollStoreAppPath() stringByAppendingPathComponent:@"ldid"]];
++#else
+ 	// Since TrollStore Lite depends on ldid, we assume it exists
+ 	return YES;
++#endif
+ }
+ 
+ NSString *getLdidPath(void)
+ {
++#ifdef NABU_APP_STORE
++	return [trollStoreAppPath() stringByAppendingPathComponent:@"ldid"];
++#else
+ 	return JBROOT_PATH(@"/usr/bin/ldid");
++#endif
+ }
+ 
+ #else
+@@ -1546,6 +1556,9 @@ int MAIN_NAME(int argc, char *argv[], char *envp[])
+ 		}
+ 
+ 		NSLog(@"trollstorehelper invoked with arguments: %@", args);
++#ifdef NABU_APP_STORE
++		NSLog(@"[NabuStore] uid=%u euid=%u helper=%@ ldid=%@", getuid(), geteuid(), getExecutablePath(), getLdidPath());
++#endif
+ 
+ 		int ret = 0;
+ 		NSString* cmd = args.firstObject;
+diff --git a/Shared/TSUtil.m b/Shared/TSUtil.m
+index 45476b9..e9c33e0 100644
+--- a/Shared/TSUtil.m
++++ b/Shared/TSUtil.m
+@@ -4,7 +4,9 @@
+ #import <spawn.h>
+ #import <sys/sysctl.h>
+ #import <mach-o/dyld.h>
+-#ifdef THEOS_PACKAGE_SCHEME_ROOTHIDE
++#if defined(NABU_APP_STORE)
++#import "NabuChildStatus.h"
++#elif defined(THEOS_PACKAGE_SCHEME_ROOTHIDE)
+ #import <roothide.h>
+ #define JBROOT_PATH(x) jbroot(x)
+ #else
+@@ -45,10 +47,14 @@ NSString *getExecutablePath(void)
+ 
+ BOOL shouldRegisterAsUserByDefault(void)
+ {
++#ifdef NABU_APP_STORE
++	return NO;
++#else
+ 	if ([[NSFileManager defaultManager] fileExistsAtPath:JBROOT_PATH(@"/Library/MobileSubstrate/DynamicLibraries/AppSyncUnified-FrontBoard.dylib")]) {
+ 		return YES;
+ 	}
+ 	return NO;
++#endif
+ }
+ 
+ #else
+@@ -192,6 +198,10 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+ 		});
+ 	}
+ 
++#ifdef NABU_APP_STORE
++	int childResult = nabu_wait_child(task_pid, &status);
++	NSLog(@"[NabuStore] helper wait status=%d result=%d", status, childResult);
++#else
+ 	do
+ 	{
+ 		if (waitpid(task_pid, &status, 0) != -1) {
+@@ -203,6 +213,7 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+ 			return -222;
+ 		}
+ 	} while (!WIFEXITED(status) && !WIFSIGNALED(status));
++#endif
+ 
+ 	_isRunning = NO;
+ 	if(stdOut || stdErr)
+@@ -229,7 +240,11 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+ 		}
+ 	}
+ 
++#ifdef NABU_APP_STORE
++	return childResult;
++#else
+ 	return WEXITSTATUS(status);
++#endif
+ }
+ 
+ void enumerateProcessesUsingBlock(void (^enumerator)(pid_t pid, NSString* executablePath, BOOL* stop))
+@@ -413,15 +428,24 @@ NSArray *trollStoreInactiveInstalledAppBundlePaths(void)
+ 
+ NSString* trollStorePath()
+ {
++#ifdef NABU_APP_STORE
++	return [trollStoreAppPath() stringByDeletingLastPathComponent];
++#else
+ 	NSError* mcmError;
+ 	MCMAppContainer* appContainer = [MCMAppContainer containerWithIdentifier:APP_ID createIfNecessary:NO existed:NULL error:&mcmError];
+ 	if(!appContainer) return nil;
+ 	return appContainer.url.path;
++#endif
+ }
+ 
+ NSString* trollStoreAppPath()
+ {
++#ifdef NABU_APP_STORE
++	// The app, root helper and ldid live together in the installed IPA bundle.
++	return [getExecutablePath().stringByResolvingSymlinksInPath stringByDeletingLastPathComponent];
++#else
+ 	return [trollStorePath() stringByAppendingPathComponent:@"TrollStore.app"];
++#endif
+ }
+ 
+ BOOL isRemovableSystemApp(NSString* appId)
+diff --git a/TrollStore/TSAppInfo.m b/TrollStore/TSAppInfo.m
+index 70d4de6..61c1f2f 100644
+--- a/TrollStore/TSAppInfo.m
++++ b/TrollStore/TSAppInfo.m
+@@ -968,7 +968,7 @@ extern UIImage* imageWithSize(UIImage* image, CGSize size);
+ 				{
+ 					if([serviceID isKindOfClass:NSString.class])
+ 					{
+-						NSString* displayName = commonTCCServices[serviceID];
++						NSString* displayName = commonTCCServices()[serviceID];
+ 						if(displayName == nil)
+ 						{
+ 							[allowedTccServices addObject:[serviceID stringByReplacingOccurrencesOfString:@"kTCCService" withString:@""]];
+diff --git a/TrollStore/TSCommonTCCServiceNames.h b/TrollStore/TSCommonTCCServiceNames.h
+index 9e3b0b2..786423c 100644
+--- a/TrollStore/TSCommonTCCServiceNames.h
++++ b/TrollStore/TSCommonTCCServiceNames.h
+@@ -7,7 +7,12 @@
+ 
+ #import <Foundation/Foundation.h>
+ 
+-static NSDictionary* const commonTCCServices = @{
++static NSDictionary* commonTCCServices(void)
++{
++    static NSDictionary* services;
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{
++    services = @{
+     @"kTCCServicePhotos": @"Photo Library",
+     @"kTCCServicePhotosAdd": @"Photo Library (Add)",
+     @"kTCCServiceCamera": @"Camera",
+@@ -28,4 +33,7 @@ static NSDictionary* const commonTCCServices = @{
+     @"kTCCServiceBluetoothWhileInUse": @"Bluetooth (While In Use)",
+     @"kTCCServiceBluetoothPeripheral": @"Bluetooth (Peripherals)",
+     @"kTCCServiceLocation": @"Location"
+-};
++    };
++    });
++    return services;
++}
+diff --git a/TrollStoreLite/entitlements.plist b/TrollStoreLite/entitlements.plist
+index abc5d7b..f910869 100644
+--- a/TrollStoreLite/entitlements.plist
++++ b/TrollStoreLite/entitlements.plist
+@@ -3,7 +3,7 @@
+ <plist version="1.0">
+ <dict>
+ 	<key>application-identifier</key>
+-	<string>com.opa334.TrollStore</string>
++	<string>com.opa334.TrollStoreLite</string>
+ 	<key>platform-application</key>
+ 	<true/>
+ 	<key>com.apple.security.exception.files.absolute-path.read-write</key>
+@@ -42,4 +42,4 @@
+ 	<key>com.apple.springboard.opensensitiveurl</key>
+ 	<true/>
+ </dict>
+-</plist>
+\ No newline at end of file
++</plist>

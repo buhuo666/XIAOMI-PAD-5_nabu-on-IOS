@@ -1,0 +1,125 @@
+diff --git a/TrollApps/TrollApps/Functions/Apps.swift b/TrollApps/TrollApps/Functions/Apps.swift
+index b44e9f9..1bd9c1e 100644
+--- a/TrollApps/TrollApps/Functions/Apps.swift
++++ b/TrollApps/TrollApps/Functions/Apps.swift
+@@ -7,6 +7,17 @@
+ 
+ import Combine
+ 
++// This project ships the Lite installer; keep its identity and marker together.
++enum TrollStoreBackend {
++    static let bundleIdentifier = "com.opa334.TrollStoreLite"
++    static let managedMarker = "_TrollStoreLite"
++
++    static func helperPath() -> String? {
++        guard let app = SBFApplication(applicationBundleIdentifier: bundleIdentifier) else { return nil }
++        return app.bundleURL.appendingPathComponent("trollstorehelper").path
++    }
++}
++
+ struct BundledApp: Identifiable, Hashable {
+     let id: String
+     var name: String
+@@ -26,7 +37,7 @@ func GetApps() -> [BundledApp] {
+         let appDict = NSDictionary(contentsOfFile: "\(app.bundleURL.path)/Info.plist")
+         
+         let parentDirectory = app.bundleURL.deletingLastPathComponent()
+-        let filePath = parentDirectory.appendingPathComponent("_TrollStore")
++        let filePath = parentDirectory.appendingPathComponent(TrollStoreBackend.managedMarker)
+         let fileExists = FileManager.default.fileExists(atPath: filePath.path)
+         
+         let bundleID = (appDict?.value(forKey: "CFBundleIdentifier") ?? "Unknown") as! String
+diff --git a/TrollApps/TrollApps/Managers/InstallManager.swift b/TrollApps/TrollApps/Managers/InstallManager.swift
+index 93e7fc1..ed24e0f 100644
+--- a/TrollApps/TrollApps/Managers/InstallManager.swift
++++ b/TrollApps/TrollApps/Managers/InstallManager.swift
+@@ -17,8 +17,7 @@ func InstallIPA(_ itemID: UUID, queueManager: QueueManager, completion: @escapin
+     if !FileManager.default.fileExists(atPath: IPAPathURL.path) {
+         completion(FunctionStatus(error: true, message: ErrorMessage(title: "FNF \(IPAPathURL.path)", body: "File does not exist")))
+         return
+-    } else if let trollStoreApp = SBFApplication(applicationBundleIdentifier: "com.opa334.TrollStore") {
+-        let trollstoreHelperPath = trollStoreApp.bundleURL.path + "/trollstorehelper"
++    } else if let trollstoreHelperPath = TrollStoreBackend.helperPath() {
+         let returnCode = spawnRoot(trollstoreHelperPath, ["install", IPAPathURL.path])
+         
+         if(returnCode != 0) {
+diff --git a/TrollApps/TrollApps/Managers/UninstallManager.swift b/TrollApps/TrollApps/Managers/UninstallManager.swift
+index 734dbae..9c505df 100644
+--- a/TrollApps/TrollApps/Managers/UninstallManager.swift
++++ b/TrollApps/TrollApps/Managers/UninstallManager.swift
+@@ -8,8 +8,7 @@
+ import Combine
+ 
+ func UninstallIPA(_ appID: String) -> FunctionStatus {
+-    if let trollStoreApp = SBFApplication(applicationBundleIdentifier: "com.opa334.TrollStore") {
+-        let trollstoreHelperPath = trollStoreApp.bundleURL.path + "/trollstorehelper"
++    if let trollstoreHelperPath = TrollStoreBackend.helperPath() {
+         let returnCode = spawnRoot(trollstoreHelperPath, ["uninstall", appID])
+         
+         if(returnCode != 0) {
+diff --git a/TrollApps/TrollApps/Objective C/TSUtil.m b/TrollApps/TrollApps/Objective C/TSUtil.m
+index ea018f5..b7dde4d 100644
+--- a/TrollApps/TrollApps/Objective C/TSUtil.m	
++++ b/TrollApps/TrollApps/Objective C/TSUtil.m	
+@@ -8,6 +8,7 @@
+ #import <Foundation/Foundation.h>
+ #import <spawn.h>
+ #import "TrollApps-Bridging-Header.h"
++#import "NabuChildStatus.h"
+ 
+ 
+ #define POSIX_SPAWN_PERSONA_FLAGS_OVERRIDE 1
+@@ -55,17 +56,8 @@ int spawnRoot(NSString* path, NSArray* args)
+         return spawnError;
+     }
+ 
+-    do
+-    {
+-        if (waitpid(task_pid, &status, 0) != -1) {
+-            NSLog(@"Child status %d", WEXITSTATUS(status));
+-        } else
+-        {
+-            perror("waitpid");
+-            return -222;
+-        }
+-    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+-    
+-    return WEXITSTATUS(status);
++    int result = nabu_wait_child(task_pid, &status);
++    NSLog(@"[NabuStore] %@ uid=%u helper=%@ status=%d result=%d", args.firstObject, getuid(), path, status, result);
++    return result;
+ }
+ 
+diff --git a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift b/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
+index 9e9d827..53a930e 100644
+--- a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
++++ b/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
+@@ -44,7 +44,7 @@ struct InstalledAppCell: View {
+         .frame(maxWidth: .infinity)
+         .contextMenu
+         {
+-            if(app.id != "com.opa334.TrollStore" && app.id != Bundle.main.bundleIdentifier) {
++            if(app.id != TrollStoreBackend.bundleIdentifier && app.id != Bundle.main.bundleIdentifier) {
+                 Button(action: {
+                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: {
+                         let uninstallIPAStatus = UninstallIPA(app.id)
+diff --git a/TrollApps/entitlements.plist b/TrollApps/entitlements.plist
+index 4f15de5..0f9aeb4 100644
+--- a/TrollApps/entitlements.plist
++++ b/TrollApps/entitlements.plist
+@@ -5,7 +5,7 @@
+ 	<key>platform-application</key>
+ 	<true/>
+ 	<key>application-identifier</key>
+-	<string>org.haxi0.TrollApps</string>
++	<string>org.resonance.store</string>
+ 	<key>com.apple.security.exception.files.absolute-path.read-write</key>
+ 	<array>
+ 		<string>/</string>
+@@ -23,4 +23,4 @@
+         <key>com.apple.private.persona-mgmt</key>
+         <true/>
+ </dict>
+-</plist>
+\ No newline at end of file
++</plist>
