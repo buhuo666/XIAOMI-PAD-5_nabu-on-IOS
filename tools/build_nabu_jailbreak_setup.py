@@ -24,7 +24,7 @@ def main():
     info=dict(CFBundleIdentifier=identifier,CFBundleExecutable='JailbreakSetup',CFBundleName='JailbreakSetup',
         CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='4',CFBundleShortVersionString='1.0',
         MinimumOSVersion='16.5',UIDeviceFamily=[2],CFBundleSupportedPlatforms=['iPhoneOS'],LSRequiresIPhoneOS=True,
-        UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
+        LSApplicationQueriesSchemes=['sileo'],UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
     entitlements={key:True for key in ['platform-application','com.apple.private.security.no-sandbox',
         'com.apple.private.persona-mgmt','com.apple.private.bindfs-allow']}

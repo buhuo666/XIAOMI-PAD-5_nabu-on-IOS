@@ -112,7 +112,7 @@ static BOOL verifySetuid(void) {
     }
     BOOL prepared=chown(destination.fileSystemRepresentation,0,0)==0 && chmod(destination.fileSystemRepresentation,04755)==0;
     BOOL passed=NO;
-    if (prepared) passed=[run(@"native_setuid",@[@"/var/jb/.nabu-setuid-probe"],501)[@"passed"] boolValue];
+    if (prepared) passed=[run(@"native_setuid",@[source,@"--launch",@"/var/jb/.nabu-setuid-probe"],501)[@"passed"] boolValue];
     int removed=unlink(destination.fileSystemRepresentation);
     report[@"setuid_probe_removed"]=@(removed==0);
     return prepared && passed && removed==0;
@@ -287,8 +287,15 @@ static int setup(void) {
 
 @interface NabuSetupDelegate : UIResponder <UIApplicationDelegate>
 @property(nonatomic,strong) UIWindow *window;
+@property(nonatomic,strong) UILabel *statusLabel;
+@property(nonatomic,strong) UIButton *sileoButton;
 @end
 @implementation NabuSetupDelegate
+- (void)openSileo {
+    [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"sileo://"] options:@{} completionHandler:^(BOOL opened) {
+        if (!opened) self.statusLabel.text=@"Sileo 还未成功打开。\n请保持 USB 连接，以便读取启动记录。";
+    }];
+}
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     (void)application; (void)options;
     self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
@@ -297,6 +304,13 @@ static int setup(void) {
     UILabel *label=[[UILabel alloc] initWithFrame:CGRectMake(30,140,UIScreen.mainScreen.bounds.size.width-60,260)];
     label.numberOfLines=0; label.textAlignment=NSTextAlignmentCenter;
     label.text=@"正在安装越狱软件环境…\n请保持此页面和 USB 连接。";
+    self.statusLabel=label;
+    self.sileoButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    self.sileoButton.frame=CGRectMake(60,430,UIScreen.mainScreen.bounds.size.width-120,56);
+    [self.sileoButton setTitle:@"打开 Sileo" forState:UIControlStateNormal];
+    [self.sileoButton addTarget:self action:@selector(openSileo) forControlEvents:UIControlEventTouchUpInside];
+    self.sileoButton.enabled=NO;
+    [controller.view addSubview:self.sileoButton];
     [controller.view addSubview:label]; self.window.rootViewController=controller; [self.window makeKeyAndVisible];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         const char *path=NSBundle.mainBundle.executablePath.fileSystemRepresentation;
@@ -310,6 +324,7 @@ static int setup(void) {
         if (!error) do { waited=waitpid(pid,&status,0); } while (waited<0 && errno==EINTR);
         BOOL passed=!error && waited==pid && WIFEXITED(status) && WEXITSTATUS(status)==0;
         dispatch_async(dispatch_get_main_queue(), ^{
+            self.sileoButton.enabled=YES;
             label.text=passed ? @"环境安装与检查已结束。\n请保持 USB 连接，等待核对结果。" :
                 [NSString stringWithFormat:@"环境配置遇到错误。\n启动错误：%d，等待状态：%d。\n请保持 USB 连接以读取记录。",error,status];
         });

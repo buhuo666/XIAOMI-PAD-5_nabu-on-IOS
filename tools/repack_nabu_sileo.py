@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path, PurePosixPath
 import plistlib
+import struct
 import subprocess
 import sys
 import tarfile
@@ -14,6 +15,54 @@ import tarfile
 APP_PREFIX = './var/jb/Applications/Sileo.app/'
 DEBUG_ENTITLEMENTS = ('get-task-allow', 'com.apple.security.get-task-allow')
 VERSION = '2.5.1+nabu1'
+
+
+def read_embedded_xml_entitlements(data):
+    """Read this fixed arm64 input's XML slot without treating its old envelope as valid signing."""
+    magic, cpu, _, _, count, commands_size, _, _ = struct.unpack_from('<8I', data)
+    assert magic == 0xfeedfacf and cpu == 0x100000c
+    cursor = 32
+    signatures = []
+    for _ in range(count):
+        command, size = struct.unpack_from('<II', data, cursor)
+        assert size >= 8 and cursor + size <= 32 + commands_size
+        if command == 0x1d:
+            offset, length = struct.unpack_from('<II', data, cursor + 8)
+            signatures.append((cursor, offset, length))
+        cursor += size
+    assert cursor == 32 + commands_size and len(signatures) == 1
+    command_offset, signature_offset, signature_size = signatures[0]
+    assert signature_offset + signature_size <= len(data)
+    signature = data[signature_offset:signature_offset + signature_size]
+    magic, length, count = struct.unpack_from('>III', signature)
+    assert magic == 0xfade0cc0 and 12 + 8 * count <= length <= signature_size
+    xml_slots, slots, directories = [], [], []
+    for index in range(count):
+        kind, offset = struct.unpack_from('>II', signature, 12 + index * 8)
+        assert 12 + 8 * count <= offset <= length - 8
+        magic, size = struct.unpack_from('>II', signature, offset)
+        assert size >= 8 and offset + size <= length
+        slot = {'type': kind, 'file_offset': signature_offset + offset,
+                'magic': hex(magic), 'bytes': size}
+        slots.append(slot)
+        if kind == 5:
+            assert magic == 0xfade7171
+            xml_slots.append((signature[offset + 8:offset + size], slot))
+        if magic == 0xfade0c02:
+            version, flags = struct.unpack_from('>II', signature, offset + 8)
+            directories.append({'slot': kind, 'version': hex(version), 'flags': hex(flags),
+                                'adhoc': bool(flags & 2)})
+    assert len(xml_slots) == 1
+    xml, xml_slot = xml_slots[0]
+    entitlements = plistlib.loads(xml)
+    assert isinstance(entitlements, dict)
+    detail = {'method': 'Mach-O LC_CODE_SIGNATURE / EmbeddedSignature SuperBlob / XML slot 5',
+              'load_command_file_offset': command_offset, 'signature_file_offset': signature_offset,
+              'signature_bytes': signature_size, 'superblob_bytes': length, 'slots': slots,
+              'xml_slot': xml_slot, 'entitlement_count': len(entitlements),
+              'code_directories': directories, 'cms_slot_present': any(slot['type'] == 0x10000 for slot in slots),
+              'old_signature_trust_claimed': False}
+    return entitlements, xml, detail
 
 
 def read_ar(data):
@@ -106,7 +155,13 @@ def main():
         return plistlib.loads(run(['codesign', '--display', '--entitlements', '-', '--xml', path]).stdout.encode())
 
     try:
-        before = entitlements(app)
+        # The fixed upstream binary has readable XML entitlements but macOS
+        # codesign rejects its old signing envelope. Preserve the actual XML
+        # values, independently matched to the device's 38 registered values.
+        before, original_xml, signature_detail = read_embedded_xml_entitlements((app / 'Sileo').read_bytes())
+        (out / 'original-entitlements-slot.xml').write_bytes(original_xml)
+        (out / 'original-signature-layout.json').write_text(json.dumps(signature_detail, indent=2) + '\n')
+        report['original_entitlements_source'] = signature_detail
         after = {key: value for key, value in before.items() if key not in DEBUG_ENTITLEMENTS}
         for name, value in [('original-entitlements.plist', before), ('nabu-entitlements.plist', after)]:
             (out / name).write_bytes(plistlib.dumps(value))
@@ -114,8 +169,12 @@ def main():
         (app / 'giveMeRoot').write_bytes(helper_data)
         (app / 'giveMeRoot').chmod(0o755)
         run(['codesign', '--verify', '--strict', app / 'giveMeRoot'])
+        # Create a new ad-hoc signature. The source has flags=0 and no CMS;
+        # its old requirements/flags/runtime must not be inherited as trusted
+        # metadata. Only the explicitly parsed and adjusted entitlements carry
+        # over. Normal codesign recreates the bundle resource seal.
         run(['codesign', '--force', '--sign', '-', '--timestamp=none', '--pagesize', '4096',
-             '--identifier', info['CFBundleIdentifier'], '--preserve-metadata=requirements,flags,runtime',
+             '--identifier', info['CFBundleIdentifier'],
              '--entitlements', out / 'nabu-entitlements.plist', app])
         run(['codesign', '--verify', '--strict', app])
         run(['codesign', '--verify', '--strict', app / 'giveMeRoot'])
@@ -130,6 +189,7 @@ def main():
         report['removed_entitlements'] = {key: before[key] for key in DEBUG_ENTITLEMENTS if key in before}
         report['other_entitlements_preserved'] = True
         report['complete_app_signature_verified'] = True
+        report['signature_policy'] = 'New ad-hoc signature; explicit XML entitlements; no old requirements/flags/runtime preservation'
 
         rebuilt = []
         for original, data in payload:
