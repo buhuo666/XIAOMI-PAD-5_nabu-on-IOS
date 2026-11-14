@@ -1,8 +1,8 @@
 diff --git a/TrollApps/TrollApps/Functions/Apps.swift b/TrollApps/TrollApps/Functions/Apps.swift
-index b44e9f9..9da4a84 100644
+index b44e9f9..b722ea5 100644
 --- a/TrollApps/TrollApps/Functions/Apps.swift
 +++ b/TrollApps/TrollApps/Functions/Apps.swift
-@@ -7,6 +7,47 @@
+@@ -7,6 +7,48 @@
  
  import Combine
  
@@ -32,9 +32,10 @@ index b44e9f9..9da4a84 100644
 +                                          "executable": fm.isExecutableFile(atPath: url.path)]
 +                do {
 +                    let attributes = try fm.attributesOfItem(atPath: url.path)
-+                    for key in [FileAttributeKey.posixPermissions, .ownerAccountID, .groupOwnerAccountID, .size, .type] {
++                    for key in [FileAttributeKey.posixPermissions, .ownerAccountID, .groupOwnerAccountID, .size] {
 +                        item[key.rawValue] = attributes[key]
 +                    }
++                    if let type = attributes[.type] as? FileAttributeType { item["NSFileType"] = type.rawValue }
 +                } catch { item["error"] = error.localizedDescription }
 +                return item
 +            }
@@ -50,7 +51,7 @@ index b44e9f9..9da4a84 100644
  struct BundledApp: Identifiable, Hashable {
      let id: String
      var name: String
-@@ -26,7 +67,7 @@ func GetApps() -> [BundledApp] {
+@@ -26,7 +68,7 @@ func GetApps() -> [BundledApp] {
          let appDict = NSDictionary(contentsOfFile: "\(app.bundleURL.path)/Info.plist")
          
          let parentDirectory = app.bundleURL.deletingLastPathComponent()
