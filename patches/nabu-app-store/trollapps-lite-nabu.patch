@@ -30,10 +30,33 @@ index b44e9f9..1bd9c1e 100644
          
          let bundleID = (appDict?.value(forKey: "CFBundleIdentifier") ?? "Unknown") as! String
 diff --git a/TrollApps/TrollApps/Managers/InstallManager.swift b/TrollApps/TrollApps/Managers/InstallManager.swift
-index 93e7fc1..ed24e0f 100644
+index 93e7fc1..b5847af 100644
 --- a/TrollApps/TrollApps/Managers/InstallManager.swift
 +++ b/TrollApps/TrollApps/Managers/InstallManager.swift
-@@ -17,8 +17,7 @@ func InstallIPA(_ itemID: UUID, queueManager: QueueManager, completion: @escapin
+@@ -7,6 +7,22 @@
+ 
+ import Combine
+ 
++private func recordInstallResult(_ itemID: UUID, helper: String, ipa: String, result: Int32) {
++    let directory = URL(fileURLWithPath: "/var/mobile/Media/NabuStore", isDirectory: true)
++    do {
++        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
++        let record: [String: Any] = [
++            "operation": "install", "itemID": itemID.uuidString,
++            "helper": helper, "ipa": ipa, "result": Int(result),
++            "timestamp": Date().timeIntervalSince1970
++        ]
++        try JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
++            .write(to: directory.appendingPathComponent("last-install-result.json"), options: .atomic)
++    } catch {
++        print("NabuStore: could not save installation result: \(error)")
++    }
++}
++
+ func InstallIPA(_ itemID: UUID, queueManager: QueueManager, completion: @escaping (FunctionStatus) -> Void) {
+         
+     let destinationFolderURL = URL(fileURLWithPath: "/var/mobile/.TrollApps/tmp/")
+@@ -17,12 +33,13 @@ func InstallIPA(_ itemID: UUID, queueManager: QueueManager, completion: @escapin
      if !FileManager.default.fileExists(atPath: IPAPathURL.path) {
          completion(FunctionStatus(error: true, message: ErrorMessage(title: "FNF \(IPAPathURL.path)", body: "File does not exist")))
          return
@@ -41,8 +64,51 @@ index 93e7fc1..ed24e0f 100644
 -        let trollstoreHelperPath = trollStoreApp.bundleURL.path + "/trollstorehelper"
 +    } else if let trollstoreHelperPath = TrollStoreBackend.helperPath() {
          let returnCode = spawnRoot(trollstoreHelperPath, ["install", IPAPathURL.path])
++        recordInstallResult(itemID, helper: trollstoreHelperPath, ipa: IPAPathURL.path, result: returnCode)
          
          if(returnCode != 0) {
+-            completion(FunctionStatus(error: true, message: ErrorMessage(title: "FAILED_TO_INSTALL", body: "INSTALLATION_RETURNED_ERROR \(returnCode)")))
++            let detail = String(format: NSLocalizedString("INSTALLATION_RETURNED_ERROR %@", comment: "Installer return code"), String(returnCode))
++            completion(FunctionStatus(error: true, message: ErrorMessage(title: "FAILED_TO_INSTALL", body: detail)))
+             return
+         } else {
+             NotificationCenter.default.post(name: Notification.Name("ApplicationsChanged"), object: nil)
+diff --git a/TrollApps/TrollApps/Managers/QueueManager.swift b/TrollApps/TrollApps/Managers/QueueManager.swift
+index e7a5c20..56aaecf 100644
+--- a/TrollApps/TrollApps/Managers/QueueManager.swift
++++ b/TrollApps/TrollApps/Managers/QueueManager.swift
+@@ -184,7 +184,10 @@ struct QueueManagerView<Content: View>: View {
+                                                 Text(queueItem.name)
+                                                 
+                                                 if queueItem.error {
+-                                                    Text(queueItem.message.title)
++                                                    Text(LocalizedStringKey(queueItem.message.title))
++                                                        .font(.caption)
++                                                        .foregroundColor(.gray)
++                                                    Text(queueItem.message.body)
+                                                         .font(.caption)
+                                                         .foregroundColor(.gray)
+                                                 } else if queueManager.isProcessing {
+@@ -324,6 +327,19 @@ struct QueueManagerView<Content: View>: View {
+                             .buttonStyle(LongButtonStyle(type: "gray", dissabled: queueManager.isProcessing))
+                             .disabled(queueManager.isProcessing)
+                         } else {
++                            if queueManager.queue.contains(where: { $0.error && $0.action == .install }) {
++                                Button("Retry Failed Installs") {
++                                    for index in queueManager.queue.indices where queueManager.queue[index].error && queueManager.queue[index].action == .install {
++                                        queueManager.queue[index].error = false
++                                        queueManager.queue[index].message = ErrorMessage(title: "", body: "")
++                                    }
++                                    queueManager.hasFinished = false
++                                    queueManager.isProcessing = true
++                                    queueManager.canClose = false
++                                    processInstalls(index: 0)
++                                }
++                                .buttonStyle(LongButtonStyle(type: "blue", dissabled: false))
++                            }
+                             Button("Close Queue") {
+                                 queueManager.queue.removeAll()
+                                 queueManager.hasFinished = false
 diff --git a/TrollApps/TrollApps/Managers/UninstallManager.swift b/TrollApps/TrollApps/Managers/UninstallManager.swift
 index 734dbae..9c505df 100644
 --- a/TrollApps/TrollApps/Managers/UninstallManager.swift
@@ -58,21 +124,55 @@ index 734dbae..9c505df 100644
          
          if(returnCode != 0) {
 diff --git a/TrollApps/TrollApps/Objective C/TSUtil.m b/TrollApps/TrollApps/Objective C/TSUtil.m
-index ea018f5..b7dde4d 100644
+index ea018f5..0489dba 100644
 --- a/TrollApps/TrollApps/Objective C/TSUtil.m	
 +++ b/TrollApps/TrollApps/Objective C/TSUtil.m	
-@@ -8,6 +8,7 @@
+@@ -7,7 +7,10 @@
+ 
  #import <Foundation/Foundation.h>
  #import <spawn.h>
++#import <fcntl.h>
++#import <unistd.h>
  #import "TrollApps-Bridging-Header.h"
 +#import "NabuChildStatus.h"
  
  
  #define POSIX_SPAWN_PERSONA_FLAGS_OVERRIDE 1
-@@ -55,17 +56,8 @@ int spawnRoot(NSString* path, NSArray* args)
-         return spawnError;
-     }
+@@ -38,34 +41,42 @@ int spawnRoot(NSString* path, NSArray* args)
  
+     posix_spawn_file_actions_t action;
+     posix_spawn_file_actions_init(&action);
++    NSString *diagnosticDirectory = @"/var/mobile/Media/NabuStore";
++    [[NSFileManager defaultManager] createDirectoryAtPath:diagnosticDirectory withIntermediateDirectories:YES attributes:nil error:nil];
++    NSString *outputPath = [diagnosticDirectory stringByAppendingPathComponent:@"last-helper-output.log"];
++    int outputFD = open(outputPath.fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC, 0644);
++    int outputError = outputFD < 0 ? errno : 0;
++    if (outputFD >= 0) {
++        posix_spawn_file_actions_adddup2(&action, outputFD, STDOUT_FILENO);
++        posix_spawn_file_actions_adddup2(&action, outputFD, STDERR_FILENO);
++        if (outputFD != STDOUT_FILENO && outputFD != STDERR_FILENO) {
++            posix_spawn_file_actions_addclose(&action, outputFD);
++        }
++    }
+     
+     pid_t task_pid;
+     int status = -200;
+     int spawnError = posix_spawn(&task_pid, [path UTF8String], &action, &attr, (char* const*)argsC, NULL);
+     posix_spawnattr_destroy(&attr);
++    posix_spawn_file_actions_destroy(&action);
++    if (outputFD >= 0) close(outputFD);
+     for (NSUInteger i = 0; i < argCount; i++)
+     {
+         free(argsC[i]);
+     }
+     free(argsC);
+     
+-    if(spawnError != 0)
+-    {
+-        NSLog(@"posix_spawn error %d\n", spawnError);
+-        return spawnError;
+-    }
+-
 -    do
 -    {
 -        if (waitpid(task_pid, &status, 0) != -1) {
@@ -85,11 +185,44 @@ index ea018f5..b7dde4d 100644
 -    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
 -    
 -    return WEXITSTATUS(status);
-+    int result = nabu_wait_child(task_pid, &status);
++    int result = spawnError != 0 ? spawnError : nabu_wait_child(task_pid, &status);
++    NSDictionary *diagnostic = @{
++        @"operation": args.firstObject ?: @"", @"helper": path,
++        @"callerUID": @(getuid()), @"spawnError": @(spawnError),
++        @"waitStatus": @(status), @"result": @(result),
++        @"outputOpenError": @(outputError),
++        @"timestamp": @([[NSDate date] timeIntervalSince1970])
++    };
++    NSData *diagnosticData = [NSJSONSerialization dataWithJSONObject:diagnostic options:NSJSONWritingPrettyPrinted error:nil];
++    [diagnosticData writeToFile:[diagnosticDirectory stringByAppendingPathComponent:@"last-spawn-result.json"] options:NSDataWritingAtomic error:nil];
 +    NSLog(@"[NabuStore] %@ uid=%u helper=%@ status=%d result=%d", args.firstObject, getuid(), path, status, result);
 +    return result;
  }
  
+diff --git a/TrollApps/TrollApps/Resources/en.lproj/Localizable.strings b/TrollApps/TrollApps/Resources/en.lproj/Localizable.strings
+index 128d738..63db47c 100644
+--- a/TrollApps/TrollApps/Resources/en.lproj/Localizable.strings
++++ b/TrollApps/TrollApps/Resources/en.lproj/Localizable.strings
+@@ -130,6 +130,7 @@
+ 
+ // Install / Uninstall / Download Errors
+ "FAILED_TO_INSTALL" = "Failed to Install";
++"Retry Failed Installs" = "Retry Failed Installs";
+ "INSTALLATION_RETURNED_ERROR %@" = "Installation returned error: %@";
+ 
+ "ERROR_REMOVING_IPA_FILE_AFTER_INSTALL" = "Error removing IPA after installation";
+diff --git a/TrollApps/TrollApps/Resources/zh-Hans.lproj/Localizable.strings b/TrollApps/TrollApps/Resources/zh-Hans.lproj/Localizable.strings
+index caf1708..7564218 100644
+--- a/TrollApps/TrollApps/Resources/zh-Hans.lproj/Localizable.strings
++++ b/TrollApps/TrollApps/Resources/zh-Hans.lproj/Localizable.strings
+@@ -130,6 +130,7 @@
+ 
+ // Install / Uninstall / Download Errors
+ "FAILED_TO_INSTALL" = "安装失败";
++"Retry Failed Installs" = "重试失败的安装";
+ "INSTALLATION_RETURNED_ERROR %@" = "安装返回错误: %@";
+ 
+ "ERROR_REMOVING_IPA_FILE_AFTER_INSTALL" = "安装后删除IPA时出错";
 diff --git a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift b/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift
 index 9e9d827..53a930e 100644
 --- a/TrollApps/TrollApps/Views/Cells/InstalledAppCell.swift

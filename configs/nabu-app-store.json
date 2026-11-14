@@ -1,6 +1,6 @@
 {
   "target": "arm64-apple-ios16.5",
-  "revision": "store-01",
+  "revision": "store-02",
   "sources": [
     {"name": "TrollStore", "cache": "src/trollstore-roothide-lansonsam", "url": "https://github.com/lansonsam/TrollStore-roothide.git", "commit": "763b9768241384ea490c119d37173204ad634918", "patch": "trollstore-lite-nabu.patch"},
     {"name": "TrollStore/ChOma", "cache": "src/trollstore-roothide-lansonsam/ChOma", "url": "https://github.com/opa334/ChOma.git", "commit": "964023ddac2286ef8e843f90df64d44ac6a673df"},
@@ -15,7 +15,7 @@
   ],
   "apps": [
     {"ipa": "TrollStoreLite-Nabu.ipa", "app": "TrollStoreLite", "bundle_id": "com.opa334.TrollStoreLite", "version": "2.1.1", "build": "21101"},
-    {"ipa": "TrollApps-Nabu.ipa", "app": "TrollApps", "bundle_id": "org.resonance.store", "version": "2.3", "build": "2301"}
+    {"ipa": "TrollApps-Nabu.ipa", "app": "TrollApps", "bundle_id": "org.resonance.store", "version": "2.3", "build": "2302"}
   ],
   "ldid_version": "v2.1.5-procursus7-new",
   "build_accesses_device": false

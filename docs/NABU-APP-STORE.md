@@ -42,7 +42,7 @@ python3 tools/build_nabu_app_store.py --sources build/nabu-app-store/sources --o
 成功时输出：
 
 - `TrollStoreLite-Nabu.ipa`，`com.opa334.TrollStoreLite`，build `21101`。
-- `TrollApps-Nabu.ipa`，`org.resonance.store`，build `2301`。
+- `TrollApps-Nabu.ipa`，`org.resonance.store`，build `2302`。
 - `build-report.json`：必须是 `result=signed-not-run` 且 `ipa_ready=true`，并包含两款应用。
 
 应用和 helper 使用 ad hoc 签名；逐项读回签名 entitlements，检查 ARM64 / iOS 16.5 目标。`ldid` 保持已下载的官方原始字节。IPA ZIP 中保留可执行权限。
@@ -71,4 +71,6 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 
 2026-11-14 后续用户明确要求临时启动 iPadOS：沿用 i4-10 内核与 i4-12 启动包，新建商店日志槽 1，通过 `adb reboot bootloader` / `fastboot boot` 启动；未额外重启 Android。原生 USB 和 GPU 就绪，两款应用已安装并进入图标清单，用户确认两款都能打开。TrollApps 的 PC 安装连接在 30 秒超时后，设备又过约 4 秒报告完成；已保留原始超时回执及后续独立 Lookup/图标验证。商店安装脚本的回复等待改为 90 秒，不重复安装已确认成功的应用。
 
-用户正在测试从 TrollApps 下载 `tapgame prototype` 并安装、打开；这一流程尚未确认。完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停。本轮日志槽尚未回收，其他任务不得覆盖。
+用户测试从 TrollApps 下载 `tapgame prototype` 后报告 `FAILED_TO_INSTALL`，关闭队列重新获取仍失败。旧版队列没有显示错误 body，因此没有实际返回码；覆盖重试的 syslog 也未取得应用自己的诊断。安装和打开流程尚未通过。完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停。本轮日志槽尚未回收，其他任务不得覆盖。
+
+`store-02` / TrollApps build `2302` 显示本地化错误标题与完整详情；失败队列新增“重试失败的安装”，复用当前队列下载的 IPA。应用重开仍遵循上游清理缓存的行为，不能保留旧队列。安装返回码保存到 `/var/mobile/Media/NabuStore/last-install-result.json`，启动错误与原始等待状态保存到 `last-spawn-result.json`，helper 标准输出/错误保存到 `last-helper-output.log`，可通过 AFC 读取。此版本用于取得真实错误，尚不代表安装故障已修复。
