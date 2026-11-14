@@ -32,7 +32,7 @@ def main():
     entitlement_file.write_bytes(plistlib.dumps(entitlements))
     (app/'Info.plist').write_bytes(plistlib.dumps(dict(
         CFBundleIdentifier=identifier, CFBundleExecutable='JailbreakProbe', CFBundleName='JailbreakProbe',
-        CFBundleDisplayName='越狱能力验证', CFBundlePackageType='APPL', CFBundleVersion='2',
+        CFBundleDisplayName='越狱能力验证', CFBundlePackageType='APPL', CFBundleVersion='3',
         CFBundleShortVersionString='1.0', MinimumOSVersion='16.5', UIDeviceFamily=[2],
         CFBundleSupportedPlatforms=['iPhoneOS'], LSRequiresIPhoneOS=True, UIRequiresFullScreen=True,
         UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],

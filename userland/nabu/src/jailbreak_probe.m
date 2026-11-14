@@ -16,7 +16,7 @@
 extern kern_return_t mach_vm_read_overwrite(vm_map_t, mach_vm_address_t, mach_vm_size_t, mach_vm_address_t, mach_vm_size_t *);
 extern kern_return_t mach_vm_write(vm_map_t, mach_vm_address_t, vm_offset_t, mach_msg_type_number_t);
 extern int ptrace(int, pid_t, caddr_t, int);
-#define PT_ATTACH 10
+#define PT_ATTACHEXC 14
 #define PT_DETACH 11
 
 extern int posix_spawnattr_set_persona_np(const posix_spawnattr_t *, uid_t, uint32_t);
@@ -26,10 +26,13 @@ extern char **environ;
 static NSString *const directory = @"/var/mobile/Media/NabuJailbreak";
 static volatile uint64_t memoryWord = 0x1020304050607080ULL;
 
-static void save(NSDictionary *value, NSString *name) {
+static BOOL save(NSDictionary *value, NSString *name) {
     [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:NSJSONWritingPrettyPrinted error:nil];
-    [data writeToFile:[directory stringByAppendingPathComponent:name] options:NSDataWritingAtomic error:nil];
+    NSError *error = nil;
+    BOOL written = [data writeToFile:[directory stringByAppendingPathComponent:name] options:NSDataWritingAtomic error:&error];
+    if (!written) NSLog(@"Nabu jailbreak probe could not save %@: %@", name, error);
+    return written;
 }
 
 static int spawnMode(const char *mode, uid_t uid, int output, char **environment, pid_t *pid) {
@@ -103,7 +106,8 @@ static NSDictionary *debugChild(void) {
             }
             mach_port_deallocate(mach_task_self(), task);
         }
-        int attached = ptrace(PT_ATTACH, pid, 0, 0);
+        result[@"ptrace_request"] = @"PT_ATTACHEXC";
+        int attached = ptrace(PT_ATTACHEXC, pid, 0, 0);
         result[@"ptrace_attach_errno"] = @(attached == 0 ? 0 : errno);
         if (attached == 0) {
             int status = 0;
@@ -139,8 +143,14 @@ static int jitChild(void) {
 
 static int rootTests(void) {
     NSMutableDictionary *result = [@{@"uid": @(getuid()), @"euid": @(geteuid()),
-                                     @"timestamp": @([[NSDate date] timeIntervalSince1970])} mutableCopy];
+                                     @"timestamp": @([[NSDate date] timeIntervalSince1970]),
+                                     @"build": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]} mutableCopy];
     if (getuid() != 0 || geteuid() != 0) { save(result,@"results.json"); return 1; }
+    // The mobile UI writes its launch receipt after this root process exits.
+    // Build 2 created this directory as root, preventing that final atomic write.
+    [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    int ownership = chown(directory.fileSystemRepresentation, 501, 501);
+    result[@"output_directory_chown_errno"] = @(ownership == 0 ? 0 : errno);
     result[@"debugging"] = debugChild();
     pid_t child = 0;
     int error = spawnMode("--jit-child", 0, -1, environ, &child);
@@ -179,8 +189,8 @@ static int rootTests(void) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         pid_t pid=0; int error=spawnMode("--root-tests",0,-1,environ,&pid);
         NSDictionary *status=waitResult(pid,error);
-        save(status,@"root-launch.json");
-        dispatch_async(dispatch_get_main_queue(), ^{ label.text=@"验证已结束，结果已保存。\n请保持 USB 连接。"; });
+        BOOL saved = save(status,@"root-launch.json");
+        dispatch_async(dispatch_get_main_queue(), ^{ label.text=saved ? @"验证已结束，结果已保存。\n请保持 USB 连接。" : @"验证已结束，但启动回执保存失败。\n请保持 USB 连接以读取日志。"; });
     });
     return YES;
 }

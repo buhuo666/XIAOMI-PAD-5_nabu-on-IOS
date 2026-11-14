@@ -80,3 +80,9 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 `store-02` 的 CI `43568790727` 成功，TrollApps 2302 已更新并由用户打开。实际记录确认 helper 与 ldid 都为 `0644`、uid/gid 33，两个父目录为 `0755`，应用进程为 uid/euid 501；安装包中的执行位在原生安装后未保留。这解释了 helper 启动时报 EACCES。证据为 `log/host/app-store-20261114/store-02/environment-01/backend-environment.json`。
 
 `store-03` 在两端的 `spawnRoot` 中为这个实际问题增加准备步骤：当本包 helper 或 ldid 无法执行时，通过已有执行权限的 Lite 主程序运行 `--nabu-prepare-helper`，保留 persona root 要求。该专用入口在进入 UIKit 前检查真实 uid/euid 均为 0，只 chmod 同一包中的 `trollstorehelper` 与 `ldid` 为 `0755`，记录实际身份、前后权限和 errno 到 `helper-preparation.json`。成功后继续原来的 helper 调用，失败则返回真实错误。普通打开 Lite 不执行准备操作；不修改内核或启动包。诊断读取脚本新增第五项准备记录。root 准备与应用安装仍须实机验证。
+
+后续 `acd60a9` / CI `43569538300` 完整构建成功，Lite 21102 和 TrollApps 2303 已安装。`store-03/test-02` 实测记录确认：准备及 helper 均为 UID/EUID 0/0，两文件从 0644 改为 0755，chmod errno 均 0；ldid 两次退出 0，MCM 安装和注册完成，helper/安装返回 0。独立 Lookup 确认 `dev.bonnie.tapgame` 已注册，用户也确认安装成功。root、本地 helper 和商店安装链已通过。
+
+tapgame 打不开属于下一阶段：syslog 两次记录 Unity 2021.3.2f1 / il2cpp 已开始图形初始化，随后 `-[NBBlitEncoder optimizeContentsForGPUAccess:]` 缺失导致 NSInvalidArgumentException / SIGABRT。证据为 `store-03/tapgame-launch/exception-evidence.json`。修复提交 `c0a74a7` / CI `43571625934` 基于 GPU246 前端补齐已观察到的方法，复用既有纹理保留及 IOSurface 跟踪；编译、签名与符号检查通过，产物在 `artifacts/nabu-store-metal-01` 完成一次下载审查。尚未打包或部署，不能称 tapgame 已能正常运行。
+
+本轮 store-01 日志已回收清空，当前设备和占用槽改由 `log/host/jailbreak-20261114/continuation.json` 记录，详见 [NABU-JAILBREAK.md](NABU-JAILBREAK.md)。
