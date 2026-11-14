@@ -2,6 +2,8 @@
  * Included after the original bindfs read operations and before its vnode table.
  * Writable file mappings use the lower vnode's VM object via the mmap calldown below.
  */
+extern memory_object_control_t ubc_getobject(vnode_t, int);
+
 static int
 nabu_bind_lower(vnode_t upper, vnode_t *lower)
 {

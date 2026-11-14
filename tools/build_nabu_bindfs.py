@@ -32,6 +32,8 @@ def generate(tree,out):
     for name in names:vfs=re.sub(r'\b'+name+r'\b','nabu_'+name,vfs)
     (out/'NabuBindVfs.c').write_text(vfs)
     vnode=(source/'bind_vnops.c').read_text()
+    vnode=once(vnode,'\tstruct bind_mount * bind_mp;\n','')
+    vnode=once(vnode,'\tbind_mp = MOUNTTOBINDMOUNT(mp);\n','')
     vnode=once(vnode,'vop_t * bindfs_vnodeop_p = NULL;',
         '/* The original bind_nodeget and this descriptor share the original operation vector. */\n'
         'static void nabu_bind_size(vnode_t upper, vnode_t lower);')
