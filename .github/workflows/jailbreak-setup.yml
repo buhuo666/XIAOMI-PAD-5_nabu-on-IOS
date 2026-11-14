@@ -6,6 +6,9 @@ on:
       - '.github/workflows/jailbreak-setup.yml'
       - 'tools/build_nabu_jailbreak_setup.py'
       - 'userland/nabu/src/jailbreak_setup.m'
+      - 'userland/nabu/src/jailbreak_fs_probe.*'
+      - 'userland/nabu/src/jailbreak_paths.*'
+      - 'userland/nabu/src/jailbreak_boot.c'
   workflow_dispatch:
 permissions:
   contents: read

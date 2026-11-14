@@ -22,7 +22,7 @@ def main():
     app=out/'Payload/JailbreakSetup.app'; app.mkdir(parents=True)
     identifier='org.nabu.JailbreakSetup'
     info=dict(CFBundleIdentifier=identifier,CFBundleExecutable='JailbreakSetup',CFBundleName='JailbreakSetup',
-        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='2',CFBundleShortVersionString='1.0',
+        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='3',CFBundleShortVersionString='1.0',
         MinimumOSVersion='16.5',UIDeviceFamily=[2],CFBundleSupportedPlatforms=['iPhoneOS'],LSRequiresIPhoneOS=True,
         UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -31,7 +31,7 @@ def main():
     entitlements['application-identifier']=identifier
     (out/'entitlements.plist').write_bytes(plistlib.dumps(entitlements))
     report=dict(result='building',ci={'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')},
-        commands=[],device_executed=False,bundle_id=identifier,build='2')
+        commands=[],device_executed=False,bundle_id=identifier,build='3')
     def run(cmd):
         cmd=list(map(str,cmd)); report['commands'].append(cmd)
         value=subprocess.run(cmd,capture_output=True,text=True)
@@ -41,9 +41,23 @@ def main():
     try:
         sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path']).stdout.strip()
         binary=app/'JailbreakSetup'
+        common=['xcrun','--sdk','iphoneos','clang','-target','arm64-apple-ios16.5','-isysroot',sdk,
+            '-Os','-g','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations']
+        objects=[]
+        for name in ['jailbreak_paths','jailbreak_fs_probe']:
+            obj=out/(name+'.o')
+            run([*common,'-c',ROOT/'userland/nabu/src'/(name+'.c'),'-o',obj])
+            objects.append(obj)
+        boot=out/'nabu-jailbreak-boot'
+        run([*common,ROOT/'userland/nabu/src/jailbreak_boot.c',objects[0],'-o',boot])
+        macho_target(boot,2)
+        boot.chmod(0o755)
+        run(['codesign','--force','--sign','-','--timestamp=none','--pagesize','4096',
+            '--identifier','org.nabu.jailbreak-boot','--entitlements',out/'entitlements.plist',boot])
+        run(['codesign','--verify','--strict',boot])
         run(['xcrun','--sdk','iphoneos','clang','-target','arm64-apple-ios16.5','-isysroot',sdk,'-Os','-g',
             '-fobjc-arc','-fblocks','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations',
-            ROOT/'userland/nabu/src/jailbreak_setup.m','-framework','Foundation','-framework','UIKit','-larchive','-o',binary])
+            ROOT/'userland/nabu/src/jailbreak_setup.m',*objects,'-framework','Foundation','-framework','UIKit','-larchive','-o',binary])
         macho_target(binary,2); binary.chmod(0o755)
         run(['codesign','--force','--sign','-','--timestamp=none','--pagesize','4096','--identifier',identifier,
             '--entitlements',out/'entitlements.plist',app])

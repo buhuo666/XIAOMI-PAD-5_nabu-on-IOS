@@ -8,6 +8,8 @@
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "jailbreak_paths.h"
+#include "jailbreak_fs_probe.h"
 
 // Stable libarchive ABI; the public iOS SDK omits these headers.
 struct archive;
@@ -27,7 +29,6 @@ extern int posix_spawnattr_set_persona_gid_np(const posix_spawnattr_t *, uid_t);
 extern char **environ;
 
 static NSString *const base = @"/private/var/db/nabu-jailbreak";
-static NSString *const visible = @"/private/preboot/nabu-jb";
 static NSString *const input = @"/var/mobile/Media/NabuJailbreak/Inputs";
 static NSString *const output = @"/var/mobile/Media/NabuJailbreak/Setup";
 static NSMutableDictionary *report;
@@ -140,46 +141,20 @@ static BOOL extractSeed(void) {
     return YES;
 }
 
-static BOOL bindDirectory(NSString *source, NSString *target, int flags) {
-    struct statfs fs;
-    if (statfs(target.fileSystemRepresentation,&fs)) return failure(@"mount_target");
-    if (!strcmp(fs.f_fstypename,"bindfs") && !strcmp(fs.f_mntfromname,source.fileSystemRepresentation)) return YES;
-    if (mount("bindfs",target.fileSystemRepresentation,flags,(void *)source.fileSystemRepresentation)) return failure(@"bind_mount");
-    return YES;
-}
-
 static BOOL mountPrefix(void) {
-    struct stat st;
-    if (lstat(visible.fileSystemRepresentation,&st)) {
-        const char *path=visible.fileSystemRepresentation;
-        if (sysctlbyname("kern.apfs_synthetic",NULL,NULL,(void *)path,strlen(path))) return failure(@"synthetic_preboot_mountpoint");
-    }
-    if (!bindDirectory(base,visible,0)) return NO;
+    const char *stage=NULL;
+    if (nabu_jailbreak_restore_paths(&stage)) return failure(@(stage));
     struct statfs mapped;
-    if (statfs(visible.fileSystemRepresentation,&mapped)) return failure(@"prefix_statfs");
+    if (statfs("/var/jb",&mapped)) return failure(@"prefix_statfs");
     report[@"prefix_mount_flags"]=@(mapped.f_flags);
     report[@"prefix_mount_readonly"]=@((mapped.f_flags & MNT_RDONLY)!=0);
     report[@"prefix_mount_nosuid"]=@((mapped.f_flags & MNT_NOSUID)!=0);
-    const char *target="/private/preboot/nabu-jb/procursus";
-    if (symlink(target,"/var/jb")) {
-        char previous[1024]={0};
-        ssize_t size=readlink("/var/jb",previous,sizeof(previous)-1);
-        if (size<0 || strcmp(previous,target)) return failure(@"existing_var_jb");
-    }
-    NSString *bin=[base stringByAppendingPathComponent:@"bin"];
-    NSString *usrbin=[base stringByAppendingPathComponent:@"usr-bin"];
-    if (!makeDirectory(bin) || !makeDirectory(usrbin)) return NO;
-    for (NSString *name in @[@"sh",@"mv",@"cp",@"rm",@"mkdir",@"chmod"]) {
-        NSString *path=[bin stringByAppendingPathComponent:name];
-        NSString *to=[@"/var/jb/usr/bin" stringByAppendingPathComponent:name];
-        if (symlink(to.fileSystemRepresentation,path.fileSystemRepresentation) && errno!=EEXIST) return failure(@"bin_link");
-    }
-    NSString *env=[usrbin stringByAppendingPathComponent:@"env"];
-    if (symlink("/var/jb/usr/bin/env",env.fileSystemRepresentation) && errno!=EEXIST) return failure(@"env_link");
-    if (!bindDirectory(bin,@"/bin",MNT_RDONLY|MNT_UNION) || !bindDirectory(usrbin,@"/usr/bin",MNT_RDONLY|MNT_UNION)) return NO;
-    report[@"prefix_storage"]=@"persistent APFS Data";
-    report[@"prefix_visible_path"]=@"/private/preboot/nabu-jb/procursus";
-    report[@"mounts_restored_automatically_after_reboot"]=@NO;
+    report[@"prefix_filesystem"]=@(mapped.f_fstypename);
+    report[@"prefix_storage"]=@"persistent native APFS Data";
+    report[@"prefix_visible_path"]=@(NABU_JB_PREFIX);
+    report[@"prefix_uses_bindfs"]=@NO;
+    NSData *data=[NSData dataWithContentsOfFile:@(NABU_JB_BASE "/boot-paths.json")];
+    if (data) report[@"boot_path_receipt"]=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil] ?: @{};
     return YES;
 }
 
@@ -205,7 +180,12 @@ static int setup(void) {
     if (getuid()!=0 || geteuid()!=0) return 1;
     if (!makeDirectory(output)) return 1;
     chown(output.fileSystemRepresentation,501,501);
-    if (!makeDirectory(base) || !extractSeed() || !mountPrefix() || !configureDirectories()) return 2;
+    if (!makeDirectory(base) || !extractSeed() || !mountPrefix()) return 2;
+    NSString *probeOutput=[output stringByAppendingPathComponent:@"filesystem.json"];
+    int probe=nabu_jailbreak_fs_probe(NABU_JB_PREFIX,"/var/jb",probeOutput.fileSystemRepresentation);
+    report[@"filesystem_probe_passed"]=@(probe==0);
+    if (probe) { errno=EIO; failure(@"filesystem_probe"); return 2; }
+    if (!configureDirectories()) return 2;
     if (![run(@"shell",@[@"/var/jb/bin/sh",@"-c",@"printf 'NABU_SHELL_OK\\n'; id"],-1)[@"passed"] boolValue]) return 3;
     run(@"user_database",@[@"/var/jb/usr/sbin/pwd_mkdb",@"-p",@"/var/jb/etc/master.passwd"],-1);
     run(@"firmware",@[@"/var/jb/usr/libexec/firmware"],-1);
@@ -216,7 +196,7 @@ static int setup(void) {
     run(@"unpack_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--unpack",
         [input stringByAppendingPathComponent:@"sileo-2.5.1.deb"],[input stringByAppendingPathComponent:@"ellekit-0.4.5.deb"]],-1);
     run(@"configure_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--configure",@"org.coolstar.sileo",@"ellekit"],-1);
-    run(@"register_sileo",@[@"/var/jb/usr/bin/uicache",@"-p",@"/private/preboot/nabu-jb/procursus/Applications/Sileo.app"],-1);
+    run(@"register_sileo",@[@"/var/jb/usr/bin/uicache",@"-p",@(NABU_JB_PREFIX "/Applications/Sileo.app")],-1);
     run(@"sileo_setuid",@[@"/var/jb/Applications/Sileo.app/giveMeRoot",@"/var/jb/usr/bin/id",@"-u"],501);
     run(@"package_status",@[@"/var/jb/usr/bin/dpkg-query",@"-W",@"-f=${Package} ${Version} ${Status}\\n"],-1);
     run(@"dependency_check",@[@"/var/jb/usr/bin/apt-get",@"check"],-1);
@@ -271,6 +251,8 @@ static int setup(void) {
 @end
 
 int main(int argc,char **argv) {
+    int probeChild=nabu_jailbreak_fs_probe_child(argc,argv);
+    if (probeChild>=0) return probeChild;
     @autoreleasepool {
         if (argc==2 && !strcmp(argv[1],"--setup")) return setup();
         return UIApplicationMain(argc,argv,nil,NSStringFromClass(NabuSetupDelegate.class));
