@@ -1,5 +1,6 @@
 #define _GNU_SOURCE 1
 #include "jailbreak_tweak_test.h"
+#include "jailbreak_libraries.h"
 #include <dlfcn.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -57,7 +58,7 @@ int main(int argc,char **argv) {
     int actual=value?value(0):-1;
     bool loader=loader_present();
     const char *insert=getenv("DYLD_INSERT_LIBRARIES");
-    bool exact_loader=insert && !strcmp(insert,"/var/jb/usr/lib/TweakLoader.dylib");
+    bool exact_loader=nabu_jailbreak_has_library(insert,"/var/jb/usr/lib/TweakLoader.dylib");
     bool mobile=getuid()==501 && geteuid()==501;
     bool passed=false;
     if (!strcmp(argv[2],"hooked")) {
@@ -68,7 +69,7 @@ int main(int argc,char **argv) {
     } else if (!strcmp(argv[2],"filtered")) {
         passed=mobile && actual==7 && loader && exact_loader && !state;
     } else {
-        passed=mobile && actual==7 && !loader && !state && (!insert || !*insert);
+        passed=mobile && actual==7 && !loader && !state && !exact_loader;
     }
     printf("{\"test\":\"nabu-own-tweak\",\"report_version\":1,\"pid\":%d,\"uid\":%u,\"euid\":%u,\"expect\":",
         getpid(),(unsigned)getuid(),(unsigned)geteuid());

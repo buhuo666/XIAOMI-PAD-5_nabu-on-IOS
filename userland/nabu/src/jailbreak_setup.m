@@ -76,7 +76,7 @@ static NSDictionary *runWithLoader(NSString *name, NSArray<NSString *> *argument
         posix_spawnattr_set_persona_gid_np(&attr,(uid_t)uid);
     }
     char *environment[] = {"PATH=/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin",
-        "HOME=/var/jb/var/root", "LANG=C", "LC_ALL=C",
+        uid==501 ? "HOME=/var/mobile" : "HOME=/var/jb/var/root", "LANG=C", "LC_ALL=C",
         loader ? "DYLD_INSERT_LIBRARIES=/var/jb/usr/lib/TweakLoader.dylib" : NULL, NULL};
     pid_t pid = 0;
     int error = posix_spawn(&pid,argv[0],&actions,&attr,argv,environment);
@@ -123,6 +123,39 @@ static BOOL verifySetuid(void) {
     int removed=unlink(destination.fileSystemRepresentation);
     report[@"setuid_probe_removed"]=@(removed==0);
     return prepared && passed && removed==0 && launcherRemoved==0;
+}
+
+static BOOL verifyKeyboardLayouts(void) {
+    NSString *probe=@(NABU_JB_PREFIX "/.nabu-keyboard-layout-probe");
+    NSString *library=@(NABU_JB_PREFIX "/libnabu.keyboard.dylib");
+    NSFileManager *files=NSFileManager.defaultManager;
+    BOOL copied=[files copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"nabu-keyboard-layout-probe"]
+        toPath:probe error:nil];
+    copied=copied && [files copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"libnabu.keyboard.dylib"]
+        toPath:library error:nil];
+    BOOL ready=copied && chmod(probe.fileSystemRepresentation,0755)==0 && chmod(library.fileSystemRepresentation,0644)==0;
+    BOOL passed=NO;
+    if (ready) {
+        NSString *baselinePath=[output stringByAppendingPathComponent:@"keyboard-native-layouts.json"];
+        NSString *libraryPath=[output stringByAppendingPathComponent:@"keyboard-native-library.json"];
+        BOOL baseline=[run(@"keyboard_native_layouts",@[probe,@"--output",baselinePath],501)[@"passed"] boolValue];
+        BOOL patched=[run(@"keyboard_native_library",@[probe,@"--output",libraryPath,@"--keyboard-library",library],501)[@"passed"] boolValue];
+        NSData *baselineData=[NSData dataWithContentsOfFile:baselinePath];
+        NSData *libraryData=[NSData dataWithContentsOfFile:libraryPath];
+        NSDictionary *baselineReport=baselineData?[NSJSONSerialization JSONObjectWithData:baselineData options:0 error:nil]:nil;
+        NSDictionary *libraryReport=libraryData?[NSJSONSerialization JSONObjectWithData:libraryData options:0 error:nil]:nil;
+        passed=baseline && patched && [baselineReport[@"all_nabu_candidate_query_dimensions_positive"] boolValue] &&
+            [baselineReport[@"candidate_rule_exercised_positive_query_count"] unsignedIntegerValue]>0 &&
+            [libraryReport[@"all_nabu_query_dimensions_positive"] boolValue] &&
+            ![libraryReport[@"experience_library_loaded"] boolValue] &&
+            [libraryReport[@"lightweight_adapter_before"][@"installed"] boolValue] &&
+            [libraryReport[@"current_lightweight_rule_exercised_positive_query_count"] unsignedIntegerValue]>0;
+    }
+    BOOL probeRemoved=unlink(probe.fileSystemRepresentation)==0;
+    BOOL libraryRemoved=unlink(library.fileSystemRepresentation)==0;
+    report[@"keyboard_probe_files_removed"]=@(probeRemoved && libraryRemoved);
+    report[@"native_keyboard_layouts_passed"]=@(ready && passed && probeRemoved && libraryRemoved);
+    return [report[@"native_keyboard_layouts_passed"] boolValue];
 }
 
 static BOOL removeUnusedSigningPackages(void) {
@@ -176,6 +209,13 @@ static BOOL testPackageLifecycle(void) {
     BOOL hooked=[runWithLoader(@"tweak_hooked",@[target,@"--expect",@"hooked"],501,!configured)[@"passed"] boolValue];
     BOOL filtered=[runWithLoader(@"tweak_filtered",@[control,@"--expect",@"filtered"],501,!configured)[@"passed"] boolValue];
     passed=passed && hooked && filtered && readConfig;
+    report[@"isolated_tweak_hook_passed"]=@(passed);
+    // The 0.4.5+nabu1 classifier fix leaves confirmed signed-displacement
+    // and rebind defects. One successful NOP prologue is not enough to enable
+    // this engine in every process.
+    report[@"general_tweak_relocation_qualified"]=@NO;
+    report[@"kernel_tweak_injection_deferred_reason"]=@"ElleKit signed branch displacement and rebind defects remain under investigation";
+    passed=NO;
     BOOL changed=NO;
     BOOL previousMarker=[[NSFileManager defaultManager] fileExistsAtPath:@(NABU_JB_PREFIX "/.nabu-tweaks-enabled")];
     if (passed && !configured) {
@@ -325,6 +365,7 @@ static int setup(void) {
     if (!makeDirectory(output)) return 1;
     chown(output.fileSystemRepresentation,501,501);
     if (!makeDirectory(base) || !extractSeed() || !mountPrefix() || !repairKeyboardCoverage()) return 2;
+    verifyKeyboardLayouts();
     NSString *probeOutput=[output stringByAppendingPathComponent:@"filesystem.json"];
     NSData *priorData=[NSData dataWithContentsOfFile:probeOutput];
     NSDictionary *prior=priorData ? [NSJSONSerialization JSONObjectWithData:priorData options:0 error:nil] : nil;
@@ -342,7 +383,7 @@ static int setup(void) {
         run([@"configure_" stringByAppendingString:package],@[@"/var/jb/bin/sh",script,@"configure",@"999999"],-1);
     }
     run(@"unpack_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--unpack",
-        [input stringByAppendingPathComponent:@"sileo-2.5.1+nabu1.deb"],[input stringByAppendingPathComponent:@"ellekit-0.4.5.deb"]],-1);
+        [input stringByAppendingPathComponent:@"sileo-2.5.1+nabu1.deb"],[input stringByAppendingPathComponent:@"ellekit-0.4.5+nabu1.deb"]],-1);
     run(@"configure_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--configure",@"org.coolstar.sileo",@"ellekit"],-1);
     removeUnusedSigningPackages();
     run(@"finish_package_triggers",@[@"/var/jb/usr/bin/dpkg",@"--triggers-only",@"--pending"],-1);
@@ -364,7 +405,8 @@ static int setup(void) {
     }
     report[@"inventory"]=inventory;
     report[@"finished"]=@([[NSDate date] timeIntervalSince1970]);
-    BOOL all=[report[@"native_setuid_passed"] boolValue] && [report[@"filesystem_probe_passed"] boolValue] && [report[@"kernel_tweak_injection_passed"] boolValue];
+    BOOL all=[report[@"native_setuid_passed"] boolValue] && [report[@"filesystem_probe_passed"] boolValue] &&
+        [report[@"native_keyboard_layouts_passed"] boolValue] && [report[@"kernel_tweak_injection_passed"] boolValue];
     for (NSDictionary *step in steps) all=all && [step[@"passed"] boolValue];
     report[@"all_steps_passed"]=@(all);
     publish();
@@ -411,7 +453,7 @@ static int setup(void) {
         BOOL passed=!error && waited==pid && WIFEXITED(status) && WEXITSTATUS(status)==0;
         dispatch_async(dispatch_get_main_queue(), ^{
             label.text=@"正在检查输入法布局…\n请保持此页面和 USB 连接。";
-            BOOL auditSaved=nabuKeyboardLayoutAudit([output stringByAppendingPathComponent:@"keyboard-layouts.json"]);
+            BOOL auditSaved=nabuKeyboardLayoutAudit([output stringByAppendingPathComponent:@"keyboard-app-layouts.json"]);
             self.sileoButton.enabled=YES;
             label.text=passed && auditSaved ? @"环境安装与检查已结束。\n请保持 USB 连接，等待核对结果。" :
                 [NSString stringWithFormat:@"环境配置遇到错误。\n启动错误：%d，等待状态：%d。\n请保持 USB 连接以读取记录。",error,status];

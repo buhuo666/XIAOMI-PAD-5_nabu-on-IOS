@@ -2,6 +2,9 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <unistd.h>
+#include "keyboard_compat.h"
 #include "keyboard_geometry.h"
 
 @interface NSObject (NabuKeyboardLayoutQueries)
@@ -19,6 +22,7 @@ typedef struct {
 static __thread NabuAuditContext *activeContext;
 static void (*savedSize)(id,SEL,CGSize);
 static id (*savedGraph)(id,SEL,id,id);
+static void (*lightweightStatus)(struct nabu_keyboard_compat_status *);
 
 static NSDictionary *sizeValue(CGSize value) {
     return @{ @"width":@(value.width), @"height":@(value.height) };
@@ -55,12 +59,24 @@ static NSString *implementationImage(IMP implementation) {
     return @"unknown";
 }
 
+static NSDictionary *adapterStatus(void) {
+    if (!lightweightStatus) return @{ @"status_api_available":@NO };
+    struct nabu_keyboard_compat_status status={0};
+    lightweightStatus(&status);
+    return @{ @"status_api_available":@YES, @"installed":@(status.installed),
+        @"covered_by_existing_experience":@(status.covered_by_existing_experience),
+        @"corrections":@(status.corrections) };
+}
+
 BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
     static BOOL attempted;
     if (!NSThread.isMainThread || attempted) return NO;
     attempted=YES;
-    NSMutableDictionary *report=[@{ @"version":@1, @"process":NSProcessInfo.processInfo.processName,
+    NSMutableDictionary *report=[@{ @"version":@2, @"process":NSProcessInfo.processInfo.processName,
         @"on_main_thread":@YES, @"input_preferences_changed":@NO, @"screen_methods_changed":@NO,
+        @"uid":@(getuid()), @"euid":@(geteuid()), @"main_bundle_path":NSBundle.mainBundle.bundlePath,
+        @"main_bundle_is_app":@([NSBundle.mainBundle.bundlePath.pathExtension isEqualToString:@"app"]),
+        @"nabu_screen_geometry_observed":@NO,
         @"scope":@"Private layout queries in this process; not visual keyboard or text-input validation" } mutableCopy];
     NSMutableArray *rows=[NSMutableArray new],*withoutHeight=[NSMutableArray new];
     report[@"queries"]=rows;
@@ -68,11 +84,37 @@ BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
     Method sizeMethod=NULL,graphMethod=NULL;
     BOOL sizeHooked=NO,graphHooked=NO;
     @try {
-        /* This audit runs inside an already launched UIKit application. The
-         * production lightweight library does not perform this framework load.
+        /* Match the proven standalone system-service-probe query order. Read
+         * the real screen before loading TextInputUI; never override geometry.
+         * The production lightweight library performs neither initialization.
          */
-        BOOL loaded=[[NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/TextInputUI.framework"] load];
+        UIScreen *screen=UIScreen.mainScreen;
+        CGRect native=screen.nativeBounds;
+        BOOL nabuGeometry=screen.scale==2.0 &&
+            ((native.size.width==1600.0 && native.size.height==2560.0) ||
+             (native.size.width==2560.0 && native.size.height==1600.0));
+        report[@"screen"]=@{ @"bounds":NSStringFromCGRect(screen.bounds),
+            @"native_bounds":NSStringFromCGRect(native), @"scale":@(screen.scale),
+            @"bounds_size":sizeValue(screen.bounds.size), @"native_size":sizeValue(native.size) };
+        report[@"nabu_screen_geometry_observed"]=@(nabuGeometry);
+        report[@"nabu_geometry_requirement"]=@"scale 2 and native 1600x2560 in either orientation";
+        BOOL loaded=dlopen("/System/Library/PrivateFrameworks/TextInputUI.framework/TextInputUI",RTLD_NOW)!=NULL;
         report[@"text_input_ui_loaded"]=@(loaded);
+        NSMutableArray *adapterImages=[NSMutableArray new];
+        BOOL experienceLoaded=NO,keyboardLoaded=NO;
+        for (uint32_t i=0;i<_dyld_image_count();i++) {
+            const char *name=_dyld_get_image_name(i);
+            NSString *path=name?@(name):@"";
+            BOOL experience=[path.lastPathComponent isEqualToString:@"libnabu.experience.dylib"];
+            BOOL keyboard=[path.lastPathComponent isEqualToString:@"libnabu.keyboard.dylib"];
+            if (experience || keyboard) [adapterImages addObject:path];
+            experienceLoaded|=experience; keyboardLoaded|=keyboard;
+        }
+        report[@"loaded_adapter_images"]=adapterImages;
+        report[@"experience_library_loaded"]=@(experienceLoaded);
+        report[@"lightweight_library_loaded"]=@(keyboardLoaded);
+        lightweightStatus=(void (*)(struct nabu_keyboard_compat_status *))dlsym(RTLD_DEFAULT,"nabu_keyboard_compat_status");
+        report[@"lightweight_adapter_before"]=adapterStatus();
         Class derived=NSClassFromString(@"UIKBDerivedKeyboard");
         Class traitsClass=NSClassFromString(@"UIKBScreenTraits");
         Class layoutClass=NSClassFromString(@"UIKeyboardLayoutStar");
@@ -86,10 +128,6 @@ BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
         if (!sizeMethod || !traitsAPI || !sizeAPI) {
             report[@"query_error"]=@"Required observed 20F66 keyboard API is unavailable";
         } else {
-            UIScreen *screen=UIScreen.mainScreen;
-            CGRect native=screen.nativeBounds;
-            report[@"screen"]=@{ @"bounds":NSStringFromCGRect(screen.bounds),
-                @"native_bounds":NSStringFromCGRect(native), @"scale":@(screen.scale) };
             IMP previous=method_getImplementation(sizeMethod);
             NSString *image=implementationImage(previous);
             report[@"initial_size_implementation_image"]=image;
@@ -112,6 +150,7 @@ BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
                         NabuAuditContext context={events,candidate.boolValue,NO,screen.scale,native.size.width,native.size.height};
                         NSMutableDictionary *row=[@{ @"phase":candidate.boolValue?@"candidate_zero_height_rule":@"current",
                             @"orientation":orientation, @"mode":mode, @"keyboard_type":@(type), @"keyboard_type_name":types[type] } mutableCopy];
+                        NSDictionary *adapterBefore=adapterStatus();
                         activeContext=&context;
                         @try {
                             if (!traits) {
@@ -136,6 +175,11 @@ BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
                         }
                         row[@"derived_setter_observed"]=@(calledSetter);
                         row[@"candidate_rule_exercised"]=@(exercisedRule);
+                        NSDictionary *adapterAfter=adapterStatus();
+                        unsigned int corrections=[adapterAfter[@"corrections"] unsignedIntValue]-
+                            [adapterBefore[@"corrections"] unsignedIntValue];
+                        row[@"lightweight_rule_corrections"]=@(corrections);
+                        row[@"lightweight_rule_exercised"]=@(corrections>0);
                         if (candidate.boolValue) {
                             BOOL positive=[row[@"has_positive_height"] boolValue];
                             row[@"positive_height_without_rule_exercise"]=@(positive && !exercisedRule);
@@ -162,19 +206,33 @@ BOOL nabuKeyboardLayoutAudit(NSString *outputPath) {
             else restored=NO;
         }
         report[@"temporary_observers_restored"]=@(restored);
+        report[@"lightweight_adapter_after"]=adapterStatus();
     }
     report[@"expected_query_count"]=@96;
     report[@"query_count"]=@(rows.count);
     report[@"all_candidate_queries_positive_height"]=@(rows.count==96 && withoutHeight.count==0);
     NSUInteger exercised=0,exercisedPositive=0,positiveWithoutExercise=0;
-    for (NSDictionary *row in rows) if ([row[@"phase"] isEqual:@"candidate_zero_height_rule"]) {
+    NSUInteger currentLightweightExercised=0,currentLightweightPositive=0,positiveQueries=0;
+    for (NSDictionary *row in rows) {
         BOOL positive=[row[@"has_positive_height"] boolValue];
-        if ([row[@"candidate_rule_exercised"] boolValue]) { exercised++; if (positive) exercisedPositive++; }
-        else if (positive) positiveWithoutExercise++;
+        if (positive) positiveQueries++;
+        if ([row[@"phase"] isEqual:@"candidate_zero_height_rule"]) {
+            if ([row[@"candidate_rule_exercised"] boolValue]) { exercised++; if (positive) exercisedPositive++; }
+            else if (positive) positiveWithoutExercise++;
+        } else if ([row[@"lightweight_rule_exercised"] boolValue]) {
+            currentLightweightExercised++; if (positive) currentLightweightPositive++;
+        }
     }
+    BOOL nabuGeometry=[report[@"nabu_screen_geometry_observed"] boolValue];
+    report[@"positive_query_count"]=@(positiveQueries);
+    report[@"all_nabu_query_dimensions_positive"]=@(nabuGeometry && rows.count==96 && positiveQueries==96);
+    report[@"all_nabu_candidate_query_dimensions_positive"]=@(nabuGeometry && rows.count==96 && withoutHeight.count==0);
+    report[@"nabu_result_scope"]=@"all_nabu_query_dimensions_positive covers all 96 current and candidate queries; the candidate-only field covers 48. Neither proves that a rule was exercised or visual input works.";
     report[@"candidate_rule_exercised_query_count"]=@(exercised);
     report[@"candidate_rule_exercised_positive_query_count"]=@(exercisedPositive);
     report[@"positive_candidate_queries_without_rule_exercise"]=@(positiveWithoutExercise);
+    report[@"current_lightweight_rule_exercised_query_count"]=@(currentLightweightExercised);
+    report[@"current_lightweight_rule_exercised_positive_query_count"]=@(currentLightweightPositive);
     report[@"cache_and_coverage_limit"]=@"A positive size without an observed 0-to-minus1 setter transition does not validate the repair; no private layout cache was cleared.";
     report[@"visual_input_verified"]=@NO;
     NSError *error=nil;

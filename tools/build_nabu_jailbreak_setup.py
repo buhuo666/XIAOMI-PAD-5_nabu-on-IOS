@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import sys
 from build_nabu_app_store import zip_app
@@ -16,13 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--keyboard-build',type=Path,required=True)
     args=parser.parse_args()
     assert sys.platform=='darwin'
     out=args.output.resolve(); out.mkdir(parents=True,exist_ok=False)
     app=out/'Payload/JailbreakSetup.app'; app.mkdir(parents=True)
     identifier='org.nabu.JailbreakSetup'
     info=dict(CFBundleIdentifier=identifier,CFBundleExecutable='JailbreakSetup',CFBundleName='JailbreakSetup',
-        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='5',CFBundleShortVersionString='1.0',
+        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='6',CFBundleShortVersionString='1.0',
         MinimumOSVersion='16.5',UIDeviceFamily=[2],CFBundleSupportedPlatforms=['iPhoneOS'],LSRequiresIPhoneOS=True,
         LSApplicationQueriesSchemes=['sileo'],UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -31,7 +33,7 @@ def main():
     entitlements['application-identifier']=identifier
     (out/'entitlements.plist').write_bytes(plistlib.dumps(entitlements))
     report=dict(result='building',ci={'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')},
-        commands=[],device_executed=False,bundle_id=identifier,build='5')
+        commands=[],device_executed=False,bundle_id=identifier,build='6')
     def run(cmd):
         cmd=list(map(str,cmd)); report['commands'].append(cmd)
         value=subprocess.run(cmd,capture_output=True,text=True)
@@ -39,6 +41,8 @@ def main():
         if value.returncode: raise RuntimeError((value.stdout+value.stderr)[-6000:])
         return value
     try:
+        for name in ['nabu-keyboard-layout-probe','libnabu.keyboard.dylib']:
+            shutil.copyfile(args.keyboard_build/name,app/name)
         sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path']).stdout.strip()
         binary=app/'JailbreakSetup'
         common=['xcrun','--sdk','iphoneos','clang','-target','arm64-apple-ios16.5','-isysroot',sdk,

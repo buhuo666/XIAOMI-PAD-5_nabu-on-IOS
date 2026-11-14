@@ -8,6 +8,7 @@ on:
       - 'userland/nabu/src/jailbreak_setup.m'
       - 'userland/nabu/src/jailbreak_fs_probe.*'
       - 'userland/nabu/src/jailbreak_paths.*'
+      - 'userland/nabu/src/jailbreak_libraries.h'
       - 'userland/nabu/src/jailbreak_boot.c'
       - 'userland/nabu/src/jailbreak_boot_probe.c'
       - 'userland/nabu/src/jailbreak_setuid_probe.c'
@@ -17,6 +18,8 @@ on:
       - 'tools/build_nabu_jailbreak_test_package.py'
       - 'tools/build_nabu_sileo_helper.py'
       - 'tools/repack_nabu_sileo.py'
+      - 'tools/repack_nabu_ellekit.py'
+      - 'tools/patch_nabu_ellekit.py'
       - 'patches/nabu-jailbreak/SileoGiveMeRoot.c'
   workflow_dispatch:
 permissions:
@@ -31,10 +34,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Build signed persistent prefix installer
-        run: python3 tools/build_nabu_jailbreak_setup.py --output artifacts/nabu-jailbreak-setup
       - name: Build the UIKit-lazy keyboard adapter
         run: python3 tools/build_nabu_keyboard_compat.py --output artifacts/nabu-keyboard-compat
+      - name: Build signed persistent prefix installer
+        run: python3 tools/build_nabu_jailbreak_setup.py --keyboard-build artifacts/nabu-keyboard-compat --output artifacts/nabu-jailbreak-setup
       - name: Build the removable package and rootless Sileo helper
         run: |
           python3 tools/build_nabu_jailbreak_test_package.py --output artifacts/nabu-jailbreak-test
@@ -45,6 +48,11 @@ jobs:
           curl --fail --location --output inputs/sileo-2.5.1.deb https://apt.procurs.us/pool/main/iphoneos-arm64-rootless/1800/sileo/org.coolstar.sileo_2.5.1_iphoneos-arm64.deb
           python3 -c "import hashlib,pathlib; p=pathlib.Path('inputs/sileo-2.5.1.deb'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='8e3c90e5a7d32f4ca207a0ac30d3cfa8a13dca86a2b4e11cb3f9e5c68d7bc97a'"
           python3 tools/repack_nabu_sileo.py --original-deb inputs/sileo-2.5.1.deb --helper-build artifacts/nabu-sileo-helper --output artifacts/nabu-sileo-package
+      - name: Repair the observed ElleKit branch classification
+        run: |
+          curl --fail --location --output inputs/ellekit-0.4.5.deb https://ellekit.space/pool/ellekit_0.4.5_iphoneos-arm64.deb
+          python3 -c "import hashlib,pathlib; p=pathlib.Path('inputs/ellekit-0.4.5.deb'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='dde2cac0a26aba812cfd43a1928a7e56f35e5018257792a7f071f34098a1b1a4'"
+          python3 tools/repack_nabu_ellekit.py --original-deb inputs/ellekit-0.4.5.deb --output artifacts/nabu-ellekit-package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -55,4 +63,5 @@ jobs:
             artifacts/nabu-sileo-helper/
             artifacts/nabu-sileo-package/
             artifacts/nabu-keyboard-compat/
+            artifacts/nabu-ellekit-package/
           retention-days: 14

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the UIKit-lazy keyboard-only adapter and compile its application audit."""
+"""Build the UIKit-lazy keyboard adapter, shared audit and standalone probe."""
 import argparse
 import json
 import os
@@ -37,13 +37,26 @@ def main():
         paths=[line.strip().split(' (',1)[0] for line in dependencies.splitlines()[1:]]
         expected={'/redwood/lib/libnabu.keyboard.dylib','/usr/lib/libobjc.A.dylib','/usr/lib/libSystem.B.dylib'}
         assert set(paths)==expected,paths
-        # This object is for the explicitly UIKit-based Setup app, not a
-        # dependency of the universally inserted library.
+        # Only the explicitly UIKit-based app and standalone probe link this
+        # object; it is not a dependency of the universally inserted library.
         run([*common,'-fobjc-arc','-fblocks','-Wno-deprecated-declarations','-c',
             ROOT/'userland/nabu/src/keyboard_layout_audit.m','-o',out/'keyboard_layout_audit.o'])
+        probe=out/'nabu-keyboard-layout-probe'
+        run([*common,'-fobjc-arc','-fblocks','-Wno-deprecated-declarations',
+            ROOT/'userland/nabu/src/keyboard_layout_probe.m',out/'keyboard_layout_audit.o',
+            '-framework','Foundation','-framework','UIKit','-o',probe])
+        run(['codesign','--force','--sign','-','--timestamp=none',probe])
+        run(['codesign','--verify','--strict',probe])
+        probe_dependencies=run(['otool','-L',probe])
         report.update(result='signed-not-run',dependencies=paths,audit_compiled=True,
             geometry_rule='scale 2; native 1600x2560 in either orientation; positive width and zero height only',
-            constructor_reads_screen=False,loads_uikit=False,loads_wallpaperkit=False)
+            constructor_reads_screen=False,loads_uikit=False,loads_wallpaperkit=False,
+            standalone_probe={'binary':probe.name,'entitlements':{},
+                'dependencies':[line.strip().split(' (',1)[0] for line in probe_dependencies.splitlines()[1:]],
+                'usage':'nabu-keyboard-layout-probe --output <json> [--keyboard-library <path>]',
+                'execution':'UID 501; executable outside any .app; fresh process per mode',
+                'library_mode':'Explicitly loads the named library and calls its main-thread install API; does not validate constructor scheduling alone',
+                'ui_application_main_called':False})
     finally:(out/'build-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({'result':report['result'],'dependencies':report['dependencies']}))
 

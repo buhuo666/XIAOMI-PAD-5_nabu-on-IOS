@@ -1,4 +1,5 @@
 #include "jailbreak_paths.h"
+#include "jailbreak_libraries.h"
 #include <errno.h>
 #include <mach-o/dyld.h>
 #include <stdio.h>
@@ -19,7 +20,7 @@ int main(void) {
         if (name && (strstr(name,"/ellekit/libinjector.dylib") || strstr(name,"/usr/lib/TweakLoader.dylib"))) loaded=1;
     }
     const char *env=getenv("DYLD_INSERT_LIBRARIES");
-    int environment=env && !strcmp(env,"/var/jb/usr/lib/TweakLoader.dylib");
+    int environment=nabu_jailbreak_has_library(env,"/var/jb/usr/lib/TweakLoader.dylib");
     int passed=requested && loaded && environment && getuid()==501 && geteuid()==501;
     struct timeval boot={0}; size_t bootSize=sizeof(boot);
     int bootError=sysctlbyname("kern.boottime",&boot,&bootSize,NULL,0)?errno:0;
