@@ -22,7 +22,7 @@ def main():
     app=out/'Payload/JailbreakSetup.app'; app.mkdir(parents=True)
     identifier='org.nabu.JailbreakSetup'
     info=dict(CFBundleIdentifier=identifier,CFBundleExecutable='JailbreakSetup',CFBundleName='JailbreakSetup',
-        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='3',CFBundleShortVersionString='1.0',
+        CFBundleDisplayName='越狱环境安装',CFBundlePackageType='APPL',CFBundleVersion='4',CFBundleShortVersionString='1.0',
         MinimumOSVersion='16.5',UIDeviceFamily=[2],CFBundleSupportedPlatforms=['iPhoneOS'],LSRequiresIPhoneOS=True,
         UIRequiresFullScreen=True,UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait'],UILaunchScreen={})
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -31,7 +31,7 @@ def main():
     entitlements['application-identifier']=identifier
     (out/'entitlements.plist').write_bytes(plistlib.dumps(entitlements))
     report=dict(result='building',ci={'run_id':os.environ.get('GITHUB_RUN_ID'),'head_sha':os.environ.get('GITHUB_SHA')},
-        commands=[],device_executed=False,bundle_id=identifier,build='3')
+        commands=[],device_executed=False,bundle_id=identifier,build='4')
     def run(cmd):
         cmd=list(map(str,cmd)); report['commands'].append(cmd)
         value=subprocess.run(cmd,capture_output=True,text=True)
@@ -48,6 +48,12 @@ def main():
             obj=out/(name+'.o')
             run([*common,'-c',ROOT/'userland/nabu/src'/(name+'.c'),'-o',obj])
             objects.append(obj)
+        setuid=app/'nabu-setuid-probe'
+        run([*common,ROOT/'userland/nabu/src/jailbreak_setuid_probe.c','-o',setuid])
+        setuid.chmod(0o755)
+        run(['codesign','--force','--sign','-','--timestamp=none','--pagesize','4096',
+            '--identifier','org.nabu.setuid-probe',setuid])
+        run(['codesign','--verify','--strict',setuid])
         boot=out/'nabu-jailbreak-boot'
         run([*common,ROOT/'userland/nabu/src/jailbreak_boot.c',objects[0],'-o',boot])
         macho_target(boot,2)

@@ -17,10 +17,11 @@ def main():
     parser.add_argument('--seed',type=Path)
     parser.add_argument('--inputs',type=Path)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--upload',type=Path,action='append',default=[],help='Stage additional locally prepared input files only')
     args=parser.parse_args()
     if args.stage and (not args.seed or not args.inputs): parser.error('--stage requires --seed and --inputs')
     args.output.mkdir(parents=True,exist_ok=False)
-    report=dict(started_utc=utc_now(),action='stage' if args.stage else 'read',files={},reboots_device=False)
+    report=dict(started_utc=utc_now(),action='stage' if args.stage or args.upload else 'read',files={},reboots_device=False)
     streams=[]
     try:
         device,=[d for d in list_mux_devices()['response']['DeviceList'] if d['Properties']['ConnectionType']=='USB']
@@ -34,13 +35,14 @@ def main():
             if reply.get('EnableServiceSSL'):stream=wrap_pinned(context,stream,record)
             streams.append(stream); return stream
         afc=AFC(service('com.apple.afc'))
-        if args.stage:
-            review=json.loads((args.seed/'input-review.json').read_text())
-            metadata=json.loads((args.seed/'seed-metadata-check.json').read_text())
-            assert review['ownership_preserved_in_tar'] and metadata['owners_modes_sizes_types_preserved']
+        if args.stage or args.upload:
+            if args.stage:
+                review=json.loads((args.seed/'input-review.json').read_text())
+                metadata=json.loads((args.seed/'seed-metadata-check.json').read_text())
+                assert review['ownership_preserved_in_tar'] and metadata['owners_modes_sizes_types_preserved']
             for path in ['/NabuJailbreak','/NabuJailbreak/Inputs']:
                 afc.command(0x09,path.encode()+b'\0',accepted=(0,16))
-            sources=[args.seed/'prefix.tar.gz',args.inputs/'sileo-2.5.1.deb',args.inputs/'ellekit-0.4.5.deb']
+            sources=([args.seed/'prefix.tar.gz',args.inputs/'sileo-2.5.1.deb',args.inputs/'ellekit-0.4.5.deb'] if args.stage else [])+args.upload
             for source in sources:
                 target=('/NabuJailbreak/Inputs/'+source.name).encode()+b'\0'
                 handle=afc.command(0x0D,struct.pack('<Q',3)+target)

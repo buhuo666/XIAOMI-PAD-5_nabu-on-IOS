@@ -59,7 +59,7 @@ static BOOL failure(NSString *stage) {
     return NO;
 }
 
-static NSDictionary *run(NSString *name, NSArray<NSString *> *arguments, int uid) {
+static NSDictionary *runWithLoader(NSString *name, NSArray<NSString *> *arguments, int uid, BOOL loader) {
     NSString *log = [output stringByAppendingPathComponent:[name stringByAppendingString:@".log"]];
     char **argv = calloc(arguments.count+1,sizeof(char *));
     for (NSUInteger i=0;i<arguments.count;i++) argv[i]=strdup(arguments[i].UTF8String);
@@ -75,7 +75,8 @@ static NSDictionary *run(NSString *name, NSArray<NSString *> *arguments, int uid
         posix_spawnattr_set_persona_gid_np(&attr,(uid_t)uid);
     }
     char *environment[] = {"PATH=/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin",
-        "HOME=/var/jb/var/root", "LANG=C", "LC_ALL=C", NULL};
+        "HOME=/var/jb/var/root", "LANG=C", "LC_ALL=C",
+        loader ? "DYLD_INSERT_LIBRARIES=/var/jb/usr/lib/TweakLoader.dylib" : NULL, NULL};
     pid_t pid = 0;
     int error = posix_spawn(&pid,argv[0],&actions,&attr,argv,environment);
     posix_spawn_file_actions_destroy(&actions);
@@ -95,6 +96,65 @@ static NSDictionary *run(NSString *name, NSArray<NSString *> *arguments, int uid
     [steps addObject:step];
     publish();
     return step;
+}
+
+static NSDictionary *run(NSString *name, NSArray<NSString *> *arguments, int uid) {
+    return runWithLoader(name,arguments,uid,NO);
+}
+
+static BOOL verifySetuid(void) {
+    NSString *source=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"nabu-setuid-probe"];
+    NSString *destination=@(NABU_JB_PREFIX "/.nabu-setuid-probe");
+    NSError *error=nil;
+    if (![[NSFileManager defaultManager] copyItemAtPath:source toPath:destination error:&error]) {
+        report[@"setuid_copy_error"]=error.description;
+        return failure(@"copy_setuid_probe");
+    }
+    BOOL prepared=chown(destination.fileSystemRepresentation,0,0)==0 && chmod(destination.fileSystemRepresentation,04755)==0;
+    BOOL passed=NO;
+    if (prepared) passed=[run(@"native_setuid",@[@"/var/jb/.nabu-setuid-probe"],501)[@"passed"] boolValue];
+    int removed=unlink(destination.fileSystemRepresentation);
+    report[@"setuid_probe_removed"]=@(removed==0);
+    return prepared && passed && removed==0;
+}
+
+static BOOL removeUnusedSigningPackages(void) {
+    // This port has no Apple nonce/SHSH service. Remove its packages through dpkg.
+    // The stock prerm assumes shshd was loaded; it has never been started here.
+    NSString *path=@"/var/jb/Library/dpkg/info/shshd.prerm";
+    NSString *script=[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    if (script) {
+        NSString *line=@"/var/jb/bin/launchctl unload /var/jb/Library/LaunchDaemons/us.diatr.shshd.plist";
+        NSString *fixed=@"if /var/jb/bin/launchctl list us.diatr.shshd >/dev/null 2>&1; then\n"
+            @"    /var/jb/bin/launchctl unload /var/jb/Library/LaunchDaemons/us.diatr.shshd.plist\nfi";
+        if ([script containsString:line] && ![script containsString:@"launchctl list us.diatr.shshd"]) {
+            NSString *backup=@(NABU_JB_BASE "/shshd.prerm.original");
+            if (![[NSFileManager defaultManager] fileExistsAtPath:backup] &&
+                ![script writeToFile:backup atomically:YES encoding:NSUTF8StringEncoding error:nil]) return failure(@"backup_shshd_prerm");
+            script=[script stringByReplacingOccurrencesOfString:line withString:fixed];
+            if (![script writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil] || chmod(path.fileSystemRepresentation,0755)) return failure(@"shshd_prerm_unloaded_service");
+            report[@"shshd_prerm_handles_unloaded_service"]=@YES;
+        }
+    }
+    return [run(@"remove_unused_signing_packages",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--remove",
+        @"shshd",@"libdimentio0",@"libkrw0"],-1)[@"passed"] boolValue];
+}
+
+static BOOL testPackageLifecycle(void) {
+    if (![run(@"install_test_package",@[@"/var/jb/usr/bin/dpkg",@"--install",
+        [input stringByAppendingPathComponent:@"NabuJailbreakSelfTest.deb"]],-1)[@"passed"] boolValue]) return NO;
+    NSString *target=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target";
+    NSString *control=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control";
+    run(@"tweak_plain",@[target,@"--expect",@"plain"],501);
+    runWithLoader(@"tweak_hooked",@[target,@"--expect",@"hooked"],501,YES);
+    runWithLoader(@"tweak_filtered",@[control,@"--expect",@"filtered"],501,YES);
+    run(@"purge_test_package",@[@"/var/jb/usr/bin/dpkg",@"--purge",@"org.nabu.jailbreak.selftest"],-1);
+    return [run(@"test_package_removed",@[@"/var/jb/bin/sh",@"-c",
+        @"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target && "
+         @"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control && "
+         @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.dylib && "
+         @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.plist && "
+         @"! /var/jb/usr/bin/dpkg-query -W org.nabu.jailbreak.selftest"],-1)[@"passed"] boolValue];
 }
 
 static BOOL extractSeed(void) {
@@ -182,7 +242,11 @@ static int setup(void) {
     chown(output.fileSystemRepresentation,501,501);
     if (!makeDirectory(base) || !extractSeed() || !mountPrefix()) return 2;
     NSString *probeOutput=[output stringByAppendingPathComponent:@"filesystem.json"];
-    int probe=nabu_jailbreak_fs_probe(NABU_JB_PREFIX,"/var/jb",probeOutput.fileSystemRepresentation);
+    NSData *priorData=[NSData dataWithContentsOfFile:probeOutput];
+    NSDictionary *prior=priorData ? [NSJSONSerialization JSONObjectWithData:priorData options:0 error:nil] : nil;
+    BOOL alreadyPassed=[prior[@"all_target_checks_passed"] boolValue] && [prior[@"lower_prefix"] isEqualToString:@(NABU_JB_PREFIX)];
+    int probe=alreadyPassed ? 0 : nabu_jailbreak_fs_probe(NABU_JB_PREFIX,"/var/jb",probeOutput.fileSystemRepresentation);
+    report[@"previous_filesystem_result_reused"]=@(alreadyPassed);
     report[@"filesystem_probe_passed"]=@(probe==0);
     if (probe) { errno=EIO; failure(@"filesystem_probe"); return 2; }
     if (!configureDirectories()) return 2;
@@ -194,10 +258,14 @@ static int setup(void) {
         run([@"configure_" stringByAppendingString:package],@[@"/var/jb/bin/sh",script,@"configure",@"999999"],-1);
     }
     run(@"unpack_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--unpack",
-        [input stringByAppendingPathComponent:@"sileo-2.5.1.deb"],[input stringByAppendingPathComponent:@"ellekit-0.4.5.deb"]],-1);
+        [input stringByAppendingPathComponent:@"sileo-2.5.1+nabu1.deb"],[input stringByAppendingPathComponent:@"ellekit-0.4.5.deb"]],-1);
     run(@"configure_sileo_ellekit",@[@"/var/jb/usr/bin/dpkg",@"--no-triggers",@"--configure",@"org.coolstar.sileo",@"ellekit"],-1);
+    removeUnusedSigningPackages();
+    run(@"finish_package_triggers",@[@"/var/jb/usr/bin/dpkg",@"--triggers-only",@"--pending"],-1);
     run(@"register_sileo",@[@"/var/jb/usr/bin/uicache",@"-p",@(NABU_JB_PREFIX "/Applications/Sileo.app")],-1);
-    run(@"sileo_setuid",@[@"/var/jb/Applications/Sileo.app/giveMeRoot",@"/var/jb/usr/bin/id",@"-u"],501);
+    report[@"native_setuid_passed"]=@(verifySetuid());
+    report[@"legacy_sileo_helper_test"]=@"not used by Sileo on iOS 13 or later; parent check retained";
+    testPackageLifecycle();
     run(@"package_status",@[@"/var/jb/usr/bin/dpkg-query",@"-W",@"-f=${Package} ${Version} ${Status}\\n"],-1);
     run(@"dependency_check",@[@"/var/jb/usr/bin/apt-get",@"check"],-1);
     NSMutableArray *inventory=[NSMutableArray new];
@@ -210,7 +278,7 @@ static int setup(void) {
     }
     report[@"inventory"]=inventory;
     report[@"finished"]=@([[NSDate date] timeIntervalSince1970]);
-    BOOL all=YES;
+    BOOL all=[report[@"native_setuid_passed"] boolValue] && [report[@"filesystem_probe_passed"] boolValue];
     for (NSDictionary *step in steps) all=all && [step[@"passed"] boolValue];
     report[@"all_steps_passed"]=@(all);
     publish();

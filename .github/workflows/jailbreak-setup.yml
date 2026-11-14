@@ -9,6 +9,12 @@ on:
       - 'userland/nabu/src/jailbreak_fs_probe.*'
       - 'userland/nabu/src/jailbreak_paths.*'
       - 'userland/nabu/src/jailbreak_boot.c'
+      - 'userland/nabu/src/jailbreak_setuid_probe.c'
+      - 'userland/nabu/src/jailbreak_tweak_*'
+      - 'tools/build_nabu_jailbreak_test_package.py'
+      - 'tools/build_nabu_sileo_helper.py'
+      - 'tools/repack_nabu_sileo.py'
+      - 'patches/nabu-jailbreak/SileoGiveMeRoot.c'
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,9 +30,23 @@ jobs:
           persist-credentials: false
       - name: Build signed persistent prefix installer
         run: python3 tools/build_nabu_jailbreak_setup.py --output artifacts/nabu-jailbreak-setup
+      - name: Build the removable package and rootless Sileo helper
+        run: |
+          python3 tools/build_nabu_jailbreak_test_package.py --output artifacts/nabu-jailbreak-test
+          python3 tools/build_nabu_sileo_helper.py --output artifacts/nabu-sileo-helper
+      - name: Retrieve the fixed Sileo input and sign the Nabu package
+        run: |
+          mkdir -p inputs
+          curl --fail --location --output inputs/sileo-2.5.1.deb https://apt.procurs.us/pool/main/iphoneos-arm64-rootless/1800/sileo/org.coolstar.sileo_2.5.1_iphoneos-arm64.deb
+          python3 -c "import hashlib,pathlib; p=pathlib.Path('inputs/sileo-2.5.1.deb'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='8e3c90e5a7d32f4ca207a0ac30d3cfa8a13dca86a2b4e11cb3f9e5c68d7bc97a'"
+          python3 tools/repack_nabu_sileo.py --original-deb inputs/sileo-2.5.1.deb --helper-build artifacts/nabu-sileo-helper --output artifacts/nabu-sileo-package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: nabu-jailbreak-setup-${{ github.run_number }}
-          path: artifacts/nabu-jailbreak-setup/
+          path: |
+            artifacts/nabu-jailbreak-setup/
+            artifacts/nabu-jailbreak-test/
+            artifacts/nabu-sileo-helper/
+            artifacts/nabu-sileo-package/
           retention-days: 14
