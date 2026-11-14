@@ -34,7 +34,7 @@ NABU_BIND_ONE(setxattr, a_vp, 1, VNOP_SETXATTR(lower, ap->a_name, ap->a_uio, ap-
 NABU_BIND_ONE(removexattr, a_vp, 1, VNOP_REMOVEXATTR(lower, ap->a_name, ap->a_options, ap->a_context))
 NABU_BIND_ONE(allocate, a_vp, 1, VNOP_ALLOCATE(lower, ap->a_length, ap->a_flags, ap->a_bytesallocated, ap->a_offset, ap->a_context))
 NABU_BIND_ONE(ioctl, a_vp, 0, VNOP_IOCTL(lower, ap->a_command, ap->a_data, ap->a_fflag, ap->a_context))
-NABU_BIND_ONE(advlock, a_vp, 0, VNOP_ADVLOCK(lower, ap->a_id, ap->a_op, ap->a_fl, ap->a_flags, ap->a_context))
+NABU_BIND_ONE(advlock, a_vp, 0, VNOP_ADVLOCK(lower, ap->a_id, ap->a_op, ap->a_fl, ap->a_flags, ap->a_context, ap->a_timeout))
 NABU_BIND_ONE(fsync, a_vp, 0, VNOP_FSYNC(lower, ap->a_waitfor, ap->a_context))
 #undef NABU_BIND_ONE
 
@@ -151,7 +151,7 @@ nabu_bindfs_renamex(struct vnop_renamex_args *ap)
 memory_object_control_t
 nabu_bindfs_mmap_getobject(vnode_t vp, int flags)
 {
-    if (vp->v_tag == VT_BINDFS && !vfs_isrdonly(vnode_mount(vp))) {
+    if (vnode_tag(vp) == VT_BINDFS && !vfs_isrdonly(vnode_mount(vp))) {
         vnode_t lower = NULL;
         if (nabu_bind_lower(vp, &lower)) return MEMORY_OBJECT_CONTROL_NULL;
         memory_object_control_t control = nabu_bindfs_mmap_getobject(lower, flags);

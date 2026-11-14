@@ -491,6 +491,9 @@ def link(kernel, report, reference, objects, aes_reference=None, usb_reference=N
                   '_nabu_return_trace_terminal', '_nabu_return_trace_terminal_end',
                   '_nabu_return_trace_record', '_nabu_return_trace_report') if name in definitions},
               'pointer_sites_added': len(pointer_sites), 'sparse_headers': headers,
+              'jailbreak_bindfs_symbols': {name: definitions[name] for name in (
+                  '_nabu_bindfs_vfsops', '_nabu_bindfs_vnodeop_opv_desc',
+                  '_nabu_bindfs_mmap_getobject') if name in definitions},
               'sparse_index': {'va': index_va, 'size': index_size, 'fileoff': index_at, 'headers': headers, 'abi': 1},
               'imports': {s['name']: definitions[s['name']] for obj in objects for s in obj.symbols
                           if s['kind'] == 1}, 'runtime_tested': False}

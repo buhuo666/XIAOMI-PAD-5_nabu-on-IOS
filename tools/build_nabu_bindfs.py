@@ -67,7 +67,7 @@ def main():
     flags=[a.compiler,'-target','arm64-apple-ios16.5','-std=gnu11','-Os','-g','-mkernel',
         '-fno-builtin','-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables','-nostdinc',
         '-DKERNEL=1','-DKERNEL_PRIVATE=1','-DBSD_KERNEL_PRIVATE=1','-DXNU_KERNEL_PRIVATE=1','-DPRIVATE=1','-D__APPLE_API_PRIVATE=1',
-        '-D__DARWIN_64_BIT_INO_T=1','-DARM64_BOARD_CONFIG_BCM2837','-DXNU_TARGET_OS_IOS=1',
+        '-D__DARWIN_64_BIT_INO_T=1','-DARM64_BOARD_CONFIG_BCM2837','-DXNU_TARGET_OS_IOS=1','-DCONFIG_MACF=1',
         '-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-unused-function','-Wno-unused-variable']
     include=[out,a.headers/'EXTERNAL_HEADERS',a.headers/'sdk-kernel']
     include += [a.headers/'EXPORT_HDRS'/n for n in ['osfmk','bsd','libkern','pexpert','iokit','security']]
