@@ -150,11 +150,11 @@ static BOOL testPackageLifecycle(void) {
     runWithLoader(@"tweak_filtered",@[control,@"--expect",@"filtered"],501,YES);
     run(@"purge_test_package",@[@"/var/jb/usr/bin/dpkg",@"--purge",@"org.nabu.jailbreak.selftest"],-1);
     return [run(@"test_package_removed",@[@"/var/jb/bin/sh",@"-c",
-        @"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target && "
+        (@"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target && "
          @"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control && "
          @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.dylib && "
          @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.plist && "
-         @"! /var/jb/usr/bin/dpkg-query -W org.nabu.jailbreak.selftest"],-1)[@"passed"] boolValue];
+         @"! /var/jb/usr/bin/dpkg-query -W org.nabu.jailbreak.selftest")],-1)[@"passed"] boolValue];
 }
 
 static BOOL extractSeed(void) {
