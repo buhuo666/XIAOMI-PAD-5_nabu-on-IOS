@@ -1,0 +1,44 @@
+name: nabu16 - Writable jailbreak bindfs
+on:
+  push:
+    branches: [codex/nabu-app-store]
+    paths:
+      - '.github/workflows/jailbreak-bindfs.yml'
+      - 'tools/build_nabu_bindfs.py'
+      - 'patches/nabu-jailbreak/NabuBindWritable.inc'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  bindfs:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: apple-oss-distributions/xnu
+          ref: c54f35ca767986246321eb901baf8f5ff7923f6a
+          path: inputs/xnu
+          sparse-checkout: bsd/miscfs/bindfs
+          persist-credentials: false
+      - name: Retrieve the matched kernel headers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 43161154321 --name xnu8796-reference-268 --dir inputs/qualified
+          mkdir inputs/headers
+          tar -xzf inputs/qualified/artifacts/nabu-data-block/kernel-headers.tar.gz -C inputs/headers
+      - name: Compile writable vnode and mount implementations
+        run: python3 tools/build_nabu_bindfs.py --tree inputs/xnu --headers inputs/headers --compiler "$(xcrun --find clang)" --output artifacts/nabu-bindfs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-bindfs-${{ github.run_number }}
+          path: artifacts/nabu-bindfs/
+          retention-days: 14
