@@ -1,6 +1,6 @@
 # Nabu 软件商店适配
 
-当前组合为中文版 TrollStore Lite 2.1.1 与 TrollApps 2.3，目标是 iPadOS 16.5 / arm64。源码与依赖固定在 `configs/nabu-app-store.json`，本项目改动保存在 `patches/nabu-app-store/`；`src/` 内的上游仓库不需要提交。
+当前组合为中文版 TrollStore Lite 2.1.1 与 TrollApps 2.3，目标是 iPadOS 16.5 / arm64。上游源码提交、SDK 与签名工具版本记录在 `configs/nabu-app-store.json`，本项目改动保存在 `patches/nabu-app-store/`；`src/` 内的上游仓库不需要提交。
 
 ## 适配内容
 
@@ -63,6 +63,10 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 
 ## 当前验证记录
 
-2026-11-14：五项真实子进程测试及 ASan/UBSan 已通过；应用与权限身份检查通过。证据目录为 `log/host/app-store-20261114/store-01/host-check-r2`。
+2026-11-14：五项真实子进程测试及 ASan/UBSan 已在本地和 macOS 通过；应用与权限身份检查通过。Lite 主程序、root helper 的本地 ARM64 编译/链接和 TrollApps 的 Objective-C bridge 编译通过。
+
+提交 `91324925a6fce045dd6b8c06dc3acc794cf25b20` 的 Actions run `43564234486` 成功：完整 SwiftUI 构建、两款应用及 helper 的签名与 entitlements 读回通过。两份 IPA 已下载，完成一次下载审查，确认 arm64 / iOS 16.5 目标、应用身份、可执行权限、随包 ldid 和无 RootHide 运行时库依赖。
+
+可测试安装包在主设备工作区 `D:\github-IOS\XIAOMI_PAD5-NABU\artifacts\nabu-app-store-store-01`。同目录保存构建报告及 `download-review.json`。仅生成了 `log/host/app-store-20261114/store-01/install/install-plan.json`，没有执行安装。
 
 完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停；此次没有部署、安装或重启设备。
