@@ -1,4 +1,4 @@
-完整越狱目标 active（2026-11-14）：当前为 jailbreak-02 临时 iPadOS，i4-10 内核+i4-12 启动包，槽1占用不可覆盖；store-01 日志已回收清空。Probe build 2 / CI43574230296 删除 get-task-allow 后用户确认能直接完成验证；root、task_for_pid、内存读写、线程查询、JIT返回42和DYLD注入已实测通过。旧PT_ATTACH返回45是测试接口选错，build 3改PT_ATTACHEXC并修复mobile回执目录权限，待实测。/var/jb、apt/dpkg/Sileo/ElleKit尚未部署，完整越狱未完成；爱思仍显示未越狱。商店root/ldid/安装已通过；Unity Metal修复CI43571625934已审查未部署。爱思安装/FairPlay继续暂停。详见docs/NABU-JAILBREAK.md及log/host/jailbreak-20261114/continuation.json；设备资料D:/github-IOS/XIAOMI_PAD5-NABU；以下为历史。
+完整越狱目标 active（2026-11-14）：当前为 jailbreak-02 临时 iPadOS，i4-10 内核+i4-12 启动包，槽1占用不可覆盖；store-01 日志已回收清空。Probe build 3 / CI43575012169已实测：开发者模式false且无get-task-allow，root、task_for_pid、内存读写、线程查询、PT_ATTACHEXC附加/停止/分离、JIT返回42、DYLD注入全部通过，四份结果齐全。此前PT_ATTACH错误45是测试接口选错，非内核能力缺失；本次仅更新App，无重启。/var/jb、apt/dpkg/Sileo/ElleKit尚未部署，完整越狱未完成；爱思仍显示未越狱。商店root/ldid/安装已通过；Unity Metal修复CI43571625934已审查未部署。爱思安装/FairPlay继续暂停。详见docs/NABU-JAILBREAK.md及log/host/jailbreak-20261114/continuation.json；设备资料D:/github-IOS/XIAOMI_PAD5-NABU；以下为历史。
 
 # 项目工作规则
 

@@ -12,7 +12,7 @@
 - 槽 1 当前占用，不能覆盖。权威记录为 `log/host/jailbreak-20261114/continuation.json`。
 - 前一轮 `store-01` 已回收 21,355,326 字节连续前缀和完整 64MiB 槽并清空读回；尾部 `no committed record header`，不能称已完整封口。
 
-重启会结束当前 `fastboot boot` 临时会话并回到 Android。用户在开启开发者模式时遇到这个循环。验证 App build 1 带 `get-task-allow`；build 2 删除该权限，经 CI `43574230296` 编译、签名和一次下载审查后通过 USB 更新，用户确认无需再次操作开发者模式即可看到“验证已结束”。该结果解决了验证 App 的启动阻碍，不代表已经更改默认启动系统或查明系统开发者模式的持久化状态。
+重启会结束当前 `fastboot boot` 临时会话并回到 Android。用户在开启开发者模式时遇到这个循环。验证 App build 1 带 `get-task-allow`；build 2 删除该权限，经 CI `43574230296` 编译、签名和一次下载审查后通过 USB 更新，用户确认无需再次操作开发者模式即可看到“验证已结束”。随后通过 Lockdown 只读查询 `com.apple.security.mac.amfi / DeveloperModeStatus` 得到 `false`，保存在 `probe-02/developer-mode-status.json`，确认该 App 在开发者模式关闭时运行成功。未更改默认启动系统，系统开发者模式持久化也未另行测试。
 
 ## 已实测能力
 
@@ -29,9 +29,21 @@ build 2 证据：`log/host/jailbreak-20261114/probe-02/result-02/`。
 | 旧 ptrace attach | 返回 45 | 测试误用了 PT_ATTACH；尚不能作为能力缺失结论 |
 | 包管理环境 | /var/jb、dpkg、apt-get、Sileo、TweakLoader 均 ENOENT | 尚未部署 |
 
-`bsd/kern/mach_process.c` 对非 macOS 的旧 `PT_ATTACH` 明确返回 ENOTSUP；`PT_ATTACHEXC=14` 才会进入实际附加检查。build 3 改用该请求，记录请求名称、停止及分离结果。它还将专用结果目录交给 mobile，以便主程序在 root 子进程结束后写入 `root-launch.json`；build 2 的三份 root 结果已回收，但此回执缺失。新的结果仍须真机验证。
+`bsd/kern/mach_process.c` 对非 macOS 的旧 `PT_ATTACH` 明确返回 ENOTSUP；`PT_ATTACHEXC=14` 才会进入实际附加检查。build 3 改用该请求，记录请求名称、停止及分离结果。它还将专用结果目录交给 mobile，以便主程序在 root 子进程结束后写入 `root-launch.json`；build 2 的三份 root 结果已回收，但此回执缺失。
+
+build 3 提交 `53c60e3` / CI `43575012169` 构建签名成功，完成一次下载审查和 USB 更新，独立 Lookup 确认 build 3。用户确认“验证已结束，结果已保存”。`probe-03/result-01/` 四份结果齐全，`results.json` 自报 build 3：root、task_for_pid、内存读写、线程查询、JIT、注入继续通过；`PT_ATTACHEXC` 附加 errno 0，观察到停止，分离 errno 0；目录 chown errno 0，主回执退出 0。逐项机器核对在 `assessment.json`。本次修复只更新验证程序，没有更改内核或重启设备。
 
 测试的 cleanup SIGKILL=9 是终止自有等待子进程的预期动作。`rootTests` 退出 0 和 UI“验证已结束”只表示执行结束，每项是否通过必须查看 JSON。无 `get-task-allow` 也不等于所有普通应用都具有这些权限：当前测试程序仍有 task_for_pid、persona、JIT 等明确的签名权限。
+
+本轮采集用于能力结果和启动 syslog，没有启用画面路径的性能测点。不能从 App 打开或上述返回值推出呈现延迟。本轮画面路径记录如下：
+
+| 阶段 | 最小耗时 | 最大耗时 | 平均耗时 | 原因、合理性和优化判断 |
+| --- | --- | --- | --- | --- |
+| 画面请求到 UIKit 提交 | 未测 | 未测 | 未测 | 未采样该区间，无法判断 |
+| UIKit/CoreAnimation 处理 | 未测 | 未测 | 未测 | 未采样该区间，无法判断 |
+| 合成/GPU 执行 | 未测 | 未测 | 未测 | 未采样该区间，无法判断 |
+| DPU 接受画面 | 未测 | 未测 | 未测 | 未采样该区间，无法判断 |
+| 面板扫描结束、实际显示完毕 | 未测 | 未测 | 未测 | 无面板完成测点，无法判断；不能以 DPU 接受代替 |
 
 ## 构建与回收
 
