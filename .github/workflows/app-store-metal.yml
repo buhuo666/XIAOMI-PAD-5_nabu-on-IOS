@@ -1,0 +1,34 @@
+name: nabu16 - Store app Metal compatibility
+on:
+  push:
+    branches: [codex/nabu-app-store]
+    paths:
+      - '.github/workflows/app-store-metal.yml'
+      - 'tools/build_nabu_store_metal.py'
+      - 'patches/nabu-metal/NabuBlitGPUOptimization.inc'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  store-metal:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Retrieve the current qualified GPU246 frontend
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 43373747206 --name nabu-copy-profile-2 --dir inputs/qualified
+      - name: Compile and sign the observed missing selector
+        run: python3 tools/build_nabu_store_metal.py --input inputs/qualified/nabu-copy-profile --output artifacts/nabu-store-metal
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nabu-store-metal-${{ github.run_number }}
+          path: artifacts/nabu-store-metal/
+          retention-days: 14
