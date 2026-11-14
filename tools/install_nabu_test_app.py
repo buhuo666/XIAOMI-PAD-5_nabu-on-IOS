@@ -42,6 +42,8 @@ def main():
     parser.add_argument('--bundle-id', default='org.nabu.LocalTest')
     parser.add_argument('--app-name', default='LocalTest', help='Directory name under Payload, without .app')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--response-timeout', type=float, default=30,
+                        help='Seconds to wait for each installation_proxy response')
     args = parser.parse_args()
     info = {'CFBundleIdentifier': args.bundle_id}
     if args.ipa:
@@ -97,7 +99,7 @@ def main():
             report['uploaded'] = True
             save()
         service = start_service('com.apple.mobile.installation_proxy')
-        service.settimeout(30)
+        service.settimeout(args.response_timeout)
         request = plistlib.dumps(
             {'Command': 'Uninstall', 'ApplicationIdentifier': info['CFBundleIdentifier']}
             if args.uninstall else {'Command': 'Install', 'PackagePath': path.decode(),

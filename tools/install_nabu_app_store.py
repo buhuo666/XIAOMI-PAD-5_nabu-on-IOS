@@ -32,6 +32,7 @@ def main():
             raise ValueError(f'IPA bundle identity differs: {ipa.name}')
         commands.append([sys.executable, str(ROOT/'tools/install_nabu_test_app.py'),
                          '--ipa', str(ipa), '--bundle-id', item['bundle_id'], '--app-name', item['app'],
+                         '--response-timeout', '90',
                          '--output', str(output/item['app'])])
     plan = {'mode': 'install' if args.install else 'plan-only', 'commands': commands,
             'reboots_device': False, 'installs_verified': False, 'launch_verified': False}

@@ -69,4 +69,6 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 
 可测试安装包在主设备工作区 `D:\github-IOS\XIAOMI_PAD5-NABU\artifacts\nabu-app-store-store-01`。同目录保存构建报告及 `download-review.json`。仅生成了 `log/host/app-store-20261114/store-01/install/install-plan.json`，没有执行安装。
 
-完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停；此次没有部署、安装或重启设备。
+2026-11-14 后续用户明确要求临时启动 iPadOS：沿用 i4-10 内核与 i4-12 启动包，新建商店日志槽 1，通过 `adb reboot bootloader` / `fastboot boot` 启动；未额外重启 Android。原生 USB 和 GPU 就绪，两款应用已安装并进入图标清单，用户确认两款都能打开。TrollApps 的 PC 安装连接在 30 秒超时后，设备又过约 4 秒报告完成；已保留原始超时回执及后续独立 Lookup/图标验证。商店安装脚本的回复等待改为 90 秒，不重复安装已确认成功的应用。
+
+用户正在测试从 TrollApps 下载 `tapgame prototype` 并安装、打开；这一流程尚未确认。完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停。本轮日志槽尚未回收，其他任务不得覆盖。
