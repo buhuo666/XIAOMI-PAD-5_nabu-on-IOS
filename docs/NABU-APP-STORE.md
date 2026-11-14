@@ -74,3 +74,5 @@ python tools/install_nabu_app_store.py --build artifacts/nabu-app-store --output
 用户测试从 TrollApps 下载 `tapgame prototype` 后报告 `FAILED_TO_INSTALL`，关闭队列重新获取仍失败。旧版队列没有显示错误 body，因此没有实际返回码；覆盖重试的 syslog 也未取得应用自己的诊断。安装和打开流程尚未通过。完整构建状态与实机状态以 `log/host/app-store-20261114/continuation.json` 为准。爱思工作保持暂停。本轮日志槽尚未回收，其他任务不得覆盖。
 
 `store-02` / TrollApps build `2302` 显示本地化错误标题与完整详情；失败队列新增“重试失败的安装”，复用当前队列下载的 IPA。应用重开仍遵循上游清理缓存的行为，不能保留旧队列。安装返回码保存到 `/var/mobile/Media/NabuStore/last-install-result.json`，启动错误与原始等待状态保存到 `last-spawn-result.json`，helper 标准输出/错误保存到 `last-helper-output.log`，可通过 AFC 读取。此版本用于取得真实错误，尚不代表安装故障已修复。
+
+随后在仍持续采集的 syslog 中捕获到 14:45:58 的 `posix_spawn error 13`，表明 helper 未成功启动，尚不能归因为缺少 root 或内核能力。新版应用打开时只读记录 helper、ldid 和父目录的实际权限、所有者及可执行状态到 `backend-environment.json`。使用 `python tools/read_nabu_app_store_diagnostics.py --output <新目录>` 回收四项诊断与安装版本；不会启动 helper 或修改设备文件。先确认实际执行权限，再决定下一步修复。
