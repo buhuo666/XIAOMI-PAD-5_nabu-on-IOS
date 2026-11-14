@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "jailbreak_paths.h"
 #include "jailbreak_fs_probe.h"
+#import "keyboard_layout_audit.h"
 
 // Stable libarchive ABI; the public iOS SDK omits these headers.
 struct archive;
@@ -105,17 +106,23 @@ static NSDictionary *run(NSString *name, NSArray<NSString *> *arguments, int uid
 static BOOL verifySetuid(void) {
     NSString *source=[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"nabu-setuid-probe"];
     NSString *destination=@(NABU_JB_PREFIX "/.nabu-setuid-probe");
+    NSString *launcher=@(NABU_JB_PREFIX "/.nabu-setuid-launcher");
     NSError *error=nil;
     if (![[NSFileManager defaultManager] copyItemAtPath:source toPath:destination error:&error]) {
         report[@"setuid_copy_error"]=error.description;
         return failure(@"copy_setuid_probe");
     }
-    BOOL prepared=chown(destination.fileSystemRepresentation,0,0)==0 && chmod(destination.fileSystemRepresentation,04755)==0;
+    struct stat original;
+    if (!stat(source.fileSystemRepresentation,&original)) report[@"setuid_source_mode"]=@(original.st_mode&07777);
+    BOOL copied=[[NSFileManager defaultManager] copyItemAtPath:source toPath:launcher error:&error];
+    BOOL prepared=copied && chown(destination.fileSystemRepresentation,0,0)==0 && chmod(destination.fileSystemRepresentation,04755)==0 &&
+        chown(launcher.fileSystemRepresentation,0,0)==0 && chmod(launcher.fileSystemRepresentation,0755)==0;
     BOOL passed=NO;
-    if (prepared) passed=[run(@"native_setuid",@[source,@"--launch",@"/var/jb/.nabu-setuid-probe"],501)[@"passed"] boolValue];
+    if (prepared) passed=[run(@"native_setuid",@[launcher,@"--launch",@"/var/jb/.nabu-setuid-probe"],501)[@"passed"] boolValue];
+    int launcherRemoved=unlink(launcher.fileSystemRepresentation);
     int removed=unlink(destination.fileSystemRepresentation);
     report[@"setuid_probe_removed"]=@(removed==0);
-    return prepared && passed && removed==0;
+    return prepared && passed && removed==0 && launcherRemoved==0;
 }
 
 static BOOL removeUnusedSigningPackages(void) {
@@ -140,21 +147,73 @@ static BOOL removeUnusedSigningPackages(void) {
         @"shshd",@"libdimentio0",@"libkrw0"],-1)[@"passed"] boolValue];
 }
 
-static BOOL testPackageLifecycle(void) {
-    if (![run(@"install_test_package",@[@"/var/jb/usr/bin/dpkg",@"--install",
-        [input stringByAppendingPathComponent:@"NabuJailbreakSelfTest.deb"]],-1)[@"passed"] boolValue]) return NO;
-    NSString *target=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target";
-    NSString *control=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control";
-    run(@"tweak_plain",@[target,@"--expect",@"plain"],501);
-    runWithLoader(@"tweak_hooked",@[target,@"--expect",@"hooked"],501,YES);
-    runWithLoader(@"tweak_filtered",@[control,@"--expect",@"filtered"],501,YES);
-    run(@"purge_test_package",@[@"/var/jb/usr/bin/dpkg",@"--purge",@"org.nabu.jailbreak.selftest"],-1);
-    return [run(@"test_package_removed",@[@"/var/jb/bin/sh",@"-c",
+static BOOL purgeTestPackage(void) {
+    BOOL purged=[run(@"purge_test_package",@[@"/var/jb/usr/bin/dpkg",@"--purge",@"org.nabu.jailbreak.selftest"],-1)[@"passed"] boolValue];
+    BOOL removed=[run(@"test_package_removed",@[@"/var/jb/bin/sh",@"-c",
         (@"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target && "
          @"test ! -e /var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control && "
          @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.dylib && "
          @"test ! -e /var/jb/usr/lib/TweakInject/NabuJailbreakTest.plist && "
          @"! /var/jb/usr/bin/dpkg-query -W org.nabu.jailbreak.selftest")],-1)[@"passed"] boolValue];
+    return purged && removed;
+}
+
+static BOOL testPackageLifecycle(void) {
+    if (![run(@"install_test_package",@[@"/var/jb/usr/bin/dpkg",@"--install",
+        [input stringByAppendingPathComponent:@"NabuJailbreakSelfTest.deb"]],-1)[@"passed"] boolValue]) {
+        report[@"failed_test_install_cleaned"]=@(purgeTestPackage());
+        report[@"kernel_tweak_injection_passed"]=@NO;
+        return NO;
+    }
+    NSString *target=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-target";
+    NSString *control=@"/var/jb/usr/libexec/nabu-jailbreak-tests/nabu-tweak-control";
+    char previous[4096]={0}; size_t capacity=sizeof(previous);
+    BOOL readConfig=sysctlbyname("kern.exec_inject",previous,&capacity,NULL,0)==0;
+    BOOL configured=readConfig && strstr(previous,NABU_JB_TWEAK_RULE)!=NULL;
+    report[@"kernel_tweaks_enabled_at_start"]=@(configured);
+    BOOL passed=YES;
+    if (!configured) passed=[run(@"tweak_plain",@[target,@"--expect",@"plain"],501)[@"passed"] boolValue];
+    BOOL hooked=[runWithLoader(@"tweak_hooked",@[target,@"--expect",@"hooked"],501,!configured)[@"passed"] boolValue];
+    BOOL filtered=[runWithLoader(@"tweak_filtered",@[control,@"--expect",@"filtered"],501,!configured)[@"passed"] boolValue];
+    passed=passed && hooked && filtered && readConfig;
+    BOOL changed=NO;
+    BOOL previousMarker=[[NSFileManager defaultManager] fileExistsAtPath:@(NABU_JB_PREFIX "/.nabu-tweaks-enabled")];
+    if (passed && !configured) {
+        int enabled=nabu_jailbreak_enable_tweaks(previous,sizeof(previous));
+        report[@"kernel_tweak_enable_errno"]=@(enabled?errno:0);
+        passed=enabled==0;
+        changed=enabled==0;
+        if (passed) {
+            hooked=[run(@"kernel_tweak_hooked",@[target,@"--expect",@"hooked"],501)[@"passed"] boolValue];
+            filtered=[run(@"kernel_tweak_filtered",@[control,@"--expect",@"filtered"],501)[@"passed"] boolValue];
+            passed=hooked && filtered;
+        }
+    }
+    BOOL cleaned=purgeTestPackage();
+    passed=passed && cleaned;
+    if (passed) {
+        NSString *marker=@(NABU_JB_PREFIX "/.nabu-tweaks-enabled");
+        passed=[@"nabu-tweaks-v1\n" writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        int markerFd=open(marker.fileSystemRepresentation,O_RDONLY);
+        passed=passed && markerFd>=0 && fsync(markerFd)==0;
+        if (markerFd>=0) close(markerFd);
+        int fd=open(NABU_JB_PREFIX,O_RDONLY|O_DIRECTORY);
+        passed=passed && fd>=0 && fsync(fd)==0;
+        if (fd>=0) close(fd);
+    }
+    if (!passed && changed) {
+        report[@"kernel_tweak_restore_errno"]=@(nabu_jailbreak_restore_tweak_config(previous)?errno:0);
+        if (!previousMarker) {
+            int removedMarker=unlink(NABU_JB_PREFIX "/.nabu-tweaks-enabled");
+            int markerError=removedMarker && errno!=ENOENT ? errno : 0;
+            int fd=open(NABU_JB_PREFIX,O_RDONLY|O_DIRECTORY);
+            if (fd>=0) { if (fsync(fd) && !markerError) markerError=errno; close(fd); }
+            else if (!markerError) markerError=errno;
+            report[@"kernel_tweak_marker_rollback_errno"]=@(markerError);
+        }
+    }
+    report[@"kernel_tweak_injection_passed"]=@(passed);
+    return passed;
 }
 
 static BOOL extractSeed(void) {
@@ -201,6 +260,31 @@ static BOOL extractSeed(void) {
     return YES;
 }
 
+static BOOL repairKeyboardCoverage(void) {
+    char current[4096]={0}; size_t capacity=sizeof(current);
+    if (sysctlbyname("kern.exec_inject",current,&capacity,NULL,0)) return failure(@"read_keyboard_coverage");
+    NSString *configuration=@(current);
+    NSMutableArray *groups=[[configuration componentsSeparatedByString:@";"] mutableCopy];
+    NSMutableArray *added=[NSMutableArray new];
+    BOOL found=NO;
+    for (NSUInteger i=0;i<groups.count;i++) {
+        NSString *group=groups[i];
+        if (![group hasPrefix:@"/redwood/lib/libnabu.experience.dylib "]) continue;
+        found=YES;
+        NSArray *words=[group componentsSeparatedByString:@" "];
+        for (NSString *name in @[@"Sileo",@"TrollStoreLite",@"TrollApps"]) {
+            if (![words containsObject:name]) { group=[group stringByAppendingFormat:@" %@",name]; [added addObject:name]; }
+        }
+        groups[i]=group;
+    }
+    if (!found) { errno=ENOENT; return failure(@"keyboard_compatibility_rule_missing"); }
+    NSString *updated=[groups componentsJoinedByString:@";"];
+    if (added.count && nabu_jailbreak_restore_tweak_config(updated.UTF8String)) return failure(@"extend_keyboard_coverage");
+    report[@"keyboard_added_processes"]=added;
+    report[@"keyboard_configuration_bytes"]=@([updated lengthOfBytesUsingEncoding:NSUTF8StringEncoding]+1);
+    return YES;
+}
+
 static BOOL mountPrefix(void) {
     const char *stage=NULL;
     if (nabu_jailbreak_restore_paths(&stage)) return failure(@(stage));
@@ -240,7 +324,7 @@ static int setup(void) {
     if (getuid()!=0 || geteuid()!=0) return 1;
     if (!makeDirectory(output)) return 1;
     chown(output.fileSystemRepresentation,501,501);
-    if (!makeDirectory(base) || !extractSeed() || !mountPrefix()) return 2;
+    if (!makeDirectory(base) || !extractSeed() || !mountPrefix() || !repairKeyboardCoverage()) return 2;
     NSString *probeOutput=[output stringByAppendingPathComponent:@"filesystem.json"];
     NSData *priorData=[NSData dataWithContentsOfFile:probeOutput];
     NSDictionary *prior=priorData ? [NSJSONSerialization JSONObjectWithData:priorData options:0 error:nil] : nil;
@@ -263,6 +347,8 @@ static int setup(void) {
     removeUnusedSigningPackages();
     run(@"finish_package_triggers",@[@"/var/jb/usr/bin/dpkg",@"--triggers-only",@"--pending"],-1);
     run(@"register_sileo",@[@"/var/jb/usr/bin/uicache",@"-p",@(NABU_JB_PREFIX "/Applications/Sileo.app")],-1);
+    run(@"restart_sileo_after_update",@[@"/var/jb/bin/sh",@"-c",
+        @"if /var/jb/usr/bin/killall -0 Sileo >/dev/null 2>&1; then /var/jb/usr/bin/killall -TERM Sileo; fi"],-1);
     report[@"native_setuid_passed"]=@(verifySetuid());
     report[@"legacy_sileo_helper_test"]=@"not used by Sileo on iOS 13 or later; parent check retained";
     testPackageLifecycle();
@@ -278,7 +364,7 @@ static int setup(void) {
     }
     report[@"inventory"]=inventory;
     report[@"finished"]=@([[NSDate date] timeIntervalSince1970]);
-    BOOL all=[report[@"native_setuid_passed"] boolValue] && [report[@"filesystem_probe_passed"] boolValue];
+    BOOL all=[report[@"native_setuid_passed"] boolValue] && [report[@"filesystem_probe_passed"] boolValue] && [report[@"kernel_tweak_injection_passed"] boolValue];
     for (NSDictionary *step in steps) all=all && [step[@"passed"] boolValue];
     report[@"all_steps_passed"]=@(all);
     publish();
@@ -324,8 +410,10 @@ static int setup(void) {
         if (!error) do { waited=waitpid(pid,&status,0); } while (waited<0 && errno==EINTR);
         BOOL passed=!error && waited==pid && WIFEXITED(status) && WEXITSTATUS(status)==0;
         dispatch_async(dispatch_get_main_queue(), ^{
+            label.text=@"正在检查输入法布局…\n请保持此页面和 USB 连接。";
+            BOOL auditSaved=nabuKeyboardLayoutAudit([output stringByAppendingPathComponent:@"keyboard-layouts.json"]);
             self.sileoButton.enabled=YES;
-            label.text=passed ? @"环境安装与检查已结束。\n请保持 USB 连接，等待核对结果。" :
+            label.text=passed && auditSaved ? @"环境安装与检查已结束。\n请保持 USB 连接，等待核对结果。" :
                 [NSString stringWithFormat:@"环境配置遇到错误。\n启动错误：%d，等待状态：%d。\n请保持 USB 连接以读取记录。",error,status];
         });
     });

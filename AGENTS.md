@@ -1,3 +1,5 @@
+完整越狱继续（2026-11-14）：build4实机apt依赖检查、测试包安装/卸载通过，用户确认Sileo可从安装器按钮打开；桌面图标和键盘输入尚未确认。当前准备build5：Sileo归档改USTAR、setuid launcher移到原生前缀、真实ElleKit SIGBUS增加故障寄存器日志。键盘experience名单漏Sileo/TrollStoreLite/TrollApps，补齐后配置501字节（含NUL），仍可用于当前512字节旧内核；添加96项布局查询，不能替代实际输入。独立keyboard-only库待CI。新exec内核候选已完成本地检查，未部署；通用tweak启用必须先通过实际hook测试。原生APFS64项检查通过，可写bindfs停用。设备仍jailbreak-02/i4-10+i4-12，槽1未收不可覆盖；Computer Use停用，爱思安装/FairPlay暂停。状态log/host/jailbreak-20261114/continuation.json；以下为历史。
+
 完整越狱目标 active（2026-11-14）：设备仍 jailbreak-02 临时 iPadOS，i4-10 内核+i4-12 启动包，槽1占用不可覆盖。Probe build 3 已在开发者模式false下通过root、task_for_pid/内存读写/线程、PT_ATTACHEXC、JIT和DYLD注入。setup build 1/CI43576184745已安装，root将6,527个基础文件解包到Data的/var/db/nabu-jailbreak/procursus；创建/var/jb/var/mobile遇EROFS，未执行包脚本或安装Sileo/ElleKit。根因当前bindfs强制RDONLY/NOSUID且缺写操作，需补真实可写映射和缓存/写回；不能只清标志或返回成功。包输入已审查且依赖原样保留，libkrw/shshd等依赖仍待处理。未有新内核候选，不需恢复Android。详见analysis/nabu-jailbreak-bindfs-rw-20261114.md及log/host/jailbreak-20261114/continuation.json。商店安装通过，Unity Metal修复已审查未部署；爱思安装/FairPlay继续暂停；设备资料D:/github-IOS/XIAOMI_PAD5-NABU；以下为历史。
 
 # 项目工作规则

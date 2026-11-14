@@ -2,6 +2,18 @@
 
 2026-11-14 用户要求将内核构建成完整越狱。当前内核已有部分真实能力，但包管理、通用 tweak 环境和持久化验收尚未完成；不能以应用安装成功或 PC 的越狱标签代替这些验证。
 
+## 2026-11-14 原生 APFS 验收
+
+setup build 3（691eb7f / CI43581057720）已实机迁移 `/var/jb` 到 `/private/var/db/nabu-jailbreak/procursus`，原 6,527 个文件保留。`setup-03/result-01/filesystem.json` 的 64 项均通过，包括双路径普通 I/O、MAP_SHARED 与 msync、truncate 后已映射页、关闭 fd 后映射、chmod/chown、xattr、跨进程 fcntl/flock、硬链接、rename swap、删除后的已开 fd，以及独立只读 bindfs 拒写。
+
+基础 shell、firmware（实际生成版本 16.5）、apt/dpkg、Sileo 2.5.1 和 ElleKit 0.4.5 已安装/配置。`installation_proxy` 查到 Sileo 的真实 Data 路径，证明此前不能把 ramfs 上的注册问题归因为 Data 路径被禁。但用户尚未看到桌面图标，包状态仍为 Sileo triggers-awaited、uikittools triggers-pending，需要处理并实测启动。
+
+剩余失败为错误调用旧版 Sileo helper（exit 72）及 libkrw0-plugin 缺失（apt check exit 100）。iOS 13+ 的 Sileo 实际用 persona，旧 helper 保留父进程保护；后续以独立自有程序验收 setuid。SHSH/nonce 组件不适用于此非 Apple SoC 平台，计划通过真实 dpkg 卸载而非删除 Depends 或伪造状态。
+
+可写 bindfs 两对象已经 CI43580198891 编译且零未解析符号，但独立审查发现 pager/code-sign、VLOCKLOCAL 和名称缓存问题；该候选未部署。原生 APFS 已解决实际写入目标。下一内核候选仅补 exec 注入通配与配置容量，保持板级内核和显式只读映射。
+
+完整越狱尚未验收：还需 Sileo 界面、独立 setuid、自有包安装/卸载、ElleKit 实际 hook、通用进程注入和重启后恢复。
+
 ## 当前设备与日志
 
 设备资料在 `D:/github-IOS/XIAOMI_PAD5-NABU`，源码提交使用独立的 `codex/nabu-app-store` 工作树。

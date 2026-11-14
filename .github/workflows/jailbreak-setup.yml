@@ -9,8 +9,11 @@ on:
       - 'userland/nabu/src/jailbreak_fs_probe.*'
       - 'userland/nabu/src/jailbreak_paths.*'
       - 'userland/nabu/src/jailbreak_boot.c'
+      - 'userland/nabu/src/jailbreak_boot_probe.c'
       - 'userland/nabu/src/jailbreak_setuid_probe.c'
       - 'userland/nabu/src/jailbreak_tweak_*'
+      - 'userland/nabu/src/keyboard_*'
+      - 'tools/build_nabu_keyboard_compat.py'
       - 'tools/build_nabu_jailbreak_test_package.py'
       - 'tools/build_nabu_sileo_helper.py'
       - 'tools/repack_nabu_sileo.py'
@@ -30,6 +33,8 @@ jobs:
           persist-credentials: false
       - name: Build signed persistent prefix installer
         run: python3 tools/build_nabu_jailbreak_setup.py --output artifacts/nabu-jailbreak-setup
+      - name: Build the UIKit-lazy keyboard adapter
+        run: python3 tools/build_nabu_keyboard_compat.py --output artifacts/nabu-keyboard-compat
       - name: Build the removable package and rootless Sileo helper
         run: |
           python3 tools/build_nabu_jailbreak_test_package.py --output artifacts/nabu-jailbreak-test
@@ -49,4 +54,5 @@ jobs:
             artifacts/nabu-jailbreak-test/
             artifacts/nabu-sileo-helper/
             artifacts/nabu-sileo-package/
+            artifacts/nabu-keyboard-compat/
           retention-days: 14

@@ -85,7 +85,9 @@ def read_tar(data):
 
 def write_tar(entries):
     output = io.BytesIO()
-    with tarfile.open(fileobj=output, mode='w:xz', format=tarfile.PAX_FORMAT) as archive:
+    # Target dpkg rejects PAX x/g headers. Every input path fits USTAR's
+    # prefix/name fields and all original mtimes are integral seconds.
+    with tarfile.open(fileobj=output, mode='w:xz', format=tarfile.USTAR_FORMAT) as archive:
         for item, data in entries:
             item = copy.copy(item)
             if data is not None:

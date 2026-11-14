@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 static int directory(const char *path) {
@@ -82,4 +83,20 @@ int nabu_jailbreak_restore_paths(const char **stage) {
         readonly_union(NABU_JB_BASE "/usr-bin","/usr/bin")) return -1;
     *stage="ready";
     return 0;
+}
+
+int nabu_jailbreak_restore_tweak_config(const char *previous) {
+    return sysctlbyname("kern.exec_inject",NULL,NULL,(void *)previous,strlen(previous)+1);
+}
+
+int nabu_jailbreak_enable_tweaks(char *previous,size_t capacity) {
+    size_t size=capacity;
+    if (sysctlbyname("kern.exec_inject",previous,&size,NULL,0)) return -1;
+    const char *existing=strstr(previous,NABU_JB_TWEAK_RULE);
+    if (existing && (existing==previous || existing[-1]==';') &&
+        (existing[strlen(NABU_JB_TWEAK_RULE)]==0 || existing[strlen(NABU_JB_TWEAK_RULE)]==';')) return 0;
+    char next[4096];
+    int n=snprintf(next,sizeof(next),"%s%s%s",previous,*previous?";":"",NABU_JB_TWEAK_RULE);
+    if (n<0 || (size_t)n>=sizeof(next)) { errno=E2BIG; return -1; }
+    return nabu_jailbreak_restore_tweak_config(next);
 }
