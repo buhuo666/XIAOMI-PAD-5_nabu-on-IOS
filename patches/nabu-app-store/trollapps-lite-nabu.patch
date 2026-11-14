@@ -155,7 +155,7 @@ index 734dbae..9c505df 100644
          
          if(returnCode != 0) {
 diff --git a/TrollApps/TrollApps/Objective C/TSUtil.m b/TrollApps/TrollApps/Objective C/TSUtil.m
-index ea018f5..0489dba 100644
+index ea018f5..5c677cd 100644
 --- a/TrollApps/TrollApps/Objective C/TSUtil.m	
 +++ b/TrollApps/TrollApps/Objective C/TSUtil.m	
 @@ -7,7 +7,10 @@
@@ -169,7 +169,20 @@ index ea018f5..0489dba 100644
  
  
  #define POSIX_SPAWN_PERSONA_FLAGS_OVERRIDE 1
-@@ -38,34 +41,42 @@ int spawnRoot(NSString* path, NSArray* args)
+@@ -17,6 +20,12 @@ extern int posix_spawnattr_set_persona_gid_np(const posix_spawnattr_t* __restric
+ 
+ int spawnRoot(NSString* path, NSArray* args)
+ {
++    NSString *bundle = [path stringByDeletingLastPathComponent];
++    if ([path.lastPathComponent isEqualToString:@"trollstorehelper"] &&
++        (access(path.fileSystemRepresentation, X_OK) != 0 || access([bundle stringByAppendingPathComponent:@"ldid"].fileSystemRepresentation, X_OK) != 0)) {
++        int prepared = spawnRoot([bundle stringByAppendingPathComponent:@"TrollStoreLite"], @[@"--nabu-prepare-helper"]);
++        if (prepared != 0) return prepared;
++    }
+     NSMutableArray* argsM = args.mutableCopy ?: [NSMutableArray new];
+     [argsM insertObject:path.lastPathComponent atIndex:0];
+     
+@@ -38,34 +47,42 @@ int spawnRoot(NSString* path, NSArray* args)
  
      posix_spawn_file_actions_t action;
      posix_spawn_file_actions_init(&action);

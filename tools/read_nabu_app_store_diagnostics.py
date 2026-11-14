@@ -42,7 +42,7 @@ def main():
             return stream
 
         afc = AFC(service('com.apple.afc'))
-        for name in ['backend-environment.json', 'last-install-result.json',
+        for name in ['backend-environment.json', 'helper-preparation.json', 'last-install-result.json',
                      'last-spawn-result.json', 'last-helper-output.log']:
             try:
                 data = afc_read(afc, '/NabuStore/' + name)

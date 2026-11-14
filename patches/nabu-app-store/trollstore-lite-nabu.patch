@@ -46,7 +46,7 @@ index 51472bc..13132ca 100644
  		int ret = 0;
  		NSString* cmd = args.firstObject;
 diff --git a/Shared/TSUtil.m b/Shared/TSUtil.m
-index 45476b9..e9c33e0 100644
+index 45476b9..aac913c 100644
 --- a/Shared/TSUtil.m
 +++ b/Shared/TSUtil.m
 @@ -4,7 +4,9 @@
@@ -75,7 +75,23 @@ index 45476b9..e9c33e0 100644
  }
  
  #else
-@@ -192,6 +198,10 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+@@ -103,6 +109,15 @@ void printMultilineNSString(NSString* stringToPrint)
+ 
+ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdErr)
+ {
++#ifdef NABU_APP_STORE
++	NSString *bundle = [path stringByDeletingLastPathComponent];
++	if ([path.lastPathComponent isEqualToString:@"trollstorehelper"] &&
++		(access(path.fileSystemRepresentation, X_OK) != 0 || access([bundle stringByAppendingPathComponent:@"ldid"].fileSystemRepresentation, X_OK) != 0)) {
++		// installation_proxy preserves the main executable but normalizes these resources to 0644.
++		int prepared = spawnRoot([bundle stringByAppendingPathComponent:@"TrollStoreLite"], @[@"--nabu-prepare-helper"], stdOut, stdErr);
++		if (prepared != 0) return prepared;
++	}
++#endif
+ 	NSMutableArray* argsM = args.mutableCopy ?: [NSMutableArray new];
+ 	[argsM insertObject:path atIndex:0];
+ 	
+@@ -192,6 +207,10 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
  		});
  	}
  
@@ -86,7 +102,7 @@ index 45476b9..e9c33e0 100644
  	do
  	{
  		if (waitpid(task_pid, &status, 0) != -1) {
-@@ -203,6 +213,7 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+@@ -203,6 +222,7 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
  			return -222;
  		}
  	} while (!WIFEXITED(status) && !WIFSIGNALED(status));
@@ -94,7 +110,7 @@ index 45476b9..e9c33e0 100644
  
  	_isRunning = NO;
  	if(stdOut || stdErr)
-@@ -229,7 +240,11 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
+@@ -229,7 +249,11 @@ int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdEr
  		}
  	}
  
@@ -106,7 +122,7 @@ index 45476b9..e9c33e0 100644
  }
  
  void enumerateProcessesUsingBlock(void (^enumerator)(pid_t pid, NSString* executablePath, BOOL* stop))
-@@ -413,15 +428,24 @@ NSArray *trollStoreInactiveInstalledAppBundlePaths(void)
+@@ -413,15 +437,24 @@ NSArray *trollStoreInactiveInstalledAppBundlePaths(void)
  
  NSString* trollStorePath()
  {
@@ -171,6 +187,64 @@ index 9e3b0b2..786423c 100644
 +    });
 +    return services;
 +}
+diff --git a/TrollStore/main.m b/TrollStore/main.m
+index ba87d0a..ef896bc 100644
+--- a/TrollStore/main.m
++++ b/TrollStore/main.m
+@@ -1,6 +1,43 @@
+ #import <Foundation/Foundation.h>
+ #import "TSAppDelegate.h"
+ #import "TSUtil.h"
++#ifdef NABU_APP_STORE
++#import <errno.h>
++#import <string.h>
++#import <sys/stat.h>
++#import <unistd.h>
++
++static int nabuPrepareHelper(void)
++{
++	NSMutableDictionary *report = [@{@"uid": @(getuid()), @"euid": @(geteuid()),
++		@"timestamp": @([[NSDate date] timeIntervalSince1970])} mutableCopy];
++	NSMutableArray *files = [NSMutableArray new];
++	int result = 0;
++	if (getuid() != 0 || geteuid() != 0) result = EPERM;
++	else {
++		NSString *bundle = [getExecutablePath() stringByDeletingLastPathComponent];
++		for (NSString *name in @[@"trollstorehelper", @"ldid"]) {
++			NSString *path = [bundle stringByAppendingPathComponent:name];
++			NSMutableDictionary *file = [@{@"path": path} mutableCopy];
++			struct stat before, after;
++			if (stat(path.fileSystemRepresentation, &before) == 0) file[@"mode_before"] = @(before.st_mode & 07777);
++			int chmodError = chmod(path.fileSystemRepresentation, 0755) == 0 ? 0 : errno;
++			file[@"chmod_errno"] = @(chmodError);
++			if (stat(path.fileSystemRepresentation, &after) == 0) file[@"mode_after"] = @(after.st_mode & 07777);
++			[files addObject:file];
++			if (chmodError != 0) { result = chmodError; break; }
++		}
++	}
++	report[@"files"] = files;
++	report[@"result"] = @(result);
++	NSString *directory = @"/var/mobile/Media/NabuStore";
++	[[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
++	NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
++	[data writeToFile:[directory stringByAppendingPathComponent:@"helper-preparation.json"] options:NSDataWritingAtomic error:nil];
++	NSLog(@"[NabuStore] prepare helper uid=%u euid=%u result=%d", getuid(), geteuid(), result);
++	return result;
++}
++#endif
+ 
+ NSUserDefaults* trollStoreUserDefaults(void)
+ {
+@@ -9,6 +46,9 @@ NSUserDefaults* trollStoreUserDefaults(void)
+ 
+ int main(int argc, char *argv[]) {
+ 	@autoreleasepool {
++#ifdef NABU_APP_STORE
++		if (argc == 2 && strcmp(argv[1], "--nabu-prepare-helper") == 0) return nabuPrepareHelper();
++#endif
+ 		chineseWifiFixup();
+ 		return UIApplicationMain(argc, argv, nil, NSStringFromClass(TSAppDelegate.class));
+ 	}
 diff --git a/TrollStoreLite/entitlements.plist b/TrollStoreLite/entitlements.plist
 index abc5d7b..f910869 100644
 --- a/TrollStoreLite/entitlements.plist
