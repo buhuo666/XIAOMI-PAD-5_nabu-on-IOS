@@ -27,3 +27,5 @@
 5. 候选没有可复现渲染错误且收益大于三轮基线自身波动后，才制作系统集成包。
 
 主机检查：`tools/check_nabu_frame_bench_merge.py`、`tools/check_nabu_frame_bench.py` 均通过。GitHub Actions 工作流已加入合并公式检查，但当前设备处于 Android，尚未部署或宣称真机收益。
+
+GitHub Actions run 44432356392 已成功。artifact `nabu-frame-bench-10`（ID 14486518762）中的 `NabuFrameBench.ipa` 已取回：`artifacts/round2-github/nabu-frame-bench-10/NabuFrameBench.ipa`。构建、并发检查、合并公式检查和 GPU 快照解析均通过。
