@@ -51,7 +51,7 @@ NSDictionary *distribution(std::vector<double> values) {
     uint32_t rowCount, pending, epoch, missedAdmission, nullDrawable, failures, displayLinkCallbacks;
     unsigned scene, repetition, rate, sequenceIndex, sequenceCount, requestedDrawableCount;
     double sampleStart, sampleEnd, stoppedAt, duration, presentationDrainDeadline;
-    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual, freshDrawablePool;
+    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual, freshDrawablePool, mergedAlphaRequested;
     NSInteger initialThermal;
 }
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
@@ -59,6 +59,7 @@ NSDictionary *distribution(std::vector<double> values) {
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
 @property(nonatomic, strong) id<MTLRenderPipelineState> opaquePipeline;
 @property(nonatomic, strong) id<MTLRenderPipelineState> blendPipeline;
+@property(nonatomic, strong) id<MTLRenderPipelineState> mergedBlendPipeline;
 @property(nonatomic, strong) CADisplayLink *link;
 @property(nonatomic, strong) NSTimer *watchdog;
 @property(nonatomic, strong) UIStackView *controls;
@@ -88,6 +89,7 @@ NSDictionary *distribution(std::vector<double> values) {
                               @[@"双缓冲低延时（15秒）", NSStringFromSelector(@selector(startDoubleBufferedDiagnostic))],
                               @[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
                               @[@"60帧场景对照", NSStringFromSelector(@selector(start60))],
+                              @[@"60帧透明合并对照", NSStringFromSelector(@selector(startMerged60))],
                               @[@"120帧持续10分钟", NSStringFromSelector(@selector(startSoak))]]) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
         [button setTitle:option[0] forState:UIControlStateNormal];
@@ -107,7 +109,7 @@ NSDictionary *distribution(std::vector<double> values) {
     self.metalLayer.frame = self.view.bounds;
 }
 - (BOOL)prepareRenderer {
-    if (self.device) return self.opaquePipeline && self.blendPipeline;
+    if (self.device) return self.opaquePipeline && self.blendPipeline && self.mergedBlendPipeline;
     self.device = MTLCreateSystemDefaultDevice();
     if (!self.device) { self.label.text = @"GPU未就绪，请完全退出本应用后重试。"; return NO; }
     NSError *error = nil;
@@ -123,8 +125,13 @@ NSDictionary *distribution(std::vector<double> values) {
     d.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
     d.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     self.blendPipeline = [self.device newRenderPipelineStateWithDescriptor:d error:&error];
+    MTLRenderPipelineDescriptor *merged = [MTLRenderPipelineDescriptor new];
+    merged.vertexFunction = [library newFunctionWithName:@"bench_vertex"];
+    merged.fragmentFunction = [library newFunctionWithName:@"bench_fragment_merged"];
+    merged.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    self.mergedBlendPipeline = [self.device newRenderPipelineStateWithDescriptor:merged error:&error];
     self.queue = [self.device newCommandQueue];
-    if (!self.opaquePipeline || !self.blendPipeline || !self.queue) {
+    if (!self.opaquePipeline || !self.blendPipeline || !self.mergedBlendPipeline || !self.queue) {
         self.label.text = error.localizedDescription ?: @"图形初始化失败"; return NO;
     }
     [self replaceMetalLayerWithDrawableCount:3];
@@ -151,6 +158,14 @@ NSDictionary *distribution(std::vector<double> values) {
 }
 - (void)start120 { [self beginSequence:120 soak:NO]; }
 - (void)start60 { [self beginSequence:60 soak:NO]; }
+- (void)startMerged60 {
+    if (running || draining || ![self prepareRenderer]) return;
+    if (self.metalLayer.maximumDrawableCount != 3) [self replaceMetalLayerWithDrawableCount:3];
+    requestedDrawableCount = 3;
+    lowLatencyRequested = false; diagnostic = false; mergedAlphaRequested = true; rate = 60; duration = 60;
+    sequenceIndex = 0; sequenceCount = 3; automated = true;
+    [self beginRun];
+}
 - (void)startSoak { [self beginSequence:120 soak:YES]; }
 - (void)startDiagnostic { [self startDiagnosticWithLowLatency:NO drawableCount:3]; }
 - (void)startLowLatencyDiagnostic { [self startDiagnosticWithLowLatency:YES drawableCount:3]; }
@@ -161,6 +176,7 @@ NSDictionary *distribution(std::vector<double> values) {
         [self replaceMetalLayerWithDrawableCount:count];
     requestedDrawableCount = unsigned(count);
     lowLatencyRequested = enabled;
+    mergedAlphaRequested = false;
     diagnostic = true; rate = 120; duration = 15;
     sequenceIndex = 0; sequenceCount = 1; automated = true;
     [self beginRun];
@@ -170,6 +186,7 @@ NSDictionary *distribution(std::vector<double> values) {
     if (self.metalLayer.maximumDrawableCount != 3) [self replaceMetalLayerWithDrawableCount:3];
     requestedDrawableCount = 3;
     lowLatencyRequested = false;
+    mergedAlphaRequested = false;
     diagnostic = false; rate = targetRate; duration = soak ? 600 : 60;
     sequenceIndex = 0; sequenceCount = soak ? 1 : 6; automated = true;
     [self beginRun];
@@ -180,7 +197,7 @@ NSDictionary *distribution(std::vector<double> values) {
     lowLatencyActual = [self.metalLayer lowLatency];
     presentationDrainDeadline = 0;
     ++epoch; rowCount = pending = missedAdmission = nullDrawable = failures = displayLinkCallbacks = 0;
-    scene = duration == 600 ? 1 : sequenceIndex / 3;
+    scene = duration == 600 || mergedAlphaRequested ? 1 : sequenceIndex / 3;
     repetition = duration == 600 ? 1 : sequenceIndex % 3 + 1;
     self.failureReason = nil;
     self.failureEvents = [NSMutableArray array];
@@ -208,6 +225,7 @@ NSDictionary *distribution(std::vector<double> values) {
     const uint64_t traceID = (uint64_t(generation) << 32) | index;
     const bool trace = diagnostic;
     const unsigned layers = scene ? 8 : 1;
+    const bool mergedAlpha = mergedAlphaRequested;
     Row &row = rows[index]; row = {};
     row.callback = now; row.target = link.targetTimestamp; row.frame = index;
     row.measured = now >= sampleStart; row.pending = ++pending;
@@ -254,11 +272,18 @@ NSDictionary *distribution(std::vector<double> values) {
                     [self endRun]; [self checkDeadline];
                 }); return;
             }
-            for (unsigned layer = 0; layer < layers; ++layer) {
-                Parameters p{index, layer, Width, Height, seconds};
-                [encoder setRenderPipelineState:layer ? self.blendPipeline : self.opaquePipeline];
+            Parameters p{index, 0, Width, Height, seconds};
+            if (mergedAlpha) {
+                [encoder setRenderPipelineState:self.mergedBlendPipeline];
                 [encoder setFragmentBytes:&p length:sizeof(p) atIndex:0];
                 [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+            } else {
+                for (unsigned layer = 0; layer < layers; ++layer) {
+                    p.layer = layer;
+                    [encoder setRenderPipelineState:layer ? self.blendPipeline : self.opaquePipeline];
+                    [encoder setFragmentBytes:&p length:sizeof(p) atIndex:0];
+                    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+                }
             }
             [encoder endEncoding];
             [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
@@ -399,6 +424,8 @@ NSDictionary *distribution(std::vector<double> values) {
         @"presentation_drain_seconds": @(diagnostic ? PresentationDrainSeconds : 0),
         @"result": failures || nullDrawable || !generated ? @"failed" : @"captured_not_display_qualified",
         @"error": self.failureReason ?: @"", @"scene": scene ? @"eight_layer_alpha" : @"opaque_motion",
+        @"optimization_variant": mergedAlphaRequested ? @"merged_alpha_one_draw" : @"baseline",
+        @"render_draws_per_frame": mergedAlphaRequested ? @1 : @(scene ? 8 : 1),
         @"repetition": @(repetition), @"target_hz": @(rate), @"width": @(Width), @"height": @(Height),
         @"sample_start_s": @(sampleStart), @"sample_end_s": @(sampleEnd), @"stopped_s": @(stoppedAt),
         @"observed_duration_s": @(observedDuration), @"complete_interval": @(completeInterval),

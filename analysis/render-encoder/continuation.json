@@ -1,0 +1,110 @@
+{
+  "objective": "Continue completing the render encoder; weather stage accepted to its present boundary by user",
+  "date": "2026-11-18",
+  "source_root": "C:/Users/buhuo/.codex/worktrees/nabu-app-store/XIAOMI_PAD5-NABU",
+  "device": "REN322 booted on iPadOS. Apple USB confirmed. Received REN322.json from the running trial.",
+  "protected_slot": {
+    "slot": 1,
+    "span": 8,
+    "bytes": 536870912,
+    "uuid": "2db88d9cf26f4498a9412698d41da9ca",
+    "collected": false
+  },
+  "weather_boundary": "r7b actual 3 payloads each current+287h+11days fully validated; native WeatherData propagated successfully, then VectorKit crashes on NBRenderEncoder setDepthClipMode. Keyboard accepted. User moved work to renderer.",
+  "weather_evidence": "analysis/weather-WTH320/r7b-live-result.md",
+  "browser_feedback": "PAUSED by latest user request: finish renderer first. System Safari page region black, address bar usable. Existing reproduction logs retained; no further Safari work.",
+  "browser_evidence": "log/host/WTH320/browser-black-r2/syslog.log",
+  "browser_finding": "WebKit.GPU276 no-copy IOSurface imports id229..234,1600x1024,0x640000B fail OutOfMemory(Device) and QuartzCore cannot create destination textures. HTTP200 resources received. GPU allocation/mapping root cause not yet isolated. Safari.History nil file URL crashes also observed but not established as black-page cause.",
+  "candidate": "artifacts/nabu-render-encoder-r6",
+  "candidate_status": "r6 signed, 18598000 bytes, 207 baseline exports preserved. Installed system-wide in REN321 NabuInit, loaded by SpringBoard, SBRendererService, Preferences and Weather. Device readback confirmed the staged boot files. Existing WTH320 kernel and ADT reused byte-for-byte.",
+  "coverage": "analysis/render-encoder/coverage-r6-ios/coverage.json: 86 of 131 iOS SDK methods present including 5 unsupported tile methods, 45 absent, 0 signature mismatches.",
+  "review": "D:/github-IOS/render-current-review-result.md; fixed empty range narrowing and WSL stderr symbol contamination. Earlier212 count was207 symbols+5 warning lines, corrected.",
+  "live_probe": "r15-zh (bundle version 6, r6 candidate) ran on WTH320. The device report names the installed bundle path and the launcher records a fresh result, PID 339, exit 0, signal 0. All 66 scoped cases passed independent verification. 65 raw files: 32 pixel/aspect checks and 33 mark/function-output checks. The remaining case is an expected index refusal. Reports: log/host/WTH320/render-probe-r15-result-r1/independent-check.json and analysis/render-encoder/WTH320-functions-live.md. Earlier r12 (39) and r9 (13) evidence retained.",
+  "user_constraint": "No defensive programming. Focus missing rendering features and observed failures only. Speculative timeout child keepalive/parent polling withdrawn from source after r12 run; syntax passes, installed r12 unchanged. Do not redeploy merely for that rollback.",
+  "capabilities": "Actual r12: function pointers/fromRender and ray/fromRender false inherited system Metal; tile false candidate; counterSets0 but sampling points1/2/4 true,0/3 false. Do not misstate all counter queries false or hardware impossible.",
+  "r13_device_result": "log/host/WTH320/render-probe-r13-result-r1: 52 passes (32 surface checks, 19 mark-file checks and one index refusal). All 3 ICB patch and 10 classic cases passed. Both VFT stages failed at pipeline creation with BinaryFunctions(NotPrecompiled table_sub); none of their 14 draws executed. Corrected the test function's descriptor and the frontend's actual function option forwarding. Latest installed test and verification tracked below.",
+  "r14_device_result": "log/host/WTH320/render-probe-r14-result-r1: 59 cases passed including all 7 vertex VFT cases. Fragment pipeline creation failed with LinkedFunction DataLayout. Its hand-written AIR fixture omitted target datalayout. The host translator reproduced the failure using the packaged AIR. After restoring the common layout it compiled both stages, and spirv-val validated both Vulkan 1.2 modules.",
+  "system_integration": "REN321 verified through MTLCreateSystemDefaultDevice, using /redwood/sbin/libnabu-metal-frontend.dylib. All 66 cases passed. See log/host/REN321/system-probe-result-r1/independent-check.json.",
+  "copied_sync_r7": {
+    "status": "REN322 system Metal: 66 functional cases and sparse CPU/GPU readbacks independently confirmed. Build 9 emitted no registry scan evidence.",
+    "build": "artifacts/nabu-render-encoder-r7/build-report.json",
+    "probe": "artifacts/nabu-render-probe-r7-dirty/NabuRenderEncoderProbe.ipa",
+    "host_evidence": "analysis/render-encoder/dirty-r7-host-final/report.json",
+    "method": "Reuse the exact r6 frontend sources. Apply copied-dirty-pages.patch and copied-registry-r7.patch to copy256, compile both Cargo dependencies from the staged runtime, then check all 273 r6 exports.",
+    "semantics": "Apple CPU/GPU page cursors select comparisons. First publication, unknown pages and failed watches retain comparison. Registry membership, entry retirement and potentially aliased host byte accesses are separately synchronized.",
+    "next": "System integration decision follows cold-pass variability check. Unchanged CPU full scans and GPU sparse write scans need journal diagnostics. CA finish/Swap and visible content cadence still unmeasured.",
+    "system_probe": "artifacts/nabu-render-probe-REN322-system-r2/NabuRenderEncoderProbe.ipa",
+    "startup": "log/host/REN322/startup-r2/REN322.json",
+    "boot": "log/device/nabu-boot-REN322-r1/run.json",
+    "deployment": "log/device/nabu-chain-20261118-222102/deployment.json",
+    "prior_logs": "log/device/nabu-boot-REN321-r1/runtime-log",
+    "prior_latency": "analysis/render-encoder/REN321-latency/latency-table.md",
+    "first_result": "log/host/REN322/system-probe-result-r1/independent-check.json",
+    "frame_latency": "log/host/REN322/frame-trace-01/display-latency-table.md",
+    "trace_scope": "62 swaps and 62 exact writer jobs; CA finish to Swap not available. Capture overlapped diagnostic app installation, not a controlled scrolling A/B.",
+    "finish_swap_capture": {
+      "report": "log/host/REN322/finish-swap-02/finish-swap.md",
+      "window": 2,
+      "duration_s": 15,
+      "records": 93698,
+      "dropped": 0,
+      "exact_finish_swap_frames": 0,
+      "accepted": 819,
+      "runtime_commit_calls": 820,
+      "runtime_commit_mean_ms": 0.1399012195121951,
+      "baseline_pairs_reproduced": 63,
+      "missing": "No CA finish or Swap markers. REN322 deployed bootstrap has the service flags but does not select the CA observation library for backboardd."
+    },
+    "round1": {
+      "report": "D:/github-IOS/GPU优化第一轮报告.md",
+      "functional": "log/host/REN322/round1/probe-build11/functional-and-route.json",
+      "functional_cases_passed": 66,
+      "copy_baseline": "log/host/REN322/round1/copy-control-r1/independent-check.json",
+      "bench": "log/host/REN322/round1/framebench-analysis.json",
+      "scene_summary": "log/host/REN322/round1/scene-summary.json",
+      "windows": [
+        {
+          "id": 3,
+          "records": 736212,
+          "dropped": 0,
+          "acknowledged": true
+        },
+        {
+          "id": 4,
+          "records": 757588,
+          "dropped": 0,
+          "acknowledged": true
+        }
+      ],
+      "runs": 6,
+      "submitted_and_completed": 21600,
+      "finish_swap_pairs": 0,
+      "unique_display_fps": null,
+      "candidate_patch": "patches/nabu-metal/copied-publish-written-pages.patch",
+      "candidate_host": "analysis/render-encoder/round1-copy-pages-host/report.json",
+      "candidate_device": "PASS app-local build 2 revision r7-written-pages PID 253; each selected import fell back once, both readbacks and counts pass.",
+      "dns": "paused",
+      "candidate_app": "artifacts/nabu-copy-pages-probe/NabuCopyControl.ipa",
+      "candidate_install": "log/host/REN322/round1/candidate-install/install.json",
+      "candidate_ab": "log/host/REN322/round1/copy-pages-ab.json",
+      "candidate_result": "log/host/REN322/round1/copy-control-pages/independent-check.json",
+      "system_frontend": "r7",
+      "sparse_reverse_scanned_before": 12582912,
+      "sparse_reverse_scanned_after": 4096
+    },
+    "round2": {
+      "candidate": "FrameBench merged alpha one draw",
+      "source": "userland/nabu/apps/FrameBench",
+      "report": "analysis/render-encoder/round2-merged-alpha.md",
+      "host_merge_check": "tools/check_nabu_frame_bench_merge.py: 20000 samples, max error 0",
+      "host_completion_check": "tools/check_nabu_frame_bench.py: 1000 concurrent rounds pass",
+      "device_status": "pending: device restored Android",
+      "device_plan": "temporary boot to iPadOS, run 3 x 60s merged transparent scene, compare baseline",
+      "system_integration": "only after device pixel and timing pass"
+    }
+  },
+  "remaining": [
+    "Alpha descriptor fields need dedicated GPU evidence.",
+    "Modern tile, mesh, ray tracing and counters remain incomplete."
+  ]
+}
