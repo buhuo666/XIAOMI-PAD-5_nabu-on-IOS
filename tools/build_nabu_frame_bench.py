@@ -46,6 +46,7 @@ def main():
         run(['xcrun', '--sdk', 'iphoneos', 'clang++', '-target', 'arm64-apple-ios16.5',
              '-isysroot', sdk, '-std=c++17', '-O2', '-g', '-fobjc-arc', '-fblocks',
              '-Wall', '-Wextra', '-Werror', '-fstack-protector-strong', '-I', ROOT / 'userland/nabu/src', source / 'main.mm',
+             source / 'MergePixelCheck.mm',
              '-framework', 'UIKit', '-framework', 'Foundation', '-framework', 'Metal',
              '-framework', 'QuartzCore', '-framework', 'IOSurface', '-o', app / 'FrameBench'])
         run(['xcrun', 'ibtool', '--compile', app / 'LaunchScreen.storyboardc', '--sdk', sdk,
@@ -53,7 +54,7 @@ def main():
              ROOT / 'userland/nabu/apps/LocalTest/LaunchScreen.storyboard'])
         info = {'CFBundleIdentifier': BUNDLE, 'CFBundleName': 'FrameBench', 'CFBundleExecutable': 'FrameBench',
                 'CFBundleDisplayName': 'GPU帧率基准', 'CFBundlePackageType': 'APPL',
-                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '6', 'CFBundleShortVersionString': '1.5',
+                'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleVersion': '7', 'CFBundleShortVersionString': '1.6',
                 'MinimumOSVersion': '16.5', 'CFBundleSupportedPlatforms': ['iPhoneOS'],
                 'LSRequiresIPhoneOS': True, 'UIDeviceFamily': [2], 'UIRequiresFullScreen': True,
                 'UILaunchStoryboardName': 'LaunchScreen', 'UIFileSharingEnabled': True,
@@ -79,7 +80,8 @@ def main():
                       width=1600, height=2560, scenes=['opaque_motion', 'eight_layer_alpha'],
                       repetitions=3, seconds_per_run=60, soak_seconds=600, diagnostic_seconds=15,
                       diagnostic_modes=['default', 'low_latency', 'double_buffered_low_latency'],
-                      diagnostic_drawable_counts=[3, 3, 2], readback_during_capture=False)
+                      diagnostic_drawable_counts=[3, 3, 2], readback_during_capture=False,
+                      paired_alpha_ab=True, independent_pixel_check=True)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         report.update(result='failed', error=str(error))
     (output / 'build-report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')

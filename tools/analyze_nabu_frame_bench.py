@@ -81,6 +81,9 @@ def analyze(metadata, rows):
     for r in submitted: buckets[min(len(buckets)-1, int(r['callback_s']-start))] += 1
     return {'run_id': metadata['run_id'], 'benchmark_revision': revision,
             'scene': metadata['scene'], 'repetition': metadata['repetition'],
+            'optimization_variant': metadata.get('optimization_variant', 'baseline'),
+            'render_draws_per_frame': metadata.get('render_draws_per_frame'),
+            'paired_alpha_ab': metadata.get('paired_alpha_ab', False),
             'target_hz': metadata['target_hz'], 'result': metadata['result'],
             'error': metadata.get('error', ''), 'duration_s': observed_duration,
             'requested_duration_s': end-start, 'complete_interval': complete_interval,

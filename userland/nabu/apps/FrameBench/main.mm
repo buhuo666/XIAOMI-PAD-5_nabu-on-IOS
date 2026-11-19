@@ -7,6 +7,7 @@
 #include <vector>
 #include <dlfcn.h>
 #include "FrameCompletion.h"
+#include "MergePixelCheck.h"
 #include "ca_trace_marker.h"
 
 // Original iPadOS 16.5 (20F66) CAMetalLayer methods. The property requests
@@ -53,7 +54,7 @@ NSDictionary *distribution(std::vector<double> values) {
     uint32_t rowCount, pending, epoch, missedAdmission, nullDrawable, failures, displayLinkCallbacks;
     unsigned scene, repetition, rate, sequenceIndex, sequenceCount, requestedDrawableCount;
     double sampleStart, sampleEnd, stoppedAt, duration, presentationDrainDeadline;
-    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual, freshDrawablePool, mergedAlphaRequested;
+    bool running, draining, automated, diagnostic, lowLatencyRequested, lowLatencyActual, freshDrawablePool, mergedAlphaRequested, pairedAlpha;
     NSInteger initialThermal;
 }
 @property(nonatomic, strong) CAMetalLayer *metalLayer;
@@ -92,6 +93,7 @@ NSDictionary *distribution(std::vector<double> values) {
                               @[@"120帧场景测试", NSStringFromSelector(@selector(start120))],
                               @[@"60帧场景对照", NSStringFromSelector(@selector(start60))],
                               @[@"60帧透明合并对照", NSStringFromSelector(@selector(startMerged60))],
+                              @[@"透明合成图像校验", NSStringFromSelector(@selector(checkMergePixels))],
                               @[@"120帧持续10分钟", NSStringFromSelector(@selector(startSoak))]]) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
         [button setTitle:option[0] forState:UIControlStateNormal];
@@ -164,9 +166,25 @@ NSDictionary *distribution(std::vector<double> values) {
     if (running || draining || ![self prepareRenderer]) return;
     if (self.metalLayer.maximumDrawableCount != 3) [self replaceMetalLayerWithDrawableCount:3];
     requestedDrawableCount = 3;
-    lowLatencyRequested = false; diagnostic = false; mergedAlphaRequested = true; rate = 60; duration = 60;
-    sequenceIndex = 0; sequenceCount = 3; automated = true;
+    lowLatencyRequested = false; diagnostic = false; pairedAlpha = true; rate = 60; duration = 60;
+    sequenceIndex = 0; sequenceCount = 6; automated = true;
     [self beginRun];
+}
+- (void)checkMergePixels {
+    if (running || draining || ![self prepareRenderer]) return;
+    self.controls.hidden = YES;
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
+    dispatch_async(self.renderQueue, ^{
+        NSDictionary *report = NabuCheckMergedPixels(self.device, self.queue, self.opaquePipeline,
+                                                    self.blendPipeline, self.mergedBlendPipeline, self.documents);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.label.text = [report[@"complete"] boolValue] ?
+                [NSString stringWithFormat:@"图像校验已保存\n最大RGB差值：%@／255\n条码错误：%@，透明度错误：%@",
+                    report[@"maximum_rgb_delta"], report[@"barcode_channel_errors"], report[@"alpha_errors"]] : report[@"error"];
+            self.controls.hidden = NO;
+            UIApplication.sharedApplication.idleTimerDisabled = NO;
+        });
+    });
 }
 - (void)startSoak { [self beginSequence:120 soak:YES]; }
 - (void)startDiagnostic { [self startDiagnosticWithLowLatency:NO drawableCount:3]; }
@@ -178,7 +196,7 @@ NSDictionary *distribution(std::vector<double> values) {
         [self replaceMetalLayerWithDrawableCount:count];
     requestedDrawableCount = unsigned(count);
     lowLatencyRequested = enabled;
-    mergedAlphaRequested = false;
+    mergedAlphaRequested = false; pairedAlpha = false;
     diagnostic = true; rate = 120; duration = 15;
     sequenceIndex = 0; sequenceCount = 1; automated = true;
     [self beginRun];
@@ -188,7 +206,7 @@ NSDictionary *distribution(std::vector<double> values) {
     if (self.metalLayer.maximumDrawableCount != 3) [self replaceMetalLayerWithDrawableCount:3];
     requestedDrawableCount = 3;
     lowLatencyRequested = false;
-    mergedAlphaRequested = false;
+    mergedAlphaRequested = false; pairedAlpha = false;
     diagnostic = false; rate = targetRate; duration = soak ? 600 : 60;
     sequenceIndex = 0; sequenceCount = soak ? 1 : 6; automated = true;
     [self beginRun];
@@ -199,8 +217,9 @@ NSDictionary *distribution(std::vector<double> values) {
     lowLatencyActual = [self.metalLayer lowLatency];
     presentationDrainDeadline = 0;
     ++epoch; rowCount = pending = missedAdmission = nullDrawable = failures = displayLinkCallbacks = 0;
-    scene = duration == 600 || mergedAlphaRequested ? 1 : sequenceIndex / 3;
-    repetition = duration == 600 ? 1 : sequenceIndex % 3 + 1;
+    mergedAlphaRequested = pairedAlpha && (sequenceIndex % 2 == 1);
+    scene = duration == 600 || pairedAlpha ? 1 : sequenceIndex / 3;
+    repetition = duration == 600 ? 1 : pairedAlpha ? sequenceIndex / 2 + 1 : sequenceIndex % 3 + 1;
     self.failureReason = nil;
     self.failureEvents = [NSMutableArray array];
     self.runID = [NSString stringWithFormat:@"%.0f-scene%u-repeat%u", NSDate.date.timeIntervalSince1970 * 1e6, scene, repetition];
@@ -431,7 +450,8 @@ NSDictionary *distribution(std::vector<double> values) {
     const bool completeInterval = stoppedAt >= sampleEnd;
     const bool validPerformance = !diagnostic && completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @7, @"diagnostic_only": @(diagnostic),
+        @"run_id": self.runID, @"benchmark_revision": @8, @"diagnostic_only": @(diagnostic),
+        @"paired_alpha_ab": @(pairedAlpha), @"sequence_index": @(sequenceIndex),
         @"low_latency_requested": @(lowLatencyRequested), @"low_latency_actual": @(lowLatencyActual),
         @"maximum_drawable_count_requested": @(requestedDrawableCount),
         @"maximum_drawable_count_actual": @(self.metalLayer.maximumDrawableCount),
