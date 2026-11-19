@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the merged alpha shader against the original eight source-over layers."""
+"""Check the A640 BGRA8 merged shader against eight separately quantized blends."""
 import math
 import random
 import struct
@@ -34,22 +34,31 @@ def source_over(destination, source, alpha):
                  for i in range(3))
 
 
+def byte(value):
+    return min(255, max(0, round(float(value) * 255)))
+
+
+def shader_byte(value):
+    return math.floor(f32(f32(f32(value) * f32(255.0)) + f32(.5)))
+
+
 def original(uvx, uvy, seconds):
-    out = layer_color(uvx, uvy, seconds, 0)
+    out = tuple(f32(byte(v) / 255) for v in layer_color(uvx, uvy, seconds, 0))
     for layer in range(1, 8):
-        source = layer_color(uvx, uvy, seconds, layer)
+        source = tuple(f32(byte(v) / 255) for v in layer_color(uvx, uvy, seconds, layer))
         alpha = source[3]
-        out = source_over(out, source, alpha) + (f32(1.0),)
+        out = tuple(f32(byte(v) / 255) for v in source_over(out, source, alpha)) + (f32(1.0),)
     return out
 
 
 def merged(uvx, uvy, seconds):
-    color = layer_color(uvx, uvy, seconds, 0)[:3]
+    color = tuple(shader_byte(v) for v in layer_color(uvx, uvy, seconds, 0)[:3])
     for layer in range(1, 8):
-        source = layer_color(uvx, uvy, seconds, layer)
+        source = tuple(shader_byte(v) for v in layer_color(uvx, uvy, seconds, layer))
         alpha = source[3]
-        color = source_over(color, source, alpha)
-    return color + (f32(1.0),)
+        color = tuple(math.floor(f32(f32(f32(source[i] * alpha + color[i] * (255 - alpha)) / f32(255)) + f32(.5)))
+                      for i in range(3))
+    return tuple(f32(v / 255) for v in color) + (f32(1.0),)
 
 
 def barcode_pixel(frame, pixel_x, width=1600):
@@ -71,7 +80,8 @@ def main():
     random.seed(0xA740)
     checked = 0
     max_error = 0.0
-    samples = [(random.random(), random.random(), random.random() * 600.0) for _ in range(20000)]
+    samples = [(f32((random.randrange(1600) + .5) / 1600), f32((random.randrange(2560) + .5) / 2560),
+                random.random() * 600.0) for _ in range(20000)]
     # Exercise the strict marker boundaries and phase wrap, which random points
     # almost never hit. Metal's comparisons are strict (<), as in the shader.
     for seconds in (0.0, 1.0 / 0.35, 600.0, 599.999999):
@@ -97,7 +107,8 @@ def main():
             actual = merged_fragment(frame, pixel_x, f32(63.999), 0.0, width)
             assert actual == expected, (frame, pixel_x, expected, actual)
     print({"passed": True, "samples": checked, "max_error": max_error,
-           "draws_before": 8, "draws_after": 1, "scope": "host mathematical equivalence; Metal rounding and pixel readback remain device checks"})
+           "draws_before": 8, "draws_after": 1,
+           "scope": "A640 BGRA8 source/destination quantization model; independent GPU readbacks remain required"})
 
 
 if __name__ == "__main__":
