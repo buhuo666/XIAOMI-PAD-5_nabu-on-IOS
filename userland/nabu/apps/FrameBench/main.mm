@@ -30,6 +30,8 @@ TraceSetter presentTraceSetter() {
 struct Parameters { uint32_t frame, layer, width, height; float seconds; };
 struct Row {
     double callback = 0, target = 0, acquireBegin = 0, acquireEnd = 0;
+    double commandBegin = 0, commandEnd = 0, passBegin = 0, passEnd = 0;
+    double drawBegin = 0, drawEnd = 0, encoderEnd = 0;
     double submit = 0, commitReturn = 0, completed = 0, presentedCallback = 0, presentedTime = 0;
     uint64_t drawable = 0;
     uint32_t frame = 0, surface = 0, status = 0, pending = 0, ready = 0;
@@ -248,13 +250,17 @@ NSDictionary *distribution(std::vector<double> values) {
             r.surface = surface ? IOSurfaceGetID(surface) : 0;
             if (trace) nabu_ca_trace_marker(84, traceID, r.surface, r.drawable, (uint64_t)(uintptr_t)(__bridge void *)drawable);
             const NSUInteger textureWidth = texture.width, textureHeight = texture.height;
+            r.commandBegin = CACurrentMediaTime();
             id<MTLCommandBuffer> command = [self.queue commandBuffer];
+            r.commandEnd = CACurrentMediaTime();
+            r.passBegin = CACurrentMediaTime();
             MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
             pass.colorAttachments[0].texture = texture;
             pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
             pass.colorAttachments[0].storeAction = MTLStoreActionStore;
             const bool nativeTexture = texture && textureWidth == Width && textureHeight == Height;
             id<MTLRenderCommandEncoder> encoder = nativeTexture ? [command renderCommandEncoderWithDescriptor:pass] : nil;
+            r.passEnd = CACurrentMediaTime();
             if (!command || !encoder || !nativeTexture) {
                 NSString *stage = !texture ? @"drawable_texture_nil" : !nativeTexture ? @"drawable_size_mismatch" :
                     !command ? @"command_buffer_nil" : @"render_encoder_nil";
@@ -273,6 +279,7 @@ NSDictionary *distribution(std::vector<double> values) {
                 }); return;
             }
             Parameters p{index, 0, Width, Height, seconds};
+            r.drawBegin = CACurrentMediaTime();
             if (mergedAlpha) {
                 [encoder setRenderPipelineState:self.mergedBlendPipeline];
                 [encoder setFragmentBytes:&p length:sizeof(p) atIndex:0];
@@ -285,7 +292,9 @@ NSDictionary *distribution(std::vector<double> values) {
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
                 }
             }
+            r.drawEnd = CACurrentMediaTime();
             [encoder endEncoding];
+            r.encoderEnd = CACurrentMediaTime();
             [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
                 const double callbackAt = CACurrentMediaTime(), actual = shown.presentedTime;
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -385,17 +394,19 @@ NSDictionary *distribution(std::vector<double> values) {
 }
 - (void)exportRun {
     std::vector<double> acquire, encode, commit, completion, cadence;
+    std::vector<double> commandAcquire, passSetup, drawEncode, encoderFinalize;
     unsigned generated = 0, complete = 0, presented = 0, realPresentedTime = 0;
     double previous = 0;
     NSURL *csv = [self.documents URLByAppendingPathComponent:[self.runID stringByAppendingString:@".csv"]];
     FILE *file = fopen(csv.fileSystemRepresentation, "wb");
     if (!file) { ++failures; self.failureReason = @"Cannot save frame CSV"; return; }
-    fputs("frame,measured,callback_s,target_s,acquire_begin_s,acquire_end_s,submit_s,commit_return_s,completed_s,present_callback_s,presented_s,surface_id,drawable_id,status,pending\n", file);
+    fputs("frame,measured,callback_s,target_s,acquire_begin_s,acquire_end_s,command_begin_s,command_end_s,pass_begin_s,pass_end_s,draw_begin_s,draw_end_s,encoder_end_s,submit_s,commit_return_s,completed_s,present_callback_s,presented_s,surface_id,drawable_id,status,pending\n", file);
     for (uint32_t i = 0; i < rowCount; ++i) {
         const Row &r = rows[i];
-        fprintf(file, "%u,%u,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%u,%llu,%u,%u\n",
+        fprintf(file, "%u,%u,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%.9f,%u,%llu,%u,%u\n",
                 r.frame, unsigned(r.measured), r.callback, r.target, r.acquireBegin, r.acquireEnd,
-                r.submit, r.commitReturn, r.completed, r.presentedCallback, r.presentedTime,
+                r.commandBegin, r.commandEnd, r.passBegin, r.passEnd, r.drawBegin, r.drawEnd,
+                r.encoderEnd, r.submit, r.commitReturn, r.completed, r.presentedCallback, r.presentedTime,
                 r.surface, (unsigned long long)r.drawable, r.status, r.pending);
         if (!r.measured) continue;
         if (r.submit) ++generated;
@@ -405,6 +416,10 @@ NSDictionary *distribution(std::vector<double> values) {
         if (previous) cadence.push_back((r.callback - previous) * 1000);
         previous = r.callback;
         if (r.acquireEnd) acquire.push_back((r.acquireEnd - r.acquireBegin) * 1000);
+        if (r.commandEnd) commandAcquire.push_back((r.commandEnd - r.commandBegin) * 1000);
+        if (r.passEnd) passSetup.push_back((r.passEnd - r.passBegin) * 1000);
+        if (r.drawEnd) drawEncode.push_back((r.drawEnd - r.drawBegin) * 1000);
+        if (r.encoderEnd) encoderFinalize.push_back((r.encoderEnd - r.drawEnd) * 1000);
         if (r.submit) encode.push_back((r.submit - r.acquireEnd) * 1000);
         if (r.commitReturn) commit.push_back((r.commitReturn - r.submit) * 1000);
         if (r.completed && r.submit) completion.push_back((r.completed - r.submit) * 1000);
@@ -416,7 +431,7 @@ NSDictionary *distribution(std::vector<double> values) {
     const bool completeInterval = stoppedAt >= sampleEnd;
     const bool validPerformance = !diagnostic && completeInterval && !failures && !nullDrawable && generated;
     NSDictionary *report = @{
-        @"run_id": self.runID, @"benchmark_revision": @6, @"diagnostic_only": @(diagnostic),
+        @"run_id": self.runID, @"benchmark_revision": @7, @"diagnostic_only": @(diagnostic),
         @"low_latency_requested": @(lowLatencyRequested), @"low_latency_actual": @(lowLatencyActual),
         @"maximum_drawable_count_requested": @(requestedDrawableCount),
         @"maximum_drawable_count_actual": @(self.metalLayer.maximumDrawableCount),
@@ -441,6 +456,10 @@ NSDictionary *distribution(std::vector<double> values) {
         @"thermal_state_begin": @(initialThermal), @"thermal_state_end": @(NSProcessInfo.processInfo.thermalState),
         @"screen_maximum_fps": @(UIScreen.mainScreen.maximumFramesPerSecond),
         @"drawable_acquire": distribution(acquire), @"cpu_encode": distribution(encode),
+        @"command_buffer_acquire": distribution(commandAcquire),
+        @"render_encoder_setup": distribution(passSetup),
+        @"draw_encode": distribution(drawEncode),
+        @"encoder_finalize": distribution(encoderFinalize),
         @"commit_call": distribution(commit), @"submit_to_completion_observed": distribution(completion),
         @"admitted_callback_cadence": distribution(cadence),
         @"timing_scope": @"CPU monotonic observations; command completion and presented callbacks do not prove DPU acceptance or unique display FPS",

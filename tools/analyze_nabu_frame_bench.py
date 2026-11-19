@@ -58,6 +58,23 @@ def analyze(metadata, rows):
                 raise ValueError('Invalid monotonic stage times: ' + name)
             values.append((r[right] - r[left]) * 1000)
         metrics[name] = distribution(values)
+    # Newer FrameBench revisions expose CPU encoding sub-stages. Keep these
+    # optional so historical CSV files remain analyzable without fabrication.
+    sub_stages = (
+        ('command_buffer_acquire', 'command_begin_s', 'command_end_s'),
+        ('render_encoder_setup', 'pass_begin_s', 'pass_end_s'),
+        ('draw_encode', 'draw_begin_s', 'draw_end_s'),
+        ('encoder_finalize', 'draw_end_s', 'encoder_end_s'),
+    )
+    for name, left, right in sub_stages:
+        if not submitted or not all(left in r and right in r for r in submitted):
+            continue
+        values = []
+        for r in submitted:
+            if not math.isfinite(r[left]) or not math.isfinite(r[right]) or r[right] < r[left]:
+                raise ValueError('Invalid monotonic stage times: ' + name)
+            values.append((r[right] - r[left]) * 1000)
+        metrics[name] = distribution(values)
     times = sorted(r['callback_s'] for r in selected)
     metrics['admitted_callback_interval'] = distribution([(b-a)*1000 for a, b in zip(times, times[1:])])
     buckets = [0] * math.ceil(observed_duration)

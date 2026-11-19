@@ -44,11 +44,19 @@ def check_analysis():
         for i in range(fps):
             t = 10 + (i + .5) / fps
             rows.append(dict(frame=i, measured=1, callback_s=t, acquire_begin_s=t,
-                             acquire_end_s=t+.001, submit_s=t+.002, commit_return_s=t+.0021,
+                             acquire_end_s=t+.001, command_begin_s=t+.0011,
+                             command_end_s=t+.0012, pass_begin_s=t+.0012,
+                             pass_end_s=t+.0014, draw_begin_s=t+.0014,
+                             draw_end_s=t+.0018, encoder_end_s=t+.0019,
+                             submit_s=t+.002, commit_return_s=t+.0021,
                              completed_s=t+.004, status=4))
         result = analyze(metadata, rows)
         assert result['app_submit_rate'] == fps and result['display_fps'] is None and result['pure_gpu_ms'] is None
         assert result['metrics']['submit_to_completion_observed']['p95_ms'] < 2.001
+        assert result['metrics']['command_buffer_acquire']['count'] == fps
+        assert abs(result['metrics']['render_encoder_setup']['mean_ms'] - .2) < 1e-6
+        assert abs(result['metrics']['draw_encode']['p95_ms'] - .4) < 1e-6
+        assert abs(result['metrics']['encoder_finalize']['max_ms'] - .1) < 1e-6
         assert result['valid_performance_run'] and result['complete_interval']
         diagnostic = analyze(dict(metadata, diagnostic_only=True, benchmark_revision=4), rows)
         assert not diagnostic['valid_performance_run'] and diagnostic['app_submit_rate'] is None
