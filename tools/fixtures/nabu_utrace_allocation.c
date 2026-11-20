@@ -14,6 +14,7 @@
 #define TIMESTAMP_BUF_SIZE 0x1000
 #define U_TRACE_TYPE_INDIRECTS 1
 #define U_TRACE_NO_TIMESTAMP UINT64_MAX
+#define VK_TIMEOUT 2
 #define VK_SUCCESS 0
 #define VK_SYSTEM_ALLOCATION_SCOPE_DEVICE 3
 #define TU_BO_ALLOC_INTERNAL_RESOURCE 8
@@ -39,10 +40,12 @@ struct u_trace; struct u_trace_context;
 struct u_trace_buffer_view {uint32_t buffer_index,offset;};
 struct u_trace_buffer {void *buffer;uint32_t alloc_offset,size;};
 enum u_trace_buffer_list_index {u_trace_buffer_list_timestamps,u_trace_buffer_list_indirect};
-struct u_tracepoint {uint32_t payload_sz,flags;};
+struct u_tracepoint {uint32_t payload_sz,flags,type;};
 struct u_trace_address {void *bo;uint64_t offset;};
-struct u_trace_event {const struct u_tracepoint *tp;struct u_trace_buffer_view timestamp,indirect;uint32_t payload_size;alignas(uint64_t) uint8_t payload[];};
+struct u_trace_event {const struct u_tracepoint *tp;uint32_t external_flags;struct u_trace_buffer_view timestamp,indirect;uint32_t payload_size;alignas(uint64_t) uint8_t payload[];};
 struct u_trace_context {
+ bool (*accept_external_event)(struct u_trace*,uint32_t,uint32_t,uint64_t);
+ void (*release_external_allocations)(struct u_trace*);
  void *pctx;unsigned enabled_traces;uint64_t timestamp_size_bytes,max_indirect_size_bytes;
  void *(*create_buffer)(struct u_trace_context*,uint64_t);
  void (*delete_buffer)(struct u_trace_context*,void*);
@@ -50,7 +53,7 @@ struct u_trace_context {
  uint64_t (*read_timestamp)(struct u_trace_context*,void*,uint64_t,uint32_t,void*);
  void (*capture_data)(struct u_trace*,void*,void*,uint64_t,void*,uint64_t,uint32_t);
 };
-struct u_trace {struct u_trace_context *utctx;linear_ctx *linear_alloc;struct util_dynarray events;struct u_trace_buffer_view last_timestamp;bool allocation_failed;struct util_dynarray buffers[2];};
+struct u_trace {struct u_trace_context *utctx;uint32_t external_generation,external_flags;uint64_t external_reserved_bytes;linear_ctx *linear_alloc;struct util_dynarray events;struct u_trace_buffer_view last_timestamp;bool allocation_failed;struct util_dynarray buffers[2];};
 struct u_trace_iterator {struct u_trace *ut;uint32_t event_idx;};
 static bool u_trace_iterator_equal(struct u_trace_iterator a,struct u_trace_iterator b) {return a.ut==b.ut&&a.event_idx==b.event_idx;}
 typedef void (*u_trace_copy_buffer)(struct u_trace_context*,void*,void*,uint64_t,void*,uint64_t,uint64_t);
@@ -58,7 +61,8 @@ struct tu_suballocator {unsigned initialized;};
 struct tu_suballoc_bo {uint64_t handle,iova;uint32_t size;};
 struct tu_device {struct {int alloc;} vk;struct u_trace_context trace_context;struct tu_suballocator *trace_suballoc;int trace_mutex;};
 typedef int VkResult;
-static unsigned gpu_calls,fail_gpu_at,cpu_calls,fail_cpu_at,freed_cpu,live_cpu,writes,copies,waits,deleted,maps;
+static unsigned gpu_calls,fail_gpu_at,cpu_calls,fail_cpu_at,freed_cpu,live_cpu,writes,copies,waits,deleted,maps,fence_timeouts,external_accepts,external_releases;
+static int fence_result;
 static bool submission_finished;
 static void mtx_lock(int *m) {assert(!*m);*m=1;}
 static void mtx_unlock(int *m) {assert(*m);*m=0;}
@@ -66,9 +70,9 @@ static void *vk_zalloc(void *a,size_t size,unsigned alignment,int scope) {(void)
 static void vk_free(void *a,void *p) {(void)a;if(p){free(p);freed_cpu++;live_cpu--;}}
 static void tu_bo_suballocator_init(struct tu_suballocator *s,struct tu_device *d,unsigned size,unsigned flags,const char *name) {(void)d;(void)size;(void)flags;assert(s);assert(!strcmp(name,"utrace"));s->initialized=1;}
 static VkResult tu_suballoc_bo_alloc(struct tu_suballoc_bo *b,struct tu_suballocator *s,uint64_t size,unsigned alignment) {(void)alignment;assert(b&&s&&s->initialized);gpu_calls++;if(gpu_calls==fail_gpu_at)return -2;b->handle=gpu_calls;b->iova=0x100000+b->handle*0x80000;b->size=size;return VK_SUCCESS;}
-struct tu_u_trace_submission_data {void *queue;uint64_t fence;};
+struct tu_u_trace_submission_data {void *queue;uint64_t fence;bool darwin_trace_failed;};
 static uint64_t mapped_ts[2];
-static void tu_queue_wait_fence(void *queue,uint64_t fence,uint64_t timeout) {assert(queue&&fence==7&&timeout==1000000000);waits++;submission_finished=true;}
+static VkResult tu_queue_wait_fence(void *queue,uint64_t fence,uint64_t timeout) {assert(queue&&fence==7&&timeout==1000000000);waits++;if(fence_timeouts){fence_timeouts--;return VK_TIMEOUT;}submission_finished=true;return fence_result;}
 static void *tu_suballoc_bo_map(struct tu_suballoc_bo *bo) {assert(bo&&submission_finished);maps++;return mapped_ts;}
 static uint64_t tu_device_ticks_to_ns(struct tu_device *d,uint64_t ts) {(void)d;return ts*2;}
 /* ACTUAL_READ */
@@ -86,7 +90,9 @@ static bool record(struct u_trace *ut,void *cs,void *p,uint64_t off,uint32_t fla
 static uint64_t read_ts(struct u_trace_context *ctx,void *p,uint64_t off,uint32_t flags,void *data) {struct tu_u_trace_submission_data submission={.queue=ctx,.fence=7};return tu_trace_read_ts(ctx,p,off,flags,data?data:&submission);}
 static void copy_buffer(struct u_trace_context *ctx,void *cs,void *from,uint64_t from_off,void *to,uint64_t to_off,uint64_t size) {(void)ctx;(void)cs;(void)from;(void)from_off;struct tu_suballoc_bo *b=to;volatile uint64_t iova=b->iova;assert(iova&&to_off+size<=b->size);copies++;}
 static void capture(struct u_trace *ut,void *cs,void *to,uint64_t to_off,void *from,uint64_t from_off,uint32_t size) {copy_buffer(ut->utctx,cs,from,from_off,to,to_off,size);}
-static void reset_counters(void) {assert(live_cpu==0);gpu_calls=fail_gpu_at=cpu_calls=fail_cpu_at=freed_cpu=live_cpu=writes=copies=waits=deleted=maps=0;submission_finished=true;}
+static bool accept_external(struct u_trace *ut,uint32_t count,uint32_t type,uint64_t bytes) {(void)count;(void)type;assert(bytes);external_accepts++;ut->external_reserved_bytes+=bytes;return true;}
+static void release_external(struct u_trace *ut) {assert(ut->external_reserved_bytes);external_releases++;ut->external_reserved_bytes=0;}
+static void reset_counters(void) {assert(live_cpu==0);gpu_calls=fail_gpu_at=cpu_calls=fail_cpu_at=freed_cpu=live_cpu=writes=copies=waits=deleted=maps=fence_timeouts=external_accepts=external_releases=0;fence_result=VK_SUCCESS;submission_finished=true;}
 static void setup(struct tu_device *d,struct u_trace *a,struct u_trace *b) {memset(d,0,sizeof(*d));d->trace_context=(struct u_trace_context){.timestamp_size_bytes=8,.max_indirect_size_bytes=16,.enabled_traces=U_TRACE_TYPE_INDIRECTS,.create_buffer=tu_trace_create_buffer,.delete_buffer=delete_buffer,.record_timestamp=record,.read_timestamp=read_ts,.capture_data=capture};u_trace_init(a,&d->trace_context);u_trace_init(b,&d->trace_context);}
 static void finish(struct tu_device *d,struct u_trace *a,struct u_trace *b) {submission_finished=true;u_trace_fini(a);u_trace_fini(b);vk_free(NULL,d->trace_suballoc);assert(live_cpu==0);}
 static void *append(struct u_trace *ut,bool indirect) {static const struct u_tracepoint tp={8,0};struct u_trace_address addr={NULL,0x1000};uint8_t sz=8;void *payload=u_trace_appendv(ut,NULL,&tp,0,indirect?1:0,&addr,&sz);assert(payload);memset(payload,0x44,8);return payload;}
@@ -107,6 +113,14 @@ int main(int argc,char **argv) {
  for(unsigned fail=1;fail<=2;fail++) {reset_counters();setup(&d,&a,&b);fail_cpu_at=fail;append(&a,false);assert(a.allocation_failed&&!a.events.size&&!d.trace_mutex);finish(&d,&a,&b);}
  reset_counters();setup(&d,&a,&b);append(&a,false);unsigned before=waits;assert(!u_trace_discard_failed_flush(&a,NULL));assert(waits==before);a.allocation_failed=true;clone(&a,&b);assert(b.allocation_failed&&!b.events.size&&!b.buffers[0].size);submission_finished=false;before=waits;assert(u_trace_discard_failed_flush(&b,NULL));assert(waits-before==1&&submission_finished&&maps==0);finish(&d,&a,&b);
  reset_counters();setup(&d,&a,&b);fail_gpu_at=1;append(&a,false);assert(a.allocation_failed);u_trace_fini(&a);u_trace_init(&a,&d.trace_context);fail_gpu_at=0;append(&a,false);assert(!a.allocation_failed&&a.events.size);finish(&d,&a,&b);
- puts("PASS: healthy capture; timestamp/indirect/clone/CPU allocation failures; payload safety; actual Turnip NULL wait without map; healthy read and sentinel; submission wait before cleanup; reset recovery; no leaks");
+#if FIXTURE_EXTERNAL_PROFILE
+ reset_counters();setup(&d,&a,&b);d.trace_context.accept_external_event=accept_external;d.trace_context.release_external_allocations=release_external;a.external_generation=b.external_generation=1;a.external_flags=4;b.external_flags=8;append(&a,true);clone(&a,&b);assert(external_accepts==2&&writes==1&&copies==3);assert(a.external_reserved_bytes&&b.external_reserved_bytes);assert(util_dynarray_element(&b.events,struct u_trace_event*,0)[0]->external_flags==12);finish(&d,&a,&b);assert(external_releases==2);
+ reset_counters();setup(&d,&a,&b);d.trace_context.accept_external_event=accept_external;d.trace_context.release_external_allocations=release_external;a.external_generation=b.external_generation=1;fail_gpu_at=1;append(&a,false);assert(a.allocation_failed&&!a.events.size&&external_accepts==1);submission_finished=false;assert(u_trace_discard_failed_flush(&a,NULL)&&submission_finished&&maps==0);finish(&d,&a,&b);assert(external_releases==1);
+#endif
+#if FIXTURE_FENCE_RETRY
+ reset_counters();setup(&d,&a,&b);submission=(struct tu_u_trace_submission_data){.queue=&d,.fence=7};fence_timeouts=2;submission_finished=false;assert(tu_trace_read_ts(&d.trace_context,NULL,0,0,&submission)==U_TRACE_NO_TIMESTAMP);assert(waits==3&&submission_finished&&maps==0&&!submission.darwin_trace_failed);finish(&d,&a,&b);
+ reset_counters();setup(&d,&a,&b);submission=(struct tu_u_trace_submission_data){.queue=&d,.fence=7};fence_result=-9;assert(tu_trace_read_ts(&d.trace_context,NULL,0,0,&submission)==U_TRACE_NO_TIMESTAMP);assert(waits==1&&maps==0&&submission.darwin_trace_failed);finish(&d,&a,&b);
+#endif
+ puts("PASS: healthy capture; timestamp/indirect/clone/CPU allocation failures; payload safety; actual Turnip NULL wait without map; healthy read and sentinel; submission wait before cleanup; reset recovery; no leaks; external profile accounting and fence retry/error boundaries");
  return 0;
 }

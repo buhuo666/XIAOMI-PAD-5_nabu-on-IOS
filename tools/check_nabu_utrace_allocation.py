@@ -22,9 +22,11 @@ sources={name:(a.source/path if (a.source/path).exists() else a.source/name).rea
 before=transform(sources,reverse=True)
 assert transform(before)==sources
 fixture=(ROOT/"tools/fixtures/nabu_utrace_allocation.c").read_text(encoding="utf-8")
-report={"result":"running","producer_functions_extracted":True,"cases":13,"commands":[]}
+external="external_reserved_bytes" in sources["u_trace.c"]
+fence_retry="darwin_trace_failed" in function(sources["tu_device.cc"],"tu_trace_read_ts")
+report={"result":"running","producer_functions_extracted":True,"cases":13+2*external+2*fence_retry,"commands":[]}
 for label,src in [("candidate",sources),("buggy",before)]:
- code=fixture
+ code=("#define FIXTURE_EXTERNAL_PROFILE "+str(int(external))+"\n#define FIXTURE_FENCE_RETRY "+str(int(fence_retry))+"\n")+fixture
  replacements={"CREATE":function(src["tu_device.cc"],"tu_trace_create_buffer"),
                "READ":function(src["tu_device.cc"],"tu_trace_read_ts"),
                "GET":function(src["u_trace.c"],"u_trace_buffer_view_get_buffer"),
