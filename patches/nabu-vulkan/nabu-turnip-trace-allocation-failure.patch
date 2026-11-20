@@ -1,0 +1,174 @@
+--- a/src/util/perf/u_trace.c
++++ b/src/util/perf/u_trace.c
+@@ -577,6 +577,35 @@
+    return buffer->buffer;
+ }
+ 
++
++/* GPU trace allocation failure invalidates this sample, not the rendering CS.
++ * Keep existing valid buffers until the usual submission wait and cleanup. */
++static void
++u_trace_allocation_failed(struct u_trace *ut, uint32_t size)
++{
++   if (!ut->allocation_failed)
++      fprintf(stderr, "NABU_UTRACE_ALLOCATION_FAILED context=%p trace=%p bytes=%u capture_invalid=1\n",
++              (void *)ut->utctx, (void *)ut, size);
++   ut->allocation_failed = true;
++}
++
++static bool
++u_trace_discard_failed_flush(struct u_trace *ut, void *flush_data)
++{
++   if (!ut->allocation_failed)
++      return false;
++
++   struct util_dynarray *timestamps = &ut->buffers[u_trace_buffer_list_timestamps];
++   if (util_dynarray_num_elements(timestamps, struct u_trace_buffer)) {
++      struct u_trace_buffer *buffer = util_dynarray_element(timestamps, struct u_trace_buffer, 0);
++      /* Offset zero invokes the driver's submission wait before cleanup even
++       * when failure happened after writing a timestamp but before an event
++       * could be appended. Do not publish partial ranges or timestamps. */
++      ut->utctx->read_timestamp(ut->utctx, buffer->buffer, 0, 0, flush_data);
++   }
++   return true;
++}
++
+ static char *
+ print_time(void *ctx, double time_ns)
+ {
+@@ -642,6 +671,9 @@
+    struct u_trace *ut = &flush->trace;
+    struct u_trace_context *utctx = ut->utctx;
+ 
++   if (u_trace_discard_failed_flush(ut, flush->flush_data))
++      return;
++
+    if (flush->frame_nr != U_TRACE_FRAME_UNKNOWN &&
+        flush->frame_nr != utctx->frame_nr) {
+       if (utctx->out) {
+@@ -876,6 +908,9 @@
+ {
+    struct util_dynarray *list = &ut->buffers[list_index];
+ 
++   if (ut->allocation_failed)
++      return (struct u_trace_buffer_view){ .buffer_index = UINT32_MAX };
++
+    size = align(size, 8);
+ 
+    uint32_t buffer_count = util_dynarray_num_elements(list, struct u_trace_buffer);
+@@ -904,6 +939,11 @@
+       .size = alloc_size,
+    };
+ 
++   if (!new_buffer.buffer) {
++      u_trace_allocation_failed(ut, alloc_size);
++      return (struct u_trace_buffer_view){ .buffer_index = UINT32_MAX };
++   }
++
+    util_dynarray_append(list, new_buffer);
+ 
+    return alloc_device_memory(ut, list_index, size);
+@@ -932,6 +972,13 @@
+    assert(begin_it.ut == end_it.ut);
+    struct u_trace *from = begin_it.ut;
+ 
++   if (from->allocation_failed) {
++      u_trace_allocation_failed(into, 0);
++      return;
++   }
++   if (into->allocation_failed)
++      return;
++
+    if (u_trace_iterator_equal(begin_it, end_it))
+       return;
+ 
+@@ -949,6 +996,8 @@
+          struct u_trace_buffer *src_buffer =
+             util_dynarray_element(&from->buffers[u_trace_buffer_list_timestamps], struct u_trace_buffer, src_event->timestamp.buffer_index);
+          dst_timestamp = alloc_device_memory(into, u_trace_buffer_list_timestamps, src_buffer->size);
++         if (dst_timestamp.buffer_index == UINT32_MAX)
++            return;
+ 
+          void *dst_buffer = u_trace_buffer_view_get_buffer(into, u_trace_buffer_list_timestamps, dst_timestamp);
+          copy_buffer(into->utctx, cmdstream, src_buffer->buffer, 0, dst_buffer, dst_timestamp.offset, src_buffer->size);
+@@ -960,6 +1009,8 @@
+          struct u_trace_buffer *src_buffer =
+             util_dynarray_element(&from->buffers[u_trace_buffer_list_indirect], struct u_trace_buffer, src_event->indirect.buffer_index);
+          dst_indirect = alloc_device_memory(into, u_trace_buffer_list_indirect, src_buffer->size);
++         if (dst_indirect.buffer_index == UINT32_MAX)
++            return;
+ 
+          void *dst_buffer = u_trace_buffer_view_get_buffer(into, u_trace_buffer_list_indirect, dst_indirect);
+          copy_buffer(into->utctx, cmdstream, src_buffer->buffer, 0, dst_buffer, dst_indirect.offset, src_buffer->size);
+@@ -1045,8 +1096,15 @@
+    event->tp = tp;
+    event->payload_size = payload_sz;
+ 
++   /* Generated tracepoints fill this payload unconditionally. Preserve that
++    * CPU storage while dropping the failed GPU sample. */
++   if (ut->allocation_failed)
++      return event->payload;
++
+    struct u_trace_buffer_view dst_timestamp =
+       alloc_device_memory(ut, u_trace_buffer_list_timestamps, ut->utctx->timestamp_size_bytes);
++   if (dst_timestamp.buffer_index == UINT32_MAX)
++      return event->payload;
+    void *dst_timestamp_buffer =
+       u_trace_buffer_view_get_buffer(ut, u_trace_buffer_list_timestamps, dst_timestamp);
+ 
+@@ -1067,6 +1125,8 @@
+    if ((ut->utctx->enabled_traces & U_TRACE_TYPE_INDIRECTS) && ut->utctx->max_indirect_size_bytes && n_indirects) {
+       struct u_trace_buffer_view dst_indirect =
+          alloc_device_memory(ut, u_trace_buffer_list_indirect, ut->utctx->max_indirect_size_bytes);
++      if (dst_indirect.buffer_index == UINT32_MAX)
++         return event->payload;
+       void *dst_indirect_buffer =
+          u_trace_buffer_view_get_buffer(ut, u_trace_buffer_list_indirect, dst_indirect);
+ 
+--- a/src/util/perf/u_trace.h
++++ b/src/util/perf/u_trace.h
+@@ -305,6 +305,7 @@
+    struct util_dynarray events;
+ 
+    struct u_trace_buffer_view last_timestamp;
++   bool allocation_failed; /* reset with this trace; never store an invalid GPU buffer */
+ 
+    struct util_dynarray buffers[2];
+ };
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -2233,6 +2233,11 @@
+          &device->vk.alloc, sizeof(struct tu_suballocator), 8,
+          VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+ 
++      if (!device->trace_suballoc) {
++         mtx_unlock(&device->trace_mutex);
++         return NULL;
++      }
++
+       tu_bo_suballocator_init(device->trace_suballoc, device, 512 * 1024,
+                               TU_BO_ALLOC_INTERNAL_RESOURCE, "utrace");
+    }
+@@ -2241,12 +2246,21 @@
+       &device->vk.alloc, sizeof(struct tu_suballoc_bo), 8,
+       VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+ 
++   if (!suballoc_bo) {
++      mtx_unlock(&device->trace_mutex);
++      return NULL;
++   }
++
+    VkResult result =
+       tu_suballoc_bo_alloc(suballoc_bo, device->trace_suballoc, size_B, 1);
+ 
+    mtx_unlock(&device->trace_mutex);
+ 
+-   return result == VK_SUCCESS ? suballoc_bo : NULL;
++   if (result != VK_SUCCESS) {
++      vk_free(&device->vk.alloc, suballoc_bo);
++      return NULL;
++   }
++   return suballoc_bo;
+ }
+ 
+ static void

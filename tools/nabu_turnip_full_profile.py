@@ -4,6 +4,10 @@ from pathlib import Path
 import shutil
 
 PATCH='nabu-turnip-renderpass-flush-profile.patch'
+TRACEPOINTS=('-all,+cmd_buffer,+secondary_cmd_buffer,+render_pass,+draw,+binning_ib,'
+             '+concurrent_binning_ib,+draw_ib_sysmem,+draw_ib_gmem,+concurrent_binning_barrier,'
+             '+generic_clear,+gmem_clear,+sysmem_clear,+sysmem_clear_all,+gmem_load,+gmem_store,'
+             '+sysmem_resolve,+custom_resolve,+compute,+compute_indirect,+clear_blit,+cache_flush,+tile_store_ib')
 CHANGES=(
  ('   const bool trace_flush = flushes && cs == &cmd_buffer->cs;',
   '   const bool trace_flush = flushes &&\n'

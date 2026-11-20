@@ -67,6 +67,8 @@ def main():
                    help='Prepare sources/patch manifest and streaming script; do not fetch or build')
     p.add_argument('--full-profile', action='store_true',
                    help='Include render-pass cache flush boundaries in GPU timing')
+    p.add_argument('--trace-allocation-fix', action='store_true',
+                   help='Safely reject failed utrace GPU allocations without dropping rendering commands')
     a = p.parse_args()
     if not a.stage_only and (sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true'):
         p.error('Run Apple Turnip builds in macOS GitHub Actions')
@@ -117,6 +119,9 @@ def main():
         if a.full_profile:
             from nabu_turnip_full_profile import stage_full_gpu_profile
             report['full_gpu_profile'] = stage_full_gpu_profile(ROOT, work)
+        if a.trace_allocation_fix:
+            from nabu_turnip_trace_allocation import stage_trace_allocation_failure
+            report['trace_allocation_fix'] = stage_trace_allocation_failure(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -148,6 +153,10 @@ def main():
                  '--source', source/'src/freedreno/vulkan', '--driver-source', source/TURNIP_SOURCE,
                  '--output', out/'cs-range-check'], stream=True)
             report['cs_range_host_check'] = 'pass'
+            if a.trace_allocation_fix:
+                run([sys.executable, ROOT/'tools/check_nabu_utrace_allocation.py',
+                     '--source', source, '--output', out/'utrace-allocation-check'], stream=True)
+                report['utrace_allocation_host_check'] = 'pass'
             env = dict(os.environ,UNIXNU_RECORD_HASHES='0',PYTHONUNBUFFERED='1',
                        PATH=str(work/'.cache/mesa-tools/bin')+os.pathsep+os.environ['PATH'])
             run([sys.executable,'-u',script,'--target','ios','--abi-directory',
@@ -182,6 +191,12 @@ def main():
             for name in ('tu_cs.cc', 'tu_cs.h', 'tu_resource_range_index.h'):
                 if source.with_name(name).is_file():
                     shutil.copyfile(source.with_name(name), out/'source'/name)
+        if a.trace_allocation_fix:
+            for name, relative in [('u_trace.c','src/util/perf/u_trace.c'), ('u_trace.h','src/util/perf/u_trace.h'), ('tu_device.cc','src/freedreno/vulkan/tu_device.cc')]:
+                path=work/'.cache/mesa-work'/relative
+                if path.is_file():
+                    (out/'source').mkdir(exist_ok=True)
+                    shutil.copyfile(path,out/'source'/name)
         (out/'build-report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k] for k in ('result','target','turnip_rebuilt','rust_rebuilt','gpu_exercised')}))
     return 0 if report['result'] in ('signed_not_run','staged_not_run') else 1

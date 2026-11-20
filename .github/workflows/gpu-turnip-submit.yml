@@ -25,6 +25,10 @@ on:
         description: Include render-pass GPU synchronization timing
         type: boolean
         default: false
+      trace_allocation_fix:
+        description: Fix utrace GPU allocation failure and cleanup
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -50,6 +54,7 @@ jobs:
           python3 -u tools/build_nabu_turnip_submit.py
           --work build/turnip-submit --output artifacts/nabu-turnip-submit
           ${{ inputs.full_profile == true && '--full-profile' || '' }}
+          ${{ inputs.trace_allocation_fix == true && '--trace-allocation-fix' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
