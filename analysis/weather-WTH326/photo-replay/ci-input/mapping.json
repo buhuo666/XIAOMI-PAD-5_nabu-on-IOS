@@ -1,0 +1,136 @@
+[
+  {
+    "label": "original",
+    "source": "/mnt/d/CodexData/home/worktrees/nabu-app-store/XIAOMI_PAD5-NABU/artifacts/nabu-charge-kernel-r4-return-trace/kernel.native-apfs.macho",
+    "ranges": [
+      {
+        "name": "_mach_msg_receive_results_kevent",
+        "address": "0xfffffff0072d1a60",
+        "bytes": 1648
+      },
+      {
+        "name": "_ipc_importance_receive",
+        "address": "0xfffffff0072ba93c",
+        "bytes": 1984
+      },
+      {
+        "name": "_ipc_importance_clean",
+        "address": "0xfffffff0072bb16c",
+        "bytes": 236
+      },
+      {
+        "name": "_ipc_kmsg_free",
+        "address": "0xfffffff0072bc928",
+        "bytes": 472
+      },
+      {
+        "name": "_zalloc_uaf_panic",
+        "address": "0xfffffff007aeb2b4",
+        "bytes": 228
+      }
+    ],
+    "external_labels_without_bodies": {
+      "18446744005112057744": "_current_thread",
+      "18446744005110800980": "_current_task",
+      "18446744005117351284": "_nabu_ca_ipc_trace_window",
+      "18446744005110383276": "_ikm_header",
+      "18446744005110383620": "_ikm_udata",
+      "18446744005111792544": "_memcmp",
+      "18446744005110811544": "_task_pid",
+      "18446744005110472912": "_mach_msg_receive_results_complete",
+      "18446744005110415108": "_ipc_object_release",
+      "18446744005110405236": "_ipc_kmsg_copyout_dest_to_user",
+      "18446744005110390892": "_ipc_kmsg_init_trailer",
+      "18446744005110406260": "_ipc_kmsg_trailer_size",
+      "18446744005110406456": "_ipc_kmsg_add_trailer",
+      "18446744005110384028": "_ipc_kmsg_set_aux_data_header",
+      "18446744005110391028": "_ipc_kmsg_put_to_user",
+      "18446744005117351316": "_nabu_ca_ipc_trace_record",
+      "18446744005110460544": "_ipc_voucher_receive_postprocessing",
+      "18446744005110400492": "_ipc_kmsg_copyout",
+      "18446744005110378748": "_ipc_importance_unreceive",
+      "18446744005111987952": "_copyout",
+      "18446744005118867728": "_mach_msg_receive_results_kevent.cold.3",
+      "18446744005110383464": "_ipc_kmsg_get_trailer",
+      "18446744005118867664": "_mach_msg_receive_results_kevent.cold.1",
+      "18446744005118867696": "_mach_msg_receive_results_kevent.cold.2",
+      "18446744005112023040": "_lck_spin_lock_grp",
+      "18446744005110368040": "_ipc_importance_release_locked",
+      "18446744005110416076": "_ipc_object_lock",
+      "18446744005110423880": "_ipc_port_importance_delta",
+      "18446744005110415632": "_ipc_object_unlock",
+      "18446744005110383300": "_ipc_kmsg_get_voucher_port",
+      "18446744005110561368": "_ipc_kobject_get_raw",
+      "18446744005110372156": "_ipc_importance_for_task",
+      "18446744005110370076": "_ipc_importance_task_check_transition",
+      "18446744005110370552": "_ipc_importance_task_propagate_assertion_locked",
+      "18446744005112023348": "_lck_spin_unlock",
+      "18446744005110977432": "_zfree",
+      "18446744005110457248": "_ipc_voucher_attr_control_create_mach_voucher",
+      "18446744005110431764": "_ipc_port_release_send",
+      "18446744005110456124": "_convert_voucher_to_port",
+      "18446744005110407132": "_ipc_kmsg_set_voucher_port",
+      "18446744005110983228": "_zalloc",
+      "18446744005118841404": "_ipc_importance_receive.cold.10",
+      "18446744005118841372": "_ipc_importance_receive.cold.9",
+      "18446744005118841468": "_ipc_importance_receive.cold.12",
+      "18446744005118841436": "_ipc_importance_receive.cold.11",
+      "18446744005118841340": "_ipc_importance_receive.cold.8",
+      "18446744005118841308": "_ipc_importance_receive.cold.7",
+      "18446744005118841276": "_ipc_importance_receive.cold.6",
+      "18446744005118841212": "_ipc_importance_receive.cold.4",
+      "18446744005118841180": "_ipc_importance_receive.cold.3",
+      "18446744005118841244": "_ipc_importance_receive.cold.5",
+      "18446744005118841148": "_ipc_importance_receive.cold.2",
+      "18446744005118841120": "_ipc_importance_receive.cold.1",
+      "18446744005117667092": "___stack_chk_fail",
+      "18446744005118841584": "_ipc_importance_clean.cold.1",
+      "18446744005110593008": "_kfree_ext",
+      "18446744005118844964": "_ipc_kmsg_free.cold.4",
+      "18446744005118844900": "_ipc_kmsg_free.cold.2",
+      "18446744005118844884": "_ipc_kmsg_free.cold.1",
+      "18446744005118844932": "_ipc_kmsg_free.cold.3",
+      "18446744005118844996": "_ipc_kmsg_free.cold.5",
+      "18446744005118845028": "_ipc_kmsg_free.cold.6",
+      "18446744005118845060": "_ipc_kmsg_free.cold.7",
+      "18446744005118874752": "_panic",
+      "18446744005118845092": "_ipc_kmsg_free.cold.8",
+      "18446744005119580032": "_bzero",
+      "18446744005116251764": "_scnprintf",
+      "18446744005119574752": "___ubsan_handle_add_overflow_minimal"
+    },
+    "original_bytes_and_virtual_addresses_preserved": true,
+    "procedure_extent": "next symbol upper bound",
+    "scope": "analysis-only ELF; static reconstruction, no target execution"
+  },
+  {
+    "label": "buggy",
+    "source": "/mnt/d/CodexData/home/worktrees/nabu-app-store/XIAOMI_PAD5-NABU/artifacts/nabu-profile-kernel-REN325-r6/final/kernel.native-apfs.macho",
+    "ranges": [
+      {
+        "name": "_nabu_ca_receive_results_kevent",
+        "address": "0xfffffff02a32d7a4",
+        "bytes": 1816
+      }
+    ],
+    "external_labels_without_bodies": {},
+    "original_bytes_and_virtual_addresses_preserved": true,
+    "procedure_extent": "next symbol upper bound",
+    "scope": "analysis-only ELF; static reconstruction, no target execution"
+  },
+  {
+    "label": "fixed",
+    "source": "/mnt/d/CodexData/home/worktrees/nabu-app-store/XIAOMI_PAD5-NABU/artifacts/nabu-profile-kernel-REN325-r7/final/kernel.native-apfs.macho",
+    "ranges": [
+      {
+        "name": "_nabu_ca_receive_results_kevent",
+        "address": "0xfffffff02a32d7a4",
+        "bytes": 1828
+      }
+    ],
+    "external_labels_without_bodies": {},
+    "original_bytes_and_virtual_addresses_preserved": true,
+    "procedure_extent": "next symbol upper bound",
+    "scope": "analysis-only ELF; static reconstruction, no target execution"
+  }
+]

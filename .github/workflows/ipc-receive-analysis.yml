@@ -1,0 +1,64 @@
+name: WTH326 IPC receive crash analysis
+on:
+  push:
+    branches: ['codex/ipc-receive-20261120']
+    paths:
+      - '.github/workflows/ipc-receive-analysis.yml'
+      - 'analysis/weather-WTH326/photo-replay/ci-input/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Download the pinned Ghidra release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build evidence
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > evidence/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('evidence/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          assert 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()==asset['digest']
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Decompile the original, faulty, and repaired instruction ranges through REA
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export GHIDRA_INSTALL_DIR="$PWD/build/ghidra_12.2_PUBLIC"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          node --version > evidence/node-version.txt
+          npx -y rea-agents@6.9.0 --version > evidence/rea-version.txt
+          python3 - <<'PY'
+          import json,pathlib,subprocess
+          root=pathlib.Path('analysis/weather-WTH326/photo-replay/ci-input')
+          failures=[]
+          for record in json.loads((root/'mapping.json').read_text()):
+              for item in record['ranges']:
+                  label=record['label']+'-'+item['name']
+                  with open('evidence/'+label+'.json','w') as out,open('evidence/'+label+'.stderr.txt','w') as err:
+                      result=subprocess.run(['npx','-y','rea-agents@6.9.0','decompile',
+                          str((root/(record['label']+'.elf')).resolve()),item['name'],
+                          '--provider','ghidra','--format','json'],stdout=out,stderr=err)
+                  if result.returncode: failures.append(label)
+          pathlib.Path('evidence/run-report.json').write_text(json.dumps({'failed':failures,
+              'target_execution':False,'scope':'selected instruction ranges; external bodies unavailable'},indent=2))
+          if failures: raise SystemExit('REA decompile failed: '+', '.join(failures))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: WTH326-ipc-receive-evidence
+          path: |
+            evidence/
+            analysis/weather-WTH326/photo-replay/ci-input/mapping.json
+          retention-days: 14
