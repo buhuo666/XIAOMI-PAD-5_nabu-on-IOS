@@ -16,6 +16,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
       - name: Download the pinned Ghidra release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,7 +37,6 @@ jobs:
           PY
       - name: Decompile the original, faulty, and repaired instruction ranges through REA
         run: |
-          export JAVA_HOME="$JAVA_HOME_21_X64"
           export GHIDRA_INSTALL_DIR="$PWD/build/ghidra_12.2_PUBLIC"
           export PATH="$JAVA_HOME/bin:$PATH"
           node --version > evidence/node-version.txt
