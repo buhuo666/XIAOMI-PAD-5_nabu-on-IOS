@@ -22,10 +22,11 @@ sources={name:(a.source/path if (a.source/path).exists() else a.source/name).rea
 before=transform(sources,reverse=True)
 assert transform(before)==sources
 fixture=(ROOT/"tools/fixtures/nabu_utrace_allocation.c").read_text(encoding="utf-8")
-report={"result":"running","producer_functions_extracted":True,"cases":10,"commands":[]}
+report={"result":"running","producer_functions_extracted":True,"cases":13,"commands":[]}
 for label,src in [("candidate",sources),("buggy",before)]:
  code=fixture
  replacements={"CREATE":function(src["tu_device.cc"],"tu_trace_create_buffer"),
+               "READ":function(src["tu_device.cc"],"tu_trace_read_ts"),
                "GET":function(src["u_trace.c"],"u_trace_buffer_view_get_buffer"),
                "HELPERS":FAILURE_HELPERS if label=="candidate" else "static bool u_trace_discard_failed_flush(struct u_trace *ut,void *data) {(void)ut;(void)data;return false;}",
                "LINEAR":function(src["u_trace.c"],"u_trace_get_linear_alloc"),

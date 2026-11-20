@@ -1,6 +1,6 @@
 --- a/src/util/perf/u_trace.c
 +++ b/src/util/perf/u_trace.c
-@@ -577,6 +577,35 @@
+@@ -577,6 +577,31 @@
     return buffer->buffer;
  }
  
@@ -22,21 +22,17 @@
 +   if (!ut->allocation_failed)
 +      return false;
 +
-+   struct util_dynarray *timestamps = &ut->buffers[u_trace_buffer_list_timestamps];
-+   if (util_dynarray_num_elements(timestamps, struct u_trace_buffer)) {
-+      struct u_trace_buffer *buffer = util_dynarray_element(timestamps, struct u_trace_buffer, 0);
-+      /* Offset zero invokes the driver's submission wait before cleanup even
-+       * when failure happened after writing a timestamp but before an event
-+       * could be appended. Do not publish partial ranges or timestamps. */
-+      ut->utctx->read_timestamp(ut->utctx, buffer->buffer, 0, 0, flush_data);
-+   }
++   /* A timestamp-copy CS may have been submitted even when the first clone
++    * allocation failed. The Turnip read callback accepts NULL as wait-only;
++    * always wait for that submission before returning its CS/buffers to pools. */
++   ut->utctx->read_timestamp(ut->utctx, NULL, 0, 0, flush_data);
 +   return true;
 +}
 +
  static char *
  print_time(void *ctx, double time_ns)
  {
-@@ -642,6 +671,9 @@
+@@ -642,6 +667,9 @@
     struct u_trace *ut = &flush->trace;
     struct u_trace_context *utctx = ut->utctx;
  
@@ -46,7 +42,7 @@
     if (flush->frame_nr != U_TRACE_FRAME_UNKNOWN &&
         flush->frame_nr != utctx->frame_nr) {
        if (utctx->out) {
-@@ -876,6 +908,9 @@
+@@ -876,6 +904,9 @@
  {
     struct util_dynarray *list = &ut->buffers[list_index];
  
@@ -56,7 +52,7 @@
     size = align(size, 8);
  
     uint32_t buffer_count = util_dynarray_num_elements(list, struct u_trace_buffer);
-@@ -904,6 +939,11 @@
+@@ -904,6 +935,11 @@
        .size = alloc_size,
     };
  
@@ -68,7 +64,7 @@
     util_dynarray_append(list, new_buffer);
  
     return alloc_device_memory(ut, list_index, size);
-@@ -932,6 +972,13 @@
+@@ -932,6 +968,13 @@
     assert(begin_it.ut == end_it.ut);
     struct u_trace *from = begin_it.ut;
  
@@ -82,7 +78,7 @@
     if (u_trace_iterator_equal(begin_it, end_it))
        return;
  
-@@ -949,6 +996,8 @@
+@@ -949,6 +992,8 @@
           struct u_trace_buffer *src_buffer =
              util_dynarray_element(&from->buffers[u_trace_buffer_list_timestamps], struct u_trace_buffer, src_event->timestamp.buffer_index);
           dst_timestamp = alloc_device_memory(into, u_trace_buffer_list_timestamps, src_buffer->size);
@@ -91,7 +87,7 @@
  
           void *dst_buffer = u_trace_buffer_view_get_buffer(into, u_trace_buffer_list_timestamps, dst_timestamp);
           copy_buffer(into->utctx, cmdstream, src_buffer->buffer, 0, dst_buffer, dst_timestamp.offset, src_buffer->size);
-@@ -960,6 +1009,8 @@
+@@ -960,6 +1005,8 @@
           struct u_trace_buffer *src_buffer =
              util_dynarray_element(&from->buffers[u_trace_buffer_list_indirect], struct u_trace_buffer, src_event->indirect.buffer_index);
           dst_indirect = alloc_device_memory(into, u_trace_buffer_list_indirect, src_buffer->size);
@@ -100,7 +96,7 @@
  
           void *dst_buffer = u_trace_buffer_view_get_buffer(into, u_trace_buffer_list_indirect, dst_indirect);
           copy_buffer(into->utctx, cmdstream, src_buffer->buffer, 0, dst_buffer, dst_indirect.offset, src_buffer->size);
-@@ -1045,8 +1096,15 @@
+@@ -1045,8 +1092,15 @@
     event->tp = tp;
     event->payload_size = payload_sz;
  
@@ -116,7 +112,7 @@
     void *dst_timestamp_buffer =
        u_trace_buffer_view_get_buffer(ut, u_trace_buffer_list_timestamps, dst_timestamp);
  
-@@ -1067,6 +1125,8 @@
+@@ -1067,6 +1121,8 @@
     if ((ut->utctx->enabled_traces & U_TRACE_TYPE_INDIRECTS) && ut->utctx->max_indirect_size_bytes && n_indirects) {
        struct u_trace_buffer_view dst_indirect =
           alloc_device_memory(ut, u_trace_buffer_list_indirect, ut->utctx->max_indirect_size_bytes);
@@ -127,7 +123,18 @@
  
 --- a/src/util/perf/u_trace.h
 +++ b/src/util/perf/u_trace.h
-@@ -305,6 +305,7 @@
+@@ -146,6 +146,10 @@
+  * If necessary, this should block until the GPU has finished writing back
+  * the timestamps.  (The timestamps will be read back in order, so it is
+  * safe to only synchronize on idx==0.)
++ *
++ * For an allocation-failed capture, timestamps may be NULL with offset_B=0.
++ * This is a wait-only request: wait for the submitted work, then return
++ * U_TRACE_NO_TIMESTAMP without mapping or dereferencing a timestamp buffer.
+  *
+  * flush_data is data provided by the driver via u_trace_flush.
+  *
+@@ -305,6 +309,7 @@
     struct util_dynarray events;
  
     struct u_trace_buffer_view last_timestamp;
@@ -172,3 +179,15 @@
  }
  
  static void
+@@ -2314,6 +2328,11 @@
+       tu_queue_wait_fence(submission_data->queue, submission_data->fence,
+                           1000000000);
+    }
++
++   /* Failed capture flushes still own a submitted copy CS. NULL requests
++    * only the fence wait above and must never enter mapping/dereference. */
++   if (!timestamps)
++      return U_TRACE_NO_TIMESTAMP;
+ 
+    uint64_t *ts = (uint64_t *) ((char *) tu_suballoc_bo_map(bo) + offset_B);
+ 

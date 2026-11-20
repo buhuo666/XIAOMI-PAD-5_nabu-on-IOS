@@ -25,19 +25,17 @@ u_trace_discard_failed_flush(struct u_trace *ut, void *flush_data)
    if (!ut->allocation_failed)
       return false;
 
-   struct util_dynarray *timestamps = &ut->buffers[u_trace_buffer_list_timestamps];
-   if (util_dynarray_num_elements(timestamps, struct u_trace_buffer)) {
-      struct u_trace_buffer *buffer = util_dynarray_element(timestamps, struct u_trace_buffer, 0);
-      /* Offset zero invokes the driver's submission wait before cleanup even
-       * when failure happened after writing a timestamp but before an event
-       * could be appended. Do not publish partial ranges or timestamps. */
-      ut->utctx->read_timestamp(ut->utctx, buffer->buffer, 0, 0, flush_data);
-   }
+   /* A timestamp-copy CS may have been submitted even when the first clone
+    * allocation failed. The Turnip read callback accepts NULL as wait-only;
+    * always wait for that submission before returning its CS/buffers to pools. */
+   ut->utctx->read_timestamp(ut->utctx, NULL, 0, 0, flush_data);
    return true;
 }
 '''
 
 CHANGES = [
+("u_trace.h", " * flush_data is data provided by the driver via u_trace_flush.",
+ " * For an allocation-failed capture, timestamps may be NULL with offset_B=0.\n * This is a wait-only request: wait for the submitted work, then return\n * U_TRACE_NO_TIMESTAMP without mapping or dereferencing a timestamp buffer.\n *\n * flush_data is data provided by the driver via u_trace_flush."),
 ("u_trace.h", "   struct u_trace_buffer_view last_timestamp;",
  "   struct u_trace_buffer_view last_timestamp;\n   bool allocation_failed; /* reset with this trace; never store an invalid GPU buffer */"),
 ("u_trace.c", "static char *\nprint_time(void *ctx, double time_ns)",
@@ -64,6 +62,8 @@ CHANGES = [
  "      if (!device->trace_suballoc) {\n         mtx_unlock(&device->trace_mutex);\n         return NULL;\n      }\n\n      tu_bo_suballocator_init(device->trace_suballoc, device, 512 * 1024,"),
 ("tu_device.cc", "   VkResult result =\n      tu_suballoc_bo_alloc(suballoc_bo, device->trace_suballoc, size_B, 1);",
  "   if (!suballoc_bo) {\n      mtx_unlock(&device->trace_mutex);\n      return NULL;\n   }\n\n   VkResult result =\n      tu_suballoc_bo_alloc(suballoc_bo, device->trace_suballoc, size_B, 1);"),
+("tu_device.cc", "   uint64_t *ts = (uint64_t *) ((char *) tu_suballoc_bo_map(bo) + offset_B);",
+ "   /* Failed capture flushes still own a submitted copy CS. NULL requests\n    * only the fence wait above and must never enter mapping/dereference. */\n   if (!timestamps)\n      return U_TRACE_NO_TIMESTAMP;\n\n   uint64_t *ts = (uint64_t *) ((char *) tu_suballoc_bo_map(bo) + offset_B);"),
 ("tu_device.cc", "   return result == VK_SUCCESS ? suballoc_bo : NULL;",
  "   if (result != VK_SUCCESS) {\n      vk_free(&device->vk.alloc, suballoc_bo);\n      return NULL;\n   }\n   return suballoc_bo;"),
 ]
