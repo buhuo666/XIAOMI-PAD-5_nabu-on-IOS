@@ -20,6 +20,11 @@ on:
       - 'patches/nabu-vulkan/tu_resource_range_index.h'
       - 'patches/nabu-vulkan/turnip-cs-range-index.patch'
   workflow_dispatch:
+    inputs:
+      full_profile:
+        description: Include render-pass GPU synchronization timing
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -44,6 +49,7 @@ jobs:
         run: >-
           python3 -u tools/build_nabu_turnip_submit.py
           --work build/turnip-submit --output artifacts/nabu-turnip-submit
+          ${{ inputs.full_profile == true && '--full-profile' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

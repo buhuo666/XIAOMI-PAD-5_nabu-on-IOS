@@ -1,0 +1,26 @@
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -498,9 +498,12 @@
+                  TU_CMD_FLAG_WAIT_FOR_IDLE |
+                  TU_CMD_FLAG_WAIT_FOR_ME;
+ 
+-   const bool trace_flush = flushes && cs == &cmd_buffer->cs;
++   const bool trace_flush = flushes &&
++      (cs == &cmd_buffer->cs || cs == &cmd_buffer->draw_cs);
++   struct u_trace *flush_trace = cs == &cmd_buffer->draw_cs ?
++      &cmd_buffer->rp_trace : &cmd_buffer->trace;
+    if (trace_flush) {
+-      trace_start_cache_flush(&cmd_buffer->trace, cs, cmd_buffer, flushes);
++      trace_start_cache_flush(flush_trace, cs, cmd_buffer, flushes);
+    }
+ 
+    /* Experiments show that invalidating CCU while it still has data in it
+@@ -553,7 +556,7 @@
+       tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+ 
+    if (trace_flush) {
+-      trace_end_cache_flush(&cmd_buffer->trace, cs);
++      trace_end_cache_flush(flush_trace, cs);
+    }
+ }
+ 

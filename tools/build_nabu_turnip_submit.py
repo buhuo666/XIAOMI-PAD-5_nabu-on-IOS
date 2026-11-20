@@ -65,6 +65,8 @@ def main():
     p.add_argument('--device', type=Path, default=ROOT/'src/nabu')
     p.add_argument('--stage-only', action='store_true',
                    help='Prepare sources/patch manifest and streaming script; do not fetch or build')
+    p.add_argument('--full-profile', action='store_true',
+                   help='Include render-pass cache flush boundaries in GPU timing')
     a = p.parse_args()
     if not a.stage_only and (sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true'):
         p.error('Run Apple Turnip builds in macOS GitHub Actions')
@@ -112,6 +114,9 @@ def main():
         report['descriptor_set_dedup'] = stage_descriptor_set_dedup(ROOT, work)
         report['resource_origins'] = stage_resource_origins(ROOT, work)
         report['cs_range_index'] = stage_cs_range_index(ROOT, work)
+        if a.full_profile:
+            from nabu_turnip_full_profile import stage_full_gpu_profile
+            report['full_gpu_profile'] = stage_full_gpu_profile(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
