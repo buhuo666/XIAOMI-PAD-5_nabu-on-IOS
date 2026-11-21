@@ -1,0 +1,59 @@
+{
+  "files": [
+    {
+      "file": "ExceptionDiag.h",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "exception_dispatch_test.mm",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "exception_handler_test.mm",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "gpu_metal_factory.mm",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "gpu_metal_fault_trace.c",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "gpu_metal_fault_trace_test.c",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "Info.plist",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "NabuMetalFrontendApi.h",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "NabuMetalProblemReporter.h",
+      "source": "r15 source snapshot"
+    },
+    {
+      "file": "NabuMetalProblemStream.h",
+      "source": "r15 source snapshot"
+    }
+  ],
+  "factory_baseline_ci": 42757503932,
+  "factory_baseline_commit": "20faac26da133add515720f9b3c9ffb73c3085e5",
+  "retained_definitions": [
+    "NABU_METAL_SYSTEM_CLIENTS=1",
+    "NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS=1"
+  ],
+  "scope": "Authored generic factory diagnostics and host tests; no device logs, Apple binaries or SDK",
+  "original_os_files_modified": false,
+  "dispatch_test_debug_evidence": true,
+  "revision": "r15",
+  "changes": [
+    "All factory consumers receive raw SIGSEGV/SIGBUS diagnostics if their disposition is default",
+    "Original default signal death retained; existing custom or ignored signals preserved",
+    "Normal-context dyld add-image records include UUID and late loads"
+  ]
+}

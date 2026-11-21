@@ -1,0 +1,29 @@
+name: WTH326 r15 global Metal factory and exception checks
+on:
+  push:
+    branches: ['codex/metal-r15-factory-20261121']
+    paths:
+      - '.github/workflows/metal-r15-factory.yml'
+      - 'analysis/weather-WTH326/metal-r15/build_factory_ci.py'
+      - 'analysis/weather-WTH326/metal-r15/factory-ci-input/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  factory:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Execute Foundation and dispatch exception checks and sign the iOS factory
+        run: python3 analysis/weather-WTH326/metal-r15/build_factory_ci.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: WTH326-r15-metal-factory
+          path: artifacts/nabu-metal-factory-WTH326-r15/
+          retention-days: 14
