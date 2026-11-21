@@ -34,7 +34,7 @@
     },
     {
       "file": "exception_dispatch_test.mm",
-      "source": "analysis/weather-WTH326/metal-r12/exception-source/tests/exception_dispatch_test.mm"
+      "source": "analysis/weather-WTH326/metal-r12/factory-test-debug/exception_dispatch_debug_test.mm"
     }
   ],
   "factory_baseline_ci": 42757503932,
@@ -44,5 +44,6 @@
     "NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS=1"
   ],
   "scope": "Listed source, native host exception tests and factory metadata; no device logs",
-  "original_os_files_modified": false
+  "original_os_files_modified": false,
+  "dispatch_test_debug_evidence": true
 }

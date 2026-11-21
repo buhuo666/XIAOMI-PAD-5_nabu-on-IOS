@@ -27,13 +27,14 @@ def main():
     def save():
         (OUT / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n')
 
-    def run(command, label):
+    def run(command, label, env=None, allow_failure=False):
         command = list(map(str, command))
         report['commands'].append(command)
         save()
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, env=env,
+            timeout=60 if label.endswith('-runtime') else None)
         (OUT / (label + '.log')).write_text(result.stdout + result.stderr)
-        if result.returncode:
+        if result.returncode and not allow_failure:
             report.update(result='failed', failed_phase=label, returncode=result.returncode)
             save()
             raise RuntimeError((result.stdout + result.stderr)[-6000:])
@@ -50,10 +51,21 @@ def main():
         run(['xcrun', '--sdk', 'macosx', 'clang++', '-std=c++17', '-O2', '-g', '-fobjc-arc',
              '-Wall', '-Wextra', '-Werror', '-I', INPUT, INPUT / (name + '.mm'),
              '-framework', 'Foundation', '-o', binary], name + '-compile')
-        result = run([binary], name + '-runtime')
-        assert 'PASS:' in result.stdout
-        tests.append(dict(name=name, result='passed', scope='macOS Foundation / C++ dispatch execution'))
+        if name == 'exception_dispatch_test':
+            for case in ('objc', 'cpp'):
+                result = run([binary], name + '-' + case + '-runtime',
+                    env=dict(os.environ, NABU_EXCEPTION_DEBUG_CASE=case), allow_failure=True)
+                tests.append(dict(name=name + '-' + case, result='passed' if result.returncode == 0 else 'failed',
+                    returncode=result.returncode, scope='macOS real dispatch baseline/instrumented fatal handling'))
+        else:
+            result = run([binary], name + '-runtime')
+            assert 'PASS:' in result.stdout
+            tests.append(dict(name=name, result='passed', scope='macOS Foundation execution'))
     report['exception_tests'] = tests
+    if any(test['result'] != 'passed' for test in tests):
+        report.update(result='failed', failed_phase='exception_dispatch_test-runtime')
+        save()
+        raise RuntimeError('Actual dispatch child checks failed; both case logs retained.')
     target = 'arm64-apple-ios16.5'
     fault = OUT / 'gpu-metal-fault-trace.o'
     run(['xcrun', '--sdk', 'iphoneos', 'clang', '-target', target, '-isysroot', sdk, '-std=c11',
