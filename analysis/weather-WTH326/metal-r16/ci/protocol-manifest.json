@@ -1,0 +1,5162 @@
+{
+  "classes": [
+    {
+      "cls": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLBuffer",
+        "MTLResource",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBTexture",
+      "protocol": "MTLTexture",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLResource",
+        "MTLTexture",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLLibrary",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBFunction",
+      "protocol": "MTLFunction",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLFunction",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLComputePipelineState",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLRenderPipelineState",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBSampler",
+      "protocol": "MTLSamplerState",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLSamplerState",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBDepthStencil",
+      "protocol": "MTLDepthStencilState",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLDepthStencilState",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBEvent",
+      "protocol": "MTLEvent",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLEvent",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLEvent",
+        "MTLSharedEvent",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBFence",
+      "protocol": "MTLFence",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLFence",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandQueue",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandBuffer",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandEncoder",
+        "MTLComputeCommandEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandEncoder",
+        "MTLRenderCommandEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLBlitCommandEncoder",
+        "MTLCommandEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBHeap",
+      "protocol": "MTLHeap",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLHeap",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLBinaryArchive",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLArgumentEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLCommandEncoder",
+        "MTLResourceStateCommandEncoder",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBRenderFunctionHandle",
+      "protocol": "MTLFunctionHandle",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLFunctionHandle",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLResource",
+        "MTLVisibleFunctionTable",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLDynamicLibrary",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLIndirectCommandBuffer",
+        "MTLResource",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLIndirectRenderCommand",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLIndirectComputeCommand",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": false
+    },
+    {
+      "cls": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "registration": "explicit runtime metadata before device publication",
+      "protocol_closure": [
+        "MTLBinding",
+        "NSObject"
+      ],
+      "baseline_class_conforms": false,
+      "baseline_instance_conforms": true
+    },
+    {
+      "cls": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "registration": "existing static interface",
+      "protocol_closure": [
+        "MTLRasterizationRateMap",
+        "NSObject"
+      ],
+      "baseline_class_conforms": true,
+      "baseline_instance_conforms": true
+    },
+    {
+      "cls": "NBExecutionLogs",
+      "protocol": "MTLLogContainer",
+      "registration": "existing static interface",
+      "protocol_closure": [
+        "MTLLogContainer",
+        "NSFastEnumeration"
+      ],
+      "baseline_class_conforms": true,
+      "baseline_instance_conforms": true
+    }
+  ],
+  "dynamic_device": {
+    "cls": "NativeBridgeMetalDevice",
+    "protocols": [
+      "MTLDevice",
+      "MTLDeviceSPI"
+    ],
+    "donor": "NBDeviceMethods"
+  },
+  "typed_bindings": [
+    "MTLBufferBinding",
+    "MTLTextureBinding",
+    "MTLThreadgroupBinding",
+    "MTLObjectPayloadBinding"
+  ],
+  "required_methods": [
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "commandBuffer",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "commandBufferWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "commandBufferWithUnretainedReferences",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "insertDebugCaptureBoundary",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBQueue",
+      "protocol": "MTLCommandQueue",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "GPUEndTime",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "d16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "GPUStartTime",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "d16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "accelerationStructureCommandEncoder",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "accelerationStructureCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "addCompletedHandler:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@?16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "addScheduledHandler:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@?16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "blitCommandEncoder",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "blitCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "commandQueue",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "commit",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "computeCommandEncoder",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "computeCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "computeCommandEncoderWithDispatchType:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "encodeSignalEvent:value:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "encodeWaitForEvent:value:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "enqueue",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "error",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "errorOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "kernelEndTime",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "d16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "kernelStartTime",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "d16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "logs",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "parallelRenderCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "presentDrawable:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "presentDrawable:afterMinimumDuration:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16d24"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "presentDrawable:atTime:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16d24"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "renderCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "resourceStateCommandEncoder",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "resourceStateCommandEncoderWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "retainedReferences",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "status",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "waitUntilCompleted",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBCommandBuffer",
+      "protocol": "MTLCommandBuffer",
+      "selector": "waitUntilScheduled",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "endEncoding",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "insertDebugSignpost:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBEncoder",
+      "protocol": "MTLCommandEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "dispatchThreadgroups:threadsPerThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?=QQQ}16{?=QQQ}40"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8@16Q24{?=QQQ}32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "dispatchThreads:threadsPerThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?=QQQ}16{?=QQQ}40"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "dispatchType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "endEncoding",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "executeCommandsInBuffer:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16@24Q32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "executeCommandsInBuffer:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "insertDebugSignpost:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "memoryBarrierWithResources:count:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8r^@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "memoryBarrierWithScope:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "sampleCountersInBuffer:atSampleIndex:withBarrier:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v36@0:8@16Q24B32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setAccelerationStructure:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setComputePipelineState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setImageblockWidth:height:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setIntersectionFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setIntersectionFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setStageInRegion:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?={?=QQQ}{?=QQQ}}16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setStageInRegionWithIndirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setThreadgroupMemoryLength:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setVisibleFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "setVisibleFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "updateFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "useHeap:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "useHeaps:count:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8r^@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "useResource:usage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "useResources:count:usage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBComputeEncoder",
+      "protocol": "MTLComputeCommandEncoder",
+      "selector": "waitForFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "dispatchThreadsPerTile:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8{?=QQQ}16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPatches:patchIndexBuffer:patchIndexBufferOffset:controlPointIndexBuffer:controlPointIndexBufferOffset:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v72@0:8Q16@24Q32@40Q48@56Q64"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:controlPointIndexBuffer:controlPointIndexBufferOffset:instanceCount:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8Q16Q24Q32@40Q48@56Q64Q72Q80"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8Q16Q24Q32@40Q48"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8Q16Q24Q32@40Q48Q56"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v80@0:8Q16Q24Q32@40Q48Q56q64Q72"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8Q16Q24@32Q40@48Q56"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawMeshThreadgroups:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8{?=QQQ}16{?=QQQ}40{?=QQQ}64"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawMeshThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v80@0:8@16Q24{?=QQQ}32{?=QQQ}56"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawMeshThreads:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8{?=QQQ}16{?=QQQ}40{?=QQQ}64"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPatches:patchIndexBuffer:patchIndexBufferOffset:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8Q16@24Q32@40Q48"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:instanceCount:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v72@0:8Q16Q24Q32@40Q48Q56Q64"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPrimitives:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8Q16@24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPrimitives:vertexStart:vertexCount:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8Q16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPrimitives:vertexStart:vertexCount:instanceCount:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8Q16Q24Q32Q40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8Q16Q24Q32Q40Q48"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "endEncoding",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "executeCommandsInBuffer:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16@24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "executeCommandsInBuffer:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "insertDebugSignpost:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "memoryBarrierWithResources:count:afterStages:beforeStages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16Q24Q32Q40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "memoryBarrierWithScope:afterStages:beforeStages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8Q16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "sampleCountersInBuffer:atSampleIndex:withBarrier:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v36@0:8@16Q24B32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setBlendColorRed:green:blue:alpha:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8f16f20f24f28"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setColorStoreAction:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setColorStoreActionOptions:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setCullMode:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setDepthBias:slopeScale:clamp:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v28@0:8f16f20f24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setDepthClipMode:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setDepthStencilState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setDepthStoreAction:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setDepthStoreActionOptions:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentAccelerationStructure:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentIntersectionFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentIntersectionFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentVisibleFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFragmentVisibleFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setFrontFacingWinding:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setMeshTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setObjectThreadgroupMemoryLength:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setRenderPipelineState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setScissorRect:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8{?=QQQQ}16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setScissorRects:count:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8r^{?=QQQQ}16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setStencilFrontReferenceValue:backReferenceValue:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8I16I20"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setStencilReferenceValue:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v20@0:8I16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setStencilStoreAction:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setStencilStoreActionOptions:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTessellationFactorBuffer:offset:instanceStride:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTessellationFactorScale:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v20@0:8f16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setThreadgroupMemoryLength:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8Q16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileAccelerationStructure:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileIntersectionFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileIntersectionFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileVisibleFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTileVisibleFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setTriangleFillMode:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexAccelerationStructure:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexAmplificationCount:viewMappings:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16r^{?=II}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexBufferOffset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexBytes:length:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^v16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexIntersectionFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexIntersectionFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexSamplerState:lodMinClamp:lodMaxClamp:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16f24f28Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexSamplerStates:lodMinClamps:lodMaxClamps:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8r^@16r^f24r^f32{_NSRange=QQ}40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexVisibleFunctionTable:atBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVertexVisibleFunctionTables:withBufferRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setViewport:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?=dddddd}16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setViewports:count:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8r^{?=dddddd}16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "setVisibilityResultMode:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "tileHeight",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "tileWidth",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "updateFence:afterStages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useHeap:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useHeap:stages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useHeaps:count:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8r^@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useHeaps:count:stages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useResource:usage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useResource:usage:stages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useResources:count:usage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "useResources:count:usage:stages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16Q24Q32Q40"
+    },
+    {
+      "frontend_class": "NBRenderEncoder",
+      "protocol": "MTLRenderCommandEncoder",
+      "selector": "waitForFence:beforeStages:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v120@0:8@16Q24Q32Q40{?=QQQ}48@72Q80Q88{?=QQQ}96"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v128@0:8@16Q24Q32Q40{?=QQQ}48@72Q80Q88{?=QQQ}96Q120"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8@16Q24@32Q40Q48"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v120@0:8@16Q24Q32{?=QQQ}40{?=QQQ}64@88Q96Q104Q112"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:options:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v128@0:8@16Q24Q32{?=QQQ}40{?=QQQ}64@88Q96Q104Q112Q120"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v136@0:8@16Q24Q32{?=QQQ}40{?=QQQ}64@88Q96Q104{?=QQQ}112"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:levelCount:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v80@0:8@16Q24Q32@40Q48Q56Q64Q72"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyFromTexture:toTexture:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16@24"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "copyIndirectCommandBuffer:sourceRange:destination:destinationIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8@16{_NSRange=QQ}24@40Q48"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "endEncoding",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "fillBuffer:range:value:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v44@0:8@16{_NSRange=QQ}24C40"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "generateMipmapsForTexture:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "getTextureAccessCounters:region:mipLevel:slice:resetCounters:countersBuffer:countersBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v108@0:8@16{?={?=QQQ}{?=QQQ}}24Q72Q80B88@92Q100"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "insertDebugSignpost:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "optimizeContentsForCPUAccess:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "optimizeContentsForCPUAccess:slice:level:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "optimizeContentsForGPUAccess:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "optimizeContentsForGPUAccess:slice:level:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "optimizeIndirectCommandBuffer:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "resetCommandsInBuffer:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "resetTextureAccessCounters:region:mipLevel:slice:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8@16{?={?=QQQ}{?=QQQ}}24Q72Q80"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "resolveCounters:inRange:destinationBuffer:destinationOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8@16{_NSRange=QQ}24@40Q48"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "sampleCountersInBuffer:atSampleIndex:withBarrier:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v36@0:8@16Q24B32"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "updateFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBlitEncoder",
+      "protocol": "MTLBlitCommandEncoder",
+      "selector": "waitForFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "endEncoding",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "insertDebugSignpost:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "moveTextureMappingsFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v136@0:8@16Q24Q32{?=QQQ}40{?=QQQ}64@88Q96Q104{?=QQQ}112"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "popDebugGroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "pushDebugGroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "updateFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "updateTextureMapping:mode:indirectBuffer:indirectBufferOffset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8@16Q24@32Q40"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "updateTextureMapping:mode:region:mipLevel:slice:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v96@0:8@16Q24{?={?=QQQ}{?=QQQ}}32Q80Q88"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "updateTextureMappings:mode:regions:mipLevels:slices:numRegions:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8@16Q24r^{?={?=QQQ}{?=QQQ}}32r^Q40r^Q48Q56"
+    },
+    {
+      "frontend_class": "NBResourceStateEncoder",
+      "protocol": "MTLResourceStateCommandEncoder",
+      "selector": "waitForFence:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "addDebugMarker:range:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "allocatedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "contents",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "^v16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "cpuCacheMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "gpuAddress",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "hazardTrackingMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "heap",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "heapOffset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "isAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "length",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "makeAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "newTextureWithDescriptor:offset:bytesPerRow:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "removeAllDebugMarkers",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "resourceOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "setPurgeableState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBBuffer",
+      "protocol": "MTLBuffer",
+      "selector": "storageMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "allocatedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "allowGPUOptimizedContents",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "arrayLength",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "buffer",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "bufferBytesPerRow",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "bufferOffset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "compressionType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "cpuCacheMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "depth",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "firstMipmapInTail",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v104@0:8^v16Q24Q32{?={?=QQQ}{?=QQQ}}40Q88Q96"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "getBytes:bytesPerRow:fromRegion:mipmapLevel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8^v16Q24{?={?=QQQ}{?=QQQ}}32Q80"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "hazardTrackingMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "heap",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "heapOffset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "height",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "iosurface",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "^{__IOSurface=}16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "iosurfacePlane",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "isAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "isFramebufferOnly",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "isShareable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "isSparse",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "makeAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "mipmapLevelCount",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "newSharedTextureHandle",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "newTextureViewWithPixelFormat:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "newTextureViewWithPixelFormat:textureType:levels:slices:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@64@0:8Q16Q24{_NSRange=QQ}32{_NSRange=QQ}48"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@68@0:8Q16Q24{_NSRange=QQ}32{_NSRange=QQ}48{?=CCCC}64"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "parentRelativeLevel",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "parentRelativeSlice",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "parentTexture",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "pixelFormat",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v104@0:8{?={?=QQQ}{?=QQQ}}16Q64Q72r^v80Q88Q96"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "replaceRegion:mipmapLevel:withBytes:bytesPerRow:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v88@0:8{?={?=QQQ}{?=QQQ}}16Q64r^v72Q80"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "resourceOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "rootResource",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "sampleCount",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "setPurgeableState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "storageMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "swizzle",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=CCCC}16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "tailSizeInBytes",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "textureType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "usage",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBTexture",
+      "protocol": "MTLTexture",
+      "selector": "width",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "cpuCacheMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "currentAllocatedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "hazardTrackingMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "maxAvailableSizeWithAlignment:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newAccelerationStructureWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newAccelerationStructureWithDescriptor:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newAccelerationStructureWithSize:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newAccelerationStructureWithSize:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newBufferWithLength:options:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newBufferWithLength:options:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@40@0:8Q16Q24Q32"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newTextureWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "newTextureWithDescriptor:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "resourceOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "setPurgeableState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "size",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "storageMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBHeap",
+      "protocol": "MTLHeap",
+      "selector": "usedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBSampler",
+      "protocol": "MTLSamplerState",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBSampler",
+      "protocol": "MTLSamplerState",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBSampler",
+      "protocol": "MTLSamplerState",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBDepthStencil",
+      "protocol": "MTLDepthStencilState",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBDepthStencil",
+      "protocol": "MTLDepthStencilState",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFence",
+      "protocol": "MTLFence",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFence",
+      "protocol": "MTLFence",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFence",
+      "protocol": "MTLFence",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBEvent",
+      "protocol": "MTLEvent",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBEvent",
+      "protocol": "MTLEvent",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBEvent",
+      "protocol": "MTLEvent",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "newSharedEventHandle",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "notifyListener:atValue:block:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24@?32"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "setSignaledValue:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBSharedEvent",
+      "protocol": "MTLSharedEvent",
+      "selector": "signaledValue",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "functionNames",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "installName",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newFunctionWithDescriptor:completionHandler:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16@?24"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newFunctionWithDescriptor:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newFunctionWithName:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newFunctionWithName:constantValues:completionHandler:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16@24@?32"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newFunctionWithName:constantValues:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@40@0:8@16@24^@32"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newIntersectionFunctionWithDescriptor:completionHandler:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16@?24"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "newIntersectionFunctionWithDescriptor:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBLibrary",
+      "protocol": "MTLLibrary",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "functionConstantsDictionary",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "functionType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "newArgumentEncoderWithBufferIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "newArgumentEncoderWithBufferIndex:reflection:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8Q16^@24"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "options",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "patchControlPointCount",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "patchType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "stageInputAttributes",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBFunction",
+      "protocol": "MTLFunction",
+      "selector": "vertexAttributes",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "functionHandleWithFunction:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "imageblockMemoryLengthForDimensions:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q40@0:8{?=QQQ}16"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "maxTotalThreadsPerThreadgroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "newComputePipelineStateWithAdditionalBinaryFunctions:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "newIntersectionFunctionTableWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "newVisibleFunctionTableWithDescriptor:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8@16"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "staticThreadgroupMemoryLength",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "supportIndirectCommandBuffers",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBComputePipeline",
+      "protocol": "MTLComputePipelineState",
+      "selector": "threadExecutionWidth",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "functionHandleWithFunction:stage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "imageblockMemoryLengthForDimensions:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q40@0:8{?=QQQ}16"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "imageblockSampleLength",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "maxTotalThreadgroupsPerMeshGrid",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "maxTotalThreadsPerMeshThreadgroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "maxTotalThreadsPerObjectThreadgroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "maxTotalThreadsPerThreadgroup",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "meshThreadExecutionWidth",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "newIntersectionFunctionTableWithDescriptor:stage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "newRenderPipelineStateWithAdditionalBinaryFunctions:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "newVisibleFunctionTableWithDescriptor:stage:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "objectThreadExecutionWidth",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "supportIndirectCommandBuffers",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderPipeline",
+      "protocol": "MTLRenderPipelineState",
+      "selector": "threadgroupSizeMatchesTileSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderFunctionHandle",
+      "protocol": "MTLFunctionHandle",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderFunctionHandle",
+      "protocol": "MTLFunctionHandle",
+      "selector": "functionType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderFunctionHandle",
+      "protocol": "MTLFunctionHandle",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "allocatedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "cpuCacheMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "hazardTrackingMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "heap",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "heapOffset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "isAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "makeAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "resourceOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "setFunction:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "setFunctions:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "setPurgeableState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRenderVisibleTable",
+      "protocol": "MTLVisibleFunctionTable",
+      "selector": "storageMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "allocatedSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "cpuCacheMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "gpuResourceID",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{MTLResourceID=Q}16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "hazardTrackingMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "heap",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "heapOffset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "indirectComputeCommandAtIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "indirectRenderCommandAtIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "isAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "makeAliasable",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "resetWithRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8{_NSRange=QQ}16"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "resourceOptions",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "setPurgeableState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "size",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectCommandBuffer",
+      "protocol": "MTLIndirectCommandBuffer",
+      "selector": "storageMode",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "drawIndexedPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:controlPointIndexBuffer:controlPointIndexBufferOffset:instanceCount:baseInstance:tessellationFactorBuffer:tessellationFactorBufferOffset:tessellationFactorBufferInstanceStride:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v112@0:8Q16Q24Q32@40Q48@56Q64Q72Q80@88Q96Q104"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v80@0:8Q16Q24Q32@40Q48Q56q64Q72"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "drawPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:instanceCount:baseInstance:tessellationFactorBuffer:tessellationFactorBufferOffset:tessellationFactorBufferInstanceStride:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v96@0:8Q16Q24Q32@40Q48Q56Q64@72Q80Q88"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v56@0:8Q16Q24Q32Q40Q48"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "reset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "setFragmentBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "setRenderPipelineState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBIndirectRenderCommand",
+      "protocol": "MTLIndirectRenderCommand",
+      "selector": "setVertexBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "clearBarrier",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "concurrentDispatchThreadgroups:threadsPerThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?=QQQ}16{?=QQQ}40"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "concurrentDispatchThreads:threadsPerThreadgroup:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?=QQQ}16{?=QQQ}40"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "reset",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setBarrier",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v16@0:8"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setComputePipelineState:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setImageblockWidth:height:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setKernelBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setStageInRegion:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v64@0:8{?={?=QQQ}{?=QQQ}}16"
+    },
+    {
+      "frontend_class": "NBIndirectComputeCommand",
+      "protocol": "MTLIndirectComputeCommand",
+      "selector": "setThreadgroupMemoryLength:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8Q16Q24"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "addComputePipelineFunctionsWithDescriptor:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "addFunctionWithDescriptor:library:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B40@0:8@16@24^@32"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "addRenderPipelineFunctionsWithDescriptor:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "addTileRenderPipelineFunctionsWithDescriptor:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "serializeToURL:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBBinaryArchive",
+      "protocol": "MTLBinaryArchive",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "copyParameterDataToBuffer:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "layerCount",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "mapPhysicalToScreenCoordinates:forLayer:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=ff}32@0:8{?=ff}16Q24"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "mapScreenToPhysicalCoordinates:forLayer:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=ff}32@0:8{?=ff}16Q24"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "parameterBufferSizeAndAlign",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=QQ}16@0:8"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "physicalGranularity",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=QQQ}16@0:8"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "physicalSizeForLayer:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=QQQ}24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBRateMap",
+      "protocol": "MTLRasterizationRateMap",
+      "selector": "screenSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "{?=QQQ}16@0:8"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "alignment",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "constantDataAtIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "^v24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "encodedLength",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "newArgumentEncoderForBufferAtIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@24@0:8Q16"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setAccelerationStructure:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setArgumentBuffer:offset:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setArgumentBuffer:startOffset:arrayElement:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setBuffer:offset:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8@16Q24Q32"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setBuffers:offsets:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v48@0:8r^@16r^Q24{_NSRange=QQ}32"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setComputePipelineState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setComputePipelineStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setIndirectCommandBuffer:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setIndirectCommandBuffers:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setIntersectionFunctionTable:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setIntersectionFunctionTables:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setRenderPipelineState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setRenderPipelineStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setSamplerState:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setSamplerStates:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setTexture:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setTextures:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setVisibleFunctionTable:atIndex:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v32@0:8@16Q24"
+    },
+    {
+      "frontend_class": "NBArgumentEncoder",
+      "protocol": "MTLArgumentEncoder",
+      "selector": "setVisibleFunctionTables:withRange:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v40@0:8r^@16{_NSRange=QQ}24"
+    },
+    {
+      "frontend_class": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "selector": "device",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "selector": "installName",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "selector": "label",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "selector": "serializeToURL:error:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B32@0:8@16^@24"
+    },
+    {
+      "frontend_class": "NBDynamicLibrary",
+      "protocol": "MTLDynamicLibrary",
+      "selector": "setLabel:",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "v24@0:8@16"
+    },
+    {
+      "frontend_class": "NBExecutionLogs",
+      "protocol": "NSFastEnumeration",
+      "selector": "countByEnumeratingWithState:objects:count:",
+      "required": true,
+      "sdk_header": "/mnt/d/github-IOS/XIAOMI_PAD5-NABU/build/nabu-app-store-store-03/sources/SDK/iPhoneOS16.5.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSEnumerator.h",
+      "encoding": "Q40@0:8^{?=Q^@^Q[5Q]}16^@24Q32"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "access",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "index",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "isArgument",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "isUsed",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBinding",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "access",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "bufferAlignment",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "bufferDataSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "bufferDataType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "bufferPointerType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "bufferStructType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "index",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "isArgument",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "isUsed",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLBufferBinding",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "access",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "arrayLength",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "index",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "isArgument",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "isDepthTexture",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "isUsed",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "textureDataType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "textureType",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLTextureBinding",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "access",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "index",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "isArgument",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "isUsed",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "threadgroupMemoryAlignment",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "threadgroupMemoryDataSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLThreadgroupBinding",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "access",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "index",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "isArgument",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "isUsed",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "B16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "name",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "@16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "objectPayloadAlignment",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "objectPayloadDataSize",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "Q16@0:8"
+    },
+    {
+      "frontend_class": "NBReflectedBinding",
+      "protocol": "MTLObjectPayloadBinding",
+      "selector": "type",
+      "sdk_optional": false,
+      "required": true,
+      "encoding": "q16@0:8"
+    }
+  ],
+  "full_existing_abi_count": 860,
+  "protocol_parents": {
+    "MTLCommandEncoder": [
+      "NSObject"
+    ],
+    "MTLResource": [
+      "NSObject"
+    ],
+    "MTLBuffer": [
+      "MTLResource"
+    ],
+    "MTLTexture": [
+      "MTLResource"
+    ],
+    "MTLBinding": [
+      "NSObject"
+    ],
+    "MTLBufferBinding": [
+      "MTLBinding"
+    ],
+    "MTLThreadgroupBinding": [
+      "MTLBinding"
+    ],
+    "MTLTextureBinding": [
+      "MTLBinding"
+    ],
+    "MTLObjectPayloadBinding": [
+      "MTLBinding"
+    ],
+    "MTLFunction": [
+      "NSObject"
+    ],
+    "MTLLibrary": [
+      "NSObject"
+    ],
+    "MTLCounter": [
+      "NSObject"
+    ],
+    "MTLCounterSet": [
+      "NSObject"
+    ],
+    "MTLCounterSampleBuffer": [
+      "NSObject"
+    ],
+    "MTLDevice": [
+      "NSObject"
+    ],
+    "MTLFence": [
+      "NSObject"
+    ],
+    "MTLResourceStateCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLBlitCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLCommandBufferEncoderInfo": [
+      "NSObject"
+    ],
+    "MTLCommandBuffer": [
+      "NSObject"
+    ],
+    "MTLComputeCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLCommandQueue": [
+      "NSObject"
+    ],
+    "MTLDepthStencilState": [
+      "NSObject"
+    ],
+    "MTLDrawable": [
+      "NSObject"
+    ],
+    "MTLComputePipelineState": [
+      "NSObject"
+    ],
+    "MTLRenderCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLFunctionHandle": [
+      "NSObject"
+    ],
+    "MTLVisibleFunctionTable": [
+      "MTLResource"
+    ],
+    "MTLRenderPipelineState": [
+      "NSObject"
+    ],
+    "MTLParallelRenderCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLSamplerState": [
+      "NSObject"
+    ],
+    "MTLAccelerationStructure": [
+      "MTLResource"
+    ],
+    "MTLHeap": [
+      "NSObject"
+    ],
+    "MTLArgumentEncoder": [
+      "NSObject"
+    ],
+    "MTLCaptureScope": [
+      "NSObject"
+    ],
+    "MTLIndirectRenderCommand": [
+      "NSObject"
+    ],
+    "MTLIndirectComputeCommand": [
+      "NSObject"
+    ],
+    "MTLIndirectCommandBuffer": [
+      "MTLResource"
+    ],
+    "MTLEvent": [
+      "NSObject"
+    ],
+    "MTLSharedEvent": [
+      "MTLEvent"
+    ],
+    "MTLLogContainer": [
+      "NSFastEnumeration"
+    ],
+    "MTLFunctionLogDebugLocation": [
+      "NSObject"
+    ],
+    "MTLFunctionLog": [
+      "NSObject"
+    ],
+    "MTLAccelerationStructureCommandEncoder": [
+      "MTLCommandEncoder"
+    ],
+    "MTLRasterizationRateMap": [
+      "NSObject"
+    ],
+    "MTLDynamicLibrary": [
+      "NSObject"
+    ],
+    "MTLBinaryArchive": [
+      "NSObject"
+    ],
+    "MTLIntersectionFunctionTable": [
+      "MTLResource"
+    ],
+    "MTLFunctionStitchingAttribute": [
+      "NSObject"
+    ],
+    "MTLFunctionStitchingNode": [
+      "NSObject",
+      "NSCopying"
+    ],
+    "MTLIOCommandQueue": [
+      "NSObject"
+    ],
+    "MTLIOScratchBuffer": [
+      "NSObject"
+    ],
+    "MTLIOScratchBufferAllocator": [
+      "NSObject"
+    ],
+    "MTLIOFileHandle": [
+      "NSObject"
+    ],
+    "MTLIOCommandBuffer": [
+      "NSObject"
+    ]
+  },
+  "unregistered_helpers": [
+    "NBObject",
+    "NBQueueEntry",
+    "NBResourceGroup",
+    "NBDeviceMethods"
+  ],
+  "objc_class_wrappers": {
+    "NBStageAttribute": "MTLAttribute",
+    "NBVertexAttribute": "MTLVertexAttribute",
+    "NBFunctionConstant": "MTLFunctionConstant",
+    "NBReflectedMember": "MTLStructMember",
+    "NBReflectedStruct": "MTLStructType",
+    "NBReflectedArray": "MTLArrayType",
+    "NBReflectedPointer": "MTLPointerType",
+    "NBReflectedTexture": "MTLTextureReferenceType",
+    "NBReflectedArgument": "MTLArgument",
+    "NBComputeReflection": "MTLComputePipelineReflection",
+    "NBRenderReflection": "MTLRenderPipelineReflection"
+  },
+  "coverage": {
+    "all_frontend_classes": 45,
+    "public_protocol_objects": 30,
+    "required_method_checks": 576,
+    "class_wrappers": 11,
+    "internal_helpers": 4
+  }
+}
