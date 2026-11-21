@@ -1322,9 +1322,13 @@ static void scheduled(void *context);
  trimHeldImports(false);
 
  if(self.failedLocally) {
-  std::lock_guard<std::mutex> lock(gRuntimeHandleLock);
-  NmbCommandBuffer *handle=_handle;
-  _handle=nullptr;
+  NmbCommandBuffer *handle;
+  {
+   std::lock_guard<std::mutex> lock(gRuntimeHandleLock);
+   handle=_handle;
+   _handle=nullptr;
+  }
+  // Releasing resources may run a caller's deallocator, which can query status.
   nmb_command_buffer_release(handle);
  }
 

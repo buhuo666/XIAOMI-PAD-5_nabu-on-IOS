@@ -27,7 +27,7 @@ def run(command, name):
     return result.returncode, output
 
 good = True
-for variant in ['baseline', 'fixed']:
+for variant in ['baseline', 'status-only', 'fixed']:
     binary = args.out / (variant + '-queue')
     code, _ = run(['xcrun', 'clang++', '-std=c++17', '-fobjc-arc', '-fblocks',
                    '-framework', 'Foundation', '-framework', 'Metal', '-Wall', '-Wextra', '-Werror',
@@ -36,7 +36,8 @@ for variant in ['baseline', 'fixed']:
     if code:
         continue
     code, output = run([binary], variant + '-runtime')
-    expected = code == 2 and 'STATUS_RESULT checks=36 failures=10' in output if variant == 'baseline' else code == 0 and 'STATUS_RESULT checks=36 failures=0' in output
+    failures = {'baseline': 10, 'status-only': 1, 'fixed': 0}[variant]
+    expected = code == (2 if failures else 0) and f'STATUS_RESULT checks=39 failures={failures}' in output
     report['checks'][-1]['expected_result'] = expected
     good = good and expected
 report['status'] = 'passed' if good else 'failed'

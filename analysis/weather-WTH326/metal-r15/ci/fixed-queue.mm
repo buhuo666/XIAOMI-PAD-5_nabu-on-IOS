@@ -18,6 +18,7 @@ static CommitRecord gCommitRing[32];
 static bool gDeviceHostCoherent=true;
 static NSMutableSet *gInFlight;
 static std::atomic<unsigned> presentations{0},statusChecks{0},statusFailures{0};
+static void (^releaseHook)(void);
 static void nabuCaPresent(id,bool,CFTimeInterval){presentations++;}
 static void checkStatus(bool ok,const char*what){statusChecks++;if(!ok){statusFailures++;fprintf(stderr,"STATUS_REGRESSION: %s\n",what);}}
 static uint64_t nowUs(){return 1;}
@@ -34,7 +35,7 @@ struct NmbCommandBuffer {unsigned id;int status=0,waitResult=0;bool commitOK=tru
  void (*scheduled)(void*)=nullptr;void (*completed)(void*)=nullptr;void *context=nullptr;};
 static std::vector<unsigned> submissionOrder;
 static void nmb_queue_release(NmbQueue *p){delete p;}
-static void nmb_command_buffer_release(NmbCommandBuffer *p){delete p;}
+static void nmb_command_buffer_release(NmbCommandBuffer *p){if(p&&releaseHook)releaseHook();delete p;}
 static uint64_t nmb_command_buffer_trace_identity(NmbCommandBuffer *p){return p->id;}
 static int nmb_command_buffer_status(NmbCommandBuffer *p){return p->status;}
 static bool nmb_command_buffer_on_completed(NmbCommandBuffer *p,void (*fn)(void*),void *context){p->completed=fn;p->context=context;return true;}
@@ -293,9 +294,13 @@ static void completed(void *context){NBCommandBuffer *b=(__bridge_transfer NBCom
  trimHeldImports(false);
 
  if(self.failedLocally) {
-  std::lock_guard<std::mutex> lock(gRuntimeHandleLock);
-  NmbCommandBuffer *handle=_handle;
-  _handle=nullptr;
+  NmbCommandBuffer *handle;
+  {
+   std::lock_guard<std::mutex> lock(gRuntimeHandleLock);
+   handle=_handle;
+   _handle=nullptr;
+  }
+  // Releasing resources may run a caller's deallocator, which can query status.
   nmb_command_buffer_release(handle);
  }
 
@@ -386,7 +391,22 @@ int main(){@autoreleasepool{
  // A local submission failure invokes completion and closes both wait groups.
  NBCommandBuffer*failure=make(q,11);failure.handle->commitOK=false;
  dispatch_semaphore_t failed=dispatch_semaphore_create(0);[failure addCompletedHandler:^(id<MTLCommandBuffer> cb){assert(cb.status==MTLCommandBufferStatusError);dispatch_semaphore_signal(failed);}];
- [failure commit];await(failed);[failure waitUntilCompleted];[failure waitUntilScheduled];assert(failure.handle==nullptr);
+ // A resource deallocator may synchronously ask another thread for CB status.
+ // The worker-start handshake proves a timeout is on the query, not dispatch setup.
+ __block BOOL releaseRan=NO;dispatch_semaphore_t releaseReaderFinished=dispatch_semaphore_create(0);
+ releaseHook=^{
+  releaseRan=YES;dispatch_semaphore_t started=dispatch_semaphore_create(0),queried=dispatch_semaphore_create(0);
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^{
+   dispatch_semaphore_signal(started);
+   checkStatus(next.status==MTLCommandBufferStatusCompleted,"release callback reads another command status");
+   dispatch_semaphore_signal(queried);
+   dispatch_semaphore_signal(releaseReaderFinished);
+  });
+  await(started);
+  checkStatus(dispatch_semaphore_wait(queried,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC))==0,"resource release permits synchronous status query");
+ };
+ [failure commit];await(failed);await(releaseReaderFinished);[failure waitUntilCompleted];[failure waitUntilScheduled];assert(failure.handle==nullptr);
+ releaseHook=nil;checkStatus(releaseRan,"failure actually released its runtime handle");
  // ARC ownership: retained resource wrappers survive until actual completion.
  NBCommandBuffer*resources=make(q,12);__weak NSObject*owner;
  @autoreleasepool{NSObject*value=[NSObject new];owner=value;[resources.resourceOwners addObject:value];}
