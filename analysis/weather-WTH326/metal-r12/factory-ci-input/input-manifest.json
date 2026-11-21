@@ -1,0 +1,48 @@
+{
+  "files": [
+    {
+      "file": "gpu_metal_factory.mm",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/userland/gpu_metal_factory.mm"
+    },
+    {
+      "file": "NabuMetalFrontendApi.h",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/userland/NabuMetalFrontendApi.h"
+    },
+    {
+      "file": "gpu_metal_fault_trace.c",
+      "source": "userland/nabu/src/gpu_metal_fault_trace.c"
+    },
+    {
+      "file": "Info.plist",
+      "source": "build/WTH326-r6-freezefix/root/metal-addons/NativeAdrenoMetal.bundle/Info.plist"
+    },
+    {
+      "file": "ExceptionDiag.h",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/frontend/ExceptionDiag.h"
+    },
+    {
+      "file": "NabuMetalProblemReporter.h",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/frontend/NabuMetalProblemReporter.h"
+    },
+    {
+      "file": "NabuMetalProblemStream.h",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/frontend/NabuMetalProblemStream.h"
+    },
+    {
+      "file": "exception_handler_test.mm",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/tests/exception_handler_test.mm"
+    },
+    {
+      "file": "exception_dispatch_test.mm",
+      "source": "analysis/weather-WTH326/metal-r12/exception-source/tests/exception_dispatch_test.mm"
+    }
+  ],
+  "factory_baseline_ci": 42757503932,
+  "factory_baseline_commit": "20faac26da133add515720f9b3c9ffb73c3085e5",
+  "retained_definitions": [
+    "NABU_METAL_SYSTEM_CLIENTS=1",
+    "NABU_METAL_BACKBOARD_FAULT_DIAGNOSTICS=1"
+  ],
+  "scope": "Listed source, native host exception tests and factory metadata; no device logs",
+  "original_os_files_modified": false
+}

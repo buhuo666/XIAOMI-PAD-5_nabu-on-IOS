@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>NativeAdrenoMetal</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.nabu16.NativeAdrenoMetal</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>3</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>MinimumOSVersion</key>
+	<string>16.5</string>
+	<key>NSPrincipalClass</key>
+	<string>NativeAdrenoMetalDevice</string>
+</dict>
+</plist>
