@@ -1,6 +1,7 @@
 // Preserve raw fatal memory fault context for every process using this factory.
 #define _DARWIN_C_SOURCE 1
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
@@ -20,6 +21,17 @@ static char process_name[128];
 static int fault_fd = -1;
 static int image_fd = -1;
 
+static int write_record(int fd, const char *data, size_t size) {
+    // The diagnostic cannot indefinitely delay the original fatal signal.
+    for (unsigned attempt = 0; size && attempt < 8; ++attempt) {
+        ssize_t count = write(fd, data, size);
+        if (count > 0) { data += count; size -= (size_t)count; }
+        else if (count < 0 && errno == EINTR) continue;
+        else return 0;
+    }
+    return size == 0;
+}
+
 int nabu_metal_fault_trace_open(const char *directory) {
     pthread_mutex_lock(&install_lock);
     if (fault_fd < 0) {
@@ -32,7 +44,13 @@ int nabu_metal_fault_trace_open(const char *directory) {
             image_fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_CLOEXEC, 0600);
             if (image_fd >= 0) {
                 fault_fd = open(path, O_WRONLY | O_APPEND | O_CLOEXEC | O_SYNC);
-                dprintf(image_fd, "NABU_METAL_FAULT_SINK pid=%d path=%s\n", getpid(), path);
+                char record[PATH_MAX + 96];
+                int bytes = snprintf(record, sizeof(record), "NABU_METAL_FAULT_SINK pid=%d path=%s\n", getpid(), path);
+                if (fault_fd < 0 || !write_record(fault_fd, record, (size_t)bytes)) {
+                    if (fault_fd >= 0) close(fault_fd);
+                    close(image_fd);
+                    fault_fd = image_fd = -1;
+                }
             }
         }
     }
@@ -89,7 +107,7 @@ static void fault(int number, siginfo_t *info, void *raw_context) {
     *out++ = '\n';
     // stderr may be a closed/full pipe in GUI clients: writing it here could
     // replace the original signal with SIGPIPE or prevent termination forever.
-    (void)write(fault_fd, record, (size_t)(out - record));
+    (void)write_record(fault_fd, record, (size_t)(out - record));
     // SA_RESETHAND restores SIG_DFL; the same signal still terminates normally.
     (void)kill(getpid(), number);
 }
