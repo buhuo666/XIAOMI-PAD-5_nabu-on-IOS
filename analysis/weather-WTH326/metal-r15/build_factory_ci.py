@@ -104,10 +104,11 @@ def main():
     run(['xcrun', '--sdk', 'macosx', 'clang', '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
          INPUT / 'gpu_metal_fault_trace.c', INPUT / 'gpu_metal_fault_trace_test.c', '-o', fault_test], 'fault-test-compile')
     fault_result = run([fault_test, late_image], 'fault-test-runtime')
-    assert fault_result.stdout.count('PASS fault case') == 5
-    report['fault_tests'] = dict(passed=True, cases=5, arbitrary_process=True, real_sigsegv=True,
+    assert fault_result.stdout.count('PASS fault case') == 7
+    report['fault_tests'] = dict(passed=True, cases=7, arbitrary_process=True, real_sigsegv=True,
         real_sigbus=True, existing_handler_preserved=True, ignored_signal_preserved=True,
-        late_image_uuid=True, scope='Actual macOS signal runtime, not iPadOS execution')
+        late_image_uuid=True, closed_stderr_pipe=True, full_stderr_pipe=True,
+        scope='Actual macOS signal runtime and cached file recovery, not iPadOS/reset durability')
     target = 'arm64-apple-ios16.5'
     fault = OUT / 'gpu-metal-fault-trace.o'
     run(['xcrun', '--sdk', 'iphoneos', 'clang', '-target', target, '-isysroot', sdk, '-std=c11',

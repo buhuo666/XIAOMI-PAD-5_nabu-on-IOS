@@ -18,6 +18,7 @@ static pthread_once_t images_once = PTHREAD_ONCE_INIT;
 static unsigned traced_signals;
 static char process_name[128];
 static int fault_fd = -1;
+static int image_fd = -1;
 
 int nabu_metal_fault_trace_open(const char *directory) {
     pthread_mutex_lock(&install_lock);
@@ -28,8 +29,11 @@ int nabu_metal_fault_trace_open(const char *directory) {
         int length = snprintf(path, sizeof(path), "%s/metal-fault-%d-%lld-%06d.log", directory,
             getpid(), (long long)now.tv_sec, (int)now.tv_usec);
         if (length > 0 && length < (int)sizeof(path)) {
-            fault_fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_CLOEXEC | O_SYNC, 0600);
-            if (fault_fd >= 0) dprintf(fault_fd, "NABU_METAL_FAULT_SINK pid=%d path=%s\n", getpid(), path);
+            image_fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_CLOEXEC, 0600);
+            if (image_fd >= 0) {
+                fault_fd = open(path, O_WRONLY | O_APPEND | O_CLOEXEC | O_SYNC);
+                dprintf(image_fd, "NABU_METAL_FAULT_SINK pid=%d path=%s\n", getpid(), path);
+            }
         }
     }
     int opened = fault_fd >= 0;
@@ -83,8 +87,9 @@ static void fault(int number, siginfo_t *info, void *raw_context) {
 #error Unsupported fault context
 #endif
     *out++ = '\n';
-    if (fault_fd >= 0) (void)write(fault_fd, record, (size_t)(out - record));
-    (void)write(STDERR_FILENO, record, (size_t)(out - record));
+    // stderr may be a closed/full pipe in GUI clients: writing it here could
+    // replace the original signal with SIGPIPE or prevent termination forever.
+    (void)write(fault_fd, record, (size_t)(out - record));
     // SA_RESETHAND restores SIG_DFL; the same signal still terminates normally.
     (void)kill(getpid(), number);
 }
@@ -93,15 +98,17 @@ int nabu_metal_fault_trace_install(const char *process) {
     static const int signals[] = {SIGSEGV, SIGBUS};
     static const char *names[] = {"SIGSEGV", "SIGBUS"};
     pthread_mutex_lock(&install_lock);
+    if (fault_fd < 0) {
+        pthread_mutex_unlock(&install_lock);
+        return 0;
+    }
     if (!process_name[0]) snprintf(process_name, sizeof(process_name), "%s", process ? process : "unknown");
     for (unsigned i = 0; i < 2; ++i) {
         if (traced_signals & (1u << i)) continue;
         struct sigaction previous, action = {0};
         if (sigaction(signals[i], NULL, &previous)) continue;
         if (previous.sa_handler != SIG_DFL) {
-            fprintf(stderr, "NABU_METAL_FAULT skipped=existing-handler signal=%s process=%s pid=%d\n",
-                    names[i], process_name, getpid());
-            if (fault_fd >= 0) dprintf(fault_fd, "NABU_METAL_FAULT skipped=existing-handler signal=%s process=%s pid=%d\n",
+            if (image_fd >= 0) dprintf(image_fd, "NABU_METAL_FAULT skipped=existing-handler signal=%s process=%s pid=%d\n",
                     names[i], process_name, getpid());
             continue;
         }
@@ -110,8 +117,7 @@ int nabu_metal_fault_trace_install(const char *process) {
         sigemptyset(&action.sa_mask);
         if (sigaction(signals[i], &action, NULL)) continue;
         traced_signals |= 1u << i;
-        fprintf(stderr, "NABU_METAL_FAULT armed=%s process=%s pid=%d\n", names[i], process_name, getpid());
-        if (fault_fd >= 0) dprintf(fault_fd, "NABU_METAL_FAULT armed=%s process=%s pid=%d\n", names[i], process_name, getpid());
+        if (image_fd >= 0) dprintf(image_fd, "NABU_METAL_FAULT armed=%s process=%s pid=%d\n", names[i], process_name, getpid());
     }
     int installed = traced_signals != 0;
     pthread_mutex_unlock(&install_lock);
@@ -131,16 +137,16 @@ static void image_added(const struct mach_header *header, intptr_t slide) {
     if (uuid) for (unsigned i = 0; i < 16; ++i) snprintf(uuid_text + i * 2, 3, "%02x", uuid[i]);
     Dl_info info = {0};
     dladdr(header, &info);
-    fprintf(stderr, "NABU_METAL_IMAGE pid=%d base=0x%llx slide=0x%llx uuid=%s name=%s\n", getpid(),
-        (unsigned long long)(uintptr_t)header, (unsigned long long)slide,
-        uuid ? uuid_text : "absent", info.dli_fname ? info.dli_fname : "unknown");
-    if (fault_fd >= 0) dprintf(fault_fd, "NABU_METAL_IMAGE pid=%d base=0x%llx slide=0x%llx uuid=%s name=%s\n", getpid(),
+    if (image_fd >= 0) dprintf(image_fd, "NABU_METAL_IMAGE pid=%d base=0x%llx slide=0x%llx uuid=%s name=%s\n", getpid(),
         (unsigned long long)(uintptr_t)header, (unsigned long long)slide,
         uuid ? uuid_text : "absent", info.dli_fname ? info.dli_fname : "unknown");
 }
 static void register_images(void) {
     // dyld calls this for existing images and subsequent loads, outside fault handling.
     _dyld_register_func_for_add_image(image_added);
+    // One normal-context flush after the initial table, never per image or in
+    // dyld's later-load callback. Hardware reset durability remains unverified.
+    if (image_fd >= 0) (void)fsync(image_fd);
 }
 void nabu_metal_fault_trace_images(void) {
     pthread_mutex_lock(&install_lock);

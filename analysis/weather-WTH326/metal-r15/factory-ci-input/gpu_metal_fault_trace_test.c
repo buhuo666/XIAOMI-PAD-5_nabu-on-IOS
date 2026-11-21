@@ -36,6 +36,20 @@ static void child_case(int which, const char *library, const char *directory) {
     }
     assert(nabu_metal_fault_trace_install("ArbitraryMetalClient") == 1);
     assert(nabu_metal_fault_trace_install("ArbitraryMetalClient") == 1);
+    if (which == 5 || which == 6) {
+        int blocked[2]; assert(pipe(blocked) == 0);
+        if (which == 5) close(blocked[0]);
+        else {
+            int flags = fcntl(blocked[1], F_GETFL); assert(flags >= 0);
+            assert(fcntl(blocked[1], F_SETFL, flags | O_NONBLOCK) == 0);
+            char bytes[4096] = {0};
+            while (write(blocked[1], bytes, sizeof(bytes)) > 0) {}
+            assert(fcntl(blocked[1], F_SETFL, flags) == 0);
+        }
+        assert(dup2(blocked[1], STDERR_FILENO) == STDERR_FILENO);
+        close(blocked[1]);
+        alarm(5);
+    }
     if (which == 4) {
         nabu_metal_fault_trace_images();
         nabu_metal_fault_trace_images();
@@ -65,7 +79,7 @@ static void child_case(int which, const char *library, const char *directory) {
 
 int main(int argc, char **argv) {
     assert(argc == 2);
-    for (int which = 0; which < 5; ++which) {
+    for (int which = 0; which < 7; ++which) {
         char directory[] = "/tmp/nabu-fault-sink-r15-XXXXXX";
         assert(mkdtemp(directory));
         int output[2]; assert(pipe(output) == 0);
@@ -94,21 +108,17 @@ int main(int argc, char **argv) {
         }
         closedir(dir); rmdir(directory); assert(files == 1);
         assert(strstr(persisted, "NABU_METAL_FAULT_SINK"));
-        if (which < 2) {
-            assert(WIFSIGNALED(status) && WTERMSIG(status) == (which ? SIGBUS : SIGSEGV));
-            assert(strstr(record, "NABU_METAL_FAULT process=ArbitraryMetalClient"));
+        if (which < 2 || which >= 5) {
+            assert(WIFSIGNALED(status) && WTERMSIG(status) == (which == 1 ? SIGBUS : SIGSEGV));
             assert(strstr(persisted, "NABU_METAL_FAULT process=ArbitraryMetalClient"));
             assert(strstr(persisted, " pc=0x") && strstr(persisted, " sp=0x"));
-            assert(strstr(record, " pc=0x") && strstr(record, " sp=0x"));
-            if (!which) assert(strstr(record, "address=0x0000000000000001"));
+            if (which != 1) assert(strstr(persisted, "address=0x0000000000000001"));
         } else {
             assert(WIFEXITED(status) && WEXITSTATUS(status) == (which == 2 ? 42 : 0));
             assert(!strstr(record, "NABU_METAL_FAULT process="));
             if (which == 4) {
-                assert(strstr(record, "NABU_METAL_IMAGE"));
-                assert(strstr(record, argv[1]) && strstr(record, "uuid="));
                 assert(strstr(persisted, argv[1]) && strstr(persisted, "uuid="));
-            } else assert(strstr(record, "skipped=existing-handler"));
+            } else assert(strstr(persisted, "skipped=existing-handler"));
         }
         printf("PASS fault case %d: original termination/disposition and diagnostic checks\n", which);
         free(record);
