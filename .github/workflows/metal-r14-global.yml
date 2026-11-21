@@ -1,0 +1,28 @@
+name: WTH326 r14 unified Metal runtime checks
+on:
+  push:
+    branches: ['codex/metal-r14-global-20261121']
+    paths:
+      - '.github/workflows/metal-r14-global.yml'
+      - 'analysis/weather-WTH326/metal-r14/ci/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metal-runtime:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify real Objective-C runtime ABI and queue behavior
+        run: python3 analysis/weather-WTH326/metal-r14/ci/run_checks.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: WTH326-r14-global-metal
+          path: artifacts/nabu-metal-checks-WTH326-r14/
+          retention-days: 14
