@@ -18,16 +18,16 @@
  #include "tu_cmd_buffer.h"
  #include "tu_device.h"
  #include "tu_queue.h"
-@@ -24,6 +24,7 @@
+@@ -27,6 +27,7 @@
  };
  
  static uint64_t trace_next_command;
 +static uint64_t trace_next_file;
  
- /* tu_darwin_trace_state owns one device's bounded CPU event queue. The u_trace
-  * worker supplies completed GPU timestamps; Metal supplies command metadata.
-@@ -31,6 +32,16 @@
-  * producer after admitted submissions retire and their events are sent. */
+ /* tu_darwin_trace_queue holds records from one class of producers. */
+ struct tu_darwin_trace_queue {
+@@ -41,6 +42,16 @@
+  * its producer after admitted submissions retire and both queues are sent. */
  struct tu_darwin_trace_state {
     struct tu_device *device;
 +   uint64_t file_id;
@@ -43,7 +43,7 @@
     pthread_t worker;
     pthread_mutex_t mutex;
     pthread_cond_t changed;
-@@ -71,6 +82,8 @@
+@@ -81,6 +92,8 @@
     return (ticks / state->timebase.denom) * state->timebase.numer +
            (ticks % state->timebase.denom) * state->timebase.numer / state->timebase.denom;
  }
@@ -52,18 +52,18 @@
  
  static void
  trace_argument(NativeAdrenoTraceEvent *event, uint32_t key, uint64_t value)
-@@ -317,10 +330,6 @@
+@@ -333,10 +346,6 @@
     }
  
     pthread_mutex_lock(&state->mutex);
--   while (state->count == TRACE_LOCAL_EVENTS &&
+-   while (state->queues[TRACE_GPU_QUEUE].count == TRACE_QUEUE_EVENTS &&
 -          generation == state->producer.generation && state->producer.producer_id) {
 -      pthread_cond_wait(&state->changed, &state->mutex);
 -   }
     trace_append_locked(state, generation, event);
     pthread_mutex_unlock(&state->mutex);
  }
-@@ -409,10 +418,10 @@
+@@ -434,10 +443,10 @@
  {
     tu_darwin_trace_state *state = (tu_darwin_trace_state *)opaque;
     for (;;) {
@@ -75,7 +75,7 @@
        const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
                             !p_atomic_read(&state->stop);
        if (running && !state->producer.producer_id) {
-@@ -485,6 +494,7 @@
+@@ -512,6 +521,7 @@
        return;
     }
     state->device = device;
@@ -96,7 +96,7 @@
  void tu_darwin_trace_begin(struct tu_cmd_buffer *cmd);
 --- /dev/null
 +++ b/src/freedreno/vulkan/nabu_trace_file_protocol.h
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,82 @@
 +// Local userspace file schema, not a kernel ABI. SPDX-License-Identifier: MIT
 +#pragma once
 +#include <stdint.h>
@@ -123,30 +123,33 @@
 +   NativeAdrenoTraceArgBudgetDropped = 5,
 +   NativeAdrenoTraceArgBytes = 6,
 +   NativeAdrenoTraceArgCopyDwords = 7,
-+   NativeAdrenoTraceArgDestinationFormat = 8,
-+   NativeAdrenoTraceArgDrawCount = 9,
-+   NativeAdrenoTraceArgExtraWaitForIdleDwords = 10,
-+   NativeAdrenoTraceArgFastPath = 11,
-+   NativeAdrenoTraceArgFlushBits = 12,
-+   NativeAdrenoTraceArgForceLoad = 13,
-+   NativeAdrenoTraceArgFormat = 14,
-+   NativeAdrenoTraceArgGroupCount = 15,
-+   NativeAdrenoTraceArgHeight = 16,
-+   NativeAdrenoTraceArgIndirect = 17,
-+   NativeAdrenoTraceArgLocalSize = 18,
-+   NativeAdrenoTraceArgLrz = 19,
-+   NativeAdrenoTraceArgQueueDropped = 20,
-+   NativeAdrenoTraceArgReservedBytesHighWater = 21,
-+   NativeAdrenoTraceArgSamples = 22,
-+   NativeAdrenoTraceArgSecondaryCommand = 23,
-+   NativeAdrenoTraceArgSourceFormat = 24,
-+   NativeAdrenoTraceArgTiled = 25,
-+   NativeAdrenoTraceArgTimestampDwords = 26,
-+   NativeAdrenoTraceArgUnaligned = 27,
-+   NativeAdrenoTraceArgUnexecutedGmemPoints = 28,
-+   NativeAdrenoTraceArgUnsubmittedCommands = 29,
-+   NativeAdrenoTraceArgWaitForMeDwords = 30,
-+   NativeAdrenoTraceArgWidth = 31,
++   NativeAdrenoTraceArgCopyOperation = 8,
++   NativeAdrenoTraceArgDestinationFormat = 9,
++   NativeAdrenoTraceArgDestinationImage = 10,
++   NativeAdrenoTraceArgDrawCount = 11,
++   NativeAdrenoTraceArgExtraWaitForIdleDwords = 12,
++   NativeAdrenoTraceArgFastPath = 13,
++   NativeAdrenoTraceArgFlushBits = 14,
++   NativeAdrenoTraceArgForceLoad = 15,
++   NativeAdrenoTraceArgFormat = 16,
++   NativeAdrenoTraceArgGroupCount = 17,
++   NativeAdrenoTraceArgHeight = 18,
++   NativeAdrenoTraceArgIndirect = 19,
++   NativeAdrenoTraceArgLocalSize = 20,
++   NativeAdrenoTraceArgLrz = 21,
++   NativeAdrenoTraceArgQueueDropped = 22,
++   NativeAdrenoTraceArgReservedBytesHighWater = 23,
++   NativeAdrenoTraceArgSamples = 24,
++   NativeAdrenoTraceArgSecondaryCommand = 25,
++   NativeAdrenoTraceArgSourceBuffer = 26,
++   NativeAdrenoTraceArgSourceFormat = 27,
++   NativeAdrenoTraceArgTiled = 28,
++   NativeAdrenoTraceArgTimestampDwords = 29,
++   NativeAdrenoTraceArgUnaligned = 30,
++   NativeAdrenoTraceArgUnexecutedGmemPoints = 31,
++   NativeAdrenoTraceArgUnsubmittedCommands = 32,
++   NativeAdrenoTraceArgWaitForMeDwords = 33,
++   NativeAdrenoTraceArgWidth = 34,
 +   NativeAdrenoTraceVersion = 1,
 +   NativeAdrenoTraceBatchEvents = 64,
 +   NativeAdrenoTraceSourceTurnip = 1,
