@@ -1,0 +1,1190 @@
+[
+  {
+    "instruction": "0x19f1d12f8",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d1314",
+    "candidate_reference": "0x1dd346ef8",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d1324",
+    "candidate_reference": "0x1dd346f00",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d13d8",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d13e8",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d16b0",
+    "candidate_reference": "0x1dd33fed8",
+    "included_page": "0x1dd33f000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d17b4",
+    "candidate_reference": "0x1daabe5c8",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d17c0",
+    "candidate_reference": "0x19fb4bc18",
+    "included_page": "0x19fb4b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d185c",
+    "candidate_reference": "0x19fb4bed0",
+    "included_page": "0x19fb4b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d19a4",
+    "candidate_reference": "0x1dd359fc0",
+    "included_page": "0x1dd359000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d19a8",
+    "candidate_reference": "0x1dd359fc0",
+    "included_page": "0x1dd359000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d19b0",
+    "candidate_reference": "0x1dd346ef8",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d19c4",
+    "candidate_reference": "0x1dd346f00",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d1a44",
+    "candidate_reference": "0x1dd346f00",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f1d1d1c",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f223464",
+    "candidate_reference": "0x19fb4cef8",
+    "included_page": "0x19fb4c000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f22347c",
+    "candidate_reference": "0x19fb4e700",
+    "included_page": "0x19fb4e000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2234e4",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2234f4",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f207728",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f207794",
+    "candidate_reference": "0x1dd359fc1",
+    "included_page": "0x1dd359000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f207798",
+    "candidate_reference": "0x1dd359fc1",
+    "included_page": "0x1dd359000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2077a4",
+    "candidate_reference": "0x1dd346ef8",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2077b4",
+    "candidate_reference": "0x1dd346f00",
+    "included_page": "0x1dd346000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f207a1c",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210654",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210678",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210688",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210718",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210728",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2107b0",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2107c8",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210868",
+    "candidate_reference": "0x1daabeaf0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210940",
+    "candidate_reference": "0x1daabeaf0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210a14",
+    "candidate_reference": "0x1daabeaf0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210b0c",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210b1c",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210c3c",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210c4c",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210cd8",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210cec",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210d38",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210d48",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210e14",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210e24",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210eb0",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f210ec8",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f21106c",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f21107c",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2114e8",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2114f8",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2115c0",
+    "candidate_reference": "0x1dd33fee0",
+    "included_page": "0x1dd33f000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f21204c",
+    "candidate_reference": "0x19fb4bd70",
+    "included_page": "0x19fb4b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2125a4",
+    "candidate_reference": "0x19fb4bf40",
+    "included_page": "0x19fb4b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f212d10",
+    "candidate_reference": "0x19fb4cf50",
+    "included_page": "0x19fb4c000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f212d3c",
+    "candidate_reference": "0x19fb4c048",
+    "included_page": "0x19fb4c000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f213080",
+    "candidate_reference": "0x19fbb1fa0",
+    "included_page": "0x19fbb1000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2142b0",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f2142c0",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f214888",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f214898",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f215174",
+    "candidate_reference": "0x1e1c3aa48",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f215184",
+    "candidate_reference": "0x1e1c3aa40",
+    "included_page": "0x1e1c3a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f215210",
+    "candidate_reference": "0x1daabe7f0",
+    "included_page": "0x1daabe000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f21571c",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f215730",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f21577c",
+    "candidate_reference": "0x1e1c476f0",
+    "included_page": "0x1e1c47000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19f215790",
+    "candidate_reference": "0x1e1c3bca8",
+    "included_page": "0x1e1c3b000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c364",
+    "candidate_reference": "0x1daac15a0",
+    "included_page": "0x1daac1000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3bcec",
+    "candidate_reference": "0x1d73ad820",
+    "included_page": "0x1d73ad000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c864",
+    "candidate_reference": "0x1d7469498",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c86c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b3e4",
+    "candidate_reference": "0x1d7468958",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b3ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d424",
+    "candidate_reference": "0x1d7463aa0",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d42c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3bd04",
+    "candidate_reference": "0x1d73ad830",
+    "included_page": "0x1d73ad000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c088",
+    "candidate_reference": "0x1daac05b0",
+    "included_page": "0x1daac0000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c0dc",
+    "candidate_reference": "0x1daac0668",
+    "included_page": "0x1daac0000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3bfa4",
+    "candidate_reference": "0x1daac0348",
+    "included_page": "0x1daac0000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7b104",
+    "candidate_reference": "0x1d7462f88",
+    "included_page": "0x1d7462000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7b10c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7ae24",
+    "candidate_reference": "0x1d7462e98",
+    "included_page": "0x1d7462000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7ae2c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d444",
+    "candidate_reference": "0x1d7463aa8",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d44c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90ac4",
+    "candidate_reference": "0x1d746abb8",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90acc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c01c",
+    "candidate_reference": "0x1daac0510",
+    "included_page": "0x1daac0000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd80904",
+    "candidate_reference": "0x1d7464ac8",
+    "included_page": "0x1d7464000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8090c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c3dc",
+    "candidate_reference": "0x1dab36b10",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c07c",
+    "candidate_reference": "0x1daac05a8",
+    "included_page": "0x1daac0000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd877a4",
+    "candidate_reference": "0x1d7466e58",
+    "included_page": "0x1d7466000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd877ac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd87784",
+    "candidate_reference": "0x1d7466e50",
+    "included_page": "0x1d7466000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8778c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ffe4",
+    "candidate_reference": "0x1d746a850",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ffec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd810e4",
+    "candidate_reference": "0x1d7464d80",
+    "included_page": "0x1d7464000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd810ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dba4",
+    "candidate_reference": "0x1d7463d08",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dbac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dc04",
+    "candidate_reference": "0x1d7463d20",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dc0c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dbc4",
+    "candidate_reference": "0x1d7463d10",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dbcc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dbe4",
+    "candidate_reference": "0x1d7463d18",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7dbec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7db84",
+    "candidate_reference": "0x1d7463d00",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7db8c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fb3c6dc",
+    "candidate_reference": "0x1dab36e60",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ffc4",
+    "candidate_reference": "0x1d746a848",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ffcc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd89164",
+    "candidate_reference": "0x1d7467690",
+    "included_page": "0x1d7467000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8916c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b8c4",
+    "candidate_reference": "0x1d7468b60",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b8cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d3e4",
+    "candidate_reference": "0x1d7463a90",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d3ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd87564",
+    "candidate_reference": "0x1d7466da0",
+    "included_page": "0x1d7466000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8756c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d0c4",
+    "candidate_reference": "0x1d7469920",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d0cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8bc84",
+    "candidate_reference": "0x1d7468db8",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8bc8c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8cd24",
+    "candidate_reference": "0x1d74697b0",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8cd2c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8bd64",
+    "candidate_reference": "0x1d7468e38",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8bd6c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8cf64",
+    "candidate_reference": "0x1d7469878",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8cf6c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8e824",
+    "candidate_reference": "0x1d746a0d8",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8e82c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c824",
+    "candidate_reference": "0x1d7469488",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c82c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c7e4",
+    "candidate_reference": "0x1d7469478",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c7ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c804",
+    "candidate_reference": "0x1d7469480",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c80c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa24",
+    "candidate_reference": "0x1d74680e8",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa2c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7f4c4",
+    "candidate_reference": "0x1d7464428",
+    "included_page": "0x1d7464000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7f4cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa44",
+    "candidate_reference": "0x1d74680f0",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa4c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8e4c4",
+    "candidate_reference": "0x1d7469ff0",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8e4cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa64",
+    "candidate_reference": "0x1d7468100",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8aa6c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d504",
+    "candidate_reference": "0x1d7469af8",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d50c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd89104",
+    "candidate_reference": "0x1d7467650",
+    "included_page": "0x1d7467000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8910c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90a84",
+    "candidate_reference": "0x1d746aba8",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90a8c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d4c4",
+    "candidate_reference": "0x1d7469ae8",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d4cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b6c4",
+    "candidate_reference": "0x1d7468a78",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8b6cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ac04",
+    "candidate_reference": "0x1d74681b8",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ac0c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8a6a4",
+    "candidate_reference": "0x1d7467fb0",
+    "included_page": "0x1d7467000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8a6ac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d8c4",
+    "candidate_reference": "0x1d7463c10",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d8cc",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d524",
+    "candidate_reference": "0x1d7469b00",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d52c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c784",
+    "candidate_reference": "0x1d7469448",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8c78c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d144",
+    "candidate_reference": "0x1d7469958",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d14c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d1a4",
+    "candidate_reference": "0x1d7469970",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d1ac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d184",
+    "candidate_reference": "0x1d7469968",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d18c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8f5e4",
+    "candidate_reference": "0x1d746a520",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8f5ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8f4a4",
+    "candidate_reference": "0x1d746a4b0",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8f4ac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7fca4",
+    "candidate_reference": "0x1d7464690",
+    "included_page": "0x1d7464000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7fcac",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d704",
+    "candidate_reference": "0x1d7463b90",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7d70c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90a64",
+    "candidate_reference": "0x1d746aba0",
+    "included_page": "0x1d746a000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd90a6c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ab04",
+    "candidate_reference": "0x1d7468160",
+    "included_page": "0x1d7468000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8ab0c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8a764",
+    "candidate_reference": "0x1d7467fe0",
+    "included_page": "0x1d7467000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8a76c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d0e4",
+    "candidate_reference": "0x1d7469928",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8d0ec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8cae4",
+    "candidate_reference": "0x1d74695a8",
+    "included_page": "0x1d7469000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd8caec",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7fc84",
+    "candidate_reference": "0x1d7464688",
+    "included_page": "0x1d7464000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7fc8c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7c564",
+    "candidate_reference": "0x1d7463598",
+    "included_page": "0x1d7463000",
+    "scope": "static constant-base memory reference"
+  },
+  {
+    "instruction": "0x19fd7c56c",
+    "candidate_reference": "0x1dab36c30",
+    "included_page": "0x1dab36000",
+    "scope": "static constant-base memory reference"
+  }
+]

@@ -1,0 +1,4904 @@
+[
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1328",
+    "instruction_bytes": "3337cc94",
+    "branch_target": "0x1a24deff4",
+    "target": {
+      "address": "0x1800b2a3c",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retain_x8",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deff4",
+      "instructions": [
+        "0x1a24deff4: adrp x16, #0x1800b2000",
+        "0x1a24deff8: add x16, x16, #0xa3c",
+        "0x1a24deffc: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b2a3c",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retain_x8",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b2a3c",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retain_x8",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1334",
+    "instruction_bytes": "5137cc94",
+    "branch_target": "0x1a24df078",
+    "target": {
+      "address": "0x19c900f0c",
+      "image": "/usr/lib/system/libsystem_trace.dylib",
+      "label": "_os_log_type_enabled",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24df078",
+      "instructions": [
+        "0x1a24df078: adrp x16, #0x19c900000",
+        "0x1a24df07c: add x16, x16, #0xf0c",
+        "0x1a24df080: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19c900f0c",
+          "image": "/usr/lib/system/libsystem_trace.dylib",
+          "label": "_os_log_type_enabled",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19c900f0c",
+        "image": "/usr/lib/system/libsystem_trace.dylib",
+        "label": "_os_log_type_enabled",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1380",
+    "instruction_bytes": "fe34cc94",
+    "branch_target": "0x1a24de778",
+    "target": {
+      "address": "0x19c9067a8",
+      "image": "/usr/lib/system/libsystem_trace.dylib",
+      "label": "__os_log_impl",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de778",
+      "instructions": [
+        "0x1a24de778: adrp x16, #0x19c906000",
+        "0x1a24de77c: add x16, x16, #0x7a8",
+        "0x1a24de780: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19c9067a8",
+          "image": "/usr/lib/system/libsystem_trace.dylib",
+          "label": "__os_log_impl",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19c9067a8",
+        "image": "/usr/lib/system/libsystem_trace.dylib",
+        "label": "__os_log_impl",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1384",
+    "instruction_bytes": "b936cc94",
+    "branch_target": "0x1a24dee68",
+    "target": {
+      "address": "0x1800b39d0",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x22",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee68",
+      "instructions": [
+        "0x1a24dee68: adrp x16, #0x1800b3000",
+        "0x1a24dee6c: add x16, x16, #0x9d0",
+        "0x1a24dee70: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b39d0",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x22",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b39d0",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x22",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d138c",
+    "instruction_bytes": "7d0d2394",
+    "branch_target": "0x19fa94980",
+    "target": {
+      "address": "0x19fa94980",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl11MetalDevice17resetCommandQueueEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d14b8",
+    "instruction_bytes": "75052394",
+    "branch_target": "0x19fa92a8c",
+    "target": {
+      "address": "0x19fa92a8c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl11Performance3HUD14setDisplaySizeEjj",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d14c0",
+    "instruction_bytes": "e3052394",
+    "branch_target": "0x19fa92c4c",
+    "target": {
+      "address": "0x19fa92c4c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl11Performance3HUD6updateEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1570",
+    "instruction_bytes": "fa690594",
+    "branch_target": "0x19f32bd58",
+    "target": {
+      "address": "0x19f32bd58",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIjEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS5_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1608",
+    "instruction_bytes": "56ab2594",
+    "branch_target": "0x19fb3c360",
+    "target": {
+      "address": "0x1d031cdc0",
+      "image": "/usr/lib/system/libsystem_platform.dylib",
+      "label": "__platform_memmove",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x19fb3c360",
+      "instructions": [
+        "0x19fb3c360: adrp x16, #0x1daac1000",
+        "0x19fb3c364: ldr x16, [x16, #0x5a0]",
+        "0x19fb3c368: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac15a0",
+          "raw": "0x201d031cdc0",
+          "value": "0x1d031cdc0",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x1d031cdc0",
+          "image": "/usr/lib/system/libsystem_platform.dylib",
+          "label": "__platform_memmove",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1d031cdc0",
+        "image": "/usr/lib/system/libsystem_platform.dylib",
+        "label": "__platform_memmove",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16a0",
+    "instruction_bytes": "92a92594",
+    "branch_target": "0x19fb3bce8",
+    "target": {
+      "address": "0x1d02fba74",
+      "image": "/usr/lib/libc++abi.dylib",
+      "label": "__ZdlPv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x19fb3bce8",
+      "instructions": [
+        "0x19fb3bce8: adrp x16, #0x1d73ad000",
+        "0x19fb3bcec: ldr x16, [x16, #0x820]",
+        "0x19fb3bcf0: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1d73ad820",
+          "raw": "0x201d02fba74",
+          "value": "0x1d02fba74",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x1d02fba74",
+          "image": "/usr/lib/libc++abi.dylib",
+          "label": "__ZdlPv",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1d02fba74",
+        "image": "/usr/lib/libc++abi.dylib",
+        "label": "__ZdlPv",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16b4",
+    "instruction_bytes": "9935cc94",
+    "branch_target": "0x1a24ded18",
+    "target": {
+      "address": "0x1800b8780",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_alloc_init",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24ded18",
+      "instructions": [
+        "0x1a24ded18: adrp x16, #0x1800b8000",
+        "0x1a24ded1c: add x16, x16, #0x780",
+        "0x1a24ded20: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b8780",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_alloc_init",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b8780",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_alloc_init",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16c0",
+    "instruction_bytes": "68ec2e94",
+    "branch_target": "0x19fd8c860",
+    "target": {
+      "address": "0x19fd8c860",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setRetainedReferences:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16cc",
+    "instruction_bytes": "45e72e94",
+    "branch_target": "0x19fd8b3e0",
+    "target": {
+      "address": "0x19fd8b3e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setErrorOptions:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16e4",
+    "instruction_bytes": "4faf2e94",
+    "branch_target": "0x19fd7d420",
+    "target": {
+      "address": "0x19fd7d420",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$commandBufferWithDescriptor:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16e8",
+    "instruction_bytes": "9b35cc94",
+    "branch_target": "0x1a24ded54",
+    "target": {
+      "address": "0x1800d98e8",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_claimAutoreleasedReturnValue",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24ded54",
+      "instructions": [
+        "0x1a24ded54: adrp x16, #0x1800d9000",
+        "0x1a24ded58: add x16, x16, #0x8e8",
+        "0x1a24ded5c: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800d98e8",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_claimAutoreleasedReturnValue",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800d98e8",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_claimAutoreleasedReturnValue",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16f4",
+    "instruction_bytes": "f535cc94",
+    "branch_target": "0x1a24deec8",
+    "target": {
+      "address": "0x1800b3348",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x8",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deec8",
+      "instructions": [
+        "0x1a24deec8: adrp x16, #0x1800b3000",
+        "0x1a24deecc: add x16, x16, #0x348",
+        "0x1a24deed0: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3348",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x8",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3348",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x8",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d16f8",
+    "instruction_bytes": "e535cc94",
+    "branch_target": "0x1a24dee8c",
+    "target": {
+      "address": "0x1800b3b98",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x25",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee8c",
+      "instructions": [
+        "0x1a24dee8c: adrp x16, #0x1800b3000",
+        "0x1a24dee90: add x16, x16, #0xb98",
+        "0x1a24dee94: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3b98",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x25",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3b98",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x25",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d178c",
+    "instruction_bytes": "9c0c2394",
+    "branch_target": "0x19fa949fc",
+    "target": {
+      "address": "0x19fa949fc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl11MetalDevice14enqueueBuffersESt16initializer_listIU8__strongPU27objcproto16MTLCommandBuffer11objc_objectE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d17f0",
+    "instruction_bytes": "596d1b94",
+    "branch_target": "0x19f8acd54",
+    "target": {
+      "address": "0x19f8acd54",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo11_retain_ptrIU8__strongU13block_pointerFvvENS_15_copy_block_arcIS3_EENS_18_release_block_arcIS3_EENS_9_hash_ptrENS_10_equal_ptrEEC2ES2_NS_22memory_management_modeE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d17fc",
+    "instruction_bytes": "846d1b94",
+    "branch_target": "0x19f8ace0c",
+    "target": {
+      "address": "0x19f8ace0c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo11_retain_ptrIU8__strongU13block_pointerFvvENS_15_copy_block_arcIS3_EENS_18_release_block_arcIS3_EENS_9_hash_ptrENS_10_equal_ptrEEC2ERKSA_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1808",
+    "instruction_bytes": "3ea92594",
+    "branch_target": "0x19fb3bd00",
+    "target": {
+      "address": "0x1d02fb9c4",
+      "image": "/usr/lib/libc++abi.dylib",
+      "label": "__Znwm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x19fb3bd00",
+      "instructions": [
+        "0x19fb3bd00: adrp x16, #0x1d73ad000",
+        "0x19fb3bd04: ldr x16, [x16, #0x830]",
+        "0x19fb3bd08: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1d73ad830",
+          "raw": "0x201d02fb9c4",
+          "value": "0x1d02fb9c4",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x1d02fb9c4",
+          "image": "/usr/lib/libc++abi.dylib",
+          "label": "__Znwm",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1d02fb9c4",
+        "image": "/usr/lib/libc++abi.dylib",
+        "label": "__Znwm",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1820",
+    "instruction_bytes": "0c6e1b94",
+    "branch_target": "0x19f8ad050",
+    "target": {
+      "address": "0x19f8ad050",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo11_retain_ptrIU8__strongU13block_pointerFvvENS_15_copy_block_arcIS3_EENS_18_release_block_arcIS3_EENS_9_hash_ptrENS_10_equal_ptrEEC2EOSA_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1834",
+    "instruction_bytes": "54ae0594",
+    "branch_target": "0x19f33d184",
+    "target": {
+      "address": "0x19f33d184",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNK3geo9TaskQueue12widthLimiterEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d18a0",
+    "instruction_bytes": "9c35cc94",
+    "branch_target": "0x1a24def10",
+    "target": {
+      "address": "0x1800b8738",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retainBlock",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24def10",
+      "instructions": [
+        "0x1a24def10: adrp x16, #0x1800b8000",
+        "0x1a24def14: add x16, x16, #0x738",
+        "0x1a24def18: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b8738",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retainBlock",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b8738",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retainBlock",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d18bc",
+    "instruction_bytes": "f2a92594",
+    "branch_target": "0x19fb3c084",
+    "target": {
+      "address": "0x18db049d8",
+      "image": "/usr/lib/system/libdispatch.dylib",
+      "label": "_dispatch_semaphore_wait",
+      "offset": "0x0",
+      "exact": true,
+      "role": "named CPU-variant resolver; runtime selected variant not read"
+    },
+    "stub_walk": {
+      "source": "0x19fb3c084",
+      "instructions": [
+        "0x19fb3c084: adrp x16, #0x1daac0000",
+        "0x19fb3c088: ldr x16, [x16, #0x5b0]",
+        "0x19fb3c08c: br x16",
+        "0x18db148bc: adrp x16, #0x1e1adb000",
+        "0x18db148c0: ldr x16, [x16, #0xf90]",
+        "0x18db148c4: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac05b0",
+          "raw": "0x2018db148bc",
+          "value": "0x18db148bc",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        },
+        {
+          "register": "x16",
+          "pointer": "0x1e1adbf90",
+          "raw": "0x2018db1b350",
+          "value": "0x18db1b350",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x18db148bc",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0xe38",
+          "exact": false
+        },
+        {
+          "address": "0x18db1b350",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x78cc",
+          "exact": false
+        }
+      ],
+      "resolver_helper": {
+        "address": "0x18db1b350",
+        "instructions": [
+          "0x18db1b350: stp x29, x30, [sp, #-0x10]!",
+          "0x18db1b354: mov x29, sp",
+          "0x18db1b358: stp x1, x0, [sp, #-0x10]!",
+          "0x18db1b35c: stp x3, x2, [sp, #-0x10]!",
+          "0x18db1b360: stp x5, x4, [sp, #-0x10]!",
+          "0x18db1b364: stp x7, x6, [sp, #-0x10]!",
+          "0x18db1b368: stp d1, d0, [sp, #-0x10]!",
+          "0x18db1b36c: stp d3, d2, [sp, #-0x10]!",
+          "0x18db1b370: stp d5, d4, [sp, #-0x10]!",
+          "0x18db1b374: stp d7, d6, [sp, #-0x10]!",
+          "0x18db1b378: bl #0x18db049d8",
+          "0x18db1b37c: adrp x16, #0x1e1adb000",
+          "0x18db1b380: add x16, x16, #0xf90",
+          "0x18db1b384: str x0, [x16]",
+          "0x18db1b388: mov x16, x0",
+          "0x18db1b38c: ldp d7, d6, [sp], #0x10",
+          "0x18db1b390: ldp d5, d4, [sp], #0x10",
+          "0x18db1b394: ldp d3, d2, [sp], #0x10",
+          "0x18db1b398: ldp d1, d0, [sp], #0x10",
+          "0x18db1b39c: ldp x7, x6, [sp], #0x10",
+          "0x18db1b3a0: ldp x5, x4, [sp], #0x10",
+          "0x18db1b3a4: ldp x3, x2, [sp], #0x10",
+          "0x18db1b3a8: ldp x1, x0, [sp], #0x10",
+          "0x18db1b3ac: ldp x29, x30, [sp], #0x10",
+          "0x18db1b3b0: br x16"
+        ]
+      },
+      "terminal": {
+        "address": "0x18db049d8",
+        "image": "/usr/lib/system/libdispatch.dylib",
+        "label": "_dispatch_semaphore_wait",
+        "offset": "0x0",
+        "exact": true,
+        "role": "named CPU-variant resolver; runtime selected variant not read"
+      },
+      "resolver_return_options": [
+        {
+          "address": "0x18daa7aa8",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_semaphore_wait$VARIANT$mp",
+          "offset": "0x0",
+          "exact": true
+        },
+        {
+          "address": "0x18dad72c0",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_semaphore_wait$VARIANT$armv81",
+          "offset": "0x0",
+          "exact": true
+        }
+      ]
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d18d4",
+    "instruction_bytes": "01aa2594",
+    "branch_target": "0x19fb3c0d8",
+    "target": {
+      "address": "0x18db04e10",
+      "image": "/usr/lib/system/libdispatch.dylib",
+      "label": "_dispatch_sync",
+      "offset": "0x0",
+      "exact": true,
+      "role": "named CPU-variant resolver; runtime selected variant not read"
+    },
+    "stub_walk": {
+      "source": "0x19fb3c0d8",
+      "instructions": [
+        "0x19fb3c0d8: adrp x16, #0x1daac0000",
+        "0x19fb3c0dc: ldr x16, [x16, #0x668]",
+        "0x19fb3c0e0: br x16",
+        "0x18db14a00: adrp x16, #0x1e1adc000",
+        "0x18db14a04: ldr x16, [x16, #0x68]",
+        "0x18db14a08: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac0668",
+          "raw": "0x2018db14a00",
+          "value": "0x18db14a00",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        },
+        {
+          "register": "x16",
+          "pointer": "0x1e1adc068",
+          "raw": "0x2018db1bddc",
+          "value": "0x18db1bddc",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x18db14a00",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0xf7c",
+          "exact": false
+        },
+        {
+          "address": "0x18db1bddc",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x8358",
+          "exact": false
+        }
+      ],
+      "resolver_helper": {
+        "address": "0x18db1bddc",
+        "instructions": [
+          "0x18db1bddc: stp x29, x30, [sp, #-0x10]!",
+          "0x18db1bde0: mov x29, sp",
+          "0x18db1bde4: stp x1, x0, [sp, #-0x10]!",
+          "0x18db1bde8: stp x3, x2, [sp, #-0x10]!",
+          "0x18db1bdec: stp x5, x4, [sp, #-0x10]!",
+          "0x18db1bdf0: stp x7, x6, [sp, #-0x10]!",
+          "0x18db1bdf4: stp d1, d0, [sp, #-0x10]!",
+          "0x18db1bdf8: stp d3, d2, [sp, #-0x10]!",
+          "0x18db1bdfc: stp d5, d4, [sp, #-0x10]!",
+          "0x18db1be00: stp d7, d6, [sp, #-0x10]!",
+          "0x18db1be04: bl #0x18db04e10",
+          "0x18db1be08: adrp x16, #0x1e1adc000",
+          "0x18db1be0c: add x16, x16, #0x68",
+          "0x18db1be10: str x0, [x16]",
+          "0x18db1be14: mov x16, x0",
+          "0x18db1be18: ldp d7, d6, [sp], #0x10",
+          "0x18db1be1c: ldp d5, d4, [sp], #0x10",
+          "0x18db1be20: ldp d3, d2, [sp], #0x10",
+          "0x18db1be24: ldp d1, d0, [sp], #0x10",
+          "0x18db1be28: ldp x7, x6, [sp], #0x10",
+          "0x18db1be2c: ldp x5, x4, [sp], #0x10",
+          "0x18db1be30: ldp x3, x2, [sp], #0x10",
+          "0x18db1be34: ldp x1, x0, [sp], #0x10",
+          "0x18db1be38: ldp x29, x30, [sp], #0x10",
+          "0x18db1be3c: br x16"
+        ]
+      },
+      "terminal": {
+        "address": "0x18db04e10",
+        "image": "/usr/lib/system/libdispatch.dylib",
+        "label": "_dispatch_sync",
+        "offset": "0x0",
+        "exact": true,
+        "role": "named CPU-variant resolver; runtime selected variant not read"
+      },
+      "resolver_return_options": [
+        {
+          "address": "0x18daab198",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_sync$VARIANT$mp",
+          "offset": "0x0",
+          "exact": true
+        },
+        {
+          "address": "0x18dae06c0",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_sync$VARIANT$armv81",
+          "offset": "0x0",
+          "exact": true
+        }
+      ]
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d18f8",
+    "instruction_bytes": "aaa92594",
+    "branch_target": "0x19fb3bfa0",
+    "target": {
+      "address": "0x18db03740",
+      "image": "/usr/lib/system/libdispatch.dylib",
+      "label": "_dispatch_async_and_wait",
+      "offset": "0x0",
+      "exact": true,
+      "role": "named CPU-variant resolver; runtime selected variant not read"
+    },
+    "stub_walk": {
+      "source": "0x19fb3bfa0",
+      "instructions": [
+        "0x19fb3bfa0: adrp x16, #0x1daac0000",
+        "0x19fb3bfa4: ldr x16, [x16, #0x348]",
+        "0x19fb3bfa8: br x16",
+        "0x18db142ec: adrp x16, #0x1e1adb000",
+        "0x18db142f0: ldr x16, [x16, #0xbb0]",
+        "0x18db142f4: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac0348",
+          "raw": "0x2018db142ec",
+          "value": "0x18db142ec",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        },
+        {
+          "register": "x16",
+          "pointer": "0x1e1adbbb0",
+          "raw": "0x2018db182e0",
+          "value": "0x18db182e0",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x18db142ec",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x868",
+          "exact": false
+        },
+        {
+          "address": "0x18db182e0",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x485c",
+          "exact": false
+        }
+      ],
+      "resolver_helper": {
+        "address": "0x18db182e0",
+        "instructions": [
+          "0x18db182e0: stp x29, x30, [sp, #-0x10]!",
+          "0x18db182e4: mov x29, sp",
+          "0x18db182e8: stp x1, x0, [sp, #-0x10]!",
+          "0x18db182ec: stp x3, x2, [sp, #-0x10]!",
+          "0x18db182f0: stp x5, x4, [sp, #-0x10]!",
+          "0x18db182f4: stp x7, x6, [sp, #-0x10]!",
+          "0x18db182f8: stp d1, d0, [sp, #-0x10]!",
+          "0x18db182fc: stp d3, d2, [sp, #-0x10]!",
+          "0x18db18300: stp d5, d4, [sp, #-0x10]!",
+          "0x18db18304: stp d7, d6, [sp, #-0x10]!",
+          "0x18db18308: bl #0x18db03740",
+          "0x18db1830c: adrp x16, #0x1e1adb000",
+          "0x18db18310: add x16, x16, #0xbb0",
+          "0x18db18314: str x0, [x16]",
+          "0x18db18318: mov x16, x0",
+          "0x18db1831c: ldp d7, d6, [sp], #0x10",
+          "0x18db18320: ldp d5, d4, [sp], #0x10",
+          "0x18db18324: ldp d3, d2, [sp], #0x10",
+          "0x18db18328: ldp d1, d0, [sp], #0x10",
+          "0x18db1832c: ldp x7, x6, [sp], #0x10",
+          "0x18db18330: ldp x5, x4, [sp], #0x10",
+          "0x18db18334: ldp x3, x2, [sp], #0x10",
+          "0x18db18338: ldp x1, x0, [sp], #0x10",
+          "0x18db1833c: ldp x29, x30, [sp], #0x10",
+          "0x18db18340: br x16"
+        ]
+      },
+      "terminal": {
+        "address": "0x18db03740",
+        "image": "/usr/lib/system/libdispatch.dylib",
+        "label": "_dispatch_async_and_wait",
+        "offset": "0x0",
+        "exact": true,
+        "role": "named CPU-variant resolver; runtime selected variant not read"
+      },
+      "resolver_return_options": [
+        {
+          "address": "0x18daab598",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_async_and_wait$VARIANT$mp",
+          "offset": "0x0",
+          "exact": true
+        },
+        {
+          "address": "0x18dae0ab4",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_async_and_wait$VARIANT$armv81",
+          "offset": "0x0",
+          "exact": true
+        }
+      ]
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1900",
+    "instruction_bytes": "6935cc94",
+    "branch_target": "0x1a24deea4",
+    "target": {
+      "address": "0x1800b3cc8",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x27",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deea4",
+      "instructions": [
+        "0x1a24deea4: adrp x16, #0x1800b3000",
+        "0x1a24deea8: add x16, x16, #0xcc8",
+        "0x1a24deeac: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3cc8",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x27",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3cc8",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x27",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1940",
+    "instruction_bytes": "5035cc94",
+    "branch_target": "0x1a24dee80",
+    "target": {
+      "address": "0x1800b3b00",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x24",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee80",
+      "instructions": [
+        "0x1a24dee80: adrp x16, #0x1800b3000",
+        "0x1a24dee84: add x16, x16, #0xb00",
+        "0x1a24dee88: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3b00",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x24",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3b00",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x24",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1aec",
+    "instruction_bytes": "5f500194",
+    "branch_target": "0x19f225c68",
+    "target": {
+      "address": "0x19f225c68",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20RenderResourceFences6updateERKNSt3__110shared_ptrINS_11RenderFenceEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1b1c",
+    "instruction_bytes": "79a52e94",
+    "branch_target": "0x19fd7b100",
+    "target": {
+      "address": "0x19fd7b100",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$addScheduledHandler:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1b88",
+    "instruction_bytes": "a6a42e94",
+    "branch_target": "0x19fd7ae20",
+    "target": {
+      "address": "0x19fd7ae20",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$addCompletedHandler:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1bd8",
+    "instruction_bytes": "b3c62294",
+    "branch_target": "0x19fa836a4",
+    "target": {
+      "address": "0x19fa836a4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNKSt3__18functionIFvmdN3ggl28RenderTransactionErrorStatusEEEclEmdS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1c04",
+    "instruction_bytes": "0fae2e94",
+    "branch_target": "0x19fd7d440",
+    "target": {
+      "address": "0x19fd7d440",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$commit",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1c34",
+    "instruction_bytes": "a3fb2e94",
+    "branch_target": "0x19fd90ac0",
+    "target": {
+      "address": "0x19fd90ac0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$waitUntilScheduled",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1c74",
+    "instruction_bytes": "66290194",
+    "branch_target": "0x19f21c20c",
+    "target": {
+      "address": "0x19f21c20c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl8Renderer17_resetTransactionEPNS_11RenderQueueE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1cd4",
+    "instruction_bytes": "e631cc94",
+    "branch_target": "0x1a24de46c",
+    "target": {
+      "address": "0x19466c048",
+      "image": "/usr/lib/libc++.1.dylib",
+      "label": "__ZNSt3__119__shared_weak_count14__release_weakEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de46c",
+      "instructions": [
+        "0x1a24de46c: adrp x16, #0x19466c000",
+        "0x1a24de470: add x16, x16, #0x48",
+        "0x1a24de474: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19466c048",
+          "image": "/usr/lib/libc++.1.dylib",
+          "label": "__ZNSt3__119__shared_weak_count14__release_weakEv",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19466c048",
+        "image": "/usr/lib/libc++.1.dylib",
+        "label": "__ZNSt3__119__shared_weak_count14__release_weakEv",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1d80",
+    "instruction_bytes": "a6a82594",
+    "branch_target": "0x19fb3c018",
+    "target": {
+      "address": "0x18db046b8",
+      "image": "/usr/lib/system/libdispatch.dylib",
+      "label": "_dispatch_once",
+      "offset": "0x0",
+      "exact": true,
+      "role": "named CPU-variant resolver; runtime selected variant not read"
+    },
+    "stub_walk": {
+      "source": "0x19fb3c018",
+      "instructions": [
+        "0x19fb3c018: adrp x16, #0x1daac0000",
+        "0x19fb3c01c: ldr x16, [x16, #0x510]",
+        "0x19fb3c020: br x16",
+        "0x18db147c0: adrp x16, #0x1e1adb000",
+        "0x18db147c4: ldr x16, [x16, #0xee8]",
+        "0x18db147c8: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac0510",
+          "raw": "0x2018db147c0",
+          "value": "0x18db147c0",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        },
+        {
+          "register": "x16",
+          "pointer": "0x1e1adbee8",
+          "raw": "0x2018db1ab1c",
+          "value": "0x18db1ab1c",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x18db147c0",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0xd3c",
+          "exact": false
+        },
+        {
+          "address": "0x18db1ab1c",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x7098",
+          "exact": false
+        }
+      ],
+      "resolver_helper": {
+        "address": "0x18db1ab1c",
+        "instructions": [
+          "0x18db1ab1c: stp x29, x30, [sp, #-0x10]!",
+          "0x18db1ab20: mov x29, sp",
+          "0x18db1ab24: stp x1, x0, [sp, #-0x10]!",
+          "0x18db1ab28: stp x3, x2, [sp, #-0x10]!",
+          "0x18db1ab2c: stp x5, x4, [sp, #-0x10]!",
+          "0x18db1ab30: stp x7, x6, [sp, #-0x10]!",
+          "0x18db1ab34: stp d1, d0, [sp, #-0x10]!",
+          "0x18db1ab38: stp d3, d2, [sp, #-0x10]!",
+          "0x18db1ab3c: stp d5, d4, [sp, #-0x10]!",
+          "0x18db1ab40: stp d7, d6, [sp, #-0x10]!",
+          "0x18db1ab44: bl #0x18db046b8",
+          "0x18db1ab48: adrp x16, #0x1e1adb000",
+          "0x18db1ab4c: add x16, x16, #0xee8",
+          "0x18db1ab50: str x0, [x16]",
+          "0x18db1ab54: mov x16, x0",
+          "0x18db1ab58: ldp d7, d6, [sp], #0x10",
+          "0x18db1ab5c: ldp d5, d4, [sp], #0x10",
+          "0x18db1ab60: ldp d3, d2, [sp], #0x10",
+          "0x18db1ab64: ldp d1, d0, [sp], #0x10",
+          "0x18db1ab68: ldp x7, x6, [sp], #0x10",
+          "0x18db1ab6c: ldp x5, x4, [sp], #0x10",
+          "0x18db1ab70: ldp x3, x2, [sp], #0x10",
+          "0x18db1ab74: ldp x1, x0, [sp], #0x10",
+          "0x18db1ab78: ldp x29, x30, [sp], #0x10",
+          "0x18db1ab7c: br x16"
+        ]
+      },
+      "terminal": {
+        "address": "0x18db046b8",
+        "image": "/usr/lib/system/libdispatch.dylib",
+        "label": "_dispatch_once",
+        "offset": "0x0",
+        "exact": true,
+        "role": "named CPU-variant resolver; runtime selected variant not read"
+      },
+      "resolver_return_options": [
+        {
+          "address": "0x18daa85b8",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_once$VARIANT$mp",
+          "offset": "0x0",
+          "exact": true
+        },
+        {
+          "address": "0x18dad7d4c",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_once$VARIANT$armv81",
+          "offset": "0x0",
+          "exact": true
+        }
+      ]
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1dd0",
+    "instruction_bytes": "5e32cc94",
+    "branch_target": "0x1a24de748",
+    "target": {
+      "address": "0x18dc05300",
+      "image": "/usr/lib/system/libsystem_c.dylib",
+      "label": "___stack_chk_fail",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de748",
+      "instructions": [
+        "0x1a24de748: adrp x16, #0x18dc05000",
+        "0x1a24de74c: add x16, x16, #0x300",
+        "0x1a24de750: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x18dc05300",
+          "image": "/usr/lib/system/libsystem_c.dylib",
+          "label": "___stack_chk_fail",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x18dc05300",
+        "image": "/usr/lib/system/libsystem_c.dylib",
+        "label": "___stack_chk_fail",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1dd4",
+    "instruction_bytes": "7232cc94",
+    "branch_target": "0x1a24de79c",
+    "target": {
+      "address": "0x18dbc443c",
+      "image": "/usr/lib/system/libsystem_c.dylib",
+      "label": "_abort",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de79c",
+      "instructions": [
+        "0x1a24de79c: adrp x16, #0x18dbc4000",
+        "0x1a24de7a0: add x16, x16, #0x43c",
+        "0x1a24de7a4: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x18dbc443c",
+          "image": "/usr/lib/system/libsystem_c.dylib",
+          "label": "_abort",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x18dbc443c",
+        "image": "/usr/lib/system/libsystem_c.dylib",
+        "label": "_abort",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1f10",
+    "instruction_bytes": "f3760594",
+    "branch_target": "0x19f32fadc",
+    "target": {
+      "address": "0x19f32fadc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl17RenderTransactionEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1f18",
+    "instruction_bytes": "f1760594",
+    "branch_target": "0x19f32fadc",
+    "target": {
+      "address": "0x19f32fadc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl17RenderTransactionEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame",
+    "instruction": "0x19f1d1f24",
+    "instruction_bytes": "2c30cc94",
+    "branch_target": "0x1a24ddfd4",
+    "target": {
+      "address": "0x1d0308348",
+      "image": "/usr/lib/system/libunwind.dylib",
+      "label": "__Unwind_Resume",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24ddfd4",
+      "instructions": [
+        "0x1a24ddfd4: adrp x16, #0x1d0308000",
+        "0x1a24ddfd8: add x16, x16, #0x348",
+        "0x1a24ddfdc: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1d0308348",
+          "image": "/usr/lib/system/libunwind.dylib",
+          "label": "__Unwind_Resume",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1d0308348",
+        "image": "/usr/lib/system/libunwind.dylib",
+        "label": "__Unwind_Resume",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame_work",
+    "instruction": "0x19f2232c8",
+    "instruction_bytes": "9deeca94",
+    "branch_target": "0x1a24ded3c",
+    "target": {
+      "address": "0x1800b22e0",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_autoreleasePoolPush",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24ded3c",
+      "instructions": [
+        "0x1a24ded3c: adrp x16, #0x1800b2000",
+        "0x1a24ded40: add x16, x16, #0x2e0",
+        "0x1a24ded44: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b22e0",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_autoreleasePoolPush",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b22e0",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_autoreleasePoolPush",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame_work",
+    "instruction": "0x19f223398",
+    "instruction_bytes": "e4c22194",
+    "branch_target": "0x19fa93f28",
+    "target": {
+      "address": "0x19fa93f28",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl8Renderer22updateDebugRenderQueueERKNS_18RenderTargetFormatE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_frame_work",
+    "instruction": "0x19f2233c4",
+    "instruction_bytes": "4f752d94",
+    "branch_target": "0x19fd80900",
+    "target": {
+      "address": "0x19fd80900",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$endEncoding",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_frame_work",
+    "instruction": "0x19f22344c",
+    "instruction_bytes": "bbedca94",
+    "branch_target": "0x1a24deb38",
+    "target": {
+      "address": "0x18dba99d0",
+      "image": "/usr/lib/system/libsystem_c.dylib",
+      "label": "_gettimeofday",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deb38",
+      "instructions": [
+        "0x1a24deb38: adrp x16, #0x18dba9000",
+        "0x1a24deb3c: add x16, x16, #0x9d0",
+        "0x1a24deb40: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x18dba99d0",
+          "image": "/usr/lib/system/libsystem_c.dylib",
+          "label": "_gettimeofday",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x18dba99d0",
+        "image": "/usr/lib/system/libsystem_c.dylib",
+        "label": "_gettimeofday",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_frame_work",
+    "instruction": "0x19f22351c",
+    "instruction_bytes": "af632414",
+    "branch_target": "0x19fb3c3d8",
+    "target": {
+      "address": "0x1800b44b4",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_autoreleasePoolPop",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x19fb3c3d8",
+      "instructions": [
+        "0x19fb3c3d8: adrp x16, #0x1dab36000",
+        "0x19fb3c3dc: ldr x16, [x16, #0xb10]",
+        "0x19fb3c3e0: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1dab36b10",
+          "raw": "0x201800b44b4",
+          "value": "0x1800b44b4",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x1800b44b4",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_autoreleasePoolPop",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b44b4",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_autoreleasePoolPop",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "geo_taskqueue_sync_work",
+    "instruction": "0x19f21e934",
+    "instruction_bytes": "d1752414",
+    "branch_target": "0x19fb3c078",
+    "target": {
+      "address": "0x18db049b0",
+      "image": "/usr/lib/system/libdispatch.dylib",
+      "label": "_dispatch_semaphore_signal",
+      "offset": "0x0",
+      "exact": true,
+      "role": "named CPU-variant resolver; runtime selected variant not read"
+    },
+    "stub_walk": {
+      "source": "0x19fb3c078",
+      "instructions": [
+        "0x19fb3c078: adrp x16, #0x1daac0000",
+        "0x19fb3c07c: ldr x16, [x16, #0x5a8]",
+        "0x19fb3c080: br x16",
+        "0x18db148b0: adrp x16, #0x1e1adb000",
+        "0x18db148b4: ldr x16, [x16, #0xf88]",
+        "0x18db148b8: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1daac05a8",
+          "raw": "0x2018db148b0",
+          "value": "0x18db148b0",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        },
+        {
+          "register": "x16",
+          "pointer": "0x1e1adbf88",
+          "raw": "0x2018db1b2ec",
+          "value": "0x18db1b2ec",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x18db148b0",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0xe2c",
+          "exact": false
+        },
+        {
+          "address": "0x18db1b2ec",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "-[OS_dispatch_data debugDescription].cold.1",
+          "offset": "0x7868",
+          "exact": false
+        }
+      ],
+      "resolver_helper": {
+        "address": "0x18db1b2ec",
+        "instructions": [
+          "0x18db1b2ec: stp x29, x30, [sp, #-0x10]!",
+          "0x18db1b2f0: mov x29, sp",
+          "0x18db1b2f4: stp x1, x0, [sp, #-0x10]!",
+          "0x18db1b2f8: stp x3, x2, [sp, #-0x10]!",
+          "0x18db1b2fc: stp x5, x4, [sp, #-0x10]!",
+          "0x18db1b300: stp x7, x6, [sp, #-0x10]!",
+          "0x18db1b304: stp d1, d0, [sp, #-0x10]!",
+          "0x18db1b308: stp d3, d2, [sp, #-0x10]!",
+          "0x18db1b30c: stp d5, d4, [sp, #-0x10]!",
+          "0x18db1b310: stp d7, d6, [sp, #-0x10]!",
+          "0x18db1b314: bl #0x18db049b0",
+          "0x18db1b318: adrp x16, #0x1e1adb000",
+          "0x18db1b31c: add x16, x16, #0xf88",
+          "0x18db1b320: str x0, [x16]",
+          "0x18db1b324: mov x16, x0",
+          "0x18db1b328: ldp d7, d6, [sp], #0x10",
+          "0x18db1b32c: ldp d5, d4, [sp], #0x10",
+          "0x18db1b330: ldp d3, d2, [sp], #0x10",
+          "0x18db1b334: ldp d1, d0, [sp], #0x10",
+          "0x18db1b338: ldp x7, x6, [sp], #0x10",
+          "0x18db1b33c: ldp x5, x4, [sp], #0x10",
+          "0x18db1b340: ldp x3, x2, [sp], #0x10",
+          "0x18db1b344: ldp x1, x0, [sp], #0x10",
+          "0x18db1b348: ldp x29, x30, [sp], #0x10",
+          "0x18db1b34c: br x16"
+        ]
+      },
+      "terminal": {
+        "address": "0x18db049b0",
+        "image": "/usr/lib/system/libdispatch.dylib",
+        "label": "_dispatch_semaphore_signal",
+        "offset": "0x0",
+        "exact": true,
+        "role": "named CPU-variant resolver; runtime selected variant not read"
+      },
+      "resolver_return_options": [
+        {
+          "address": "0x18daa7a84",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_semaphore_signal$VARIANT$mp",
+          "offset": "0x0",
+          "exact": true
+        },
+        {
+          "address": "0x18dad72a4",
+          "image": "/usr/lib/system/libdispatch.dylib",
+          "label": "_dispatch_semaphore_signal$VARIANT$armv81",
+          "offset": "0x0",
+          "exact": true
+        }
+      ]
+    },
+    "body_included": true
+  },
+  {
+    "function": "geo_taskqueue_sync_work",
+    "instruction": "0x19f21e944",
+    "instruction_bytes": "bbe50394",
+    "branch_target": "0x19f318030",
+    "target": {
+      "address": "0x19f318030",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__125__throw_bad_function_callB6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_queue",
+    "instruction": "0x19f2078e0",
+    "instruction_bytes": "b0ff2d94",
+    "branch_target": "0x19fd877a0",
+    "target": {
+      "address": "0x19fd877a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$optimizeContentsForGPUAccess:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_queue",
+    "instruction": "0x19f20793c",
+    "instruction_bytes": "91ff2d94",
+    "branch_target": "0x19fd87780",
+    "target": {
+      "address": "0x19fd87780",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$optimizeContentsForCPUAccess:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_queue",
+    "instruction": "0x19f207980",
+    "instruction_bytes": "61910094",
+    "branch_target": "0x19f22bf04",
+    "target": {
+      "address": "0x19f22bf04",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__16vectorIPN3ggl13CommandBufferEN3geo12StdAllocatorIS3_NS1_9AllocatorEEEEC2ERKS8_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_queue",
+    "instruction": "0x19f2079f4",
+    "instruction_bytes": "7b212e94",
+    "branch_target": "0x19fd8ffe0",
+    "target": {
+      "address": "0x19fd8ffe0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$updateFence:afterStages:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2106ac",
+    "instruction_bytes": "793acb94",
+    "branch_target": "0x1a24df090",
+    "target": {
+      "address": "0x19c901318",
+      "image": "/usr/lib/system/libsystem_trace.dylib",
+      "label": "_os_signpost_enabled",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24df090",
+      "instructions": [
+        "0x1a24df090: adrp x16, #0x19c901000",
+        "0x1a24df094: add x16, x16, #0x318",
+        "0x1a24df098: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19c901318",
+          "image": "/usr/lib/system/libsystem_trace.dylib",
+          "label": "_os_signpost_enabled",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19c901318",
+        "image": "/usr/lib/system/libsystem_trace.dylib",
+        "label": "_os_signpost_enabled",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21070c",
+    "instruction_bytes": "1e38cb94",
+    "branch_target": "0x1a24de784",
+    "target": {
+      "address": "0x19c90b264",
+      "image": "/usr/lib/system/libsystem_trace.dylib",
+      "label": "__os_signpost_emit_with_name_impl",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de784",
+      "instructions": [
+        "0x1a24de784: adrp x16, #0x19c90b000",
+        "0x1a24de788: add x16, x16, #0x264",
+        "0x1a24de78c: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19c90b264",
+          "image": "/usr/lib/system/libsystem_trace.dylib",
+          "label": "__os_signpost_emit_with_name_impl",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19c90b264",
+        "image": "/usr/lib/system/libsystem_trace.dylib",
+        "label": "__os_signpost_emit_with_name_impl",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210710",
+    "instruction_bytes": "ca39cb94",
+    "branch_target": "0x1a24dee38",
+    "target": {
+      "address": "0x1800b3808",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x19",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee38",
+      "instructions": [
+        "0x1a24dee38: adrp x16, #0x1800b3000",
+        "0x1a24dee3c: add x16, x16, #0x808",
+        "0x1a24dee40: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3808",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x19",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3808",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x19",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2107a8",
+    "instruction_bytes": "4337cb94",
+    "branch_target": "0x1a24de4b4",
+    "target": {
+      "address": "0x19466c1a4",
+      "image": "/usr/lib/libc++.1.dylib",
+      "label": "__ZNSt3__15mutex4lockEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de4b4",
+      "instructions": [
+        "0x1a24de4b4: adrp x16, #0x19466c000",
+        "0x1a24de4b8: add x16, x16, #0x1a4",
+        "0x1a24de4bc: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19466c1a4",
+          "image": "/usr/lib/libc++.1.dylib",
+          "label": "__ZNSt3__15mutex4lockEv",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19466c1a4",
+        "image": "/usr/lib/libc++.1.dylib",
+        "label": "__ZNSt3__15mutex4lockEv",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21088c",
+    "instruction_bytes": "b939cb94",
+    "branch_target": "0x1a24def70",
+    "target": {
+      "address": "0x1800b2d0c",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retain_x23",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24def70",
+      "instructions": [
+        "0x1a24def70: adrp x16, #0x1800b2000",
+        "0x1a24def74: add x16, x16, #0xd0c",
+        "0x1a24def78: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b2d0c",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retain_x23",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b2d0c",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retain_x23",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2108a0",
+    "instruction_bytes": "7539cb94",
+    "branch_target": "0x1a24dee74",
+    "target": {
+      "address": "0x1800b3a68",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x23",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee74",
+      "instructions": [
+        "0x1a24dee74: adrp x16, #0x1800b3000",
+        "0x1a24dee78: add x16, x16, #0xa68",
+        "0x1a24dee7c: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3a68",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x23",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3a68",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x23",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2108b4",
+    "instruction_bytes": "ec480094",
+    "branch_target": "0x19f222c64",
+    "target": {
+      "address": "0x19f222c64",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10RenderItem21gatherBufferLoadItemsERNSt3__16vectorINS_14BufferLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2108c8",
+    "instruction_bytes": "82180094",
+    "branch_target": "0x19f216ad0",
+    "target": {
+      "address": "0x19f216ad0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10RenderItem22gatherTextureLoadItemsERNSt3__16vectorINS_17Texture2DLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEj",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21091c",
+    "instruction_bytes": "9137cb94",
+    "branch_target": "0x1a24de760",
+    "target": {
+      "address": "0x19c901fd8",
+      "image": "/usr/lib/system/libsystem_trace.dylib",
+      "label": "__os_log_error_impl",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de760",
+      "instructions": [
+        "0x1a24de760: adrp x16, #0x19c901000",
+        "0x1a24de764: add x16, x16, #0xfd8",
+        "0x1a24de768: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19c901fd8",
+          "image": "/usr/lib/system/libsystem_trace.dylib",
+          "label": "__os_log_error_impl",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19c901fd8",
+        "image": "/usr/lib/system/libsystem_trace.dylib",
+        "label": "__os_log_error_impl",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210990",
+    "instruction_bytes": "0bdc2194",
+    "branch_target": "0x19fa879bc",
+    "target": {
+      "address": "0x19fa879bc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl12ComputeSetup21gatherBufferLoadItemsERNSt3__16vectorINS_14BufferLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21099c",
+    "instruction_bytes": "8de32194",
+    "branch_target": "0x19fa897d0",
+    "target": {
+      "address": "0x19fa897d0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl11ComputeItem22gatherTextureLoadItemsERNSt3__16vectorINS_17Texture2DLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210a64",
+    "instruction_bytes": "32ef2194",
+    "branch_target": "0x19fa8c72c",
+    "target": {
+      "address": "0x19fa8c72c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl9TileSetup21gatherBufferLoadItemsERNSt3__16vectorINS_14BufferLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210a70",
+    "instruction_bytes": "5a102294",
+    "branch_target": "0x19fa94bd8",
+    "target": {
+      "address": "0x19fa94bd8",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl8TileItem22gatherTextureLoadItemsERNSt3__16vectorINS_17Texture2DLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210acc",
+    "instruction_bytes": "4b38cb94",
+    "branch_target": "0x1a24debf8",
+    "target": {
+      "address": "0x1c0fe7290",
+      "image": "/usr/lib/system/libsystem_kernel.dylib",
+      "label": "_mach_absolute_time",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24debf8",
+      "instructions": [
+        "0x1a24debf8: adrp x16, #0x1c0fe7000",
+        "0x1a24debfc: add x16, x16, #0x290",
+        "0x1a24dec00: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1c0fe7290",
+          "image": "/usr/lib/system/libsystem_kernel.dylib",
+          "label": "_mach_absolute_time",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1c0fe7290",
+        "image": "/usr/lib/system/libsystem_kernel.dylib",
+        "label": "_mach_absolute_time",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210ba4",
+    "instruction_bytes": "ef7b0194",
+    "branch_target": "0x19f26fb60",
+    "target": {
+      "address": "0x19f26fb60",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl9Texture2D20vendImplicitLoadItemEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210bb4",
+    "instruction_bytes": "2e740194",
+    "branch_target": "0x19f26dc6c",
+    "target": {
+      "address": "0x19f26dc6c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_17Texture2DLoadItemERKNSt3__110shared_ptrINS_17RenderTransactionEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210c00",
+    "instruction_bytes": "1b740194",
+    "branch_target": "0x19f26dc6c",
+    "target": {
+      "address": "0x19f26dc6c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_17Texture2DLoadItemERKNSt3__110shared_ptrINS_17RenderTransactionEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210c28",
+    "instruction_bytes": "11740194",
+    "branch_target": "0x19f26dc6c",
+    "target": {
+      "address": "0x19f26dc6c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_17Texture2DLoadItemERKNSt3__110shared_ptrINS_17RenderTransactionEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210dd4",
+    "instruction_bytes": "d0f12194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210e00",
+    "instruction_bytes": "c5f12194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210ef0",
+    "instruction_bytes": "9cf41a94",
+    "branch_target": "0x19f8ce160",
+    "target": {
+      "address": "0x19f8ce160",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__16vectorIN3ggl14BufferLoadItemEN3geo12StdAllocatorIS2_NS1_9AllocatorEEEE22__base_destruct_at_endB6v15006EPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210efc",
+    "instruction_bytes": "99f41a94",
+    "branch_target": "0x19f8ce160",
+    "target": {
+      "address": "0x19f8ce160",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__16vectorIN3ggl14BufferLoadItemEN3geo12StdAllocatorIS2_NS1_9AllocatorEEEE22__base_destruct_at_endB6v15006EPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210f20",
+    "instruction_bytes": "2e8a1594",
+    "branch_target": "0x19f7737d8",
+    "target": {
+      "address": "0x19f7737d8",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo12StdAllocatorIN3ggl17Texture2DLoadItemENS1_9AllocatorEE7destroyEPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f210f54",
+    "instruction_bytes": "218a1594",
+    "branch_target": "0x19f7737d8",
+    "target": {
+      "address": "0x19f7737d8",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo12StdAllocatorIN3ggl17Texture2DLoadItemENS1_9AllocatorEE7destroyEPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211064",
+    "instruction_bytes": "1735cb94",
+    "branch_target": "0x1a24de4c0",
+    "target": {
+      "address": "0x19466c1e8",
+      "image": "/usr/lib/libc++.1.dylib",
+      "label": "__ZNSt3__15mutex6unlockEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24de4c0",
+      "instructions": [
+        "0x1a24de4c0: adrp x16, #0x19466c000",
+        "0x1a24de4c4: add x16, x16, #0x1e8",
+        "0x1a24de4c8: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x19466c1e8",
+          "image": "/usr/lib/libc++.1.dylib",
+          "label": "__ZNSt3__15mutex6unlockEv",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x19466c1e8",
+        "image": "/usr/lib/libc++.1.dylib",
+        "label": "__ZNSt3__15mutex6unlockEv",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211114",
+    "instruction_bytes": "cbca2194",
+    "branch_target": "0x19fa83c40",
+    "target": {
+      "address": "0x19fa83c40",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl7TextureEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE17__deallocate_nodeEPNS_16__hash_node_baseIPNS_11__hash_nodeIS9_PvEEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211158",
+    "instruction_bytes": "d7ca2194",
+    "branch_target": "0x19fa83cb4",
+    "target": {
+      "address": "0x19fa83cb4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl6BufferEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE17__deallocate_nodeEPNS_16__hash_node_baseIPNS_11__hash_nodeIS9_PvEEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2111f8",
+    "instruction_bytes": "08720094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211248",
+    "instruction_bytes": "2f850194",
+    "branch_target": "0x19f272704",
+    "target": {
+      "address": "0x19f272704",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager9newBufferEPKNS_6BufferE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211270",
+    "instruction_bytes": "9cbf2d94",
+    "branch_target": "0x19fd810e0",
+    "target": {
+      "address": "0x19fd810e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$fillBuffer:range:value:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211298",
+    "instruction_bytes": "e0710094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211310",
+    "instruction_bytes": "24b22d94",
+    "branch_target": "0x19fd7dba0",
+    "target": {
+      "address": "0x19fd7dba0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211324",
+    "instruction_bytes": "33cb2194",
+    "branch_target": "0x19fa83ff0",
+    "target": {
+      "address": "0x19fa83ff0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl6BufferEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE25__emplace_unique_key_argsIS5_JRKNS_21piecewise_construct_tENS_5tupleIJOS5_EEENSP_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS9_PvEEEEbEERKT_DpOT0_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211338",
+    "instruction_bytes": "32b22d94",
+    "branch_target": "0x19fd7dc00",
+    "target": {
+      "address": "0x19fd7dc00",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$copyFromTexture:toTexture:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21134c",
+    "instruction_bytes": "3fcc2194",
+    "branch_target": "0x19fa84448",
+    "target": {
+      "address": "0x19fa84448",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl7TextureEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE25__emplace_unique_key_argsIS5_JRKNS_21piecewise_construct_tENS_5tupleIJOS5_EEENSP_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS9_PvEEEEbEERKT_DpOT0_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211394",
+    "instruction_bytes": "0bb22d94",
+    "branch_target": "0x19fd7dbc0",
+    "target": {
+      "address": "0x19fd7dbc0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2113a8",
+    "instruction_bytes": "12cb2194",
+    "branch_target": "0x19fa83ff0",
+    "target": {
+      "address": "0x19fa83ff0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl6BufferEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE25__emplace_unique_key_argsIS5_JRKNS_21piecewise_construct_tENS_5tupleIJOS5_EEENSP_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS9_PvEEEEbEERKT_DpOT0_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2113f8",
+    "instruction_bytes": "fab12d94",
+    "branch_target": "0x19fd7dbe0",
+    "target": {
+      "address": "0x19fd7dbe0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21140c",
+    "instruction_bytes": "0fcc2194",
+    "branch_target": "0x19fa84448",
+    "target": {
+      "address": "0x19fa84448",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl7TextureEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE25__emplace_unique_key_argsIS5_JRKNS_21piecewise_construct_tENS_5tupleIJOS5_EEENSP_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS9_PvEEEEbEERKT_DpOT0_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211458",
+    "instruction_bytes": "cab12d94",
+    "branch_target": "0x19fd7db80",
+    "target": {
+      "address": "0x19fd7db80",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21146c",
+    "instruction_bytes": "f7cb2194",
+    "branch_target": "0x19fa84448",
+    "target": {
+      "address": "0x19fa84448",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__112__hash_tableINS_17__hash_value_typeIPKN3ggl7TextureEU8__strongPU32objcproto21MTLBlitCommandEncoder11objc_objectEENS_22__unordered_map_hasherIS5_S9_NS_4hashIS5_EENS_8equal_toIS5_EELb1EEENS_21__unordered_map_equalIS5_S9_SE_SC_Lb1EEENS_9allocatorIS9_EEE25__emplace_unique_key_argsIS5_JRKNS_21piecewise_construct_tENS_5tupleIJOS5_EEENSP_IJEEEEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIS9_PvEEEEbEERKT_DpOT0_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211478",
+    "instruction_bytes": "98ac2494",
+    "branch_target": "0x19fb3c6d8",
+    "target": {
+      "address": "0x1800b7bf8",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_storeStrong",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x19fb3c6d8",
+      "instructions": [
+        "0x19fb3c6d8: adrp x16, #0x1dab36000",
+        "0x19fb3c6dc: ldr x16, [x16, #0xe60]",
+        "0x19fb3c6e0: br x16"
+      ],
+      "loads": [
+        {
+          "register": "x16",
+          "pointer": "0x1dab36e60",
+          "raw": "0x201800b7bf8",
+          "value": "0x1800b7bf8",
+          "slide_info_version": 2,
+          "delta_mask": "0xffff0000000000",
+          "value_add": "0x0",
+          "chain_membership_verified": true,
+          "source_path": "OS/ipados/16.5-20F66-iPad7_11/userland/systemos/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.27.dylddata",
+          "cstring": null
+        }
+      ],
+      "branches": [
+        {
+          "address": "0x1800b7bf8",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_storeStrong",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b7bf8",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_storeStrong",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21147c",
+    "instruction_bytes": "8d36cb94",
+    "branch_target": "0x1a24deeb0",
+    "target": {
+      "address": "0x1800b3d60",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x28",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deeb0",
+      "instructions": [
+        "0x1a24deeb0: adrp x16, #0x1800b3000",
+        "0x1a24deeb4: add x16, x16, #0xd60",
+        "0x1a24deeb8: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3d60",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x28",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3d60",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x28",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211488",
+    "instruction_bytes": "8436cb94",
+    "branch_target": "0x1a24dee98",
+    "target": {
+      "address": "0x1800b3c30",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_release_x26",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24dee98",
+      "instructions": [
+        "0x1a24dee98: adrp x16, #0x1800b3000",
+        "0x1a24dee9c: add x16, x16, #0xc30",
+        "0x1a24deea0: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b3c30",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_release_x26",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b3c30",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_release_x26",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211578",
+    "instruction_bytes": "92fa2d94",
+    "branch_target": "0x19fd8ffc0",
+    "target": {
+      "address": "0x19fd8ffc0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$updateFence:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2115c4",
+    "instruction_bytes": "e7de2d94",
+    "branch_target": "0x19fd89160",
+    "target": {
+      "address": "0x19fd89160",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$renderPassDescriptor",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2115ec",
+    "instruction_bytes": "b5e82d94",
+    "branch_target": "0x19fd8b8c0",
+    "target": {
+      "address": "0x19fd8b8c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setImageblockSampleLength:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2115f0",
+    "instruction_bytes": "5136cb94",
+    "branch_target": "0x1a24def34",
+    "target": {
+      "address": "0x1800b2c1c",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retain_x19",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24def34",
+      "instructions": [
+        "0x1a24def34: adrp x16, #0x1800b2000",
+        "0x1a24def38: add x16, x16, #0xc1c",
+        "0x1a24def3c: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b2c1c",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retain_x19",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b2c1c",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retain_x19",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21162c",
+    "instruction_bytes": "fb700094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211640",
+    "instruction_bytes": "68af2d94",
+    "branch_target": "0x19fd7d3e0",
+    "target": {
+      "address": "0x19fd7d3e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$colorAttachments",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211650",
+    "instruction_bytes": "c4d72d94",
+    "branch_target": "0x19fd87560",
+    "target": {
+      "address": "0x19fd87560",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$objectAtIndexedSubscript:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211660",
+    "instruction_bytes": "98ee2d94",
+    "branch_target": "0x19fd8d0c0",
+    "target": {
+      "address": "0x19fd8d0c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setTexture:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211698",
+    "instruction_bytes": "7ae92d94",
+    "branch_target": "0x19fd8bc80",
+    "target": {
+      "address": "0x19fd8bc80",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setLevel:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2116cc",
+    "instruction_bytes": "95ed2d94",
+    "branch_target": "0x19fd8cd20",
+    "target": {
+      "address": "0x19fd8cd20",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setSlice:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211748",
+    "instruction_bytes": "86e92d94",
+    "branch_target": "0x19fd8bd60",
+    "target": {
+      "address": "0x19fd8bd60",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setLoadAction:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2117d8",
+    "instruction_bytes": "e2ed2d94",
+    "branch_target": "0x19fd8cf60",
+    "target": {
+      "address": "0x19fd8cf60",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setStoreAction:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211804",
+    "instruction_bytes": "07f42d94",
+    "branch_target": "0x19fd8e820",
+    "target": {
+      "address": "0x19fd8e820",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$storeAction",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211828",
+    "instruction_bytes": "7c700094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21185c",
+    "instruction_bytes": "f1eb2d94",
+    "branch_target": "0x19fd8c820",
+    "target": {
+      "address": "0x19fd8c820",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setResolveTexture:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211894",
+    "instruction_bytes": "d3eb2d94",
+    "branch_target": "0x19fd8c7e0",
+    "target": {
+      "address": "0x19fd8c7e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setResolveLevel:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2118c8",
+    "instruction_bytes": "ceeb2d94",
+    "branch_target": "0x19fd8c800",
+    "target": {
+      "address": "0x19fd8c800",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setResolveSlice:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211938",
+    "instruction_bytes": "3ae42d94",
+    "branch_target": "0x19fd8aa20",
+    "target": {
+      "address": "0x19fd8aa20",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setClearColor:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211978",
+    "instruction_bytes": "28700094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2119b0",
+    "instruction_bytes": "c4b62d94",
+    "branch_target": "0x19fd7f4c0",
+    "target": {
+      "address": "0x19fd7f4c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$depthAttachment",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211bac",
+    "instruction_bytes": "a5e32d94",
+    "branch_target": "0x19fd8aa40",
+    "target": {
+      "address": "0x19fd8aa40",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setClearDepth:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211be8",
+    "instruction_bytes": "8c6f0094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211c70",
+    "instruction_bytes": "14f22d94",
+    "branch_target": "0x19fd8e4c0",
+    "target": {
+      "address": "0x19fd8e4c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$stencilAttachment",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211e48",
+    "instruction_bytes": "06e32d94",
+    "branch_target": "0x19fd8aa60",
+    "target": {
+      "address": "0x19fd8aa60",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setClearStencil:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211e84",
+    "instruction_bytes": "e56e0094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211f20",
+    "instruction_bytes": "a4330094",
+    "branch_target": "0x19f21edb0",
+    "target": {
+      "address": "0x19f21edb0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager25updateTextureWithResourceEPKNS_7TextureEPv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211f34",
+    "instruction_bytes": "9f330094",
+    "branch_target": "0x19f21edb0",
+    "target": {
+      "address": "0x19f21edb0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager25updateTextureWithResourceEPKNS_7TextureEPv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211f50",
+    "instruction_bytes": "6ced2d94",
+    "branch_target": "0x19fd8d500",
+    "target": {
+      "address": "0x19fd8d500",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setVisibilityResultBuffer:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211f5c",
+    "instruction_bytes": "69dc2d94",
+    "branch_target": "0x19fd89100",
+    "target": {
+      "address": "0x19fd89100",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$renderCommandEncoderWithDescriptor:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f211f84",
+    "instruction_bytes": "bffa2d94",
+    "branch_target": "0x19fd90a80",
+    "target": {
+      "address": "0x19fd90a80",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$waitForFence:beforeStages:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212058",
+    "instruction_bytes": "1aed2d94",
+    "branch_target": "0x19fd8d4c0",
+    "target": {
+      "address": "0x19fd8d4c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setViewport:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212064",
+    "instruction_bytes": "97e52d94",
+    "branch_target": "0x19fd8b6c0",
+    "target": {
+      "address": "0x19fd8b6c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setFrontFacingWinding:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212070",
+    "instruction_bytes": "e4e22d94",
+    "branch_target": "0x19fd8ac00",
+    "target": {
+      "address": "0x19fd8ac00",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setCullMode:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212088",
+    "instruction_bytes": "86e12d94",
+    "branch_target": "0x19fd8a6a0",
+    "target": {
+      "address": "0x19fd8a6a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setBlendColorRed:green:blue:alpha:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2120dc",
+    "instruction_bytes": "ea5c0194",
+    "branch_target": "0x19f269484",
+    "target": {
+      "address": "0x19f269484",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferDataC2EmNS_10BufferTypeENS_12BufferChangeENS_11BufferUsageEm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212140",
+    "instruction_bytes": "d15c0194",
+    "branch_target": "0x19f269484",
+    "target": {
+      "address": "0x19f269484",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferDataC2EmNS_10BufferTypeENS_12BufferChangeENS_11BufferUsageEm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212228",
+    "instruction_bytes": "bc3b0094",
+    "branch_target": "0x19f221118",
+    "target": {
+      "address": "0x19f221118",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl6LoaderD2Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21228c",
+    "instruction_bytes": "321d0294",
+    "branch_target": "0x19f299754",
+    "target": {
+      "address": "0x19f299754",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl9MeshTypedIJNS_5Clear9ClearDataEEEC2EPKcRKNSt3__110shared_ptrINS_9IndexDataEEERKNS7_INS_15VertexDataTypedIS2_EEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212384",
+    "instruction_bytes": "54840294",
+    "branch_target": "0x19f2b34d4",
+    "target": {
+      "address": "0x19f2b34d4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferData12vendLoadItemEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2123a0",
+    "instruction_bytes": "4d840294",
+    "branch_target": "0x19f2b34d4",
+    "target": {
+      "address": "0x19f2b34d4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferData12vendLoadItemEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2123b8",
+    "instruction_bytes": "57ec2194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2123cc",
+    "instruction_bytes": "52ec2194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212608",
+    "instruction_bytes": "d0240c94",
+    "branch_target": "0x19f51b948",
+    "target": {
+      "address": "0x19f51b948",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl5Clear18ClearPipelineStateEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212778",
+    "instruction_bytes": "74240c94",
+    "branch_target": "0x19f51b948",
+    "target": {
+      "address": "0x19f51b948",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl5Clear18ClearPipelineStateEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212830",
+    "instruction_bytes": "8e190294",
+    "branch_target": "0x19f298e68",
+    "target": {
+      "address": "0x19f298e68",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl5Clear18ClearPipelineStateC2ERKNSt3__110shared_ptrINS_11ClearShaderEEERKNS_20ColorBufferOperationENS_18RenderTargetFormatENS_15AlphaToCoverageE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2128d4",
+    "instruction_bytes": "33240c94",
+    "branch_target": "0x19f51b9a0",
+    "target": {
+      "address": "0x19f51b9a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__115allocate_sharedB6v15006IN3ggl17ConstantDataTypedINS1_5Clear14ClearConstantsEEENS_9allocatorIS5_EEJEvEENS_10shared_ptrIT_EERKT0_DpOT1_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2129d8",
+    "instruction_bytes": "ab200c94",
+    "branch_target": "0x19f51ac84",
+    "target": {
+      "address": "0x19f51ac84",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl17ConstantDataTypedINS1_5Clear14ClearConstantsEEEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212a50",
+    "instruction_bytes": "485b0394",
+    "branch_target": "0x19f2e9770",
+    "target": {
+      "address": "0x19f2e9770",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl5Clear18ClearPipelineSetup15typedReflectionEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212a60",
+    "instruction_bytes": "27f60194",
+    "branch_target": "0x19f2902fc",
+    "target": {
+      "address": "0x19f2902fc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13PipelineSetupC2EPKNS_23PipelineDataCReflectionE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212c44",
+    "instruction_bytes": "35390094",
+    "branch_target": "0x19f221118",
+    "target": {
+      "address": "0x19f221118",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl6LoaderD2Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212c60",
+    "instruction_bytes": "bc490094",
+    "branch_target": "0x19f225350",
+    "target": {
+      "address": "0x19f225350",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl5Clear18ClearPipelineSetup8setStateERKNSt3__110shared_ptrINS0_18ClearPipelineStateEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212c7c",
+    "instruction_bytes": "f6e72194",
+    "branch_target": "0x19fa8cc54",
+    "target": {
+      "address": "0x19fa8cc54",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl10BufferDataEEaSB6v15006INS1_17ConstantDataTypedINS1_5Clear14ClearConstantsEEEvEERS3_RKNS0_IT_EE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212f74",
+    "instruction_bytes": "9f360094",
+    "branch_target": "0x19f2209f0",
+    "target": {
+      "address": "0x19f2209f0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer17resetBindingCacheEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212f88",
+    "instruction_bytes": "1df60094",
+    "branch_target": "0x19f2507fc",
+    "target": {
+      "address": "0x19f2507fc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer11_renderItemEPNS_12RenderTargetEPNS_10RenderItemEPNS_12MetalContextE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f212fe8",
+    "instruction_bytes": "82360094",
+    "branch_target": "0x19f2209f0",
+    "target": {
+      "address": "0x19f2209f0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer17resetBindingCacheEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21300c",
+    "instruction_bytes": "fcf50094",
+    "branch_target": "0x19f2507fc",
+    "target": {
+      "address": "0x19f2507fc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer11_renderItemEPNS_12RenderTargetEPNS_10RenderItemEPNS_12MetalContextE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213034",
+    "instruction_bytes": "23aa2d94",
+    "branch_target": "0x19fd7d8c0",
+    "target": {
+      "address": "0x19fd7d8c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$contents",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213190",
+    "instruction_bytes": "c4c52194",
+    "branch_target": "0x19fa848a0",
+    "target": {
+      "address": "0x19fa848a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNKSt3__116__deque_iteratorIN3ggl12PendingQueryEPS2_RS2_PS3_lLl128EEplB6v15006El",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213384",
+    "instruction_bytes": "da981394",
+    "branch_target": "0x19f6f96ec",
+    "target": {
+      "address": "0x19f6f96ec",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEEaSB6v15006EOS3_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213494",
+    "instruction_bytes": "219a1394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2134b4",
+    "instruction_bytes": "bbea1a94",
+    "branch_target": "0x19f8cdfa0",
+    "target": {
+      "address": "0x19f8cdfa0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__15dequeIN3ggl12PendingQueryENS_9allocatorIS2_EEE26__maybe_remove_front_spareB6v15006Eb",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213568",
+    "instruction_bytes": "61981394",
+    "branch_target": "0x19f6f96ec",
+    "target": {
+      "address": "0x19f6f96ec",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEEaSB6v15006EOS3_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21365c",
+    "instruction_bytes": "af991394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213678",
+    "instruction_bytes": "63ea1a94",
+    "branch_target": "0x19f8ce004",
+    "target": {
+      "address": "0x19f8ce004",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__15dequeIN3ggl12PendingQueryENS_9allocatorIS2_EEE25__maybe_remove_back_spareB6v15006Eb",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2136b0",
+    "instruction_bytes": "7cc42194",
+    "branch_target": "0x19fa848a0",
+    "target": {
+      "address": "0x19fa848a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNKSt3__116__deque_iteratorIN3ggl12PendingQueryEPS2_RS2_PS3_lLl128EEplB6v15006El",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213778",
+    "instruction_bytes": "68991394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213794",
+    "instruction_bytes": "8fea1a94",
+    "branch_target": "0x19f8ce1d0",
+    "target": {
+      "address": "0x19f8ce1d0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__15dequeINS_10shared_ptrIN3ggl9QueryItemEEENS_9allocatorIS4_EEE26__maybe_remove_front_spareB6v15006Eb",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21381c",
+    "instruction_bytes": "4f610494",
+    "branch_target": "0x19f32bd58",
+    "target": {
+      "address": "0x19f32bd58",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIjEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS5_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213888",
+    "instruction_bytes": "f73c0094",
+    "branch_target": "0x19f222c64",
+    "target": {
+      "address": "0x19f222c64",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10RenderItem21gatherBufferLoadItemsERNSt3__16vectorINS_14BufferLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21389c",
+    "instruction_bytes": "8d0c0094",
+    "branch_target": "0x19f216ad0",
+    "target": {
+      "address": "0x19f216ad0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10RenderItem22gatherTextureLoadItemsERNSt3__16vectorINS_17Texture2DLoadItemEN3geo12StdAllocatorIS3_NS_9AllocatorEEEEEj",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213a30",
+    "instruction_bytes": "ba981394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213b18",
+    "instruction_bytes": "7fe62194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213b3c",
+    "instruction_bytes": "89e91a94",
+    "branch_target": "0x19f8ce160",
+    "target": {
+      "address": "0x19f8ce160",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__16vectorIN3ggl14BufferLoadItemEN3geo12StdAllocatorIS2_NS1_9AllocatorEEEE22__base_destruct_at_endB6v15006EPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213b5c",
+    "instruction_bytes": "44680194",
+    "branch_target": "0x19f26dc6c",
+    "target": {
+      "address": "0x19f26dc6c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_17Texture2DLoadItemERKNSt3__110shared_ptrINS_17RenderTransactionEEE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213b8c",
+    "instruction_bytes": "137f1594",
+    "branch_target": "0x19f7737d8",
+    "target": {
+      "address": "0x19f7737d8",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3geo12StdAllocatorIN3ggl17Texture2DLoadItemENS1_9AllocatorEE7destroyEPS2_",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213ba4",
+    "instruction_bytes": "93330094",
+    "branch_target": "0x19f2209f0",
+    "target": {
+      "address": "0x19f2209f0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer17resetBindingCacheEv",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213c04",
+    "instruction_bytes": "47e62d94",
+    "branch_target": "0x19fd8d520",
+    "target": {
+      "address": "0x19fd8d520",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setVisibilityResultMode:offset:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213c18",
+    "instruction_bytes": "f9f20094",
+    "branch_target": "0x19f2507fc",
+    "target": {
+      "address": "0x19f2507fc",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer11_renderItemEPNS_12RenderTargetEPNS_10RenderItemEPNS_12MetalContextE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213d08",
+    "instruction_bytes": "09e91a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213d70",
+    "instruction_bytes": "efe81a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213ecc",
+    "instruction_bytes": "98e81a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f213fcc",
+    "instruction_bytes": "58e81a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214074",
+    "instruction_bytes": "2ee81a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214124",
+    "instruction_bytes": "02e81a94",
+    "branch_target": "0x19f8ce12c",
+    "target": {
+      "address": "0x19f8ce12c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__119__allocate_at_leastB6v15006INS_9allocatorIPN3ggl12PendingQueryEEEEENS_19__allocation_resultINS_16allocator_traitsIT_E7pointerEEERS8_m",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2141b0",
+    "instruction_bytes": "da961394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21421c",
+    "instruction_bytes": "8ce72194",
+    "branch_target": "0x19fa8e04c",
+    "target": {
+      "address": "0x19fa8e04c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager20newTilePipelineStateEPKNS_17TilePipelineStateE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2142a8",
+    "instruction_bytes": "36e12d94",
+    "branch_target": "0x19fd8c780",
+    "target": {
+      "address": "0x19fd8c780",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setRenderPipelineState:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21435c",
+    "instruction_bytes": "79e32d94",
+    "branch_target": "0x19fd8d140",
+    "target": {
+      "address": "0x19fd8d140",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setTileBuffers:offsets:withRange:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2143dc",
+    "instruction_bytes": "e82acb94",
+    "branch_target": "0x1a24def7c",
+    "target": {
+      "address": "0x1800b2d48",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retain_x24",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24def7c",
+      "instructions": [
+        "0x1a24def7c: adrp x16, #0x1800b2000",
+        "0x1a24def80: add x16, x16, #0xd48",
+        "0x1a24def84: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b2d48",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retain_x24",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b2d48",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retain_x24",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214488",
+    "instruction_bytes": "137c0294",
+    "branch_target": "0x19f2b34d4",
+    "target": {
+      "address": "0x19f2b34d4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferData12vendLoadItemEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2144cc",
+    "instruction_bytes": "12e42194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214748",
+    "instruction_bytes": "b4640094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214764",
+    "instruction_bytes": "cad30194",
+    "branch_target": "0x19f28968c",
+    "target": {
+      "address": "0x19f28968c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNK3ggl13MetalRenderer23getSamplerStateResourceEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21478c",
+    "instruction_bytes": "85e22d94",
+    "branch_target": "0x19fd8d1a0",
+    "target": {
+      "address": "0x19fd8d1a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setTileTexture:atIndex:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2147f8",
+    "instruction_bytes": "62e22d94",
+    "branch_target": "0x19fd8d180",
+    "target": {
+      "address": "0x19fd8d180",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setTileSamplerState:atIndex:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214818",
+    "instruction_bytes": "72eb2d94",
+    "branch_target": "0x19fd8f5e0",
+    "target": {
+      "address": "0x19fd8f5e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$tileWidth",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214824",
+    "instruction_bytes": "1feb2d94",
+    "branch_target": "0x19fd8f4a0",
+    "target": {
+      "address": "0x19fd8f4a0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$tileHeight",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214844",
+    "instruction_bytes": "17ad2d94",
+    "branch_target": "0x19fd7fca0",
+    "target": {
+      "address": "0x19fd7fca0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$dispatchThreadsPerTile:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214984",
+    "instruction_bytes": "5fa32d94",
+    "branch_target": "0x19fd7d700",
+    "target": {
+      "address": "0x19fd7d700",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$computeCommandEncoderWithDispatchType:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2149a8",
+    "instruction_bytes": "2ef02d94",
+    "branch_target": "0x19fd90a60",
+    "target": {
+      "address": "0x19fd90a60",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$waitForFence:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214a0c",
+    "instruction_bytes": "22e62194",
+    "branch_target": "0x19fa8e294",
+    "target": {
+      "address": "0x19fa8e294",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager23newComputePipelineStateEPKNS_20ComputePipelineStateE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214a28",
+    "instruction_bytes": "36d82d94",
+    "branch_target": "0x19fd8ab00",
+    "target": {
+      "address": "0x19fd8ab00",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setComputePipelineState:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214a58",
+    "instruction_bytes": "9f7a0294",
+    "branch_target": "0x19f2b34d4",
+    "target": {
+      "address": "0x19f2b34d4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferData12vendLoadItemEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214a88",
+    "instruction_bytes": "a3e22194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214b40",
+    "instruction_bytes": "657a0294",
+    "branch_target": "0x19f2b34d4",
+    "target": {
+      "address": "0x19f2b34d4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl10BufferData12vendLoadItemEPNS_6DeviceEmm",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214b70",
+    "instruction_bytes": "69e22194",
+    "branch_target": "0x19fa8d514",
+    "target": {
+      "address": "0x19fa8d514",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl20MetalResourceManager6uploadERKNS_14BufferLoadItemEPNS_12ConstantDataE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214c7c",
+    "instruction_bytes": "b9d62d94",
+    "branch_target": "0x19fd8a760",
+    "target": {
+      "address": "0x19fd8a760",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setBuffers:offsets:withRange:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214ca4",
+    "instruction_bytes": "b928cb94",
+    "branch_target": "0x1a24def88",
+    "target": {
+      "address": "0x1800b2d84",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retain_x25",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24def88",
+      "instructions": [
+        "0x1a24def88: adrp x16, #0x1800b2000",
+        "0x1a24def8c: add x16, x16, #0xd84",
+        "0x1a24def90: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b2d84",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retain_x25",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b2d84",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retain_x25",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214e64",
+    "instruction_bytes": "ed620094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214ec8",
+    "instruction_bytes": "f1d10194",
+    "branch_target": "0x19f28968c",
+    "target": {
+      "address": "0x19f28968c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNK3ggl13MetalRenderer23getSamplerStateResourceEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214ef0",
+    "instruction_bytes": "7ce02d94",
+    "branch_target": "0x19fd8d0e0",
+    "target": {
+      "address": "0x19fd8d0e0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setTexture:atIndex:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214f5c",
+    "instruction_bytes": "e1de2d94",
+    "branch_target": "0x19fd8cae0",
+    "target": {
+      "address": "0x19fd8cae0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$setSamplerState:atIndex:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f214fb8",
+    "instruction_bytes": "32ab2d94",
+    "branch_target": "0x19fd7fc80",
+    "target": {
+      "address": "0x19fd7fc80",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$dispatchThreadgroups:threadsPerThreadgroup:",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2150ec",
+    "instruction_bytes": "4b620094",
+    "branch_target": "0x19f22da18",
+    "target": {
+      "address": "0x19f22da18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl13MetalRenderer14prepareTextureEPNS_20MetalResourceManagerEPKNS_7TextureE",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2153d4",
+    "instruction_bytes": "dae62194",
+    "branch_target": "0x19fa8ef3c",
+    "target": {
+      "address": "0x19fa8ef3c",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl5Clear9ClearMeshD0Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2153dc",
+    "instruction_bytes": "251a0494",
+    "branch_target": "0x19f31bc70",
+    "target": {
+      "address": "0x19f31bc70",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9IndexDataEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2153e4",
+    "instruction_bytes": "ec190c94",
+    "branch_target": "0x19f51bb94",
+    "target": {
+      "address": "0x19f51bb94",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl15VertexDataTypedINS1_5Clear9ClearDataEEEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f215454",
+    "instruction_bytes": "0c160c94",
+    "branch_target": "0x19f51ac84",
+    "target": {
+      "address": "0x19f51ac84",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl17ConstantDataTypedINS1_5Clear14ClearConstantsEEEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2154ec",
+    "instruction_bytes": "e1190494",
+    "branch_target": "0x19f31bc70",
+    "target": {
+      "address": "0x19f31bc70",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9IndexDataEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2154f4",
+    "instruction_bytes": "a8190c94",
+    "branch_target": "0x19f51bb94",
+    "target": {
+      "address": "0x19f51bb94",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl15VertexDataTypedINS1_5Clear9ClearDataEEEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21551c",
+    "instruction_bytes": "e9180c94",
+    "branch_target": "0x19f51b8c0",
+    "target": {
+      "address": "0x19f51b8c0",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl11ClearShaderEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f21554c",
+    "instruction_bytes": "1e1a0c94",
+    "branch_target": "0x19f51bdc4",
+    "target": {
+      "address": "0x19f51bdc4",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl5Clear9ClearMeshEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f215570",
+    "instruction_bytes": "0f631594",
+    "branch_target": "0x19f76e1ac",
+    "target": {
+      "address": "0x19f76e1ac",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZN3ggl17Texture2DLoadItemD1Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f215588",
+    "instruction_bytes": "e4911394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "maps_process_buffer",
+    "instruction": "0x19f2156e0",
+    "instruction_bytes": "8e911394",
+    "branch_target": "0x19f6f9d18",
+    "target": {
+      "address": "0x19f6f9d18",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "__ZNSt3__110shared_ptrIN3ggl9QueryItemEED2B6v15006Ev",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": false
+  },
+  {
+    "function": "metal_blit_encoder",
+    "instruction": "0x19fa82244",
+    "instruction_bytes": "c7e80b94",
+    "branch_target": "0x19fd7c560",
+    "target": {
+      "address": "0x19fd7c560",
+      "image": "/System/Library/PrivateFrameworks/VectorKit.framework/VectorKit",
+      "label": "_objc_msgSend$blitCommandEncoder",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": null,
+    "body_included": true
+  },
+  {
+    "function": "metal_blit_encoder",
+    "instruction": "0x19fa82274",
+    "instruction_bytes": "b572a914",
+    "branch_target": "0x1a24ded48",
+    "target": {
+      "address": "0x1800b6b44",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_autoreleaseReturnValue",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24ded48",
+      "instructions": [
+        "0x1a24ded48: adrp x16, #0x1800b6000",
+        "0x1a24ded4c: add x16, x16, #0xb44",
+        "0x1a24ded50: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b6b44",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_autoreleaseReturnValue",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b6b44",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_autoreleaseReturnValue",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  },
+  {
+    "function": "task_queue_dispatch_queue",
+    "instruction": "0x19f33d210",
+    "instruction_bytes": "3a87c614",
+    "branch_target": "0x1a24deef8",
+    "target": {
+      "address": "0x1800b4794",
+      "image": "/usr/lib/libobjc.A.dylib",
+      "label": "_objc_retainAutoreleaseReturnValue",
+      "offset": "0x0",
+      "exact": true
+    },
+    "stub_walk": {
+      "source": "0x1a24deef8",
+      "instructions": [
+        "0x1a24deef8: adrp x16, #0x1800b4000",
+        "0x1a24deefc: add x16, x16, #0x794",
+        "0x1a24def00: br x16"
+      ],
+      "loads": [],
+      "branches": [
+        {
+          "address": "0x1800b4794",
+          "image": "/usr/lib/libobjc.A.dylib",
+          "label": "_objc_retainAutoreleaseReturnValue",
+          "offset": "0x0",
+          "exact": true
+        }
+      ],
+      "terminal": {
+        "address": "0x1800b4794",
+        "image": "/usr/lib/libobjc.A.dylib",
+        "label": "_objc_retainAutoreleaseReturnValue",
+        "offset": "0x0",
+        "exact": true
+      }
+    },
+    "body_included": true
+  }
+]
