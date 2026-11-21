@@ -1,3 +1,4 @@
+diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_darwin_trace.cc
 --- a/src/freedreno/vulkan/tu_darwin_trace.cc
 +++ b/src/freedreno/vulkan/tu_darwin_trace.cc
 @@ -1,7 +1,7 @@
@@ -83,6 +84,7 @@
     mach_timebase_info(&state->timebase);
     if (pthread_mutex_init(&state->mutex, NULL)) {
        free(state);
+diff --git a/src/freedreno/vulkan/tu_darwin_trace.h b/src/freedreno/vulkan/tu_darwin_trace.h
 --- a/src/freedreno/vulkan/tu_darwin_trace.h
 +++ b/src/freedreno/vulkan/tu_darwin_trace.h
 @@ -15,7 +15,7 @@
@@ -94,6 +96,7 @@
  void tu_darwin_trace_init(struct tu_device *device);
  void tu_darwin_trace_finish(struct tu_device *device);
  void tu_darwin_trace_begin(struct tu_cmd_buffer *cmd);
+diff --git a/src/freedreno/vulkan/nabu_trace_file_protocol.h b/src/freedreno/vulkan/nabu_trace_file_protocol.h
 --- /dev/null
 +++ b/src/freedreno/vulkan/nabu_trace_file_protocol.h
 @@ -0,0 +1,82 @@
@@ -179,6 +182,7 @@
 +struct NativeAdrenoTraceBatch { uint32_t version, generation, producer_id, count; NativeAdrenoTraceEvent events[NativeAdrenoTraceBatchEvents]; };
 +struct NabuTraceFileHeader { uint64_t magic, version, record_bytes, pid, generation, producer, started_ns, deadline_ns; };
 +static_assert(sizeof(NabuTraceFileHeader)==64, "r21 file header schema");
+diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/vulkan/nabu_trace_file_transport.inc
 --- /dev/null
 +++ b/src/freedreno/vulkan/nabu_trace_file_transport.inc
 @@ -0,0 +1,174 @@
@@ -356,6 +360,7 @@
 +   }
 +   return -1;
 +}
+diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl_darwin.cc
 --- a/src/freedreno/vulkan/tu_knl_darwin.cc
 +++ b/src/freedreno/vulkan/tu_knl_darwin.cc
 @@ -288,13 +288,6 @@
