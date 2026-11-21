@@ -64,6 +64,24 @@ def main():
     report['exception_tests'] = tests
     if any(test['result'] != 'passed' for test in tests):
         report.update(result='failed', failed_phase='exception_dispatch_test-runtime')
+        debug = []
+        for case in ('objc', 'cpp'):
+            for mode in ('baseline', 'instrumented'):
+                command = ['xcrun', 'lldb', '--batch', '--no-lldbinit',
+                    '-o', 'run --child 2 ' + mode + ' ' + case,
+                    '-o', 'thread backtrace all', '-o', 'register read',
+                    '-o', 'disassemble --pc --count 12', '-o', 'image list -o -f',
+                    str(OUT / 'exception_dispatch_test')]
+                report['commands'].append(command)
+                label = 'lldb-' + case + '-' + mode
+                try:
+                    result = subprocess.run(command, capture_output=True, timeout=45)
+                    (OUT / (label + '.log')).write_bytes(result.stdout + result.stderr)
+                    debug.append(dict(case=case, mode=mode, returncode=result.returncode, log=label + '.log'))
+                except subprocess.TimeoutExpired as error:
+                    (OUT / (label + '.log')).write_bytes((error.stdout or b'') + (error.stderr or b''))
+                    debug.append(dict(case=case, mode=mode, timeout=True, log=label + '.log'))
+        report['dispatch_debugger'] = debug
         save()
         raise RuntimeError('Actual dispatch child checks failed; both case logs retained.')
     target = 'arm64-apple-ios16.5'
