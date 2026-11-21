@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "keyboard_compat.h"
-typedef struct {double width,height;} Size;
+typedef struct {double width,height;} NabuFixtureSize;
 static const char *mode,*fixturePath,*adapterPath;
 static void *fixture,*adapter;
 static int (*installNow)(void);
@@ -43,15 +43,15 @@ static void verify(void *unused) {
         check(installNow()==1);check(method_getImplementation(m)==installed);
         id keyboard=class_createInstance(objc_lookUpClass("UIKBDerivedKeyboard"),0);
         SEL selector=sel_registerName("setKeyboardSize:");
-        void (*set)(id,SEL,Size)=(void (*)(id,SEL,Size))objc_msgSend;
-        unsigned before=calls();set(keyboard,selector,(Size){800,0});check(height()==-1&&calls()==before+1);
-        set(keyboard,selector,(Size){800,258});check(height()==258&&calls()==before+2);
-        set(keyboard,selector,(Size){800,-1});check(height()==-1&&calls()==before+3);
+        void (*set)(id,SEL,NabuFixtureSize)=(void (*)(id,SEL,NabuFixtureSize))objc_msgSend;
+        unsigned before=calls();set(keyboard,selector,(NabuFixtureSize){800,0});check(height()==-1&&calls()==before+1);
+        set(keyboard,selector,(NabuFixtureSize){800,258});check(height()==258&&calls()==before+2);
+        set(keyboard,selector,(NabuFixtureSize){800,-1});check(height()==-1&&calls()==before+3);
         if(!existing) {
-            geometry(2,2560,1600);set(keyboard,selector,(Size){1280,0});check(height()==-1);
-            geometry(2,1536,2048);set(keyboard,selector,(Size){768,0});check(height()==0);
-            geometry(3,1600,2560);set(keyboard,selector,(Size){800,0});check(height()==0);
-            geometry(2,1600,2560);set(keyboard,selector,(Size){0,0});check(height()==0);
+            geometry(2,2560,1600);set(keyboard,selector,(NabuFixtureSize){1280,0});check(height()==-1);
+            geometry(2,1536,2048);set(keyboard,selector,(NabuFixtureSize){768,0});check(height()==0);
+            geometry(3,1600,2560);set(keyboard,selector,(NabuFixtureSize){800,0});check(height()==0);
+            geometry(2,1600,2560);set(keyboard,selector,(NabuFixtureSize){0,0});check(height()==0);
             status(&s);check(s.corrections==2);
         } else {status(&s);check(s.corrections==0);}
         object_dispose(keyboard);
