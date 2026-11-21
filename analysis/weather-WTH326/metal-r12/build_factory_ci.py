@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import platform
 import plistlib
 import re
 import shutil
@@ -43,6 +44,9 @@ def main():
     xcode = run(['xcodebuild', '-version'], 'xcode').stdout.strip()
     assert xcode.startswith('Xcode 16.4\n')
     report['xcode'] = xcode
+    report['host'] = dict(machine=platform.machine(), version=platform.platform(),
+        sw_vers=run(['sw_vers'], 'host-version').stdout.strip(),
+        runner_arch=os.environ.get('RUNNER_ARCH'), runner_image=os.environ.get('ImageVersion'))
     sdk = run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], 'sdk').stdout.strip()
     report['sdk'] = sdk
     tests = []
@@ -74,9 +78,12 @@ def main():
                 command = ['xcrun', 'lldb', '--batch', '--no-lldbinit',
                     '-o', 'run --child 2 ' + mode + ' ' + case,
                     '-k', 'thread backtrace all', '-k', 'register read',
-                    '-k', 'disassemble --pc --count 12', '-k', 'image lookup -a $pc',
-                    '-k', 'image lookup -a $rax', '-k', 'image list -o -f',
-                    str(OUT / 'exception_dispatch_test')]
+                    '-k', 'image list -o -f', '-k', 'disassemble --name _Unwind_RaiseException',
+                    '-k', 'disassemble --pc --count 12']
+                if platform.machine() == 'x86_64':
+                    command += ['-k', 'memory read --format x --size 8 --count 12 $r12',
+                        '-k', 'memory read --format x --size 8 --count 12 $r14']
+                command += [str(OUT / 'exception_dispatch_test')]
                 report['commands'].append(command)
                 label = 'lldb-' + case + '-' + mode
                 try:
