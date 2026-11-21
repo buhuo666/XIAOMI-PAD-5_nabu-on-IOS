@@ -19,7 +19,7 @@ try:
         '-I'+str(ROOT/'userland/nabu/src')]
     host=OUT/'libnabu.keyboard.dylib'
     run([*common,'-std=gnu11','-dynamiclib',ROOT/'userland/nabu/src/keyboard_compat.c','-lobjc','-o',host],'host-adapter')
-    run([*common,'-dynamiclib',HERE/'mock_uikit.m','-Wl,-install_name,/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore','-lobjc','-o',OUT/'mock_uikit.dylib'],'host-fixture')
+    run([*common,'-dynamiclib',HERE/'mock_uikit.m','-Wl,-not_for_dyld_shared_cache','-Wl,-install_name,/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore','-lobjc','-o',OUT/'mock_uikit.dylib'],'host-fixture')
     for name in ['libnabu.experience.dylib','ex.dylib']:
         run([*common,'-dynamiclib',HERE/'mock_experience.c','-lobjc','-o',OUT/name],'host-'+name)
     run([*common,HERE/'test_keyboard_runtime.c','-framework','CoreFoundation','-lobjc','-o',OUT/'runtime-test'],'host-driver')
