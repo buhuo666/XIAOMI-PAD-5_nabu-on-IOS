@@ -67,6 +67,7 @@ static uint64_t nowUs() {return clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1000;}
 #include "NativeMetalEncodeProfile.inc"
 #include "NativeMetalApiProfile.inc"
 #include "NativeMetalAttachmentTrace.inc"
+#include "NativeMetalLifetimeTrace.inc"
 struct Timed {std::atomic<uint64_t> count{0},total{0},slowest{0};
  void add(uint64_t began){const uint64_t took=nowUs()-began;count++;total+=took;uint64_t seen=slowest.load();while(took>seen && !slowest.compare_exchange_weak(seen,took)){}}};
 static Timed gTimePipeline,gTimeLibrary,gTimeFunction,gTimeEncodeToCommit;
@@ -267,7 +268,11 @@ static NmbTextureDescriptorExtra textureDescriptorExtra(MTLTextureDescriptor *d)
   (uint64_t)d.allowGPUOptimizedContents,(uint64_t)d.compressionType};
 }
 @implementation NBTexture
-- (void)dealloc {nmb_texture_release(_handle);if(_surface)CFRelease(_surface);}
+- (void)dealloc {
+ {NabuMetalLifetimeSpan lifetime(640,641,(uintptr_t)(__bridge void *)self,(uintptr_t)_handle);
+  nmb_texture_release(_handle);}
+ if(_surface)CFRelease(_surface);
+}
 - (MTLTextureType)textureType {return (MTLTextureType)_descriptor.type;}
 - (MTLPixelFormat)pixelFormat {return (MTLPixelFormat)_descriptor.format;}
 - (NSUInteger)width {return _descriptor.width;}
@@ -1311,7 +1316,8 @@ static void scheduled(void *context);
  }
  void (^run)(void)=^{
   NBCommandBuffer *previous=nbFrontendHandler;nbFrontendHandler=self;
-  @try {for(MTLCommandBufferHandler block in handlers)block((id<MTLCommandBuffer>)self);}
+  NabuMetalLifetimeSpan lifetime(646,647,(uintptr_t)(__bridge void *)self,self.commitIndex);
+  @try {@autoreleasepool {for(MTLCommandBufferHandler block in handlers)block((id<MTLCommandBuffer>)self);}}
   @finally {nbFrontendHandler=previous;dispatch_group_leave(self->_schedulingHandlers);}
  };
  // Run on the runtime's scheduled-handler thread, preserving its ordering and own-wait
@@ -1321,6 +1327,7 @@ static void scheduled(void *context);
 // Completion releases retained resources and then delivers completed handlers.
 // The frontend flushes surfaces only when the driver requires CPU cache operations here.
 - (void)finish {
+ NabuMetalLifetimeSpan lifetime(642,643,(uintptr_t)(__bridge void *)self,self.commitIndex);
  flushSurfaces(_surfaces);
  // Actual GPU completion (or a local refusal that never submitted) is the
  // release point. A retained completed command must not pin every old frame.
@@ -1347,6 +1354,7 @@ static void scheduled(void *context);
  }
  void (^run)(void)=^{
   NBCommandBuffer *previous=nbFrontendHandler;nbFrontendHandler=self;
+  NabuMetalLifetimeSpan lifetime(644,645,(uintptr_t)(__bridge void *)self,self.commitIndex);
   @try {@autoreleasepool {for(MTLCommandBufferHandler block in completedHandlers)block((id<MTLCommandBuffer>)self);}}
   @finally {nbFrontendHandler=previous;dispatch_group_leave(self->_handlers);}
  };

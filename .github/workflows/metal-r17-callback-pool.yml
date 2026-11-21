@@ -18,15 +18,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Full frontend callback pool baseline and candidate
-        run: >-
-          python3 analysis/weather-WTH326/metal-r17/workers/pipelines/run_callback_pool.py
-          --baseline analysis/weather-WTH326/metal-r16/ci/frontend
-          --fixed analysis/weather-WTH326/metal-r17/workers/pipelines/source
-          --out artifacts/nabu-metal-callback-pool-WTH326-r17
+      - name: Final complete frontend protocol ABI queues pools and lifetime transport
+        run: python3 analysis/weather-WTH326/metal-r17/workers/pipelines/run_global.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: WTH326-r17-callback-pool
-          path: artifacts/nabu-metal-callback-pool-WTH326-r17/
+          path: |
+            artifacts/nabu-metal-callback-pool-WTH326-r17/
+            analysis/weather-WTH326/metal-r17/workers/pipelines/lifetime-test/
           retention-days: 14
