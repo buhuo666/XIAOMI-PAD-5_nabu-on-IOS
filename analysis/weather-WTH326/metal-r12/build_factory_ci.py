@@ -52,6 +52,10 @@ def main():
              '-Wall', '-Wextra', '-Werror', '-I', INPUT, INPUT / (name + '.mm'),
              '-framework', 'Foundation', '-o', binary], name + '-compile')
         if name == 'exception_dispatch_test':
+            run(['xcrun', '--sdk', 'macosx', 'clang++', '-###', '-std=c++17', '-O2', '-g', '-fobjc-arc',
+                 '-Wall', '-Wextra', '-Werror', '-I', INPUT, INPUT / (name + '.mm'),
+                 '-framework', 'Foundation', '-o', binary], name + '-driver')
+        if name == 'exception_dispatch_test':
             for case in ('objc', 'cpp'):
                 result = run([binary], name + '-' + case + '-runtime',
                     env=dict(os.environ, NABU_EXCEPTION_DEBUG_CASE=case), allow_failure=True)
@@ -69,8 +73,9 @@ def main():
             for mode in ('baseline', 'instrumented'):
                 command = ['xcrun', 'lldb', '--batch', '--no-lldbinit',
                     '-o', 'run --child 2 ' + mode + ' ' + case,
-                    '-o', 'thread backtrace all', '-o', 'register read',
-                    '-o', 'disassemble --pc --count 12', '-o', 'image list -o -f',
+                    '-k', 'thread backtrace all', '-k', 'register read',
+                    '-k', 'disassemble --pc --count 12', '-k', 'image lookup -a $pc',
+                    '-k', 'image lookup -a $rax', '-k', 'image list -o -f',
                     str(OUT / 'exception_dispatch_test')]
                 report['commands'].append(command)
                 label = 'lldb-' + case + '-' + mode
