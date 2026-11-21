@@ -7,6 +7,7 @@
 #include <dispatch/dispatch.h>
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
+#include <mach-o/loader.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include <pthread.h>
@@ -21,6 +22,7 @@ typedef struct { NabuKeyboardPoint origin; NabuKeyboardSize size; } NabuKeyboard
 typedef void (*SizeImplementation)(id,SEL,NabuKeyboardSize);
 static SizeImplementation previousSize;
 static atomic_bool installQueued;
+static atomic_bool keyboardImageLoaded;
 static atomic_int installState; /* 0 waiting, 1 own method, 2 tested experience method */
 static atomic_uint corrections;
 
@@ -57,6 +59,7 @@ static bool experienceMethod(IMP implementation) {
 
 static void queuedInstall(void *unused);
 static void scheduleInstall(void) {
+    if (!atomic_load_explicit(&keyboardImageLoaded,memory_order_acquire)) return;
     if (atomic_load_explicit(&installState,memory_order_acquire)!=0) return;
     if (!atomic_exchange_explicit(&installQueued,true,memory_order_acq_rel))
         dispatch_async_f(dispatch_get_main_queue(),NULL,queuedInstall);
@@ -98,8 +101,27 @@ static void queuedInstall(void *unused) {
 }
 
 static void imageAdded(const struct mach_header *header,intptr_t slide) {
-    (void)header; (void)slide;
-    scheduleInstall();
+    (void)slide;
+    /* A universal insertion must not initialize dispatch or enqueue work in
+     * services that never load UIKit. Read only this loader-validated image's
+     * install name; defer ObjC and main-queue work until UIKitCore exists.
+     * This also handles UIKitCore loaded later by an arbitrary application.
+     */
+    if (header->magic!=MH_MAGIC_64) return;
+    const struct mach_header_64 *image=(const struct mach_header_64 *)header;
+    const struct load_command *command=(const struct load_command *)(image+1);
+    for (uint32_t index=0;index<image->ncmds;index++) {
+        if (command->cmd==LC_ID_DYLIB) {
+            const struct dylib_command *dylib=(const struct dylib_command *)command;
+            const char *name=(const char *)dylib+dylib->dylib.name.offset;
+            if (!strcmp(name,"/System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore")) {
+                atomic_store_explicit(&keyboardImageLoaded,true,memory_order_release);
+                scheduleInstall();
+            }
+            return;
+        }
+        command=(const struct load_command *)((const char *)command+command->cmdsize);
+    }
 }
 
 void nabu_keyboard_compat_status(struct nabu_keyboard_compat_status *status) {
