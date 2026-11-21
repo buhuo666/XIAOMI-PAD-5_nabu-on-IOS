@@ -1,0 +1,56 @@
+name: WTH326 Maps buffer dispatch table analysis
+on:
+  push:
+    branches: ['codex/metal-r11-render-20261121']
+    paths:
+      - '.github/workflows/maps-render-analysis-v2.yml'
+      - 'analysis/weather-WTH326/metal-r11/resolve-audit/rea-ci-input-v2/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify the selected original bytes and static pointer decoding
+        run: |
+          python3 analysis/weather-WTH326/metal-r11/resolve-audit/run_maps_rea_ci.py --input analysis/weather-WTH326/metal-r11/resolve-audit/rea-ci-input-v2 --verify-only --output evidence
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Acquire the pinned analysis engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > evidence/ghidra-release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,urllib.request
+          release=json.loads(pathlib.Path('evidence/ghidra-release.json').read_text())
+          asset=next(a for a in release['assets'] if a['name']=='ghidra_12.2_PUBLIC_20261016.zip')
+          archive=pathlib.Path('build/ghidra.zip')
+          urllib.request.urlretrieve(asset['browser_download_url'],archive)
+          assert 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()==asset['digest']
+          subprocess.run(['unzip','-q',str(archive),'-d','build'],check=True)
+          PY
+      - name: Reconstruct the selected Maps rendering functions through REA
+        env:
+          GHIDRA_INSTALL_DIR: ${{ github.workspace }}/build/ghidra_12.2_PUBLIC
+        run: |
+          export PATH="$JAVA_HOME/bin:$PATH"
+          node --version > evidence/node-version.txt
+          npx -y rea-agents@6.9.0 --version > evidence/rea-version.txt
+          python3 analysis/weather-WTH326/metal-r11/resolve-audit/run_maps_rea_ci.py --input analysis/weather-WTH326/metal-r11/resolve-audit/rea-ci-input-v2 --output evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: WTH326-r11-maps-buffer-v2-static-evidence
+          path: |
+            evidence/
+            analysis/weather-WTH326/metal-r11/resolve-audit/rea-ci-input-v2/
+          retention-days: 14
