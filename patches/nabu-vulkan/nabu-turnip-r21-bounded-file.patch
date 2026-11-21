@@ -1,0 +1,371 @@
+--- a/src/freedreno/vulkan/tu_darwin_trace.cc
++++ b/src/freedreno/vulkan/tu_darwin_trace.cc
+@@ -1,7 +1,7 @@
+ /* SPDX-License-Identifier: MIT */
+ #include "tu_darwin_trace.h"
+ 
+-#if __has_include("NativeAdrenoTrace.h")
++#if defined(TU_HAS_DARWIN)
+ #include <mach/mach_time.h>
+ #include <pthread.h>
+ #include <stdio.h>
+@@ -10,7 +10,7 @@
+ #include <time.h>
+ #include <unistd.h>
+ 
+-#include "NativeAdrenoTrace.h"
++#include "nabu_trace_file_protocol.h"
+ #include "tu_cmd_buffer.h"
+ #include "tu_device.h"
+ #include "tu_queue.h"
+@@ -24,6 +24,7 @@
+ };
+ 
+ static uint64_t trace_next_command;
++static uint64_t trace_next_file;
+ 
+ /* tu_darwin_trace_state owns one device's bounded CPU event queue. The u_trace
+  * worker supplies completed GPU timestamps; Metal supplies command metadata.
+@@ -31,6 +32,16 @@
+  * producer after admitted submissions retire and their events are sent. */
+ struct tu_darwin_trace_state {
+    struct tu_device *device;
++   uint64_t file_id;
++   uint64_t file_bytes;
++   uint64_t file_rejected;
++   FILE *file;
++   uint32_t file_generation;
++   uint32_t file_failure_generation;
++   uint32_t file_io_error;
++   NativeAdrenoTraceStatus file_control;
++   uint64_t file_next_poll_ns;
++
+    pthread_t worker;
+    pthread_mutex_t mutex;
+    pthread_cond_t changed;
+@@ -71,6 +82,8 @@
+    return (ticks / state->timebase.denom) * state->timebase.numer +
+           (ticks % state->timebase.denom) * state->timebase.numer / state->timebase.denom;
+ }
++
++#include "nabu_trace_file_transport.inc"
+ 
+ static void
+ trace_argument(NativeAdrenoTraceEvent *event, uint32_t key, uint64_t value)
+@@ -317,10 +330,6 @@
+    }
+ 
+    pthread_mutex_lock(&state->mutex);
+-   while (state->count == TRACE_LOCAL_EVENTS &&
+-          generation == state->producer.generation && state->producer.producer_id) {
+-      pthread_cond_wait(&state->changed, &state->mutex);
+-   }
+    trace_append_locked(state, generation, event);
+    pthread_mutex_unlock(&state->mutex);
+ }
+@@ -409,10 +418,10 @@
+ {
+    tu_darwin_trace_state *state = (tu_darwin_trace_state *)opaque;
+    for (;;) {
+-      pthread_mutex_lock(&state->device->submit_mutex);
+       NativeAdrenoTraceStatus status = {};
+       const bool query_ok = !tu_darwin_trace_call(state->device, NativeAdrenoMethodQueryTrace,
+                                                   NULL, 0, &status, sizeof(status));
++      pthread_mutex_lock(&state->device->submit_mutex);
+       const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
+                            !p_atomic_read(&state->stop);
+       if (running && !state->producer.producer_id) {
+@@ -485,6 +494,7 @@
+       return;
+    }
+    state->device = device;
++   state->file_id = p_atomic_inc_return(&trace_next_file);
+    mach_timebase_info(&state->timebase);
+    if (pthread_mutex_init(&state->mutex, NULL)) {
+       free(state);
+--- a/src/freedreno/vulkan/tu_darwin_trace.h
++++ b/src/freedreno/vulkan/tu_darwin_trace.h
+@@ -15,7 +15,7 @@
+    TU_DARWIN_TRACE_SKIP_GMEM = 1,
+ };
+ 
+-#if defined(TU_HAS_DARWIN) && __has_include("NativeAdrenoTrace.h")
++#if defined(TU_HAS_DARWIN)
+ void tu_darwin_trace_init(struct tu_device *device);
+ void tu_darwin_trace_finish(struct tu_device *device);
+ void tu_darwin_trace_begin(struct tu_cmd_buffer *cmd);
+--- /dev/null
++++ b/src/freedreno/vulkan/nabu_trace_file_protocol.h
+@@ -0,0 +1,79 @@
++// Local userspace file schema, not a kernel ABI. SPDX-License-Identifier: MIT
++#pragma once
++#include <stdint.h>
++enum {
++   NativeAdrenoTraceTurnipRenderPass = 0,
++   NativeAdrenoTraceTurnipBinning = 1,
++   NativeAdrenoTraceTurnipDrawSysmem = 2,
++   NativeAdrenoTraceTurnipDrawGmem = 3,
++   NativeAdrenoTraceTurnipCompute = 4,
++   NativeAdrenoTraceTurnipComputeIndirect = 5,
++   NativeAdrenoTraceTurnipGmemLoad = 6,
++   NativeAdrenoTraceTurnipGmemStore = 7,
++   NativeAdrenoTraceTurnipCacheFlush = 8,
++   NativeAdrenoTraceTurnipTileStore = 9,
++   NativeAdrenoTraceTurnipCopy = 10,
++   NativeAdrenoTraceTurnipExecute = 11,
++   NativeAdrenoTraceTurnipSubmit = 12,
++   NativeAdrenoTraceTurnipInstrumentation = 13,
++   NativeAdrenoTraceTurnipRecordCounts = 14,
++   NativeAdrenoTraceArgAppendDropped = 1,
++   NativeAdrenoTraceArgBandwidth = 2,
++   NativeAdrenoTraceArgBins = 3,
++   NativeAdrenoTraceArgBudgetBytes = 4,
++   NativeAdrenoTraceArgBudgetDropped = 5,
++   NativeAdrenoTraceArgBytes = 6,
++   NativeAdrenoTraceArgCopyDwords = 7,
++   NativeAdrenoTraceArgDestinationFormat = 8,
++   NativeAdrenoTraceArgDrawCount = 9,
++   NativeAdrenoTraceArgExtraWaitForIdleDwords = 10,
++   NativeAdrenoTraceArgFastPath = 11,
++   NativeAdrenoTraceArgFlushBits = 12,
++   NativeAdrenoTraceArgForceLoad = 13,
++   NativeAdrenoTraceArgFormat = 14,
++   NativeAdrenoTraceArgGroupCount = 15,
++   NativeAdrenoTraceArgHeight = 16,
++   NativeAdrenoTraceArgIndirect = 17,
++   NativeAdrenoTraceArgLocalSize = 18,
++   NativeAdrenoTraceArgLrz = 19,
++   NativeAdrenoTraceArgQueueDropped = 20,
++   NativeAdrenoTraceArgReservedBytesHighWater = 21,
++   NativeAdrenoTraceArgSamples = 22,
++   NativeAdrenoTraceArgSecondaryCommand = 23,
++   NativeAdrenoTraceArgSourceFormat = 24,
++   NativeAdrenoTraceArgTiled = 25,
++   NativeAdrenoTraceArgTimestampDwords = 26,
++   NativeAdrenoTraceArgUnaligned = 27,
++   NativeAdrenoTraceArgUnexecutedGmemPoints = 28,
++   NativeAdrenoTraceArgUnsubmittedCommands = 29,
++   NativeAdrenoTraceArgWaitForMeDwords = 30,
++   NativeAdrenoTraceArgWidth = 31,
++   NativeAdrenoTraceVersion = 1,
++   NativeAdrenoTraceBatchEvents = 64,
++   NativeAdrenoTraceSourceTurnip = 1,
++   NativeAdrenoTraceSourceMetal = 2,
++   NativeAdrenoTracePhaseInstant = 3,
++   NativeAdrenoTraceClockMonotonicNanoseconds = 1,
++   NativeAdrenoTraceClockGpuNanoseconds = 2,
++   NativeAdrenoTraceEventInvalid = 1,
++   NativeAdrenoTraceArgumentUnsigned = 1,
++   NativeAdrenoTraceRunning = 1,
++   NativeAdrenoMethodQueryTrace = 1,
++   NativeAdrenoMethodRegisterTraceProducer = 2,
++   NativeAdrenoMethodAppendTrace = 3,
++   NativeAdrenoMethodEndTraceProducer = 4,
++};
++struct NativeAdrenoTraceArgument { uint32_t key, type; uint64_t value; };
++struct NativeAdrenoTraceEvent {
++   uint32_t source, point, phase, clock_domain;
++   uint64_t timestamp_ns, submission_id, completion_id, command_buffer_id;
++   uint32_t process_id, queue_id, flags, argument_count;
++   char name[64];
++   NativeAdrenoTraceArgument args[4];
++};
++static_assert(sizeof(NativeAdrenoTraceEvent)==192, "r21 event file schema");
++struct NativeAdrenoTraceStatus { uint32_t state, generation; uint64_t started_ns, stopped_ns, deadline_ns; };
++struct NativeAdrenoTraceProducer { uint32_t version, generation, source, producer_id, dropped; };
++struct NativeAdrenoTraceBatch { uint32_t version, generation, producer_id, count; NativeAdrenoTraceEvent events[NativeAdrenoTraceBatchEvents]; };
++struct NabuTraceFileHeader { uint64_t magic, version, record_bytes, pid, generation, producer, started_ns, deadline_ns; };
++static_assert(sizeof(NabuTraceFileHeader)==64, "r21 file header schema");
+--- /dev/null
++++ b/src/freedreno/vulkan/nabu_trace_file_transport.inc
+@@ -0,0 +1,174 @@
++// SPDX-License-Identifier: MIT
++// Capture control is the deployed controller's read-only registry result.
++// No new IOConnect selector is sent to the kernel.
++#include <CoreFoundation/CoreFoundation.h>
++#include <IOKit/IOKitLib.h>
++#include <errno.h>
++#include <sys/stat.h>
++
++static pthread_mutex_t nabu_file_budget_mutex = PTHREAD_MUTEX_INITIALIZER;
++static uint64_t nabu_file_budget_used;
++static bool nabu_file_reserve(uint64_t bytes)
++{
++   pthread_mutex_lock(&nabu_file_budget_mutex);
++   const bool allowed = bytes <= (64ull << 20) - nabu_file_budget_used;
++   if (allowed) nabu_file_budget_used += bytes;
++   pthread_mutex_unlock(&nabu_file_budget_mutex);
++   return allowed;
++}
++
++static uint64_t nabu_number(CFDictionaryRef dict, const char *name)
++{
++   CFStringRef key = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
++   CFTypeRef value = CFDictionaryGetValue(dict, key);
++   int64_t result = 0;
++   if (value && CFGetTypeID(value) == CFNumberGetTypeID())
++      CFNumberGetValue((CFNumberRef)value, kCFNumberSInt64Type, &result);
++   CFRelease(key);
++   return (uint64_t)result;
++}
++
++static NativeAdrenoTraceStatus nabu_file_query(tu_darwin_trace_state *state)
++{
++   const uint64_t now = trace_now(state);
++   // Only the transport thread polls IOKit; submission consumes the cached deadline.
++   if (pthread_equal(pthread_self(), state->worker) && now >= state->file_next_poll_ns) {
++      state->file_next_poll_ns = now + 10000000;
++      io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
++         IOServiceMatching("NativeAdrenoGpuPublished"));
++      if (service) {
++         CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("LastTraceResult"), NULL, 0);
++         IOObjectRelease(service);
++         if (value && CFGetTypeID(value) == CFDictionaryGetTypeID()) {
++            CFDictionaryRef result = (CFDictionaryRef)value;
++            NativeAdrenoTraceStatus status = {};
++            status.generation = nabu_number(result, "window");
++            status.started_ns = nabu_number(result, "start_us") * 1000;
++            status.deadline_ns = nabu_number(result, "deadline_us") * 1000;
++            status.stopped_ns = nabu_number(result, "end_us") * 1000;
++            const CFTypeRef active = CFDictionaryGetValue(result, CFSTR("active"));
++            if (active == kCFBooleanTrue && status.generation && now < status.deadline_ns)
++               status.state = NativeAdrenoTraceRunning;
++            pthread_mutex_lock(&state->mutex);
++            state->file_control = status;
++            pthread_mutex_unlock(&state->mutex);
++         }
++         if (value) CFRelease(value);
++      }
++   }
++   pthread_mutex_lock(&state->mutex);
++   NativeAdrenoTraceStatus status = state->file_control;
++   pthread_mutex_unlock(&state->mutex);
++   if (status.generation && now >= status.deadline_ns) {
++      status.state = 0;
++      status.stopped_ns = status.deadline_ns;
++   }
++   if (status.generation == p_atomic_read(&state->file_failure_generation)) status.state = 0;
++   return status;
++}
++
++static void nabu_file_marker(uint64_t id, uint64_t stage, uint64_t a, uint64_t b)
++{
++   const int saved = errno;
++   syscall(179, 0x31ca81fcull, id, stage, a, b);
++   errno = saved;
++}
++
++int tu_darwin_trace_call(struct tu_device *device, uint32_t method,
++                        const void *input, size_t input_size,
++                        void *output, size_t output_size)
++{
++   (void)input_size;
++   (void)output_size;
++   tu_darwin_trace_state *state = trace_state(device);
++   if (method == NativeAdrenoMethodQueryTrace) {
++      *(NativeAdrenoTraceStatus *)output = nabu_file_query(state);
++      return 0;
++   }
++   if (method == NativeAdrenoMethodRegisterTraceProducer) {
++      NativeAdrenoTraceProducer producer = *(const NativeAdrenoTraceProducer *)input;
++      const NativeAdrenoTraceStatus control = nabu_file_query(state);
++      if (producer.generation != control.generation || control.state != NativeAdrenoTraceRunning) return -1;
++      // The tail reservation guarantees a terminal loss/error record even at the file budget.
++      if (!nabu_file_reserve(sizeof(NabuTraceFileHeader) + 4096)) {
++         p_atomic_set(&state->file_failure_generation, producer.generation);
++         nabu_file_marker(state->file_id, 780, producer.generation, ENOSPC);
++         return -1;
++      }
++      char directory[1024];
++      const char *home = getenv("CFFIXED_USER_HOME");
++      if (!home) home = getenv("HOME");
++      const bool container = home && strstr(home, "/Containers/");
++      if (container) snprintf(directory, sizeof(directory), "%s/Library/Caches/NabuGpuTrace", home);
++      else snprintf(directory, sizeof(directory), "/var/mobile/Media/NabuGpuOpt");
++      mkdir(directory, 0700);
++      char name[1200];
++      snprintf(name, sizeof(name), "%s/r21-gpu-%u-%llu-%u.bin", directory,
++               (unsigned)getpid(), (unsigned long long)state->file_id, producer.generation);
++      state->file = fopen(name, "wbx");
++      if (!state->file) {
++         p_atomic_set(&state->file_failure_generation, producer.generation);
++         nabu_file_marker(state->file_id, 780, producer.generation, (uint64_t(container) << 32) | uint32_t(errno));
++         return -1;
++      }
++      state->file_generation = producer.generation;
++      state->file_bytes = 0;
++      state->file_rejected = 0;
++      state->file_io_error = 0;
++      producer.producer_id = (uint32_t)state->file_id;
++      const NabuTraceFileHeader header = {0x313254525542414eull, 1, sizeof(NativeAdrenoTraceEvent),
++         (uint64_t)getpid(), producer.generation, producer.producer_id, control.started_ns, control.deadline_ns};
++      if (fwrite(&header, sizeof(header), 1, state->file) != 1 || fflush(state->file)) {
++         state->file_io_error = errno ? errno : EIO;
++         fclose(state->file); state->file = NULL;
++         p_atomic_set(&state->file_failure_generation, producer.generation);
++         nabu_file_marker(state->file_id, 780, producer.generation, state->file_io_error);
++         return -1;
++      }
++      *(NativeAdrenoTraceProducer *)output = producer;
++      nabu_file_marker(state->file_id, 780, producer.generation, uint64_t(container) << 32);
++      return 0;
++   }
++   if (method == NativeAdrenoMethodAppendTrace) {
++      const NativeAdrenoTraceBatch *batch = (const NativeAdrenoTraceBatch *)input;
++      if (!state->file || batch->generation != state->file_generation) return -1;
++      const size_t bytes = batch->count * sizeof(batch->events[0]);
++      if (state->file_io_error || !nabu_file_reserve(bytes)) {
++         state->file_rejected += batch->count;
++         return -1;
++      }
++      if (fwrite(batch->events, sizeof(batch->events[0]), batch->count, state->file) != batch->count) {
++         state->file_io_error = errno ? errno : EIO;
++         state->file_rejected += batch->count;
++         return -1;
++      }
++      state->file_bytes += bytes;
++      return 0;
++   }
++   if (method == NativeAdrenoMethodEndTraceProducer) {
++      const NativeAdrenoTraceProducer *producer = (const NativeAdrenoTraceProducer *)input;
++      if (state->file) {
++         NativeAdrenoTraceEvent footer = {};
++         footer.source = NativeAdrenoTraceSourceTurnip;
++         footer.point = NativeAdrenoTraceTurnipRecordCounts;
++         footer.phase = NativeAdrenoTracePhaseInstant;
++         footer.clock_domain = NativeAdrenoTraceClockMonotonicNanoseconds;
++         footer.timestamp_ns = trace_now(state);
++         footer.process_id = getpid();
++         snprintf(footer.name, sizeof(footer.name), "file_complete");
++         footer.argument_count = 4;
++         footer.args[0] = {1001, NativeAdrenoTraceArgumentUnsigned, state->file_bytes};
++         footer.args[1] = {1002, NativeAdrenoTraceArgumentUnsigned, state->file_rejected};
++         footer.args[2] = {1003, NativeAdrenoTraceArgumentUnsigned, state->file_io_error};
++         footer.args[3] = {1004, NativeAdrenoTraceArgumentUnsigned, producer->dropped};
++         const bool wrote = fwrite(&footer, sizeof(footer), 1, state->file) == 1;
++         const int flush_error = fflush(state->file);
++         const int close_error = fclose(state->file);
++         state->file = NULL;
++         if (!wrote || flush_error || close_error) state->file_io_error = errno ? errno : EIO;
++      }
++      // Always release the producer: failed diagnostics must not stall device teardown.
++      return 0;
++   }
++   return -1;
++}
+--- a/src/freedreno/vulkan/tu_knl_darwin.cc
++++ b/src/freedreno/vulkan/tu_knl_darwin.cc
+@@ -288,13 +288,6 @@
+ /* nabu A640: the trace ABI header exists only for the A740 driver; tu_darwin_trace.h
+  * declares this function, and tu_darwin_trace.cc uses it, only when it is present. */
+ #if __has_include("NativeAdrenoTrace.h")
+-int
+-tu_darwin_trace_call(struct tu_device *device, uint32_t method,
+-                     const void *input, size_t input_size,
+-                     void *output, size_t output_size)
+-{
+-   return dw_call(device, method, input, input_size, output, output_size);
+-}
+ #endif
+ 
+ static void darwin_refresh_mapping_budget(struct tu_device *dev, bool force);

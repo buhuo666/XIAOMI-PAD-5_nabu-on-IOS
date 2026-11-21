@@ -69,6 +69,8 @@ def main():
                    help='Include render-pass cache flush boundaries in GPU timing')
     p.add_argument('--trace-allocation-fix', action='store_true',
                    help='Safely reject failed utrace GPU allocations without dropping rendering commands')
+    p.add_argument('--bounded-stage-file', action='store_true',
+                   help='Enable bounded GPU stage files controlled by the existing trace window')
     a = p.parse_args()
     if not a.stage_only and (sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true'):
         p.error('Run Apple Turnip builds in macOS GitHub Actions')
@@ -122,6 +124,9 @@ def main():
         if a.trace_allocation_fix:
             from nabu_turnip_trace_allocation import stage_trace_allocation_failure
             report['trace_allocation_fix'] = stage_trace_allocation_failure(ROOT, work)
+        if a.bounded_stage_file:
+            from nabu_turnip_bounded_stage_file import stage_bounded_gpu_file
+            report['bounded_stage_file'] = stage_bounded_gpu_file(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'

@@ -29,6 +29,10 @@ on:
         description: Fix utrace GPU allocation failure and cleanup
         type: boolean
         default: false
+      bounded_stage_file:
+        description: Enable bounded GPU stage files for the active capture window
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -55,6 +59,7 @@ jobs:
           --work build/turnip-submit --output artifacts/nabu-turnip-submit
           ${{ inputs.full_profile == true && '--full-profile' || '' }}
           ${{ inputs.trace_allocation_fix == true && '--trace-allocation-fix' || '' }}
+          ${{ inputs.bounded_stage_file == true && '--bounded-stage-file' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
