@@ -71,6 +71,8 @@ def main():
                    help='Safely reject failed utrace GPU allocations without dropping rendering commands')
     p.add_argument('--bounded-stage-file', action='store_true',
                    help='Enable bounded GPU stage files controlled by the existing trace window')
+    p.add_argument('--gmem-attribution', action='store_true',
+                   help='Record common draw/dependency state without additional GPU packets')
     a = p.parse_args()
     if not a.stage_only and (sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true'):
         p.error('Run Apple Turnip builds in macOS GitHub Actions')
@@ -127,6 +129,11 @@ def main():
         if a.bounded_stage_file:
             from nabu_turnip_bounded_stage_file import stage_bounded_gpu_file
             report['bounded_stage_file'] = stage_bounded_gpu_file(ROOT, work)
+        if a.gmem_attribution:
+            if not a.bounded_stage_file:
+                raise ValueError('GMEM attribution requires the retained bounded transport')
+            from nabu_turnip_gmem_attribution import stage_gmem_attribution
+            report['gmem_attribution'] = stage_gmem_attribution(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -203,6 +210,9 @@ def main():
                          'nabu_trace_file_transport.inc', 'nabu_trace_file_budget.h'):
                 if source.with_name(name).is_file():
                     shutil.copyfile(source.with_name(name), out/'source'/name)
+            if a.gmem_attribution:
+                for name in ('tu_cmd_buffer.h','tu_lrz.cc','tu_tracepoints.py','nabu_gmem_attribution.inc'):
+                    shutil.copyfile(source.with_name(name),out/'source'/name)
         if a.trace_allocation_fix:
             for name, relative in [('u_trace.c','src/util/perf/u_trace.c'), ('u_trace.h','src/util/perf/u_trace.h'), ('tu_device.cc','src/freedreno/vulkan/tu_device.cc')]:
                 path=work/'.cache/mesa-work'/relative

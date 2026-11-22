@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -175,7 +176,7 @@ static void close_after_retirement() {
     pthread_mutex_unlock(&f.state.mutex);
     until([&]{ return f.device.ended.load() == 1; });
     f.stop();
-    assert(f.device.ended == 1 && f.device.written == 10);
+    assert(f.device.ended == 1 && f.device.written == 7+EXPECT_SUMMARY_RECORDS);
 }
 static void stop_on_query_failure() {
     Fixture f(true);
@@ -184,7 +185,7 @@ static void stop_on_query_failure() {
     p_atomic_set(&f.state.stop, true);
     f.start();
     assert(!pthread_join(f.state.worker, nullptr));
-    assert(f.device.ended == 1 && f.device.written == 12);
+    assert(f.device.ended == 1 && f.device.written == 9+EXPECT_SUMMARY_RECORDS);
     assert(!f.state.producer.producer_id && !f.state.active_generation);
 }
 static void burst_wake_budget() {
@@ -221,7 +222,7 @@ static void empty_handoffs() {
         until([&]{ return f.device.written == i && waits > previous; });
     }
     f.stop();
-    assert(f.state.dropped == 0 && f.device.written == 203 && f.device.ended == 1);
+    assert(f.state.dropped == 0 && f.device.written == 200+EXPECT_SUMMARY_RECORDS && f.device.ended == 1);
 }
 static void concurrent_bursts() {
     Fixture f(true);
@@ -247,7 +248,7 @@ static void concurrent_bursts() {
     }
     f.stop();
     const uint64_t n = rounds*threads*per_thread;
-    assert(f.state.dropped == 0 && f.device.written == n+3);
+    assert(f.state.dropped == 0 && f.device.written == n+EXPECT_SUMMARY_RECORDS);
     assert(f.device.identity_sum == n*(n+1)/2 && f.device.ended == 1);
 }
 int main() {

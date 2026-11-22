@@ -33,6 +33,10 @@ on:
         description: Enable bounded GPU stage files for the active capture window
         type: boolean
         default: false
+      gmem_attribution:
+        description: Record common GMEM draw state and dependencies without extra GPU packets
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -60,6 +64,7 @@ jobs:
           ${{ inputs.full_profile == true && '--full-profile' || '' }}
           ${{ inputs.trace_allocation_fix == true && '--trace-allocation-fix' || '' }}
           ${{ inputs.bounded_stage_file == true && '--bounded-stage-file' || '' }}
+          ${{ inputs.gmem_attribution == true && '--gmem-attribution' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -1,0 +1,419 @@
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -8400,6 +8400,7 @@
+    if (cmd->state.disable_fs)
+       zmode = A6XX_EARLY_Z;
+ 
++   cmd->darwin_gmem.zmode = zmode;
+    tu_cs_emit_regs(cs, GRAS_SU_DEPTH_PLANE_CNTL(CHIP, .z_mode = zmode));
+    tu_cs_emit_regs(cs, A6XX_RB_DEPTH_PLANE_CNTL(.z_mode = zmode));
+ }
+@@ -8771,8 +8772,10 @@
+ 
+    /* Early exit if there is nothing to emit, saves CPU cycles */
+    uint32_t dirty = cmd->state.dirty;
+-   if (!dynamic_draw_state_dirty && !(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS))
++   if (!dynamic_draw_state_dirty && !(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS)) {
++      tu_darwin_trace_draw_state(cmd);
+       return VK_SUCCESS;
++   }
+ 
+    struct tu_tess_params *tess_params = &cmd->state.tess_params;
+    if ((dirty & TU_CMD_DIRTY_TESS_PARAMS) ||
+@@ -8975,6 +8978,7 @@
+     */
+    cmd->state.dirty &= TU_CMD_DIRTY_COMPUTE_DESC_SETS;
+    BITSET_ZERO(cmd->vk.dynamic_graphics_state.dirty);
++   tu_darwin_trace_draw_state(cmd);
+    return VK_SUCCESS;
+ }
+ 
+@@ -10228,6 +10232,7 @@
+            const VkDependencyInfo *dep_infos,
+            bool no_sync)
+ {
++   tu_darwin_trace_dependency(cmd, dep_count, dep_infos, no_sync);
+    VkPipelineStageFlags2 srcStage = 0;
+    VkPipelineStageFlags2 dstStage = 0;
+    BITMASK_ENUM(tu_cmd_access_mask) src_flags = 0;
+--- a/src/freedreno/vulkan/tu_cmd_buffer.h
++++ b/src/freedreno/vulkan/tu_cmd_buffer.h
+@@ -657,6 +657,13 @@
+ 
+ struct tu_cmd_buffer
+ {
++   /* CPU-only capture state; reset when command recording begins. */
++   struct {
++      uint64_t value[45][3];
++      uint64_t valid;
++      uint32_t draws, sequence, barriers, zmode;
++   } darwin_gmem;
++
+    struct vk_command_buffer vk;
+ 
+    struct tu_device *device;
+--- a/src/freedreno/vulkan/tu_darwin_trace.h
++++ b/src/freedreno/vulkan/tu_darwin_trace.h
+@@ -16,6 +16,9 @@
+ };
+ 
+ #if defined(TU_HAS_DARWIN)
++void tu_darwin_trace_draw_state(struct tu_cmd_buffer *cmd);
++void tu_darwin_trace_dependency(struct tu_cmd_buffer *cmd, uint32_t count,
++                                const VkDependencyInfo *infos, bool no_sync);
+ void tu_darwin_trace_init(struct tu_device *device);
+ void tu_darwin_trace_finish(struct tu_device *device);
+ void tu_darwin_trace_begin(struct tu_cmd_buffer *cmd);
+@@ -35,6 +38,9 @@
+                                          uint32_t type, uint32_t flags,
+                                          const uint64_t *words, uint32_t count);
+ #else
++static inline void tu_darwin_trace_draw_state(struct tu_cmd_buffer *) {}
++static inline void tu_darwin_trace_dependency(struct tu_cmd_buffer *, uint32_t,
++                                              const VkDependencyInfo *, bool) {}
+ static inline void tu_darwin_trace_init(struct tu_device *)
+ {
+ }
+--- a/src/freedreno/vulkan/tu_darwin_trace.cc
++++ b/src/freedreno/vulkan/tu_darwin_trace.cc
+@@ -8,6 +8,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <time.h>
++#include <errno.h>
+ #include <unistd.h>
+ 
+ #include "nabu_trace_file_protocol.h"
+@@ -15,6 +16,7 @@
+ #include "tu_device.h"
+ #include "tu_queue.h"
+ #include "tu_tracepoints.h"
++#include "tu_shader.h"
+ #include "util/u_atomic.h"
+ 
+ enum {
+@@ -76,6 +78,7 @@
+    uint64_t copy_dwords;
+    uint64_t wait_dwords;
+    uint64_t extra_idle_dwords;
++   uint64_t send_calls, send_cpu_ns, send_wall_ns, send_clock_errors;
+    uint64_t stage_commands[12];
+    mach_timebase_info_data_t timebase;
+ };
+@@ -95,6 +98,16 @@
+ }
+ 
+ #include "nabu_trace_file_transport.inc"
++
++static uint64_t
++trace_thread_cpu_ns()
++{
++   const int saved_errno = errno;
++   struct timespec time;
++   const int result = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time);
++   errno = saved_errno;
++   return result == 0 ? (uint64_t)time.tv_sec * 1000000000 + time.tv_nsec : UINT64_MAX;
++}
+ 
+ static void
+ trace_argument(NativeAdrenoTraceEvent *event, uint32_t key, uint64_t value)
+@@ -152,6 +165,8 @@
+    trace_append_locked(state, generation, event);
+    pthread_mutex_unlock(&state->mutex);
+ }
++
++#include "nabu_gmem_attribution.inc"
+ 
+ static bool
+ trace_accept(struct u_trace *trace, uint32_t count, uint32_t type, uint64_t allocation_bytes)
+@@ -354,11 +369,15 @@
+    pthread_mutex_lock(&state->mutex);
+    trace_append_locked(state, generation, event);
+    pthread_mutex_unlock(&state->mutex);
++   if (event.point == NativeAdrenoTraceTurnipRenderPass)
++      gmem_payload(state, generation, event, payload);
+ }
+ 
+ static void
+ trace_send(tu_darwin_trace_state *state)
+ {
++   const uint64_t cpu_start = trace_thread_cpu_ns();
++   const uint64_t wall_start = trace_now(state);
+    for (uint32_t sent = 0; ; ++sent) {
+       NativeAdrenoTraceBatch batch = {};
+       pthread_mutex_lock(&state->mutex);
+@@ -366,6 +385,13 @@
+                                  state->queues[TRACE_METADATA_QUEUE].count;
+       if (!available || !state->producer.producer_id ||
+           (p_atomic_read(&state->active_generation) && sent == 128)) {
++         const uint64_t cpu_end = trace_thread_cpu_ns();
++         state->send_calls++;
++         state->send_wall_ns += trace_now(state) - wall_start;
++         if (cpu_start != UINT64_MAX && cpu_end != UINT64_MAX)
++            state->send_cpu_ns += cpu_end - cpu_start;
++         else
++            state->send_clock_errors++;
+          pthread_mutex_unlock(&state->mutex);
+          return;
+       }
+@@ -426,6 +452,12 @@
+       trace_argument(&excluded, NativeAdrenoTraceArgReservedBytesHighWater, state->reserved_bytes_peak);
+       trace_argument(&excluded, NativeAdrenoTraceArgBudgetBytes, TRACE_MEMORY_BYTES);
+       trace_append_locked(state, state->producer.generation, excluded);
++      NativeAdrenoTraceEvent transport = trace_cpu_event(state, 47, "trace_transport_cpu");
++      trace_argument(&transport, 0, state->send_calls);
++      trace_argument(&transport, 1, state->send_cpu_ns);
++      trace_argument(&transport, 2, state->send_wall_ns);
++      trace_argument(&transport, 3, state->send_clock_errors);
++      trace_append_locked(state, state->producer.generation, transport);
+       state->end_records_written = true;
+    }
+    pthread_mutex_unlock(&state->mutex);
+@@ -482,6 +514,7 @@
+                state->copy_dwords = 0;
+                state->wait_dwords = 0;
+                state->extra_idle_dwords = 0;
++               state->send_calls = state->send_cpu_ns = state->send_wall_ns = state->send_clock_errors = 0;
+                state->next_queue = TRACE_METADATA_QUEUE;
+                state->end_records_written = false;
+                p_atomic_set(&state->active_generation, producer.generation);
+@@ -602,6 +635,9 @@
+    }
+    tu_darwin_trace_release(cmd);
+    pthread_mutex_lock(&state->mutex);
++   cmd->darwin_gmem.valid = 0;
++   cmd->darwin_gmem.draws = cmd->darwin_gmem.sequence = 0;
++   cmd->darwin_gmem.barriers = cmd->darwin_gmem.zmode = 0;
+    cmd->darwin_trace_id = p_atomic_inc_return(&trace_next_command);
+    cmd->darwin_trace_generation = p_atomic_read(&state->active_generation);
+    if (cmd->darwin_trace_generation &&
+--- a/src/freedreno/vulkan/nabu_gmem_attribution.inc
++++ b/src/freedreno/vulkan/nabu_gmem_attribution.inc
+@@ -0,0 +1,227 @@
++/* SPDX-License-Identifier: MIT
++ * CPU-only observations of the state already chosen by Turnip. No GPU packets.
++ * words[0] holds an attempted-record sequence and draw/barrier ordinal, so a
++ * consumer can reject state reconstruction across a dropped metadata record.
++ */
++static uint64_t
++gmem_pair(uint32_t low, uint32_t high)
++{
++   return low | ((uint64_t)high << 32);
++}
++
++static uint32_t
++gmem_float(float value)
++{
++   uint32_t bits;
++   memcpy(&bits, &value, sizeof(bits));
++   return bits;
++}
++
++static bool
++gmem_active(struct tu_cmd_buffer *cmd)
++{
++   tu_darwin_trace_state *state = trace_state(cmd->device);
++   return state && cmd->darwin_trace_generation &&
++      cmd->darwin_trace_generation == p_atomic_read(&state->active_generation);
++}
++
++static void
++gmem_record(struct tu_cmd_buffer *cmd, unsigned point, const char *name,
++            uint32_t flags, uint32_t ordinal, uint64_t a, uint64_t b, uint64_t c)
++{
++   tu_darwin_trace_state *state = trace_state(cmd->device);
++   NativeAdrenoTraceEvent event = trace_cpu_event(state, point, name);
++   event.command_buffer_id = cmd->darwin_trace_id;
++   event.flags = flags << 16;
++   trace_argument(&event, 0, gmem_pair(ordinal, ++cmd->darwin_gmem.sequence));
++   trace_argument(&event, 1, a);
++   trace_argument(&event, 2, b);
++   trace_argument(&event, 3, c);
++   trace_append(state, cmd->darwin_trace_generation, event);
++}
++
++static void
++gmem_changed(struct tu_cmd_buffer *cmd, unsigned slot, unsigned point,
++             const char *name, uint32_t flags, uint64_t a, uint64_t b, uint64_t c)
++{
++   const uint64_t words[] = {a, b, c};
++   const uint64_t bit = UINT64_C(1) << slot;
++   if ((cmd->darwin_gmem.valid & bit) &&
++       !memcmp(cmd->darwin_gmem.value[slot], words, sizeof(words)))
++      return;
++   memcpy(cmd->darwin_gmem.value[slot], words, sizeof(words));
++   cmd->darwin_gmem.valid |= bit;
++   gmem_record(cmd, point, name, flags, cmd->darwin_gmem.draws, a, b, c);
++}
++
++static uint64_t
++gmem_stencil(const struct vk_stencil_test_face_state &face)
++{
++   return (uint64_t)face.op.fail | ((uint64_t)face.op.pass << 8) |
++      ((uint64_t)face.op.depth_fail << 16) | ((uint64_t)face.op.compare << 24) |
++      ((uint64_t)face.compare_mask << 32) | ((uint64_t)face.write_mask << 40) |
++      ((uint64_t)face.reference << 48);
++}
++
++void
++tu_darwin_trace_draw_state(struct tu_cmd_buffer *cmd)
++{
++   if (!gmem_active(cmd))
++      return;
++   ++cmd->darwin_gmem.draws;
++   if (cmd->state.rp.drawcall_count == 1)
++      cmd->darwin_gmem.valid = 0;
++   const struct vk_dynamic_graphics_state &s = cmd->vk.dynamic_graphics_state;
++   const struct tu_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
++   uint64_t depth = s.ds.depth.test_enable | ((uint64_t)s.ds.depth.write_enable << 1) |
++      ((uint64_t)s.ds.depth.bounds_test.enable << 2) | ((uint64_t)s.ds.stencil.test_enable << 3) |
++      ((uint64_t)s.ds.stencil.write_enable << 4) | ((uint64_t)s.ds.depth.compare_op << 8);
++   gmem_changed(cmd, 0, 16, "draw_depth_stencil", 0, depth,
++                 gmem_stencil(s.ds.stencil.front), gmem_stencil(s.ds.stencil.back));
++   gmem_changed(cmd, 1, 17, "draw_depth_bounds", 0,
++                 gmem_pair(gmem_float(s.ds.depth.bounds_test.min), gmem_float(s.ds.depth.bounds_test.max)),
++                 cmd->darwin_gmem.zmode, 0);
++   uint64_t control = s.ms.rasterization_samples | ((uint64_t)s.ms.sample_mask << 16) |
++      ((uint64_t)s.ms.alpha_to_coverage_enable << 32) | ((uint64_t)s.ms.alpha_to_one_enable << 33) |
++      ((uint64_t)s.ms.sample_locations_enable << 34);
++   uint64_t blend = s.cb.attachment_count | ((uint64_t)s.cb.color_write_enables << 8) |
++      ((uint64_t)s.cb.logic_op_enable << 16) | ((uint64_t)s.cb.logic_op << 24);
++   uint64_t raster = s.ia.primitive_topology | ((uint64_t)s.ia.primitive_restart_enable << 8) |
++      ((uint64_t)s.rs.cull_mode << 16) | ((uint64_t)s.rs.front_face << 24) |
++      ((uint64_t)s.rs.rasterizer_discard_enable << 32);
++   gmem_changed(cmd, 2, 18, "draw_control", 0, control, blend, raster);
++   gmem_changed(cmd, 3, 20, "draw_blend_constants", 0,
++                 gmem_pair(gmem_float(s.cb.blend_constants[0]), gmem_float(s.cb.blend_constants[1])),
++                 gmem_pair(gmem_float(s.cb.blend_constants[2]), gmem_float(s.cb.blend_constants[3])), 0);
++   uint64_t shader = fs->variant->has_kill | ((uint64_t)fs->variant->writes_smask << 1) |
++      ((uint64_t)fs->variant->writes_pos << 2) | ((uint64_t)fs->variant->fs.early_fragment_tests << 3) |
++      ((uint64_t)fs->fs.sample_shading << 4) | ((uint64_t)fs->fs.lrz.force_late_z << 5) |
++      ((uint64_t)cmd->state.lrz.force_late_z << 6) | ((uint64_t)cmd->state.disable_fs << 7) |
++      ((uint64_t)fs->fs.lrz.status << 16);
++   uint64_t lrz = cmd->state.lrz.valid | ((uint64_t)cmd->state.lrz.enabled << 1) |
++      ((uint64_t)cmd->state.lrz.fast_clear << 2) | ((uint64_t)cmd->state.lrz.gpu_dir_tracking << 3) |
++      ((uint64_t)cmd->state.lrz_blend_status << 16);
++   gmem_changed(cmd, 4, 21, "draw_fragment_lrz", 0, (uintptr_t)fs, shader, lrz);
++   for (unsigned i = 0; i < s.cb.attachment_count; ++i) {
++      const struct vk_color_blend_attachment_state &b = s.cb.attachments[i];
++      uint64_t factors = b.blend_enable | ((uint64_t)b.write_mask << 8) |
++         ((uint64_t)b.src_color_blend_factor << 16) | ((uint64_t)b.dst_color_blend_factor << 24) |
++         ((uint64_t)b.src_alpha_blend_factor << 32) | ((uint64_t)b.dst_alpha_blend_factor << 40);
++      uint64_t advanced = b.src_premultiplied | ((uint64_t)b.dst_premultiplied << 1) |
++         ((uint64_t)b.clamp_results << 2) | ((uint64_t)b.blend_overlap << 32);
++      gmem_changed(cmd, 5+i, 19, "draw_blend_attachment", i, factors,
++                    gmem_pair(b.color_blend_op, b.alpha_blend_op), advanced);
++   }
++   for (unsigned i = 0; i < s.vp.scissor_count; ++i) {
++      const VkRect2D &r = s.vp.scissors[i];
++      gmem_changed(cmd, 13+i, 22, "draw_scissor", i,
++                    gmem_pair(r.offset.x, r.offset.y), gmem_pair(r.extent.width, r.extent.height), s.vp.scissor_count);
++   }
++   for (unsigned i = 0; i < s.vp.viewport_count; ++i) {
++      const VkViewport &v = s.vp.viewports[i];
++      gmem_changed(cmd, 29+i, 23, "draw_viewport", i,
++                    gmem_pair(gmem_float(v.x), gmem_float(v.y)),
++                    gmem_pair(gmem_float(v.width), gmem_float(v.height)),
++                    gmem_pair(gmem_float(v.minDepth), gmem_float(v.maxDepth)));
++   }
++}
++
++/* This preserves raw Vulkan scope, layout and resource identities before the
++ * driver translates or merges them. A recorded dependency is not a measured stall. */
++void
++tu_darwin_trace_dependency(struct tu_cmd_buffer *cmd, uint32_t count,
++                           const VkDependencyInfo *infos, bool no_sync)
++{
++   if (!gmem_active(cmd))
++      return;
++   for (unsigned d = 0; d < count; ++d) {
++      const VkDependencyInfo &info = infos[d];
++      const uint32_t ordinal = ++cmd->darwin_gmem.barriers;
++      gmem_record(cmd, 40, "dependency_header", no_sync, ordinal,
++                   info.dependencyFlags, gmem_pair(info.memoryBarrierCount, info.bufferMemoryBarrierCount),
++                   gmem_pair(info.imageMemoryBarrierCount, cmd->darwin_gmem.draws));
++      for (unsigned kind = 0; kind < 3; ++kind) {
++         unsigned n = kind == 0 ? info.memoryBarrierCount : kind == 1 ? info.bufferMemoryBarrierCount : info.imageMemoryBarrierCount;
++         for (unsigned i = 0; i < n; ++i) {
++            VkPipelineStageFlags2 src_stage, dst_stage;
++            VkAccessFlags2 src_access, dst_access;
++            uint64_t resource = 0;
++            const void *next;
++            if (kind == 0) {
++               const VkMemoryBarrier2 &b = info.pMemoryBarriers[i];
++               src_stage=b.srcStageMask; dst_stage=b.dstStageMask;
++               src_access=b.srcAccessMask; dst_access=b.dstAccessMask; next=b.pNext;
++            } else if (kind == 1) {
++               const VkBufferMemoryBarrier2 &b = info.pBufferMemoryBarriers[i];
++               src_stage=b.srcStageMask; dst_stage=b.dstStageMask;
++               src_access=b.srcAccessMask; dst_access=b.dstAccessMask; next=b.pNext;
++               resource=(uint64_t)(uintptr_t)b.buffer;
++               gmem_record(cmd, 43, "dependency_buffer", kind, ordinal, gmem_pair(i,b.srcQueueFamilyIndex), b.offset, b.size);
++               gmem_record(cmd, 44, "dependency_queues", kind, ordinal, i, gmem_pair(b.srcQueueFamilyIndex,b.dstQueueFamilyIndex), 0);
++            } else {
++               const VkImageMemoryBarrier2 &b = info.pImageMemoryBarriers[i];
++               src_stage=b.srcStageMask; dst_stage=b.dstStageMask;
++               src_access=b.srcAccessMask; dst_access=b.dstAccessMask; next=b.pNext;
++               resource=(uint64_t)(uintptr_t)b.image;
++               gmem_record(cmd, 43, "dependency_image", kind, ordinal, gmem_pair(i,b.subresourceRange.aspectMask),
++                            gmem_pair(b.subresourceRange.baseMipLevel,b.subresourceRange.levelCount),
++                            gmem_pair(b.subresourceRange.baseArrayLayer,b.subresourceRange.layerCount));
++               gmem_record(cmd, 44, "dependency_queues", kind, ordinal, i,
++                            gmem_pair(b.srcQueueFamilyIndex,b.dstQueueFamilyIndex),gmem_pair(b.oldLayout,b.newLayout));
++            }
++            gmem_record(cmd, 41, "dependency_stages", kind, ordinal, i, src_stage, dst_stage);
++            gmem_record(cmd, 42, "dependency_access", kind, ordinal, i, src_access, dst_access);
++            gmem_record(cmd, 45, "dependency_resource", kind, ordinal, i, resource, next != NULL);
++            const VkMemoryBarrierAccessFlags3KHR *access3 =
++               vk_find_struct_const(next, MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
++            if (access3)
++               gmem_record(cmd, 46, "dependency_access3", kind, ordinal, i, access3->srcAccessMask3, access3->dstAccessMask3);
++         }
++      }
++   }
++}
++
++/* Copy existing u_trace payload fields without inserting GPU timestamps. */
++static void
++gmem_payload(tu_darwin_trace_state *state, uint32_t generation,
++              const NativeAdrenoTraceEvent &original, const void *payload)
++{
++   NativeAdrenoTraceEvent event = original;
++   event.phase = NativeAdrenoTracePhaseInstant;
++   event.argument_count = 0;
++   if (original.phase == 1) {
++      const struct trace_start_render_pass *p = (const struct trace_start_render_pass *)payload;
++      event.point=24;
++      snprintf(event.name,sizeof(event.name),"gmem_pass_layout");
++      trace_argument(&event,0,gmem_pair(p->binWidth,p->binHeight));
++      trace_argument(&event,1,p->clearCPP | ((uint64_t)p->loadCPP<<8) | ((uint64_t)p->storeCPP<<16));
++      trace_argument(&event,2,p->attachment_count | ((uint64_t)p->hasDepth<<32));
++      uint64_t ubwc=0;
++      memcpy(&ubwc,p->ubwc,MIN2(sizeof(ubwc),sizeof(p->ubwc)));
++      trace_argument(&event,3,ubwc);
++      trace_append(state,generation,event);
++   } else {
++      const struct trace_end_render_pass *p = (const struct trace_end_render_pass *)payload;
++      event.point=25;
++      snprintf(event.name,sizeof(event.name),"gmem_lrz_status");
++      trace_argument(&event,0,p->lrz);
++      trace_argument(&event,1,(uint32_t)p->lrzDisabledAtDraw);
++      trace_argument(&event,2,(uint32_t)p->lrzWriteDisabledAtDraw);
++      trace_argument(&event,3,p->lrzStatus);
++      trace_append(state,generation,event);
++      const char *reasons[] = {p->lrzDisableReason,p->lrzWriteDisableReason,p->tilingDisableReason};
++      for (unsigned kind=0;kind<3;++kind) {
++         const size_t length=strlen(reasons[kind]);
++         for (size_t offset=0;offset<length;offset+=24) {
++            uint64_t words[3]={};
++            memcpy(words,reasons[kind]+offset,MIN2(length-offset,sizeof(words)));
++            event.point=26;
++            event.argument_count=0;
++            snprintf(event.name,sizeof(event.name),"gmem_disable_reason");
++            trace_argument(&event,0,kind | ((uint64_t)length<<8) | ((uint64_t)offset<<32));
++            for (unsigned i=0;i<3;++i)trace_argument(&event,i+1,words[i]);
++            trace_append(state,generation,event);
++         }
++      }
++   }
++}

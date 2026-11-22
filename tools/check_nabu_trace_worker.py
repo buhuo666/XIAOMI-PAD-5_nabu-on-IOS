@@ -23,6 +23,8 @@ def main():
     structures = part(source, '/* tu_darwin_trace_queue', 'static tu_darwin_trace_state *\ntrace_state')
     (out/'production_types.inc').write_text(constants+structures)
     core = part(source, 'static void\ntrace_argument(', 'static void\ntrace_append(tu_darwin_trace_state')
+    if 'trace_thread_cpu_ns()' in source:
+        core = part(source, 'static uint64_t\ntrace_thread_cpu_ns()', 'static void\ntrace_argument(') + core
     core += part(source, 'static void\ntrace_send(', '\nvoid\ntu_darwin_trace_init')
     (out/'production_core.inc').write_text(core)
     results = []
@@ -30,6 +32,7 @@ def main():
         binary = out / mode
         command = ['clang++','-std=c++17','-Wall','-Wextra','-Werror','-pthread',*flags,
                    '-DEXPECT_STEADY_DRAIN=1','-DEXPECT_COALESCED_WAKE='+str(args.expected_coalesced_wake),
+                   '-DEXPECT_SUMMARY_RECORDS='+str(4 if '"trace_transport_cpu"' in source else 3),
                    '-I'+host_path(out),'-I'+host_path(args.source.parent),
                    host_path(ROOT/'tools/fixtures/nabu_trace_worker.cpp'),'-o',host_path(binary)]
         for step, cmd in [('compile',command),('run',[host_path(binary)])]:
