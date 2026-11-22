@@ -11,6 +11,6 @@ def stage_bounded_gpu_file(root: Path, work: Path):
     pins=json.loads(path.read_text());pins['patches'].append(relative)
     path.write_text(json.dumps(pins,indent=2)+'\n',newline='\n')
     return dict(patch=relative, control='existing LastTraceResult capture window',
-        gpu_timestamp_budget_per_device=16<<20, file_budget_per_process=64<<20,
+        gpu_timestamp_budget_per_device=16<<20, file_budget_per_process_per_window=512<<20,
         new_kernel_selectors=False, completed_records_survive_window_end=True,
         limitation='GPU timestamps include drain/backpressure and timestamp overhead; A640 validation pending')

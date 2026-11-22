@@ -27,11 +27,12 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
  
  /* tu_darwin_trace_queue holds records from one class of producers. */
  struct tu_darwin_trace_queue {
-@@ -41,6 +42,16 @@
+@@ -41,6 +42,17 @@
   * its producer after admitted submissions retire and both queues are sent. */
  struct tu_darwin_trace_state {
     struct tu_device *device;
 +   uint64_t file_id;
++   struct NabuTraceFileBudget *file_budget;
 +   uint64_t file_bytes;
 +   uint64_t file_rejected;
 +   FILE *file;
@@ -44,7 +45,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
     pthread_t worker;
     pthread_mutex_t mutex;
     pthread_cond_t changed;
-@@ -81,6 +92,8 @@
+@@ -81,6 +93,8 @@
     return (ticks / state->timebase.denom) * state->timebase.numer +
            (ticks % state->timebase.denom) * state->timebase.numer / state->timebase.denom;
  }
@@ -53,7 +54,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
  
  static void
  trace_argument(NativeAdrenoTraceEvent *event, uint32_t key, uint64_t value)
-@@ -333,10 +346,6 @@
+@@ -333,10 +347,6 @@
     }
  
     pthread_mutex_lock(&state->mutex);
@@ -64,7 +65,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
     trace_append_locked(state, generation, event);
     pthread_mutex_unlock(&state->mutex);
  }
-@@ -434,10 +443,10 @@
+@@ -434,10 +444,10 @@
  {
     tu_darwin_trace_state *state = (tu_darwin_trace_state *)opaque;
     for (;;) {
@@ -76,7 +77,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
        const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
                             !p_atomic_read(&state->stop);
        if (running && !state->producer.producer_id) {
-@@ -512,6 +521,7 @@
+@@ -512,6 +522,7 @@
        return;
     }
     state->device = device;
@@ -194,16 +195,7 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +#include <errno.h>
 +#include <sys/stat.h>
 +
-+static pthread_mutex_t nabu_file_budget_mutex = PTHREAD_MUTEX_INITIALIZER;
-+static uint64_t nabu_file_budget_used;
-+static bool nabu_file_reserve(uint64_t bytes)
-+{
-+   pthread_mutex_lock(&nabu_file_budget_mutex);
-+   const bool allowed = bytes <= (64ull << 20) - nabu_file_budget_used;
-+   if (allowed) nabu_file_budget_used += bytes;
-+   pthread_mutex_unlock(&nabu_file_budget_mutex);
-+   return allowed;
-+}
++#include "nabu_trace_file_budget.h"
 +
 +static uint64_t nabu_number(CFDictionaryRef dict, const char *name)
 +{
@@ -278,9 +270,12 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +      const NativeAdrenoTraceStatus control = nabu_file_query(state);
 +      if (producer.generation != control.generation || control.state != NativeAdrenoTraceRunning) return -1;
 +      // The tail reservation guarantees a terminal loss/error record even at the file budget.
-+      if (!nabu_file_reserve(sizeof(NabuTraceFileHeader) + 4096)) {
++      state->file_budget = nabu_file_budget_acquire(control.started_ns, producer.generation,
++                                                    sizeof(NabuTraceFileHeader) + 4096);
++      if (!state->file_budget) {
++         const int error = errno;
 +         p_atomic_set(&state->file_failure_generation, producer.generation);
-+         nabu_file_marker(state->file_id, 780, producer.generation, ENOSPC);
++         nabu_file_marker(state->file_id, 780, producer.generation, error);
 +         return -1;
 +      }
 +      char directory[1024];
@@ -295,8 +290,10 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +               (unsigned)getpid(), (unsigned long long)state->file_id, producer.generation, (unsigned long long)control.started_ns);
 +      state->file = fopen(name, "wbx");
 +      if (!state->file) {
++         const int error = errno;
++         nabu_file_budget_release(state->file_budget); state->file_budget = NULL;
 +         p_atomic_set(&state->file_failure_generation, producer.generation);
-+         nabu_file_marker(state->file_id, 780, producer.generation, (uint64_t(container) << 32) | uint32_t(errno));
++         nabu_file_marker(state->file_id, 780, producer.generation, (uint64_t(container) << 32) | uint32_t(error));
 +         return -1;
 +      }
 +      state->file_generation = producer.generation;
@@ -309,6 +306,7 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +      if (fwrite(&header, sizeof(header), 1, state->file) != 1 || fflush(state->file)) {
 +         state->file_io_error = errno ? errno : EIO;
 +         fclose(state->file); state->file = NULL;
++         nabu_file_budget_release(state->file_budget); state->file_budget = NULL;
 +         p_atomic_set(&state->file_failure_generation, producer.generation);
 +         nabu_file_marker(state->file_id, 780, producer.generation, state->file_io_error);
 +         return -1;
@@ -321,7 +319,7 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +      const NativeAdrenoTraceBatch *batch = (const NativeAdrenoTraceBatch *)input;
 +      if (!state->file || batch->generation != state->file_generation) return -1;
 +      const size_t bytes = batch->count * sizeof(batch->events[0]);
-+      if (state->file_io_error || !nabu_file_reserve(bytes)) {
++      if (state->file_io_error || !nabu_file_reserve(state->file_budget, bytes)) {
 +         state->file_rejected += batch->count;
 +         return -1;
 +      }
@@ -355,10 +353,108 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +         state->file = NULL;
 +         if (!wrote || flush_error || close_error) state->file_io_error = errno ? errno : EIO;
 +      }
++      if (state->file_budget) {
++         nabu_file_budget_release(state->file_budget); state->file_budget = NULL;
++      }
 +      // Always release the producer: failed diagnostics must not stall device teardown.
 +      return 0;
 +   }
 +   return -1;
++}
+diff --git a/src/freedreno/vulkan/nabu_trace_file_budget.h b/src/freedreno/vulkan/nabu_trace_file_budget.h
+--- /dev/null
++++ b/src/freedreno/vulkan/nabu_trace_file_budget.h
+@@ -0,0 +1,91 @@
++// SPDX-License-Identifier: MIT
++#pragma once
++#include <errno.h>
++#include <pthread.h>
++#include <stdint.h>
++#include <stdlib.h>
++
++// One process-wide allowance per capture identity, shared by every Vulkan device.
++// Old writers retain their own budget while completed GPU timestamps drain.
++static constexpr uint64_t NABU_TRACE_FILE_WINDOW_BYTES = 512ull << 20;
++struct NabuTraceFileBudget {
++   uint64_t started_ns, used;
++   uint32_t generation, writers;
++   NabuTraceFileBudget *next;
++};
++static pthread_mutex_t nabu_file_budget_mutex = PTHREAD_MUTEX_INITIALIZER;
++static NabuTraceFileBudget *nabu_file_budgets;
++static uint64_t nabu_file_latest_started_ns;
++
++static void nabu_file_budget_prune_locked()
++{
++   NabuTraceFileBudget **link = &nabu_file_budgets;
++   while (*link) {
++      NabuTraceFileBudget *budget = *link;
++      if (!budget->writers && budget->started_ns < nabu_file_latest_started_ns) {
++         *link = budget->next;
++         free(budget);
++      } else {
++         link = &budget->next;
++      }
++   }
++}
++
++static NabuTraceFileBudget *nabu_file_budget_acquire(uint64_t started_ns,
++                                                   uint32_t generation,
++                                                   uint64_t initial_bytes)
++{
++   pthread_mutex_lock(&nabu_file_budget_mutex);
++   if (started_ns > nabu_file_latest_started_ns) {
++      nabu_file_latest_started_ns = started_ns;
++      nabu_file_budget_prune_locked();
++   }
++   NabuTraceFileBudget *budget = nabu_file_budgets;
++   while (budget && (budget->started_ns != started_ns || budget->generation != generation))
++      budget = budget->next;
++   if (!budget) {
++      if (started_ns < nabu_file_latest_started_ns) {
++         pthread_mutex_unlock(&nabu_file_budget_mutex);
++         errno = ESTALE;
++         return NULL;
++      }
++      budget = (NabuTraceFileBudget *)calloc(1, sizeof(*budget));
++      if (!budget) {
++         pthread_mutex_unlock(&nabu_file_budget_mutex);
++         errno = ENOMEM;
++         return NULL;
++      }
++      budget->started_ns = started_ns;
++      budget->generation = generation;
++      budget->next = nabu_file_budgets;
++      nabu_file_budgets = budget;
++   }
++   if (initial_bytes > NABU_TRACE_FILE_WINDOW_BYTES - budget->used) {
++      pthread_mutex_unlock(&nabu_file_budget_mutex);
++      errno = ENOSPC;
++      return NULL;
++   }
++   budget->used += initial_bytes;
++   ++budget->writers;
++   pthread_mutex_unlock(&nabu_file_budget_mutex);
++   return budget;
++}
++
++static bool nabu_file_reserve(NabuTraceFileBudget *budget, uint64_t bytes)
++{
++   pthread_mutex_lock(&nabu_file_budget_mutex);
++   const bool allowed = bytes <= NABU_TRACE_FILE_WINDOW_BYTES - budget->used;
++   if (allowed) budget->used += bytes;
++   pthread_mutex_unlock(&nabu_file_budget_mutex);
++   return allowed;
++}
++
++static void nabu_file_budget_release(NabuTraceFileBudget *budget)
++{
++   pthread_mutex_lock(&nabu_file_budget_mutex);
++   --budget->writers;
++   // Retain an ended current window's usage so a later device cannot reset it.
++   // Retired windows are removed only after their final writer is done.
++   nabu_file_budget_prune_locked();
++   pthread_mutex_unlock(&nabu_file_budget_mutex);
 +}
 diff --git a/src/freedreno/vulkan/tu_knl_darwin.cc b/src/freedreno/vulkan/tu_knl_darwin.cc
 --- a/src/freedreno/vulkan/tu_knl_darwin.cc
