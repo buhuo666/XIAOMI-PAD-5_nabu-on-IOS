@@ -65,7 +65,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
     trace_append_locked(state, generation, event);
     pthread_mutex_unlock(&state->mutex);
  }
-@@ -434,10 +444,10 @@
+@@ -434,46 +444,54 @@
  {
     tu_darwin_trace_state *state = (tu_darwin_trace_state *)opaque;
     for (;;) {
@@ -73,11 +73,88 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
        NativeAdrenoTraceStatus status = {};
        const bool query_ok = !tu_darwin_trace_call(state->device, NativeAdrenoMethodQueryTrace,
                                                    NULL, 0, &status, sizeof(status));
-+      pthread_mutex_lock(&state->device->submit_mutex);
-       const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
-                            !p_atomic_read(&state->stop);
-       if (running && !state->producer.producer_id) {
-@@ -512,6 +522,7 @@
+-      const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
+-                           !p_atomic_read(&state->stop);
+-      if (running && !state->producer.producer_id) {
+-         NativeAdrenoTraceProducer producer = {};
+-         producer.version = NativeAdrenoTraceVersion;
+-         producer.generation = status.generation;
+-         producer.source = NativeAdrenoTraceSourceTurnip;
+-         if (!tu_darwin_trace_call(state->device, NativeAdrenoMethodRegisterTraceProducer,
+-                                   &producer, sizeof(producer), &producer, sizeof(producer))) {
++      /* Producer admission/closure changes share submit_mutex with submit.
++       * During a running capture the transport only drains its own queues;
++       * it must not wait behind an unrelated GPU submission to write them. */
++      const bool transition = !state->producer.producer_id ||
++                              p_atomic_read(&state->stop) ||
++                              (query_ok && status.state != NativeAdrenoTraceRunning);
++      if (transition) {
++         pthread_mutex_lock(&state->device->submit_mutex);
++         const bool running = query_ok && status.state == NativeAdrenoTraceRunning &&
++                              !p_atomic_read(&state->stop);
++         if (running && !state->producer.producer_id) {
++            NativeAdrenoTraceProducer producer = {};
++            producer.version = NativeAdrenoTraceVersion;
++            producer.generation = status.generation;
++            producer.source = NativeAdrenoTraceSourceTurnip;
++            if (!tu_darwin_trace_call(state->device, NativeAdrenoMethodRegisterTraceProducer,
++                                      &producer, sizeof(producer), &producer, sizeof(producer))) {
++               pthread_mutex_lock(&state->mutex);
++               state->producer = producer;
++               state->dropped = 0;
++               state->budget_dropped = 0;
++               state->queue_dropped = 0;
++               state->append_dropped = 0;
++               state->unsubmitted_commands = 0;
++               state->unexecuted_gmem_points = 0;
++               state->reserved_bytes_peak = state->reserved_bytes;
++               state->timestamp_dwords = 0;
++               state->copy_dwords = 0;
++               state->wait_dwords = 0;
++               state->extra_idle_dwords = 0;
++               state->next_queue = TRACE_METADATA_QUEUE;
++               state->end_records_written = false;
++               p_atomic_set(&state->active_generation, producer.generation);
++               pthread_mutex_unlock(&state->mutex);
++            }
++         }
++         if (p_atomic_read(&state->stop) || (query_ok && !running)) {
+             pthread_mutex_lock(&state->mutex);
+-            state->producer = producer;
+-            state->dropped = 0;
+-            state->budget_dropped = 0;
+-            state->queue_dropped = 0;
+-            state->append_dropped = 0;
+-            state->unsubmitted_commands = 0;
+-            state->unexecuted_gmem_points = 0;
+-            state->reserved_bytes_peak = state->reserved_bytes;
+-            state->timestamp_dwords = 0;
+-            state->copy_dwords = 0;
+-            state->wait_dwords = 0;
+-            state->extra_idle_dwords = 0;
+-            state->next_queue = TRACE_METADATA_QUEUE;
+-            state->end_records_written = false;
+-            p_atomic_set(&state->active_generation, producer.generation);
++            p_atomic_set(&state->active_generation, 0);
++            state->unsubmitted_commands += state->pending_commands;
++            state->pending_commands = 0;
+             pthread_mutex_unlock(&state->mutex);
+          }
+-      }
+-      if (p_atomic_read(&state->stop) || (query_ok && !running)) {
+-         pthread_mutex_lock(&state->mutex);
+-         p_atomic_set(&state->active_generation, 0);
+-         state->unsubmitted_commands += state->pending_commands;
+-         state->pending_commands = 0;
+-         pthread_mutex_unlock(&state->mutex);
+-      }
+-      pthread_mutex_unlock(&state->device->submit_mutex);
++         pthread_mutex_unlock(&state->device->submit_mutex);
++      }
+       trace_send(state);
+ 
+       pthread_mutex_lock(&state->mutex);
+@@ -512,6 +530,7 @@
        return;
     }
     state->device = device;

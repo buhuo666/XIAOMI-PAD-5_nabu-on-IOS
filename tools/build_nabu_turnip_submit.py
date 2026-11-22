@@ -162,6 +162,11 @@ def main():
                 run([sys.executable, ROOT/'tools/check_nabu_utrace_allocation.py',
                      '--source', source, '--output', out/'utrace-allocation-check'], stream=True)
                 report['utrace_allocation_host_check'] = 'pass'
+            if a.bounded_stage_file:
+                run([sys.executable, ROOT/'tools/check_nabu_trace_worker.py',
+                     '--source', source/'src/freedreno/vulkan/tu_darwin_trace.cc',
+                     '--output', out/'trace-worker-check'], stream=True)
+                report['trace_worker_host_check'] = 'pass'
             env = dict(os.environ,UNIXNU_RECORD_HASHES='0',PYTHONUNBUFFERED='1',
                        PATH=str(work/'.cache/mesa-tools/bin')+os.pathsep+os.environ['PATH'])
             run([sys.executable,'-u',script,'--target','ios','--abi-directory',
@@ -193,7 +198,9 @@ def main():
             (out/'source').mkdir(exist_ok=True)
             shutil.copyfile(source,out/'source'/source.name)
             shutil.copyfile(source.with_name('tu_cmd_buffer.cc'),out/'source/tu_cmd_buffer.cc')
-            for name in ('tu_cs.cc', 'tu_cs.h', 'tu_resource_range_index.h'):
+            for name in ('tu_cs.cc', 'tu_cs.h', 'tu_resource_range_index.h',
+                         'tu_darwin_trace.cc', 'tu_darwin_trace.h', 'nabu_trace_file_protocol.h',
+                         'nabu_trace_file_transport.inc', 'nabu_trace_file_budget.h'):
                 if source.with_name(name).is_file():
                     shutil.copyfile(source.with_name(name), out/'source'/name)
         if a.trace_allocation_fix:
