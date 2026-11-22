@@ -1,0 +1,157 @@
+diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd_buffer.cc
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -4828,40 +4828,58 @@
+                          const VkDeviceSize *pStrides)
+ {
+    VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+-   struct tu_cs cs;
+-
+-   cmd->state.max_vbs_bound = MAX2(
+-      cmd->state.max_vbs_bound, firstBinding + bindingCount);
++   const uint32_t max_vbs = MAX2(cmd->state.max_vbs_bound,
++                                firstBinding + bindingCount);
++   bool changed = max_vbs != cmd->state.max_vbs_bound;
++   cmd->state.max_vbs_bound = max_vbs;
++   cmd->state.vertex_bind_calls++;
++   cmd->state.vertex_state_baseline_dwords += 4 * max_vbs;
+ 
+    if (pStrides) {
+       vk_cmd_set_vertex_binding_strides(&cmd->vk, firstBinding, bindingCount,
+                                         pStrides);
+    }
+ 
++   for (uint32_t i = 0; i < bindingCount; i++) {
++      uint64_t base = 0;
++      uint32_t size = 0;
++      if (pBuffers[i] != VK_NULL_HANDLE) {
++         struct tu_buffer *buf = tu_buffer_from_handle(pBuffers[i]);
++         tu_cmd_use_buffer(cmd, buf, TU_RESOURCE_READ);
++         base = vk_buffer_address(&buf->vk, pOffsets[i]);
++         size = vk_buffer_range(&buf->vk, pOffsets[i],
++                                pSizes ? pSizes[i] : VK_WHOLE_SIZE);
++      }
++      auto &vb = cmd->state.vb[firstBinding + i];
++      changed |= vb.base != base || vb.size != size;
++      vb.base = base;
++      vb.size = size;
++   }
++
++   if (changed)
++      cmd->state.dirty |= TU_CMD_DIRTY_VERTEX_BUFFERS;
++   else
++      cmd->state.vertex_bind_reuses++;
++}
++
++/* Bind calls only update the final vertex inputs. Build one state block at
++ * the next draw; an identical rebind keeps the previously recorded block.
++ * Full draw-state restoration still binds that block after clears/secondaries.
++ */
++static void
++tu_emit_vertex_buffer_state(struct tu_cmd_buffer *cmd)
++{
++   struct tu_cs cs;
+    cmd->state.vertex_buffers.size = 4 * cmd->state.max_vbs_bound;
+    cmd->state.vertex_buffers.iova =
+       tu_cs_draw_state(&cmd->sub_cs, &cs, cmd->state.vertex_buffers.size).iova;
+-
+-   for (uint32_t i = 0; i < bindingCount; i++) {
+-      if (pBuffers[i] == VK_NULL_HANDLE) {
+-         cmd->state.vb[firstBinding + i].base = 0;
+-         cmd->state.vb[firstBinding + i].size = 0;
+-      } else {
+-         struct tu_buffer *buf = tu_buffer_from_handle(pBuffers[i]);
+-         tu_cmd_use_buffer(cmd, buf, TU_RESOURCE_READ);
+-         cmd->state.vb[firstBinding + i].base = vk_buffer_address(&buf->vk, pOffsets[i]);
+-         cmd->state.vb[firstBinding + i].size =
+-            vk_buffer_range(&buf->vk, pOffsets[i], pSizes ? pSizes[i] : VK_WHOLE_SIZE);
+-      }
+-   }
+-
+    for (uint32_t i = 0; i < cmd->state.max_vbs_bound; i++) {
+       tu_cs_emit_regs(&cs,
+                       A6XX_VFD_VERTEX_BUFFER_BASE(i, .qword = cmd->state.vb[i].base),
+                       A6XX_VFD_VERTEX_BUFFER_SIZE(i, cmd->state.vb[i].size));
+    }
+-
+-   cmd->state.dirty |= TU_CMD_DIRTY_VERTEX_BUFFERS;
++   cmd->state.vertex_state_builds++;
++   cmd->state.vertex_state_emitted_dwords += cmd->state.vertex_buffers.size;
+ }
+ 
+ template <chip CHIP>
+@@ -5677,6 +5695,7 @@
+    tu_cs_end(&cmd_buffer->draw_cs);
+    tu_cs_end(&cmd_buffer->draw_epilogue_cs);
+ 
++   tu_darwin_trace_vertex_state(cmd_buffer);
+    tu_cmd_record_result(cmd_buffer);
+    return vk_command_buffer_end(&cmd_buffer->vk);
+ }
+@@ -8771,6 +8790,9 @@
+       tu_set_render_mode<CHIP>(cs, { .shader_uses_rt = true });
+    }
+ 
++   if (cmd->state.dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
++      tu_emit_vertex_buffer_state(cmd);
++
+    /* Early exit if there is nothing to emit, saves CPU cycles */
+    uint32_t dirty = cmd->state.dirty;
+    if (!dynamic_draw_state_dirty && !(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS)) {
+diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_buffer.h
+--- a/src/freedreno/vulkan/tu_cmd_buffer.h
++++ b/src/freedreno/vulkan/tu_cmd_buffer.h
+@@ -480,6 +480,8 @@
+    } vb[MAX_VBS];
+ 
+    uint32_t max_vbs_bound;
++   uint64_t vertex_bind_calls, vertex_bind_reuses, vertex_state_builds;
++   uint64_t vertex_state_baseline_dwords, vertex_state_emitted_dwords;
+ 
+    bool has_fdm;
+    /* See tu_pipeline::per_view_viewport */
+diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_darwin_trace.cc
+--- a/src/freedreno/vulkan/tu_darwin_trace.cc
++++ b/src/freedreno/vulkan/tu_darwin_trace.cc
+@@ -672,6 +672,22 @@
+ }
+ 
+ void
++tu_darwin_trace_vertex_state(struct tu_cmd_buffer *cmd)
++{
++   tu_darwin_trace_state *state = trace_state(cmd->device);
++   if (!state || !cmd->darwin_trace_generation)
++      return;
++   NativeAdrenoTraceEvent event = trace_cpu_event(state, 51, "vertex_buffer_state");
++   event.command_buffer_id = cmd->darwin_trace_id;
++   trace_argument(&event, 0, cmd->state.vertex_bind_calls);
++   trace_argument(&event, 1, cmd->state.vertex_bind_reuses);
++   trace_argument(&event, 2, cmd->state.vertex_state_builds);
++   trace_argument(&event, 3, cmd->state.vertex_state_baseline_dwords -
++                             cmd->state.vertex_state_emitted_dwords);
++   trace_append(state, cmd->darwin_trace_generation, event);
++}
++
++void
+ tu_darwin_trace_execute(struct tu_cmd_buffer *cmd, struct tu_cmd_buffer *secondary)
+ {
+    tu_darwin_trace_state *state = trace_state(cmd->device);
+diff --git a/src/freedreno/vulkan/tu_darwin_trace.h b/src/freedreno/vulkan/tu_darwin_trace.h
+--- a/src/freedreno/vulkan/tu_darwin_trace.h
++++ b/src/freedreno/vulkan/tu_darwin_trace.h
+@@ -17,6 +17,7 @@
+ };
+ 
+ #if defined(TU_HAS_DARWIN)
++void tu_darwin_trace_vertex_state(struct tu_cmd_buffer *cmd);
+ void tu_darwin_trace_draw_state(struct tu_cmd_buffer *cmd);
+ void tu_darwin_trace_dependency(struct tu_cmd_buffer *cmd, uint32_t count,
+                                 const VkDependencyInfo *infos, bool no_sync);
+@@ -41,6 +42,7 @@
+                                          uint32_t type, uint32_t flags,
+                                          const uint64_t *words, uint32_t count);
+ #else
++static inline void tu_darwin_trace_vertex_state(struct tu_cmd_buffer *) {}
+ static inline void tu_darwin_trace_draw_state(struct tu_cmd_buffer *) {}
+ static inline void tu_darwin_trace_dependency(struct tu_cmd_buffer *, uint32_t,
+                                               const VkDependencyInfo *, bool) {}

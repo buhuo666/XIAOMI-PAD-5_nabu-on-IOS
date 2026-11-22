@@ -37,6 +37,10 @@ on:
         description: Record common GMEM draw state and dependencies without extra GPU packets
         type: boolean
         default: false
+      vertex_state_reuse:
+        description: Coalesce vertex binding state and reuse identical draw-state commands
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -65,6 +69,7 @@ jobs:
           ${{ inputs.trace_allocation_fix == true && '--trace-allocation-fix' || '' }}
           ${{ inputs.bounded_stage_file == true && '--bounded-stage-file' || '' }}
           ${{ inputs.gmem_attribution == true && '--gmem-attribution' || '' }}
+          ${{ inputs.vertex_state_reuse == true && '--vertex-state-reuse' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

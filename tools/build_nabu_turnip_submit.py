@@ -73,6 +73,8 @@ def main():
                    help='Enable bounded GPU stage files controlled by the existing trace window')
     p.add_argument('--gmem-attribution', action='store_true',
                    help='Record common draw/dependency state without additional GPU packets')
+    p.add_argument('--vertex-state-reuse', action='store_true',
+                   help='Coalesce vertex bindings and reuse unchanged GPU draw-state blocks')
     a = p.parse_args()
     if not a.stage_only and (sys.platform != 'darwin' or os.environ.get('GITHUB_ACTIONS') != 'true'):
         p.error('Run Apple Turnip builds in macOS GitHub Actions')
@@ -134,6 +136,11 @@ def main():
                 raise ValueError('GMEM attribution requires the retained bounded transport')
             from nabu_turnip_gmem_attribution import stage_gmem_attribution
             report['gmem_attribution'] = stage_gmem_attribution(ROOT, work)
+        if a.vertex_state_reuse:
+            if not a.gmem_attribution:
+                raise ValueError('Vertex state reuse is staged on the retained r26 build')
+            from nabu_turnip_vertex_state import stage_vertex_state
+            report['vertex_state_reuse'] = stage_vertex_state(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -152,6 +159,11 @@ def main():
             producer.mesa(work,pins)
             source = work/'.cache/mesa-work'
             report['recorded_patch_sequence_passed'] = True
+            if a.vertex_state_reuse:
+                run([sys.executable, ROOT/'tools/check_nabu_vertex_state.py',
+                     '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc',
+                     '--output', out/'vertex-state-check'], stream=True)
+                report['vertex_state_host_check'] = 'pass'
             run([sys.executable, ROOT/'tools/check_nabu_turnip_descriptor_sets.py',
                  '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc',
                  '--output', out/'descriptor-set-check'], stream=True)
