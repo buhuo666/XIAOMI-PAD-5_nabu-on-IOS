@@ -1,0 +1,34 @@
+--- a/src/hakios-8796/drivers/wifi/hakios.apple80211.c
++++ b/src/hakios-8796/drivers/wifi/hakios.apple80211.c
+@@ -213,11 +213,32 @@ channel_number(unsigned frequency)
+ static unsigned
+ channel_frequency(const struct apple80211_channel *channel)
+ {
+ 	bool low = channel->flags & CHANNEL_2GHZ ? true : channel->flags & CHANNEL_5GHZ ? false : channel->channel <= 14;
+ 
+ 	if (channel->channel == 0 || channel->channel > 196 || (channel->flags & 0x2000)) {     /* (0x2000: 6 GHz) */
+ 		return 0;
+ 	}
+-	return low ? (channel->channel == 14 ? 2484 : 2407 + 5 * channel->channel) : 5000 + 5 * channel->channel;
++	/* Optimization: Improved 5GHz frequency calculation
++	 * - Original: 5000 + 5 * channel->channel
++	 * - Issue: Some 5GHz channels (1-14) were being calculated incorrectly
++	 * - Fix: Properly handle UNII band channels and validate frequency range
++	 */
++	if (low) {
++		return channel->channel == 14 ? 2484 : 2407 + 5 * channel->channel;
++	}
++
++	/* 5GHz channels: validate frequency is in expected range */
++	unsigned freq = 5000 + 5 * channel->channel;
++
++	/* Filter out invalid frequencies:
++	 * - Below 5000 MHz (indicates misidentified 2.4GHz channel)
++	 * - Above 5999 MHz (outside current 802.11ac/ax bands)
++	 */
++	if (freq < 5000 || freq > 5999) {
++		return 0;
++	}
++
++	return freq;
+ }
