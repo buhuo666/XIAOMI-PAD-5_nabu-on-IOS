@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-coalesced-wake', type=int, choices=(0, 1), default=1)
     args = parser.parse_args()
     source = args.source.read_text()
     out = args.output
@@ -28,7 +29,8 @@ def main():
     for mode, flags in [('release',['-O2']),('sanitized',['-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer'])]:
         binary = out / mode
         command = ['clang++','-std=c++17','-Wall','-Wextra','-Werror','-pthread',*flags,
-                   '-DEXPECT_STEADY_DRAIN=1','-I'+host_path(out),'-I'+host_path(args.source.parent),
+                   '-DEXPECT_STEADY_DRAIN=1','-DEXPECT_COALESCED_WAKE='+str(args.expected_coalesced_wake),
+                   '-I'+host_path(out),'-I'+host_path(args.source.parent),
                    host_path(ROOT/'tools/fixtures/nabu_trace_worker.cpp'),'-o',host_path(binary)]
         for step, cmd in [('compile',command),('run',[host_path(binary)])]:
             result = subprocess.run(host_command(cmd),capture_output=True,timeout=90)

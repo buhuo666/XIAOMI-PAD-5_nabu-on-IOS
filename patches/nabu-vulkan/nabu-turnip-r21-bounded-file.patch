@@ -27,7 +27,13 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
  
  /* tu_darwin_trace_queue holds records from one class of producers. */
  struct tu_darwin_trace_queue {
-@@ -41,6 +42,17 @@
+@@ -36,11 +37,22 @@
+ };
+ 
+ /* tu_darwin_trace_state owns separate bounded queues for completed GPU
+- * timestamps and CPU metadata. Only the u_trace worker waits for queue space.
++ * timestamps and CPU metadata. Producers never wait for queue space.
+  * The transport thread alternates queues, polls capture control, and releases
   * its producer after admitted submissions retire and both queues are sent. */
  struct tu_darwin_trace_state {
     struct tu_device *device;
@@ -45,16 +51,32 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
     pthread_t worker;
     pthread_mutex_t mutex;
     pthread_cond_t changed;
-@@ -81,6 +93,8 @@
-    return (ticks / state->timebase.denom) * state->timebase.numer +
+@@ -82,6 +94,8 @@
            (ticks % state->timebase.denom) * state->timebase.numer / state->timebase.denom;
  }
-+
-+#include "nabu_trace_file_transport.inc"
  
++#include "nabu_trace_file_transport.inc"
++
  static void
  trace_argument(NativeAdrenoTraceEvent *event, uint32_t key, uint64_t value)
-@@ -333,10 +347,6 @@
+ {
+@@ -120,9 +134,14 @@
+       return;
+    }
+ 
++   /* Only the transport worker waits for records. Its empty predicate and
++    * this transition share the mutex, so one wake covers the whole burst. */
++   const bool was_empty = !state->queues[TRACE_GPU_QUEUE].count &&
++                          !state->queues[TRACE_METADATA_QUEUE].count;
+    queue.events[(queue.head + queue.count) % TRACE_QUEUE_EVENTS] = event;
+    queue.count++;
+-   pthread_cond_broadcast(&state->changed);
++   if (was_empty)
++      pthread_cond_signal(&state->changed);
+ }
+ 
+ static void
+@@ -333,10 +352,6 @@
     }
  
     pthread_mutex_lock(&state->mutex);
@@ -65,7 +87,16 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
     trace_append_locked(state, generation, event);
     pthread_mutex_unlock(&state->mutex);
  }
-@@ -434,46 +444,54 @@
+@@ -369,7 +384,7 @@
+          queue.count--;
+          state->next_queue = selected ^ 1;
+       }
+-      pthread_cond_broadcast(&state->changed);
++      /* Producers account for overflow without waiting for queue space. */
+       pthread_mutex_unlock(&state->mutex);
+ 
+       if (tu_darwin_trace_call(state->device, NativeAdrenoMethodAppendTrace,
+@@ -434,46 +449,54 @@
  {
     tu_darwin_trace_state *state = (tu_darwin_trace_state *)opaque;
     for (;;) {
@@ -154,7 +185,7 @@ diff --git a/src/freedreno/vulkan/tu_darwin_trace.cc b/src/freedreno/vulkan/tu_d
        trace_send(state);
  
        pthread_mutex_lock(&state->mutex);
-@@ -512,6 +530,7 @@
+@@ -512,6 +535,7 @@
        return;
     }
     state->device = device;

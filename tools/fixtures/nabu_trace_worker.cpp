@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <pthread.h>
 #include <thread>
 #include <unistd.h>
@@ -18,6 +19,7 @@ struct tu_device {
     std::atomic<uint32_t> control{NativeAdrenoTraceRunning};
     std::atomic<bool> fail_query{false};
     std::atomic<uint32_t> queries{0}, registered{0}, written{0}, ended{0};
+    std::atomic<uint64_t> identity_sum{0};
 };
 #include "production_types.inc"
 static uint64_t trace_now(tu_darwin_trace_state *) {
@@ -45,13 +47,34 @@ static int tu_darwin_trace_call(tu_device *device, uint32_t method,
         const auto *batch = static_cast<const NativeAdrenoTraceBatch *>(input);
         assert(batch->generation == 1 && batch->count <= NativeAdrenoTraceBatchEvents);
         device->written.fetch_add(batch->count);
+        for (uint32_t i = 0; i < batch->count; ++i)
+            device->identity_sum.fetch_add(batch->events[i].command_buffer_id);
         return 0;
     }
     assert(method == NativeAdrenoMethodEndTraceProducer);
     device->ended.fetch_add(1);
     return 0;
 }
+static std::atomic<uint64_t> broadcasts{0}, signals{0}, waits{0};
+static int counted_broadcast(pthread_cond_t *c) {
+    broadcasts.fetch_add(1);
+    return pthread_cond_broadcast(c);
+}
+[[maybe_unused]] static int counted_signal(pthread_cond_t *c) {
+    signals.fetch_add(1);
+    return pthread_cond_signal(c);
+}
+static int counted_wait(pthread_cond_t *c, pthread_mutex_t *m, const timespec *t) {
+    waits.fetch_add(1);
+    return pthread_cond_timedwait(c, m, t);
+}
+#define pthread_cond_broadcast counted_broadcast
+#define pthread_cond_signal counted_signal
+#define pthread_cond_timedwait counted_wait
 #include "production_core.inc"
+#undef pthread_cond_broadcast
+#undef pthread_cond_signal
+#undef pthread_cond_timedwait
 
 template<class F> static void until(F test) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -164,12 +187,81 @@ static void stop_on_query_failure() {
     assert(f.device.ended == 1 && f.device.written == 12);
     assert(!f.state.producer.producer_id && !f.state.active_generation);
 }
+static void burst_wake_budget() {
+    Fixture f(true);
+    const auto b = broadcasts.load(), s = signals.load();
+    pthread_mutex_lock(&f.state.mutex);
+    NativeAdrenoTraceEvent event{};
+    for (uint32_t kind : {NativeAdrenoTraceClockGpuNanoseconds,
+                          NativeAdrenoTraceClockMonotonicNanoseconds}) {
+        event.clock_domain = kind;
+        for (uint32_t i=0; i<2048; ++i)
+            trace_append_locked(&f.state, 1, event);
+        trace_append_locked(&f.state, 1, event); // Full queue still drops once.
+    }
+    pthread_mutex_unlock(&f.state.mutex);
+    assert(f.state.queue_dropped == 2 && f.state.dropped == 2);
+    trace_send(&f.state);
+    assert(f.device.written == 4096);
+#if EXPECT_COALESCED_WAKE
+    assert(signals-s == 1 && broadcasts-b == 0);
+#else
+    assert(signals-s == 0 && broadcasts-b == 4096+64);
+#endif
+}
+static void empty_handoffs() {
+    Fixture f(true);
+    const auto initial = waits.load();
+    f.start();
+    until([&]{ return waits > initial; });
+    for (uint32_t i=1; i<=200; ++i) {
+        const auto previous = waits.load();
+        // Taking the same mutex also establishes the waiter entered its wait.
+        f.add(1);
+        until([&]{ return f.device.written == i && waits > previous; });
+    }
+    f.stop();
+    assert(f.state.dropped == 0 && f.device.written == 203 && f.device.ended == 1);
+}
+static void concurrent_bursts() {
+    Fixture f(true);
+    f.start();
+    constexpr uint32_t rounds = 100, per_thread = 128, threads = 4;
+    for (uint32_t r=0; r<rounds; ++r) {
+        std::thread producers[threads];
+        for (uint32_t t=0; t<threads; ++t) {
+            producers[t] = std::thread([&, r, t]{
+                for (uint32_t n=0; n<per_thread; ++n) {
+                    NativeAdrenoTraceEvent event{};
+                    event.clock_domain = t % 2 ? NativeAdrenoTraceClockGpuNanoseconds :
+                                                NativeAdrenoTraceClockMonotonicNanoseconds;
+                    event.command_buffer_id = (r*threads+t)*per_thread+n+1;
+                    pthread_mutex_lock(&f.state.mutex);
+                    trace_append_locked(&f.state, 1, event);
+                    pthread_mutex_unlock(&f.state.mutex);
+                }
+            });
+        }
+        for (auto &producer : producers) producer.join();
+        until([&]{ return f.device.written == (r+1)*threads*per_thread; });
+    }
+    f.stop();
+    const uint64_t n = rounds*threads*per_thread;
+    assert(f.state.dropped == 0 && f.device.written == n+3);
+    assert(f.device.identity_sum == n*(n+1)/2 && f.device.ended == 1);
+}
 int main() {
     running_drain(false);
     running_drain(true);
     admission();
     close_after_retirement();
     stop_on_query_failure();
-    printf("{\"passed\":true,\"cases\":5,\"steady_drain_while_submit_locked\":%s,\"records\":1024}\n",
-           EXPECT_STEADY_DRAIN ? "true" : "false");
+    burst_wake_budget();
+    empty_handoffs();
+    concurrent_bursts();
+    printf("{\"passed\":true,\"cases\":8,\"steady_drain_while_submit_locked\":%s,"
+           "\"coalesced_wake\":%s,\"burst_events\":4096,\"burst_notifications\":%u,"
+           "\"concurrent_records\":51200,\"empty_handoffs\":200}\n",
+           EXPECT_STEADY_DRAIN ? "true" : "false", EXPECT_COALESCED_WAKE ? "true" : "false",
+           EXPECT_COALESCED_WAKE ? 1u : 4160u);
 }
