@@ -62,7 +62,7 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_
 +
     struct tu_device *device;
  
-    struct u_trace_iterator trace_renderpass_start;
+    struct util_dynarray resource_ranges;
 diff --git a/src/freedreno/vulkan/tu_darwin_trace.h b/src/freedreno/vulkan/tu_darwin_trace.h
 --- a/src/freedreno/vulkan/tu_darwin_trace.h
 +++ b/src/freedreno/vulkan/tu_darwin_trace.h
