@@ -1,7 +1,15 @@
 diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd_buffer.cc
 --- a/src/freedreno/vulkan/tu_cmd_buffer.cc
 +++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
-@@ -8400,6 +8400,7 @@
+@@ -6884,6 +6884,7 @@
+                    const struct tu_subpass_barrier *barrier,
+                    bool external)
+ {
++   tu_darwin_trace_subpass_dependency(cmd_buffer, barrier, external);
+    /* Note: we don't know until the end of the subpass whether we'll use
+     * sysmem, so assume sysmem here to be safe.
+     */
+@@ -8400,6 +8401,7 @@
     if (cmd->state.disable_fs)
        zmode = A6XX_EARLY_Z;
  
@@ -9,7 +17,7 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
     tu_cs_emit_regs(cs, GRAS_SU_DEPTH_PLANE_CNTL(CHIP, .z_mode = zmode));
     tu_cs_emit_regs(cs, A6XX_RB_DEPTH_PLANE_CNTL(.z_mode = zmode));
  }
-@@ -8771,8 +8772,10 @@
+@@ -8771,8 +8773,10 @@
  
     /* Early exit if there is nothing to emit, saves CPU cycles */
     uint32_t dirty = cmd->state.dirty;
@@ -21,7 +29,7 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
  
     struct tu_tess_params *tess_params = &cmd->state.tess_params;
     if ((dirty & TU_CMD_DIRTY_TESS_PARAMS) ||
-@@ -8975,6 +8978,7 @@
+@@ -8975,6 +8979,7 @@
      */
     cmd->state.dirty &= TU_CMD_DIRTY_COMPUTE_DESC_SETS;
     BITSET_ZERO(cmd->vk.dynamic_graphics_state.dirty);
@@ -29,7 +37,7 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
     return VK_SUCCESS;
  }
  
-@@ -10228,6 +10232,7 @@
+@@ -10228,6 +10233,7 @@
             const VkDependencyInfo *dep_infos,
             bool no_sync)
  {
@@ -40,10 +48,10 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
 diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_buffer.h
 --- a/src/freedreno/vulkan/tu_cmd_buffer.h
 +++ b/src/freedreno/vulkan/tu_cmd_buffer.h
-@@ -657,6 +657,13 @@
- 
- struct tu_cmd_buffer
+@@ -659,6 +659,14 @@
  {
+    struct vk_command_buffer vk;
+ 
 +   /* CPU-only capture state; reset when command recording begins. */
 +   struct {
 +      uint64_t value[45][3];
@@ -51,29 +59,42 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_
 +      uint32_t draws, sequence, barriers, zmode;
 +   } darwin_gmem;
 +
-    struct vk_command_buffer vk;
- 
++
     struct tu_device *device;
+ 
+    struct u_trace_iterator trace_renderpass_start;
 diff --git a/src/freedreno/vulkan/tu_darwin_trace.h b/src/freedreno/vulkan/tu_darwin_trace.h
 --- a/src/freedreno/vulkan/tu_darwin_trace.h
 +++ b/src/freedreno/vulkan/tu_darwin_trace.h
-@@ -16,6 +16,9 @@
+@@ -8,6 +8,7 @@
+ 
+ struct tu_device;
+ struct tu_cmd_buffer;
++struct tu_subpass_barrier;
+ struct tu_queue;
+ struct tu_u_trace_submission_data;
+ 
+@@ -16,6 +17,11 @@
  };
  
  #if defined(TU_HAS_DARWIN)
 +void tu_darwin_trace_draw_state(struct tu_cmd_buffer *cmd);
 +void tu_darwin_trace_dependency(struct tu_cmd_buffer *cmd, uint32_t count,
 +                                const VkDependencyInfo *infos, bool no_sync);
++void tu_darwin_trace_subpass_dependency(struct tu_cmd_buffer *cmd,
++                                         const struct tu_subpass_barrier *barrier, bool external);
  void tu_darwin_trace_init(struct tu_device *device);
  void tu_darwin_trace_finish(struct tu_device *device);
  void tu_darwin_trace_begin(struct tu_cmd_buffer *cmd);
-@@ -35,6 +38,9 @@
+@@ -35,6 +41,11 @@
                                           uint32_t type, uint32_t flags,
                                           const uint64_t *words, uint32_t count);
  #else
 +static inline void tu_darwin_trace_draw_state(struct tu_cmd_buffer *) {}
 +static inline void tu_darwin_trace_dependency(struct tu_cmd_buffer *, uint32_t,
 +                                              const VkDependencyInfo *, bool) {}
++static inline void tu_darwin_trace_subpass_dependency(struct tu_cmd_buffer *,
++                                           const struct tu_subpass_barrier *, bool) {}
  static inline void tu_darwin_trace_init(struct tu_device *)
  {
  }
@@ -195,7 +216,7 @@ diff --git a/src/freedreno/vulkan/nabu_gmem_attribution.inc b/src/freedreno/vulk
 new file mode 100644
 --- /dev/null
 +++ b/src/freedreno/vulkan/nabu_gmem_attribution.inc
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,245 @@
 +/* SPDX-License-Identifier: MIT
 + * CPU-only observations of the state already chosen by Turnip. No GPU packets.
 + * words[0] holds an attempted-record sequence and draw/barrier ordinal, so a
@@ -377,6 +398,24 @@ new file mode 100644
 +         }
 +      }
 +   }
++}
++
++/* Render-pass begin/end and between-subpass dependencies bypass tu_barrier. */
++void
++tu_darwin_trace_subpass_dependency(struct tu_cmd_buffer *cmd,
++                                   const struct tu_subpass_barrier *barrier, bool external)
++{
++   if (!gmem_active(cmd))
++      return;
++   const uint32_t ordinal = ++cmd->darwin_gmem.barriers;
++   const uint32_t flags = external | (barrier->incoherent_ccu_color << 1) |
++                          (barrier->incoherent_ccu_depth << 2);
++   gmem_record(cmd, 48, "subpass_dependency_stages", flags, ordinal,
++                cmd->darwin_gmem.draws, barrier->src_stage_mask, barrier->dst_stage_mask);
++   gmem_record(cmd, 49, "subpass_dependency_access", flags, ordinal,
++                cmd->darwin_gmem.draws, barrier->src_access_mask, barrier->dst_access_mask);
++   gmem_record(cmd, 50, "subpass_dependency_access3", flags, ordinal,
++                cmd->darwin_gmem.draws, barrier->src_access_mask2, barrier->dst_access_mask2);
 +}
 +
 +/* Copy existing u_trace payload fields without inserting GPU timestamps. */
