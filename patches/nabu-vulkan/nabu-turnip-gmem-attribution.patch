@@ -216,7 +216,7 @@ diff --git a/src/freedreno/vulkan/nabu_gmem_attribution.inc b/src/freedreno/vulk
 new file mode 100644
 --- /dev/null
 +++ b/src/freedreno/vulkan/nabu_gmem_attribution.inc
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,244 @@
 +/* SPDX-License-Identifier: MIT
 + * CPU-only observations of the state already chosen by Turnip. No GPU packets.
 + * words[0] holds an attempted-record sequence and draw/barrier ordinal, so a
@@ -444,7 +444,6 @@ new file mode 100644
 +      trace_argument(&event,0,p->lrz);
 +      trace_argument(&event,1,(uint32_t)p->lrzDisabledAtDraw);
 +      trace_argument(&event,2,(uint32_t)p->lrzWriteDisabledAtDraw);
-+      trace_argument(&event,3,p->lrzStatus);
 +      trace_append(state,generation,event);
 +      const char *reasons[] = {p->lrzDisableReason,p->lrzWriteDisableReason,p->tilingDisableReason};
 +      for (unsigned kind=0;kind<3;++kind) {
