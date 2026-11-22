@@ -39,6 +39,7 @@ struct vk_command {std::array<uint64_t,32> strides{};bool stride_dirty=false;};
 struct tu_cmd_buffer {
   vk_command vk;
   struct {Registers vb{};uint32_t max_vbs_bound=0,dirty=0;tu_draw_state vertex_buffers{};
+    bool vertex_state_pending=false;
     uint64_t vertex_bind_calls=0,vertex_bind_reuses=0,vertex_state_builds=0;
     uint64_t vertex_state_baseline_dwords=0,vertex_state_emitted_dwords=0;} state;
   tu_cs sub_cs{this,0};
@@ -76,7 +77,7 @@ namespace after {
 }
 static void check(bool value,const char *what){if(!value)throw std::runtime_error(what);}
 static void draw(tu_cmd_buffer &c,bool optimized,bool full=false){
-  if(optimized && (c.state.dirty&TU_CMD_DIRTY_VERTEX_BUFFERS))after::tu_emit_vertex_buffer_state(&c);
+  if(optimized && c.state.vertex_state_pending)after::tu_emit_vertex_buffer_state(&c);
   if((c.state.dirty&TU_CMD_DIRTY_VERTEX_BUFFERS)||full){
     if(c.state.vertex_buffers.iova)c.gpu=c.blocks.at(c.state.vertex_buffers.iova-1);
     c.group_loads++;
@@ -110,6 +111,11 @@ int main(){
       (unsigned long long)(b.state.vertex_state_baseline_dwords-b.state.vertex_state_emitted_dwords));
     a.gpu={};b.gpu={};compare(a,b,true);draws++;
     check(b.gpu[0].base==0x10010,"full restoration after clobber");
+    for(unsigned i=0;i<100;i++){
+      a.gpu={};b.gpu={};a.state.dirty=~0u;b.state.dirty=~0u;
+      compare(a,b,true);draws++;
+    }
+    check(b.blocks.size()==1,"secondary all-dirty reuses existing block");
     uint64_t stride[]={64};bind(a,b,0,1,buf,off,nullptr,stride);compare(a,b);draws++;
     check(b.blocks.size()==1&&b.vk.strides[0]==64,"stride-only rebind");
     buf[0]=buffers+2;bind(a,b,0,1,buf,off);compare(a,b);draws++;
@@ -139,7 +145,7 @@ int main(){
       }
       bind(a,b,first,count,buf,off,rng()%2?sz:nullptr,rng()%2?stride:nullptr);
       if(rng()%3==0){compare(a,b);draws++;}
-      if(step%333==0){a.gpu={};b.gpu={};compare(a,b,true);draws++;}
+      if(step%333==0){a.gpu={};b.gpu={};a.state.dirty=~0u;b.state.dirty=~0u;compare(a,b,true);draws++;}
     }
     compare(a,b);draws++;
     check(b.state.vertex_state_emitted_dwords==b.allocated_dwords,"emission accounting");
@@ -190,7 +196,7 @@ def main():
     report=dict(passed=True,results=results,actual_functions_extracted=True,
         covered=['repeated bindings','batch before draw','full state restore','stride-only updates',
             'alias resources','range changes','null binding','sparse high-water','32-bit size semantics',
-            '10000 randomized binds','new recording'],
+            '10000 randomized binds','100 secondary all-dirty restores','new recording'],
         limits='Host effective register and resource equivalence. No real GPU timing or physical pixel validation.')
     (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(report,indent=2))

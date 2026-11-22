@@ -57,9 +57,10 @@ tu_CmdBindVertexBuffers2(VkCommandBuffer commandBuffer,
       vb.size = size;
    }
 
-   if (changed)
+   if (changed) {
+      cmd->state.vertex_state_pending = true;
       cmd->state.dirty |= TU_CMD_DIRTY_VERTEX_BUFFERS;
-   else
+   } else
       cmd->state.vertex_bind_reuses++;
 }
 
@@ -81,12 +82,13 @@ tu_emit_vertex_buffer_state(struct tu_cmd_buffer *cmd)
    }
    cmd->state.vertex_state_builds++;
    cmd->state.vertex_state_emitted_dwords += cmd->state.vertex_buffers.size;
+   cmd->state.vertex_state_pending = false;
 }'''
     out['tu_cmd_buffer.cc']=out['tu_cmd_buffer.cc'].replace(old,new,1)
     anchor='   /* Early exit if there is nothing to emit, saves CPU cycles */\n'
     assert out['tu_cmd_buffer.cc'].count(anchor)==1
     out['tu_cmd_buffer.cc']=out['tu_cmd_buffer.cc'].replace(anchor,
-        '   if (cmd->state.dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)\n'
+        '   if (cmd->state.vertex_state_pending)\n'
         '      tu_emit_vertex_buffer_state(cmd);\n\n'+anchor)
     anchor='   tu_cmd_record_result(cmd_buffer);\n   return vk_command_buffer_end(&cmd_buffer->vk);'
     assert out['tu_cmd_buffer.cc'].count(anchor)==1
@@ -95,6 +97,7 @@ tu_emit_vertex_buffer_state(struct tu_cmd_buffer *cmd)
     anchor='   uint32_t max_vbs_bound;'
     assert out['tu_cmd_buffer.h'].count(anchor)==1
     out['tu_cmd_buffer.h']=out['tu_cmd_buffer.h'].replace(anchor,anchor+'''
+   bool vertex_state_pending;
    uint64_t vertex_bind_calls, vertex_bind_reuses, vertex_state_builds;
    uint64_t vertex_state_baseline_dwords, vertex_state_emitted_dwords;''')
     anchor='void tu_darwin_trace_draw_state(struct tu_cmd_buffer *cmd);'

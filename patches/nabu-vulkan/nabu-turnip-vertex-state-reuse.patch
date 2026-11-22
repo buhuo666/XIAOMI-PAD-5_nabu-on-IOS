@@ -1,7 +1,7 @@
 diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd_buffer.cc
 --- a/src/freedreno/vulkan/tu_cmd_buffer.cc
 +++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
-@@ -4828,40 +4828,58 @@
+@@ -4828,40 +4828,60 @@
                           const VkDeviceSize *pStrides)
  {
     VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
@@ -37,9 +37,10 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
 +      vb.size = size;
 +   }
 +
-+   if (changed)
++   if (changed) {
++      cmd->state.vertex_state_pending = true;
 +      cmd->state.dirty |= TU_CMD_DIRTY_VERTEX_BUFFERS;
-+   else
++   } else
 +      cmd->state.vertex_bind_reuses++;
 +}
 +
@@ -77,10 +78,11 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
 -   cmd->state.dirty |= TU_CMD_DIRTY_VERTEX_BUFFERS;
 +   cmd->state.vertex_state_builds++;
 +   cmd->state.vertex_state_emitted_dwords += cmd->state.vertex_buffers.size;
++   cmd->state.vertex_state_pending = false;
  }
  
  template <chip CHIP>
-@@ -5677,6 +5695,7 @@
+@@ -5677,6 +5697,7 @@
     tu_cs_end(&cmd_buffer->draw_cs);
     tu_cs_end(&cmd_buffer->draw_epilogue_cs);
  
@@ -88,11 +90,11 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
     tu_cmd_record_result(cmd_buffer);
     return vk_command_buffer_end(&cmd_buffer->vk);
  }
-@@ -8771,6 +8790,9 @@
+@@ -8771,6 +8792,9 @@
        tu_set_render_mode<CHIP>(cs, { .shader_uses_rt = true });
     }
  
-+   if (cmd->state.dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
++   if (cmd->state.vertex_state_pending)
 +      tu_emit_vertex_buffer_state(cmd);
 +
     /* Early exit if there is nothing to emit, saves CPU cycles */
@@ -101,10 +103,11 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
 diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_buffer.h
 --- a/src/freedreno/vulkan/tu_cmd_buffer.h
 +++ b/src/freedreno/vulkan/tu_cmd_buffer.h
-@@ -480,6 +480,8 @@
+@@ -480,6 +480,9 @@
     } vb[MAX_VBS];
  
     uint32_t max_vbs_bound;
++   bool vertex_state_pending;
 +   uint64_t vertex_bind_calls, vertex_bind_reuses, vertex_state_builds;
 +   uint64_t vertex_state_baseline_dwords, vertex_state_emitted_dwords;
  
