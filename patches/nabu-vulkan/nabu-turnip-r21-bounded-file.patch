@@ -291,8 +291,8 @@ diff --git a/src/freedreno/vulkan/nabu_trace_file_transport.inc b/src/freedreno/
 +      else snprintf(directory, sizeof(directory), "/var/mobile/Media/NabuGpuOpt");
 +      mkdir(directory, 0700);
 +      char name[1200];
-+      snprintf(name, sizeof(name), "%s/r21-gpu-%u-%llu-%u.bin", directory,
-+               (unsigned)getpid(), (unsigned long long)state->file_id, producer.generation);
++      snprintf(name, sizeof(name), "%s/r21-gpu-%u-%llu-%u-%llu.bin", directory,
++               (unsigned)getpid(), (unsigned long long)state->file_id, producer.generation, (unsigned long long)control.started_ns);
 +      state->file = fopen(name, "wbx");
 +      if (!state->file) {
 +         p_atomic_set(&state->file_failure_generation, producer.generation);
