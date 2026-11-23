@@ -92,7 +92,7 @@ static void lck_mtx_unlock(int *mutex)
     locked = false;
 }
 
-static int hakios_sta_ask_join(const struct hakios_sta_join *what)
+static int hakios_sta_ask_join_standing(const struct hakios_sta_join *what)
 {
     assert(!locked && join_result == 0 && lock_calls == 1);
     native_calls++;

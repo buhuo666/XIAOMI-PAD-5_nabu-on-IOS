@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tarfile
 from check_darwinboot_8796 import host_command, host_path
@@ -22,6 +23,8 @@ def main():
     ap.add_argument('--native-usb',action='store_true',help='Include the stock USB family adapter and DWC3 bidirectional transport')
     ap.add_argument('--wireless',action='store_true',help='Include the Nabu SM8150 wireless foundation')
     ap.add_argument('--ath10k',action='store_true',help='Use the cold-boot ath10k platform bridge; link its separately built object too')
+    ap.add_argument('--station-header',type=Path,default=ROOT/'build/xnu8796-reference/tree/bsd/sys/hakios.sta.h',
+                    help='Station ABI header from the patched kernel source tree')
     ap.add_argument('--gpu',action='store_true',help='Start the separately built A640 backend when nabu-gpu=1 is selected')
     ap.add_argument('--return-trace',action='store_true',help='Include first-loader-return diagnostic objects for the separate offline patch step')
     a=ap.parse_args();a.output.mkdir(parents=True,exist_ok=True)
@@ -41,6 +44,10 @@ def main():
         headers/'EXTERNAL_HEADERS',headers/'sdk-kernel']
     include += [headers/'EXPORT_HDRS'/directory for directory in ('osfmk','bsd','libkern','pexpert','iokit','security')]
     if a.ath10k:
+        abi_include=a.output/'station-include'
+        (abi_include/'sys').mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(a.station_header,abi_include/'sys/hakios.sta.h')
+        include.insert(0,abi_include)
         include.append(ROOT/'src/hakios-8796/xnu/files/bsd')
     flags += ['-I'+host_path(p) for p in include]
     if a.power: flags += ['-DNABU_POWER_SERVICE=1']

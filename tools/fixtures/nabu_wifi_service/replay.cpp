@@ -29,6 +29,12 @@ int main(){
     assert(!transmit(&packet,64));nabu_ath10k_os_net_input(packet.bytes.data(),64);assert(!rx_calls);
     hakios_sta_scan scan={};scan_errno=ETIMEDOUT;assert(station_scan(&scan)==ETIMEDOUT);
     hakios_sta_join what={};what.security=HAKIOS_STA_WPA2_PSK;
+    what.security=HAKIOS_STA_WPA3_SAE;
+    assert(station_join(&what)==EINVAL&&!bsd_up);
+    what.passphrase_length=8;
+    join_errno=EACCES;assert(station_join(&what)==EACCES&&!bsd_up);
+    join_errno=0;join_ok(what);
+    what.security=HAKIOS_STA_WPA2_PSK;what.passphrase_length=0;
     join_errno=EACCES;assert(station_join(&what)==EACCES&&!bsd_up);join_errno=0;
     join_ok(what);nabu_ath10k_os_net_input(packet.bytes.data(),64);assert(rx_calls==1);
     packet.bad=true;assert(!transmit(&packet,64));packet.bad=false;

@@ -2,7 +2,7 @@ name: nabu16 - 8796 macOS compilation
 
 on:
   push:
-    branches: [nabu16-bootstrap]
+    branches: [nabu16-bootstrap, codex/int330-wifi-source]
     paths:
       - '.github/workflows/bootstrap.yml'
       - 'tools/**'
@@ -150,6 +150,22 @@ jobs:
           python3 tools/fetch_sources.py --only NativeAES ArmSmmu4K-nabu --report log/ci/nabu-native-source.json
           python3 tools/build_nabu_aes.py --data-build artifacts/nabu-data-block \
             --output artifacts/nabu-wireless-objects --power --native-usb --wireless --ath10k --return-trace --gpu
+      - name: Retain compiled BSD wireless objects and source identities
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, shutil
+          tree=pathlib.Path('build/xnu8796-reference/tree')
+          dst=pathlib.Path('artifacts/wifi-bsd-objects'); dst.mkdir()
+          evidence={}
+          for name in ['hakios.sta','hakios.apple80211','hakios.wifi']:
+              src=tree/'bsd/dev'/(name+'.c')
+              candidates=[p for p in pathlib.Path('src/hakios-8796').rglob(name+'.o') if p.is_file()]
+              candidates += [p for p in tree.rglob(name+'.o') if p.is_file()]
+              hashes={hashlib.sha256(p.read_bytes()).hexdigest():p for p in candidates}
+              evidence[name]={'source_sha256':hashlib.sha256(src.read_bytes()).hexdigest(),'objects':list(hashes)}
+              if len(hashes)==1: shutil.copyfile(next(iter(hashes.values())),dst/(name+'.o'))
+          (dst/'report.json').write_text(json.dumps(evidence,indent=2)+'\n')
+          PY
       - name: Compile A640 system Metal factory transport for 20F66
         run: |
           python3 tools/check_nabu_frame_trace.py --output log/ci/nabu-frame-trace
@@ -187,6 +203,7 @@ jobs:
           path: |
             log/ci/
             artifacts/8796-reference/
+            artifacts/wifi-bsd-objects/
             artifacts/nabu-userland/
             artifacts/nabu-setup-compat/
             artifacts/nabu-input-bridge/

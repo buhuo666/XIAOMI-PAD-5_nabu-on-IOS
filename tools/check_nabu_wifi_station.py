@@ -16,12 +16,14 @@ CASES = ('attach-off', 'attach-fatal', 'power', 'scan', 'lost', 'scan-fatal',
          'join-publication-race', 'join-commit-race', 'join-committed-off-on', 'join-off-active',
          'signal-current', 'signal-newjoin-pending', 'signal-newjoin-active', 'signal-publication-race',
          'signal-off', 'signal-off-on', 'signal-leave', 'signal-lost', 'signal-fatal',
-         'signal-detach', 'signal-newjoin')
+         'signal-detach', 'signal-newjoin', 'join-bounded-fallback')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--reference-root', type=Path, default=ROOT,
+                        help='Project containing the existing hakios reference sources')
     args = parser.parse_args()
     out = args.output.resolve()
     source = out / 'source'
@@ -32,7 +34,9 @@ def main():
     ):
         destination = source / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / original, destination)
+        shutil.copy2(args.reference_root / original, destination)
+    from prepare_wifi_base import prepare
+    prepare(source, '0002')
     patch = ROOT / 'patches/8796/nabu-wifi-station-lifecycle.patch'
     subprocess.run(host_command(['patch', '--fuzz=0', '-p1', '-d', host_path(source),
                                  '-i', host_path(patch)]), check=True)

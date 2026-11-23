@@ -1,0 +1,44 @@
+diff --git a/src/hakios-8796/drivers/wifi/hakios.wifi.c b/src/hakios-8796/drivers/wifi/hakios.wifi.c
+index 04c350d..c25bd57 100644
+--- a/src/hakios-8796/drivers/wifi/hakios.wifi.c
++++ b/src/hakios-8796/drivers/wifi/hakios.wifi.c
+@@ -193,6 +193,10 @@ static uint32_t step;                   /* the one being performed */
+ static uint32_t new_from;               /* the first of the steps that have not been seen to work: they wait */
+ static char last_write[96] = "nothing written";
+ 
++/* Optimization: dynamic pause reduction after initialization */
++static uint32_t init_complete_step = 11;  /* after DSP startup, reduce wait times */
++static uint32_t reduced_pause_ms = 200;   /* reduced pause for established initialization */
++
+ /* As in hakios.adreno.c: every line goes to the log the loader reads from another core as well. */
+ extern void loader_log_putc(char c);
+ 
+@@ -395,12 +399,25 @@ need(struct block *b)
+ 	}
+ }
+ 
+-/* Time for the loader to note what has just been said, where it is not yet known to be harmless. */
++/* Time for the loader to note what has just been said, where it is not yet known to be harmless.
++ * Optimization: Dynamic wait time reduction after initialization phase completes.
++ * - Steps 1-11: Full pause (loader needs to log each step)
++ * - Steps 12+: Reduced pause (initialization complete, driver taking over)
++ */
+ static void
+ hold(bool single_access)
+ {
+-	if (step >= new_from && pause_ms && (!single_access || fine)) {
+-		sleep_ms(pause_ms);
++	uint32_t effective_pause = pause_ms;
++
++	/* After step 11 (DSP started), use reduced pause for GLINK/QRTR setup */
++	if (step > init_complete_step && reduced_pause_ms > 0) {
++		if (effective_pause > reduced_pause_ms) {
++			effective_pause = reduced_pause_ms;
++		}
++	}
++
++	if (step >= new_from && effective_pause && (!single_access || fine)) {
++		sleep_ms(effective_pause);
+ 	}
+ }
+ 

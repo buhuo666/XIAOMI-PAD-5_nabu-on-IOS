@@ -52,7 +52,7 @@
  
  static const char interface_name[16] = "en0";   /* (drivers/net/hakios.net.c makes one interface, and that is its name) */
  
-@@ -294,7 +298,7 @@
+@@ -301,7 +305,7 @@
  	switch (request->req_type) {
  	case 43:
  	case 44: {                              /* the driver's and the hardware's name: the text alone, in 256 bytes */
@@ -61,7 +61,7 @@
  
  		return give(request, name, sizeof(name));
  	}
-@@ -307,17 +311,18 @@
+@@ -314,17 +318,18 @@
  		 * for a WPA2 network ("Unable to join").
  		 */
  		uint8_t bits[13] = { 0 };
@@ -84,7 +84,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -511,6 +516,40 @@
+@@ -518,6 +523,50 @@
  	return error;
  }
  
@@ -93,11 +93,13 @@
 +join_security(const struct apple80211_assoc *asked)
 +{
 +	if (asked->version != 1 || asked->key_version != 1) return EINVAL;
-+	if (asked->mode != 2 || asked->auth_lower != 1 || asked->auth_upper != 8 ||
++	bool sae = asked->auth_upper == (1u << 12);
++	if (asked->mode != 2 || asked->auth_lower != 1 || (!sae && asked->auth_upper != 8) ||
 +	    asked->key_flags || asked->key_index) return EOPNOTSUPP;
 +	if (asked->key_cipher != CIPHER_PMK && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
++	if (sae && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
 +	if ((asked->key_cipher == CIPHER_PMK && asked->key_length != 32) ||
-+	    (asked->key_cipher == CIPHER_PASSPHRASE && (asked->key_length < 8 || asked->key_length > 63))) return EINVAL;
++	    (asked->key_cipher == CIPHER_PASSPHRASE && (asked->key_length < (sae ? 1u : 8u) || asked->key_length > 63))) return EINVAL;
 +	unsigned length = asked->rsn_length;
 +	const uint8_t *r = asked->rsn;
 +	if (!length) return EOPNOTSUPP;
@@ -110,7 +112,15 @@
 +	if (count != 1 || memcmp(r + 10, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
 +	count = r[14] | r[15] << 8;
 +	if (!count || count > (length - 16) / 4) return EINVAL;
-+	if (count != 1 || memcmp(r + 16, "\x00\x0f\xac\x02", 4)) return EOPNOTSUPP;
++	if (count != 1 || memcmp(r + 16, "\x00\x0f\xac", 3) || r[19] != (sae ? 8 : 2)) return EOPNOTSUPP;
++	if (sae) {
++		if (length < 22 || (r[20] & 0xc0) != 0xc0) return EOPNOTSUPP;
++		if (length == 22) return 0;
++		if (length < 24) return EINVAL;
++		if (r[22] || r[23]) return EOPNOTSUPP; /* No cached association. */
++		if (length == 24) return 0;
++		return length == 28 && !memcmp(r + 24, "\x00\x0f\xac\x06", 4) ? 0 : EOPNOTSUPP;
++	}
 +	if (length == 20) return 0;
 +	if (length < 22) return EINVAL;
 +	if (r[20] & 0xc0) return EOPNOTSUPP; /* No management-frame protection negotiated. */
@@ -125,7 +135,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -518,12 +557,12 @@
+@@ -525,12 +574,12 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -140,7 +150,7 @@
  		error = asked == NULL || what == NULL ? ENOMEM : error;
  		goto out;
  	}
-@@ -535,12 +574,11 @@
+@@ -542,13 +591,12 @@
  		error = EINVAL;
  		goto out;
  	}
@@ -151,11 +161,22 @@
 -	if (asked->key_length == 0) {
 -		what->security = HAKIOS_STA_OPEN;
 -	} else if (asked->key_cipher == CIPHER_PASSPHRASE && asked->key_length >= 8 && asked->key_length <= 63) {
-+	if (asked->key_cipher == CIPHER_PASSPHRASE && asked->key_length >= 8 && asked->key_length <= 63) {
- 		what->security = HAKIOS_STA_WPA2_PSK;
+-		what->security = HAKIOS_STA_WPA2_PSK;
++	if (asked->key_cipher == CIPHER_PASSPHRASE) {
++		what->security = asked->auth_upper == (1u << 12) ? HAKIOS_STA_WPA3_SAE : HAKIOS_STA_WPA2_PSK;
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
-@@ -611,6 +649,23 @@
+ 	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
+@@ -561,7 +609,7 @@
+ 	lck_mtx_lock(&apple80211_lock);
+ 	join_result = 0;
+ 	lck_mtx_unlock(&apple80211_lock);
+-	error = hakios_sta_ask_join(what);
++	error = hakios_sta_ask_join_standing(what);
+ out:
+ 	if (asked != NULL) {
+ 		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
+@@ -618,6 +666,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -179,7 +200,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -726,8 +781,9 @@
+@@ -733,8 +798,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -191,3 +212,14 @@
  		printf("apple80211: %s %s %d (%s), value %d, %u bytes%s: %s", who, is_set ? "sets" : "gets", request->req_type,
  		    type_name(request->req_type), request->req_val, request->req_len, what, error == 0 ? "answered\n" : error ==
  		    EOPNOTSUPP ? "REFUSED\n" : "");
+--- a/bsd/sys/hakios.sta.h
++++ b/bsd/sys/hakios.sta.h
+@@ -42,7 +42,7 @@
+ 	uint16_t dwell_ms;                      /* on each channel; 0: the radio's own */
+ };
+ 
+-enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK };
++enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE };
+ 
+ struct hakios_sta_join {
+ 	uint8_t ssid[32], ssid_length;

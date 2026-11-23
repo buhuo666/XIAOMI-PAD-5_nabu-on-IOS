@@ -42,6 +42,10 @@ def stage(out, original, relative, patch):
     target = out / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(original.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+    if relative.startswith('bsd/'):
+        header = out / 'bsd/sys/hakios.sta.h'
+        header.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / 'src/hakios-8796/xnu/files/bsd/sys/hakios.sta.h', header)
     result = subprocess.run(host_command(['patch', '--batch', '--fuzz=0', '-p1', '-d', host_path(out),
                                          '-i', host_path(patch)]), capture_output=True, timeout=30)
     (out / 'patch.log').write_bytes(result.stdout + result.stderr)
@@ -106,7 +110,7 @@ def main():
             ('CIPHER_PASSPHRASE', r'^#define CIPHER_PASSPHRASE[^\n]+'),
             ('association ABI assertions', r'^_Static_assert\(sizeof\(struct apple80211_assoc\).*?;')
         ], ('join_security', 'set_join'))
-        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup')))
+        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup', 'sae-selection')))
     if backend:
         backend_unit, backend_evidence = unit(out, 'backend', backend, [
             ('ELEMENTS_MOST', r'^#define ELEMENTS_MOST[^\n]+'),
@@ -119,7 +123,7 @@ def main():
     results = []
     for name, source, flags, cases in variants:
         binary = out / (name + '-test')
-        headers = ROOT / 'src/hakios-8796/xnu/files/bsd' if name == 'control' else backend.parents[3] / 'xnu/files/bsd'
+        headers = control.parents[1] if name == 'control' else backend.parents[3] / 'xnu/files/bsd'
         command = ['clang' if sys.platform == 'darwin' else 'clang-18', '-std=gnu11',
                    '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                    '-fno-sanitize-recover=all', '-fno-omit-frame-pointer', '-g',

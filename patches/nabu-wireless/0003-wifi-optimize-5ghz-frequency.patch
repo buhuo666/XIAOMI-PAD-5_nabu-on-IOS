@@ -1,0 +1,20 @@
+diff --git a/src/hakios-8796/drivers/wifi/hakios.apple80211.c b/src/hakios-8796/drivers/wifi/hakios.apple80211.c
+index 62662f7..d1451f9 100644
+--- a/src/hakios-8796/drivers/wifi/hakios.apple80211.c
++++ b/src/hakios-8796/drivers/wifi/hakios.apple80211.c
+@@ -218,7 +218,14 @@ channel_frequency(const struct apple80211_channel *channel)
+ 	if (channel->channel == 0 || channel->channel > 196 || (channel->flags & 0x2000)) {     /* (0x2000: 6 GHz) */
+ 		return 0;
+ 	}
+-	return low ? (channel->channel == 14 ? 2484 : 2407 + 5 * channel->channel) : 5000 + 5 * channel->channel;
++	if ((channel->flags & CHANNEL_2GHZ) && (channel->flags & CHANNEL_5GHZ)) {
++		return 0;
++	}
++	if (low) {
++		if (channel->channel > 14) return 0;
++		return channel->channel == 14 ? 2484 : 2407 + 5 * channel->channel;
++	}
++	return 5000 + 5 * channel->channel;
+ }
+ 
+ static void
