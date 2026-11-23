@@ -2,7 +2,7 @@ name: nabu16 - 8796 macOS compilation
 
 on:
   push:
-    branches: [nabu16-bootstrap, codex/int330-wifi-source]
+    branches: [nabu16-bootstrap, codex/int331-source]
     paths:
       - '.github/workflows/bootstrap.yml'
       - 'tools/**'
