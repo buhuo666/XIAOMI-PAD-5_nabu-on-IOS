@@ -10,11 +10,12 @@
     "xnu/files/bsd/sys/hakios.qmi.h",
     "xnu/files/bsd/sys/hakios.sta.h"
   ],
-  "build_variant": "native-management-int333-r1",
+  "build_variant": "native-management-int334-r1",
   "reference_patches": [
     "patches/nabu-ath10k/station-start-rollback.patch",
     "patches/nabu-ath10k/station-association.patch",
-    "patches/nabu-ath10k/management-sequence.patch"
+    "patches/nabu-ath10k/management-sequence.patch",
+    "patches/nabu-ath10k/management-ccmp-header.patch"
   ],
   "project_patches": {
     "linux": [
