@@ -66,8 +66,8 @@
  		 */
  		uint8_t bits[13] = { 0 };
 -		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
-+		/* 20F66: bit3 CCMP, bit14 RSN, bit75 SAE including required PMF. */
-+		static const uint8_t has[] = { 3, 14, 75 };
++		/* 20F66: bit3 CCMP, bit14 RSN, bit52 management protection, bit75 SAE. */
++		static const uint8_t has[] = { 3, 14, 52, 75 };
  
  		for (unsigned i = 0; i < sizeof(has); i++) {
  			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
