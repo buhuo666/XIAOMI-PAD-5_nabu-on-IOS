@@ -70,6 +70,15 @@ int main(void) {
     }
     r=(struct apple80211req){44,sizeof(name),name};assert(get(&r)==0);
     assert(strstr(name,"Nabu")&&strstr(name,"WCN399x")&&!strstr(name,"WCN6750"));
+    /* Original IO80211 creates signed SInt32 CFNumbers from +4/+8/+12;
+     * wifid reads CFIndex and compares signed scan dBm against threshold. */
+    int32_t bounds[4]={0};
+    r=(struct apple80211req){106,sizeof(bounds),bounds};assert(get(&r)==0);
+    assert(bounds[0]==1 && bounds[1]==-127 && bounds[2]==0 && bounds[3]==-76);
+    int64_t threshold=bounds[3];
+    const int32_t accepted[]={-76,-31,-30,-29,0}, rejected[]={-127,-95,-77};
+    for(unsigned i=0;i<sizeof(accepted)/sizeof(*accepted);i++)assert((int64_t)accepted[i]>=threshold);
+    for(unsigned i=0;i<sizeof(rejected)/sizeof(*rejected);i++)assert((int64_t)rejected[i]<threshold);
     return 0;
 }
 '''
@@ -131,7 +140,7 @@ int main(void) {
     report = {'hardware_tested': False, 'source_patch_applied': str(patch),
               'sanitizers': ['address', 'undefined'],
               'passed': ['no backend reports off', 'attached backend power preserved',
-                         'CCMP, RSN and implemented SAE/PMF capability advertised', 'Nabu driver identity', '20F66 event39 encoding carries only valid real RSSI',
+                         'CCMP, RSN and implemented SAE/PMF capability advertised', 'Nabu driver identity', '20F66 signed RSSI_BOUNDS response and autojoin boundary', '20F66 event39 encoding carries only valid real RSSI',
                          'backend MAC and readiness required', 'native power/scan preserve backend errors',
                          'late join publication gated by native commit', 'AP loss differs from fatal withdrawal',
                          'explicit device discovery', 'one stable down interface', 'copied TX queue, overflow/errors, control drain, AP loss and fatal tested',

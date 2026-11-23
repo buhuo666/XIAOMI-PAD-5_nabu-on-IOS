@@ -61,7 +61,7 @@
  
  		return give(request, name, sizeof(name));
  	}
-@@ -314,17 +318,18 @@
+@@ -314,17 +318,30 @@
  		 * for a WPA2 network ("Unable to join").
  		 */
  		uint8_t bits[13] = { 0 };
@@ -74,6 +74,18 @@
  		}
  		return give(request, bits, sizeof(bits));
  	}
++	case 106: {                            /* 20F66 RSSI_BOUNDS: signed dBm, not SNR. */
++		/* The backend exports signed 8-bit dBm. Adopt the board's -76 dBm
++		 * poor-signal boundary as our initial automatic-join policy. This
++		 * is a policy limit, not a measured receiver-sensitivity claim.
++		 * Without this response wifid retains its positive SNR default. */
++		struct {
++			uint32_t version;
++			int32_t minimum, maximum, threshold;
++		} answer = { 1, -127, 0, -76 };
++		_Static_assert(sizeof(answer) == 16, "20F66 RSSI bounds ABI");
++		return give(request, &answer, sizeof(answer));
++	}
 -	case 19: {                              /* the radio's power: one radio. Until the driver is up it counts as on: it */
 -		struct {                        /* is being brought up, and Darwin asks this once, early */
 +	case 19: {                              /* The backend's completed power state. */
@@ -84,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +523,50 @@
+@@ -518,6 +535,50 @@
  	return error;
  }
  
@@ -135,7 +147,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,12 +574,12 @@
+@@ -525,12 +586,12 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -150,7 +162,7 @@
  		error = asked == NULL || what == NULL ? ENOMEM : error;
  		goto out;
  	}
-@@ -542,13 +591,12 @@
+@@ -542,13 +603,12 @@
  		error = EINVAL;
  		goto out;
  	}
@@ -167,7 +179,7 @@
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
  	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
-@@ -561,7 +609,7 @@
+@@ -561,7 +621,7 @@
  	lck_mtx_lock(&apple80211_lock);
  	join_result = 0;
  	lck_mtx_unlock(&apple80211_lock);
@@ -176,7 +188,7 @@
  out:
  	if (asked != NULL) {
  		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +666,23 @@
+@@ -618,6 +678,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -200,7 +212,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +798,9 @@
+@@ -733,8 +810,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -214,7 +226,7 @@
  		    EOPNOTSUPP ? "REFUSED\n" : "");
 --- a/bsd/sys/hakios.sta.h
 +++ b/bsd/sys/hakios.sta.h
-@@ -42,7 +42,7 @@
+@@ -42,7 +120,7 @@
  	uint16_t dwell_ms;                      /* on each channel; 0: the radio's own */
  };
  
