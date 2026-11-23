@@ -61,7 +61,10 @@ int main(void) {
     for(unsigned p=0;p<2;p++) {
         present=p;r=(struct apple80211req){12,sizeof(caps),caps};
         assert(get(&r)==0);assert(caps[0]==8 && caps[1]==64);
-        for(unsigned i=2;i<sizeof(caps);i++)assert(!caps[i]);
+        for(unsigned i=2;i<sizeof(caps);i++)assert(caps[i]==(i==9?8:0));
+        /* Original 20F66 __performAssociation reads handle+0x59 bit3.
+         * CARD_CAPABILITIES is copied to handle+0x50 by BindToInterface. */
+        assert(caps[9]&8);
     }
     r=(struct apple80211req){44,sizeof(name),name};assert(get(&r)==0);
     assert(strstr(name,"Nabu")&&strstr(name,"WCN399x")&&!strstr(name,"WCN6750"));
@@ -126,7 +129,7 @@ int main(void) {
     report = {'hardware_tested': False, 'source_patch_applied': str(patch),
               'sanitizers': ['address', 'undefined'],
               'passed': ['no backend reports off', 'attached backend power preserved',
-                         'only CCMP and WPA2 capability bits advertised', 'Nabu driver identity', '20F66 event39 encoding carries only valid real RSSI',
+                         'CCMP, RSN and implemented SAE/PMF capability advertised', 'Nabu driver identity', '20F66 event39 encoding carries only valid real RSSI',
                          'backend MAC and readiness required', 'native power/scan preserve backend errors',
                          'late join publication gated by native commit', 'AP loss differs from fatal withdrawal',
                          'explicit device discovery', 'one stable down interface', 'copied TX queue, overflow/errors, control drain, AP loss and fatal tested',
