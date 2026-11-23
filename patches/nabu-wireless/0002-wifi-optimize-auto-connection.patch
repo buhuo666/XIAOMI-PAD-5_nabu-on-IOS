@@ -1,0 +1,135 @@
+diff --git a/src/hakios-8796/drivers/wifi/hakios.sta.c b/src/hakios-8796/drivers/wifi/hakios.sta.c
+index 6e56de5..028b5f6 100644
+--- a/src/hakios-8796/drivers/wifi/hakios.sta.c
++++ b/src/hakios-8796/drivers/wifi/hakios.sta.c
+@@ -47,13 +47,14 @@ static bool asked_power, asked_power_on, asked_scan, asked_join, asked_leave;
+ static struct hakios_sta_scan asked_scan_what;
+ static struct hakios_sta_join asked_join_what;
+ static struct hakios_sta_join standing;        /* the network joined whenever the radio comes on (ssid_length 0: none) */
+-static struct hakios_sta_join fallback;        /* ... as it was before a join that has not come through yet */
++static bool save_join, restore_join;
+ 
+ static struct hakios_sta_bss *heard;           /* by the last scan that came to an end */
+ static unsigned heard_count;
+ static struct hakios_sta_channel channels[CHANNELS_MOST];
+ static unsigned channel_count;
+ 
++
+ static void
+ heard_one(const struct hakios_sta_bss *bss, __unused void *context)
+ {
+@@ -74,6 +75,7 @@ sta_runs(__unused void *parameter, __unused wait_result_t result)
+ 	for (;;) {
+ 		const struct hakios_sta_ops *ops;
+ 		bool power = false, power_on = false, leave = false, do_join = false, do_scan = false;
++		bool save = false, restore = false;
+ 		int error = 0;
+ 
+ 		lck_mtx_lock(&sta_lock);
+@@ -92,6 +94,8 @@ sta_runs(__unused void *parameter, __unused wait_result_t result)
+ 		} else if (asked_join) {
+ 			do_join = true;
+ 			join = asked_join_what;
++			save = save_join;
++			restore = restore_join;
+ 			bzero(&asked_join_what, sizeof(asked_join_what));
+ 			asked_join = false;
+ 		} else {
+@@ -117,7 +121,8 @@ sta_runs(__unused void *parameter, __unused wait_result_t result)
+ 			}
+ 			hakios_apple80211_event(HAKIOS_STA_POWER, error == 0 ? power_on : !power_on);
+ 			lck_mtx_lock(&sta_lock);
+-			if (error == 0 && power_on && standing.ssid_length != 0 && !asked_join) {
++			if (error == 0 && power_on && standing.ssid_length != 0 && !asked_join && !asked_leave && !asked_power) {
++				save_join = restore_join = false;
+ 				asked_join_what = standing;
+ 				asked_join = true;
+ 			}
+@@ -127,18 +132,20 @@ sta_runs(__unused void *parameter, __unused wait_result_t result)
+ 			hakios_apple80211_event(HAKIOS_STA_LINK, 0);
+ 		} else if (do_join) {
+ 			error = ops->join(&join);
+-			bzero(&join, sizeof(join));
+ 			hakios_apple80211_event(HAKIOS_STA_JOIN_DONE, error);
+ 			if (error == 0) {
+ 				hakios_apple80211_event(HAKIOS_STA_LINK, 1);
+ 			}
+ 			/* a join that did not come through (a wrong passphrase) leaves things as they were: the standing network again */
+ 			lck_mtx_lock(&sta_lock);
+-			if (error != 0 && fallback.ssid_length != 0 && !asked_join && !asked_leave && !asked_power) {
+-				standing = asked_join_what = fallback;
++			if (error == 0 && save) {
++				standing = join;
++			} else if (error != 0 && restore && standing.ssid_length && !asked_join && !asked_leave && !asked_power) {
++				asked_join_what = standing;
++				save_join = restore_join = false;
+ 				asked_join = true;
+ 			}
+-			bzero(&fallback, sizeof(fallback));
++			bzero(&join, sizeof(join));
+ 			lck_mtx_unlock(&sta_lock);
+ 		} else if (do_scan) {
+ 			error = ops->scan(&scan);
+@@ -264,31 +271,16 @@ hakios_sta_ask_scan(const struct hakios_sta_scan *what)
+ 	return 0;
+ }
+ 
+-int
+-hakios_sta_ask_join_standing(const struct hakios_sta_join *what)
+-{
+-	int error = hakios_sta_ask_join(what);
+-
+-	lck_mtx_lock(&sta_lock);
+-	if (error == 0) {
+-		standing = *what;
+-	}
+-	lck_mtx_unlock(&sta_lock);
+-	return error;
+-}
+-
+-int
+-hakios_sta_ask_join(const struct hakios_sta_join *what)
++static int
++queue_join(const struct hakios_sta_join *what, bool save)
+ {
+ 	lck_mtx_lock(&sta_lock);
+ 	if (sta_ops == NULL || !sta_on) {
+ 		lck_mtx_unlock(&sta_lock);
+ 		return sta_ops == NULL ? ENXIO : ENETDOWN;
+ 	}
+-	if (standing.ssid_length != 0) {
+-		fallback = standing;
+-	}
+-	bzero(&standing, sizeof(standing));     /* (whoever asks for a network now has the say) */
++	save_join = save;
++	restore_join = true;
+ 	asked_join_what = *what;
+ 	asked_join = true;
+ 	asked_leave = false;
+@@ -297,6 +289,18 @@ hakios_sta_ask_join(const struct hakios_sta_join *what)
+ 	return 0;
+ }
+ 
++int
++hakios_sta_ask_join_standing(const struct hakios_sta_join *what)
++{
++	return queue_join(what, true);
++}
++
++int
++hakios_sta_ask_join(const struct hakios_sta_join *what)
++{
++	return queue_join(what, false);
++}
++
+ int
+ hakios_sta_ask_leave(void)
+ {
+@@ -308,7 +312,6 @@ hakios_sta_ask_leave(void)
+ 	asked_leave = true;
+ 	asked_join = false;
+ 	bzero(&asked_join_what, sizeof(asked_join_what));
+-	bzero(&fallback, sizeof(fallback));
+ 	lck_mtx_unlock(&sta_lock);
+ 	thread_wakeup((event_t)&sta_ops);
+ 	return 0;

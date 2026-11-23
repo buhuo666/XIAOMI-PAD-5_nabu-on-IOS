@@ -20,6 +20,7 @@ static atomic_uint signal_calls;
 static atomic_uint power_calls, scan_calls, heard_calls, state_calls;
 static bool power_history[16];
 static atomic_uint join_calls, commit_calls;
+static atomic_uint last_ssid;
 static atomic_bool adapter_allows = true, skip_commit, bad_wrapper_success;
 static pthread_mutex_t events_mutex = PTHREAD_MUTEX_INITIALIZER;
 static unsigned events[4], power_status, link_status, join_success, link_up, join_result;
@@ -121,6 +122,7 @@ static bool adapter_commit(void *context)
 static int backend_join(const struct hakios_sta_join *what)
 {
     assert(what->ssid_length == 1); atomic_fetch_add(&join_calls, 1);
+    atomic_store(&last_ssid, what->ssid[0]);
     atomic_store(&backend_phase, HAKIOS_STA_JOINING); gate_enter(&join_gate);
     atomic_store(&backend_phase, HAKIOS_STA_JOINED);
     bool committed = !atomic_load(&skip_commit) && hakios_sta_join_commit(adapter_commit, &join_calls);
@@ -214,6 +216,15 @@ static void join_case(const char *mode)
         assert(event_count(HAKIOS_STA_JOIN_DONE) == 1 && join_result == (success ? 0u : (unsigned)ECANCELED));
         assert(!hakios_sta_join_commit(adapter_commit, &join_calls));
         if (success) { hakios_sta_lost(EIO); check_loss_preserved(); }
+    } else if (!strcmp(mode, "join-bounded-fallback")) {
+        struct hakios_sta_join target = request;
+        assert(!hakios_sta_ask_join_standing(&target)); wait_idle();
+        target.ssid[0] = 'b';
+        assert(!hakios_sta_ask_join_standing(&target)); wait_idle();
+        atomic_store(&adapter_allows, false);
+        target.ssid[0] = 'c';
+        assert(!hakios_sta_ask_join_standing(&target)); wait_idle();
+        assert(atomic_load(&join_calls) == 4 && atomic_load(&last_ssid) == 'b');
     } else if (!strcmp(mode, "join-off-active")) {
         assert(!hakios_sta_ask_join(&request)); wait_idle(); assert(join_success == 1);
         gate_block(&power_gate); assert(!hakios_sta_ask_power(false)); gate_await(&power_gate);

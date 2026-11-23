@@ -63,7 +63,7 @@ static void check_set(struct apple80211_assoc *asked, unsigned size, int expecte
     /* The actual log may report sizes/kinds, but never any of the synthetic values. */
     for (size_t i = 0; i < strlen(said); i++) assert((unsigned char)said[i] < 128);
     if (native) {
-        assert(captured.security == HAKIOS_STA_WPA2_PSK);
+        assert(captured.security == (asked->auth_upper == 4096 ? HAKIOS_STA_WPA3_SAE : HAKIOS_STA_WPA2_PSK));
         assert(captured.ssid_length == asked->ssid_length);
         assert(!memcmp(captured.ssid, asked->ssid, asked->ssid_length));
         assert_zero(captured.ssid + asked->ssid_length, sizeof(captured.ssid) - asked->ssid_length);
@@ -188,12 +188,33 @@ static void copy_cleanup(void)
     reset_peers(); check_set(&request, sizeof(request) + 64, 0, true);
 }
 
+static void sae_selection(void)
+{
+    struct apple80211_assoc r = valid();
+    r.auth_upper = 4096;
+    r.rsn[19] = 8;
+    length_set(&r, 22); r.rsn[20] = 0xc0;
+    check(&r, EOPNOTSUPP); /* a derived PMK cannot authenticate SAE */
+    r.key_cipher = CIPHER_PASSPHRASE;
+    r.key_length = 1; check(&r, 0);
+    r.key_length = 0; check(&r, EINVAL);
+    r.key_length = 64; check(&r, EINVAL);
+    r.key_length = 63; check(&r, 0);
+    r.rsn[20] = 0x80; check(&r, EOPNOTSUPP);
+    r.rsn[20] = 0xc0; r.rsn[19] = 2; check(&r, EOPNOTSUPP);
+    r.rsn[19] = 8; r.auth_upper = 8; check(&r, EOPNOTSUPP);
+    r.auth_upper = 4096; length_set(&r, 28);
+    memcpy(r.rsn + 24, "\x00\x0f\xac\x06", 4); check(&r, 0);
+    r.rsn[27] = 11; check(&r, EOPNOTSUPP);
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
     if (!strcmp(argv[1], "keys-auth")) keys_auth();
     else if (!strcmp(argv[1], "selected-rsn")) selected_rsn();
     else if (!strcmp(argv[1], "copy-cleanup")) copy_cleanup();
+    else if (!strcmp(argv[1], "sae-selection")) sae_selection();
     else return 2;
     printf("PASS case=%s checks=%u\n", argv[1], checks);
     return 0;

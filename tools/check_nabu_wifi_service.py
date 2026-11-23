@@ -17,13 +17,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--reference-root', type=Path, default=ROOT,
+                        help='Project containing the existing hakios reference sources')
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     tree = out / 'source'
     target = tree / 'bsd/dev/hakios.apple80211.c'
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / 'src/hakios-8796/drivers/wifi/hakios.apple80211.c', target)
+    shutil.copy2(args.reference_root / 'src/hakios-8796/drivers/wifi/hakios.apple80211.c', target)
+    (tree / 'bsd/sys').mkdir(exist_ok=True)
+    shutil.copy2(args.reference_root / 'src/hakios-8796/xnu/files/bsd/sys/hakios.sta.h', tree / 'bsd/sys')
     patch = ROOT / 'patches/8796/nabu-wifi-control-state.patch'
     subprocess.run(host_command(['patch', '-p1', '-d', host_path(tree), '-i', host_path(patch)]), check=True)
     source = target.read_text()
@@ -102,7 +106,7 @@ int main(void) {
         binary = out / (name + '-test')
         src.write_text(text, newline="\n")
         subprocess.run(host_command([compiler, '-std=' + standard, '-pthread', '-fsanitize=address,undefined',
-            '-I' + host_path(ROOT / 'src/hakios-8796/xnu/files/bsd'),
+            '-I' + host_path(tree / 'bsd'), '-I' + host_path(args.reference_root / 'src/hakios-8796/xnu/files/bsd'),
             '-fno-sanitize-recover=all', '-fno-omit-frame-pointer', '-g', host_path(src), '-o', host_path(binary)]), check=True)
         result = subprocess.run(host_command([host_path(binary)]), capture_output=True, check=True)
         (out / (name + '.log')).write_bytes(result.stdout + result.stderr)
