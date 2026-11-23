@@ -22,7 +22,8 @@ def install(tree):
     for unit in UNITS:
         for suffix in ('.h', '.cpp'):
             shutil.copyfile(ROOT / 'patches/nabu-display' / (unit + suffix), folder / (unit + suffix))
-    for name in ('NabuDpuSwapLedger.h', 'NabuDpuProducer.h', 'NabuDpuSmmuNamespace.h', 'NabuDpuCheckpoint.h'):
+    for name in ('NabuDpuSwapLedger.h', 'NabuDpuProducer.h', 'NabuDpuSmmuNamespace.h', 'NabuDpuCheckpoint.h',
+                 'NabuBacklightPropertyTrace.h'):
         shutil.copyfile(ROOT / 'patches/nabu-display' / name, folder / name)
     shutil.copyfile(ROOT / 'patches/nabu-gpu/NabuFrameTraceEvents.h', folder / 'NabuFrameTraceEvents.h')
     smmu = ROOT / 'src/nabu/gpu/upstream/ArmSmmu4K'
@@ -172,6 +173,13 @@ IOMobileFramebuffer::start(IOService * provider)''')
         path.write_text(text)
 
     text = path.read_text()
+    if 'nabu_backlight_observe_property(properties, result);' not in text:
+        text = '#include "nabu_display/NabuBacklightPropertyTrace.h"\n' + text
+        text = replace(text,
+            '    return NabuDpuDisplay::diagnosticRequest(properties, fGraphics);',
+            '    IOReturn result = NabuDpuDisplay::diagnosticRequest(properties, fGraphics);\n'
+            '    nabu_backlight_observe_property(properties, result);\n'
+            '    return result;')
     # 20F66's VSync adapter decodes three 64-bit values from low/high halves.
     # QuartzCore consumes the second as a continuous timestamp and the third
     # as the refresh duration in mach ticks, not the cumulative IRQ sequence.

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 namespace NabuBacklight {
+static const uint16_t kBrightnessMax = 2047;
 enum Error { Ok, BusNotIdle, ClockHeldLow, AddressNack, RegisterNack, ReadAddressNack, DataNack };
 template<class Pins> class Bus {
     Pins &pins;
@@ -89,5 +90,29 @@ bool set_power(Registers &io, bool on, uint8_t &before, uint8_t &after) {
     uint8_t wanted = on ? (before | 0x40) : (before & ~0x40);
     if (wanted != before && !io.write_register(0x08, wanted)) return false;
     return io.read_register(0x08, after) && after == wanted;
+}
+
+template<class Registers>
+bool get_brightness(Registers &io, uint16_t &level) {
+    uint8_t low, high;
+    if (!io.read_register(0x04, low) || !io.read_register(0x05, high)) return false;
+    level = static_cast<uint16_t>((uint16_t(high) << 3) | (low & 0x07));
+    return true;
+}
+
+template<class Registers>
+bool set_brightness(Registers &io, uint16_t level) {
+    if (level > kBrightnessMax) return false;
+    uint8_t before_low, before_high;
+    if (!io.read_register(0x04, before_low) || !io.read_register(0x05, before_high)) return false;
+
+    const uint8_t wanted_low = static_cast<uint8_t>((before_low & 0xf8) | (level & 0x07));
+    const uint8_t wanted_high = static_cast<uint8_t>(level >> 3);
+    if (before_high != wanted_high && !io.write_register(0x05, wanted_high)) return false;
+    if (before_low != wanted_low && !io.write_register(0x04, wanted_low)) return false;
+
+    uint8_t after_low, after_high;
+    if (!io.read_register(0x04, after_low) || !io.read_register(0x05, after_high)) return false;
+    return after_low == wanted_low && after_high == wanted_high;
 }
 } // namespace NabuBacklight

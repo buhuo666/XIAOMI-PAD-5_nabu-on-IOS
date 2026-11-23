@@ -1,12 +1,14 @@
 --- a/iokit/Kernel/MiniIOMobileFramebuffer.cpp
 +++ b/iokit/Kernel/MiniIOMobileFramebuffer.cpp
-@@ -36,6 +36,9 @@
+@@ -36,6 +36,11 @@
  #include <IOKit/IOBufferMemoryDescriptor.h>
  
  #include "MiniIOSurface.h"
 +
 +extern "C" void nabu_backlight_init(void);
 +extern "C" IOReturn nabu_backlight_set_power(bool on);
++extern "C" IOReturn nabu_backlight_set_brightness(uint16_t level);
++extern "C" IOReturn nabu_backlight_get_brightness(uint32_t *level);
  
  extern "C" void hakios_tl(const char * format, ...) __printflike(1, 2);
  
@@ -18,7 +20,7 @@
  	if (gMeasure && kernel_thread_start(measurePanel, NULL, &thread) == KERN_SUCCESS) {
  		thread_deallocate(thread);
  	}
-@@ -1642,10 +1646,15 @@
+@@ -1642,10 +1646,34 @@
  			    args->scalarInputCount > 1 ? in[1] : 0, args->scalarInputCount > 2 ? in[2] : 0, micros(mach_absolute_time()));
  		}
  		return kIOReturnSuccess;
@@ -27,6 +29,25 @@
 +			return kIOReturnBadArgument;
 +		}
 +		return nabu_backlight_set_power(in[0] != 0);
++	case 66: // IOMobileFramebufferSPLCSetBrightness: level and display ID.
++		if (args->scalarInputCount != 2) {
++			return kIOReturnBadArgument;
++		}
++		if (in[0] > 2047) {
++			return kIOReturnBadArgument;
++		}
++		return nabu_backlight_set_brightness(static_cast<uint16_t>(in[0]));
++	case 67: // IOMobileFramebufferSPLCGetBrightness: one scalar output.
++		if (args->scalarInputCount != 0 || args->scalarOutputCount != 1 ||
++		    args->scalarOutput == nullptr) {
++			return kIOReturnBadArgument;
++		}
++		{
++			uint32_t level = 0;
++			auto result = nabu_backlight_get_brightness(&level);
++			if (result == 0) args->scalarOutput[0] = level;
++			return result;
++		}
 +
  	case kFBMethodSwapSignal:
  	case kFBMethodSwapCancel:

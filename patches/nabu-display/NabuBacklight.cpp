@@ -6,9 +6,14 @@
 #include "NabuBacklight.h"
 
 extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+extern "C" void nabu_dpu_power_changed(bool on);
+#ifdef NABU_NATIVE_BACKLIGHT
+extern "C" void nabu_backlight_native_start(void);
+extern "C" void nabu_backlight_native_power(bool);
+#endif
 
 namespace {
-IOLock *power_lock;
+IOLock *control_lock;
 bool nabu;
 struct Pins {
     volatile uint32_t *base;
@@ -43,20 +48,55 @@ extern "C" void nabu_backlight_init(void) {
     // Live nabu DT: I2C at 0x880000, address 0x11; GPIO0 SDA / GPIO1 SCL.
     // SM8150 pinctrl places GPIO0/1 in the SOUTH tile at 0x03d00000.
     pins.base = reinterpret_cast<volatile uint32_t *>(ml_io_map(0x03d00000, 0x2000));
-    power_lock = IOLockAlloc();
-    IOLog("NABU BACKLIGHT: KTZ8866 GPIO0/1 control %s; firmware brightness retained\n",
-        pins.base && power_lock ? "ready" : "unavailable");
+    control_lock = IOLockAlloc();
+    IOLog("NABU BACKLIGHT: KTZ8866 GPIO0/1 control %s; brightness range=0..%u\n",
+        pins.base && control_lock ? "ready" : "unavailable",
+        unsigned(NabuBacklight::kBrightnessMax));
+#ifdef NABU_NATIVE_BACKLIGHT
+    if (pins.base && control_lock) nabu_backlight_native_start();
+#endif
 }
 
 extern "C" IOReturn nabu_backlight_set_power(bool on) {
     if (!nabu) return kIOReturnSuccess;
-    if (!pins.base || !power_lock) return kIOReturnNotReady;
-    IOLockLock(power_lock);
+    if (!pins.base || !control_lock) return kIOReturnNotReady;
+    IOLockLock(control_lock);
     NabuBacklight::Bus<Pins> bus(pins);
     uint8_t before = 0, after = 0;
     bool ok = NabuBacklight::set_power(bus, on, before, after);
     IOLog("NABU BACKLIGHT: request=%s BL_EN=%#x->%#x result=%s bus-error=%u\n",
         on ? "on" : "off", before, after, ok ? "verified" : "failed", unsigned(bus.error()));
-    IOLockUnlock(power_lock);
+    IOLockUnlock(control_lock);
+#ifdef NABU_NATIVE_BACKLIGHT
+    if (ok) nabu_backlight_native_power(on);
+#endif
+    if (ok) nabu_dpu_power_changed(on);
+    return ok ? kIOReturnSuccess : kIOReturnIOError;
+}
+
+extern "C" IOReturn nabu_backlight_set_brightness(uint16_t level) {
+    if (!nabu) return kIOReturnSuccess;
+    if (level > NabuBacklight::kBrightnessMax) return kIOReturnBadArgument;
+    if (!pins.base || !control_lock) return kIOReturnNotReady;
+    IOLockLock(control_lock);
+    NabuBacklight::Bus<Pins> bus(pins);
+    bool ok = NabuBacklight::set_brightness(bus, level);
+    if (!ok) IOLog("NABU BACKLIGHT: brightness write failed level=%u bus-error=%u\n",
+        unsigned(level), unsigned(bus.error()));
+    IOLockUnlock(control_lock);
+    return ok ? kIOReturnSuccess : kIOReturnIOError;
+}
+
+extern "C" IOReturn nabu_backlight_get_brightness(uint32_t *level) {
+    if (!nabu) { *level = 0; return kIOReturnSuccess; }
+    if (!pins.base || !control_lock) return kIOReturnNotReady;
+    IOLockLock(control_lock);
+    NabuBacklight::Bus<Pins> bus(pins);
+    uint16_t value = 0;
+    bool ok = NabuBacklight::get_brightness(bus, value);
+    if (ok) *level = value;
+    if (!ok) IOLog("NABU BACKLIGHT: brightness read failed bus-error=%u\n",
+        unsigned(bus.error()));
+    IOLockUnlock(control_lock);
     return ok ? kIOReturnSuccess : kIOReturnIOError;
 }

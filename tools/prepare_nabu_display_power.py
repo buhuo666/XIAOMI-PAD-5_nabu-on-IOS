@@ -16,18 +16,26 @@ def main():
     args = ap.parse_args()
     folder = args.tree / 'iokit/Kernel/nabu_display'
     folder.mkdir(parents=True, exist_ok=True)
-    for name in ('NabuBacklight.cpp', 'NabuBacklight.h'):
+    for name in ('NabuBacklight.cpp', 'NabuBacklight.h', 'NabuBacklightService.cpp',
+                 'NabuBrightnessCurve.h', 'NabuBacklightRemapData.h'):
         shutil.copyfile(ROOT / 'patches/nabu-display' / name, folder / name)
+    # The separate PEN driver may omit the native service. The XNU build includes it.
+    (folder / 'NabuBuiltinBacklight.cpp').write_text(
+        '#define NABU_NATIVE_BACKLIGHT 1\n#include "NabuBacklight.cpp"\n')
     conf = args.tree / 'iokit/conf/files.arm64'
-    entry = 'iokit/Kernel/nabu_display/NabuBacklight.cpp optional nos_arm_asm'
-    content = conf.read_text()
-    if entry not in content:
-        conf.write_text(content + '\n' + entry + '\n')
+    old = 'iokit/Kernel/nabu_display/NabuBacklight.cpp optional nos_arm_asm'
+    entries = [line for line in conf.read_text().splitlines() if line != old]
+    for name in ('NabuBuiltinBacklight.cpp', 'NabuBacklightService.cpp'):
+        entry = f'iokit/Kernel/nabu_display/{name} optional nos_arm_asm'
+        if entry not in entries:
+            entries.append(entry)
+    conf.write_text('\n'.join(entries) + '\n')
     sync = install_display_sync(args.tree)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'backend': str(folder),
-        'interface': 'RequestPowerChange -> nabu_backlight_set_power',
-        'scope': 'KTZ8866 LED enable; preserves brightness and panel bias',
+        'interface': 'RequestPowerChange (12), SPLCSetBrightness (66), SPLCGetBrightness (67)',
+        'scope': 'KTZ8866 LED enable and 11-bit brightness; preserves panel bias',
+        'class_registration': 'XNU C++ initialization',
         'display_sync': sync}, indent=2) + '\n')
 
 
