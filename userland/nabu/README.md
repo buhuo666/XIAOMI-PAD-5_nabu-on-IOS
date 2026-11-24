@@ -1,14 +1,14 @@
 # nabu 用户态初始化策略
 
-用户于 2026-11-04 要求跳过首次设置／激活引导，目标是直接进入 SpringBoard 桌面。
+2026-11-24 INT337 实机确认设置中的容量识别正常，但 Files App 仍失败；`fileproviderd` 明确拒绝连接，理由是设备尚未完成设置。此前的 `ForceNoBuddy=true`、`SetupDone=true` 和 PurpleBuddy 拒绝规则会跳过原生完成流程。INT338 恢复原生 Setup Assistant：允许 `com.apple.purplebuddy.budd` 按需启动、将两个种子标志置为 false，并保留系统 setup reason。完成状态必须由原生流程产生，不写入伪造的完成标记。
 
-`var/mobile/Library/Preferences/com.apple.purplebuddy.plist` 是后续 Data 种子的偏好文件，包含 `SetupDone=true` 和 `ForceNoBuddy=true`。目的仅是初次设置界面的启动策略；它不是 Apple 激活记录，也不代表联网注册成功。
+`var/mobile/Library/Preferences/com.apple.purplebuddy.plist` 是后续 Data 种子的偏好文件，INT338 将 `SetupDone` 与 `ForceNoBuddy` 设为 `false`。PurpleBuddy 仅保留原生 Mach 服务按需触发；不把它改为开机常驻，也不写 `SetupFinishedAllSteps` 或 `ActivationStateAcknowledged`。这不是 Apple 激活记录，也不代表联网注册成功。
 
 部署时将此文件置于 `/private/var/mobile/Library/Preferences/`，归属 mobile（UID/GID 501），权限 0644。已有 Data 中的其他偏好和用户状态应保留，只合并这两个键。第十二轮已把合并后的种子打包进 ESP 上的 RAM 启动镜像，实际用户态部署仍待设备结果；磁盘 Data 初始化／挂载路径尚未接通。
 
 现有固定 HakiOS 源码在 `userland/mkjobs.py` 中排除 purplebuddy 相关启动项，并在 `userland/src/inject_sb.c` 中另有 SpringBoard 的 setup/activation 兼容逻辑。后者包含特定二进制地址和对象布局，不能直接复制为本机 20F66 已验证实现。待 launchd 和桌面服务启动后，根据实际 20F66 组件确认是否还存在额外的界面阻塞。
 
-验收为不进入首次设置助手、出现实际 SpringBoard 桌面。偏好文件能被解析或已生成，不算该验收通过。
+INT338 允许设备呈现原生 Setup Assistant；可能需要完成首次设置后才可进入桌面。Files 修复的验收是 setup gate 不再拒绝、File Provider 域可枚举，且“我的 iPad”能浏览和读写文件。偏好文件能被解析或已生成，不算该验收通过。
 
 ## 初始用户态候选
 

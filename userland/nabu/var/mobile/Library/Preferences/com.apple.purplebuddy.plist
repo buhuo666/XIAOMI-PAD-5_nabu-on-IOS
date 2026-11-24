@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>SetupDone</key>
-    <true/>
+    <false/>
     <key>ForceNoBuddy</key>
-    <true/>
+    <false/>
 </dict>
 </plist>

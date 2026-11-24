@@ -24,12 +24,12 @@
     "com.apple.SpringBoard"
   ],
   "additional_deny": [
-    "purplebuddy",
     "mobileactivation"
   ],
   "on_demand_allow": [
     "com.apple.dmd",
-    "com.apple.bluetoothuserd"
+    "com.apple.bluetoothuserd",
+    "com.apple.purplebuddy.budd"
   ],
   "environment_overrides": {
     "com.apple.bluetoothd": {

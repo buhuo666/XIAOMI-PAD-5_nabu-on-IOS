@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <objc/runtime.h>
 #include <sys/sysctl.h>
+#include "cc_brightness_tracking.h"
 #endif
 
 static BOOL (*original_bricked)(id, SEL);
-static BOOL (*original_reason)(id, SEL, uint64_t);
 static BOOL (*original_auto_unlock)(id, SEL, int32_t);
 static atomic_bool enabled = false;
 static atomic_bool hall_lock_screen_enabled = false;
@@ -22,12 +22,6 @@ static BOOL nabu_bricked_device(id self, SEL selector) {
     if (!atomic_load_explicit(&enabled, memory_order_acquire) || activation_from_service)
         return original_bricked(self, selector);
     return (BOOL)0;
-}
-
-static BOOL nabu_set_setup_reason(id self, SEL selector, uint64_t reason) {
-    if (atomic_load_explicit(&enabled, memory_order_acquire)) reason = 0;
-    /* Keep the original state updates, notifications, and BOOL return value. */
-    return original_reason(self, selector, reason);
 }
 
 /* 20F66: SmartCover is source 3. The caller retains its normal screen-wake
@@ -56,21 +50,18 @@ __attribute__((constructor)) static void nabu_setup_compat_constructor(void) {
         if (strcmp(arg, "nabu-hall=1") == 0) hall_requested = true;
     }
     if (!requested) return;
+    cc_register();
 
     Method bricked = class_getInstanceMethod(objc_getClass("SBLockdownManager"),
         sel_registerName("brickedDevice"));
-    Method reason = class_getInstanceMethod(objc_getClass("SBSetupManager"),
-        sel_registerName("_setSetupRequiredReason:"));
-    if (!bricked || !reason) {
-        fprintf(stderr, "NABU SETUP: SpringBoard setup methods not available\n");
+    if (!bricked) {
+        fprintf(stderr, "NABU SETUP: SpringBoard activation method not available\n");
         return;
     }
     original_bricked = (BOOL (*)(id, SEL))method_getImplementation(bricked);
-    original_reason = (BOOL (*)(id, SEL, uint64_t))method_getImplementation(reason);
     method_setImplementation(bricked, (IMP)nabu_bricked_device);
-    method_setImplementation(reason, (IMP)nabu_set_setup_reason);
     atomic_store_explicit(&enabled, true, memory_order_release);
-    fprintf(stderr, "NABU SETUP: local UI policy installed\n");
+    fprintf(stderr, "NABU SETUP: activation compatibility installed; native setup reason preserved\n");
     if (activation_from_service)
         fprintf(stderr, "NABU SETUP: brickedDevice uses original system activation state\n");
     if (hall_requested) {

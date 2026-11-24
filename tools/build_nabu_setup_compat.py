@@ -66,6 +66,7 @@ def main() -> None:
         "schema_version": 1, "source": SOURCE.relative_to(ROOT).as_posix(),
         "source_sha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
         "source_sha256_lf": sha256_lf(SOURCE), "binary": binary,
+        "cc_brightness_header_sha256_lf": sha256_lf(SOURCE.with_name("cc_brightness_tracking.h")),
         "compiler": capture([clang, "--version"])["stdout"].strip(),
         "xcode": xcode, "sdk": {"name": "iphoneos", "path": sdk_path, "version": sdk_version},
         "command": command, "compiler_output": compiler_result,
@@ -81,6 +82,7 @@ def main() -> None:
             "behavior": "Deny SmartCover auto-unlock; preserve the original wake path and other sources",
             "device_execution_validated": False,
         },
+        "native_setup_reason_interposed": False,
         "scope": "Source-built local UI policy for 20F66 arm64; no Apple payload included; "
                  "native build verification does not establish device or desktop success.",
     }

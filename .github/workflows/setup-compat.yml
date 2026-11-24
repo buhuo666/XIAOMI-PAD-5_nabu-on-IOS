@@ -6,7 +6,12 @@ on:
       - '.github/workflows/setup-compat.yml'
       - 'tools/check_nabu_setup_compat.py'
       - 'tools/build_nabu_setup_compat.py'
+      - 'tools/package_nabu_userland.py'
       - 'userland/nabu/src/setup_compat.c'
+      - 'userland/nabu/src/cc_brightness_tracking.h'
+      - 'userland/nabu/tests/cc_brightness_tracking_test.c'
+      - 'userland/nabu/jobs.json'
+      - 'userland/nabu/var/mobile/Library/Preferences/com.apple.purplebuddy.plist'
   workflow_dispatch:
 permissions:
   contents: read

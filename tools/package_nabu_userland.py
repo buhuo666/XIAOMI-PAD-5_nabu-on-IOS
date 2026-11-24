@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 from nabu_service_policy import apply_service_policy
+from build_nabu_setup_compat import sha256_lf
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -39,6 +40,17 @@ def qualified_setup_compat(directory):
     checks=json.loads((directory/'host-check.json').read_text())
     source_sha=build['source_sha256_lf']
     binary=build['binary']
+    if source_sha != sha256_lf(ROOT/'userland/nabu/src/setup_compat.c'):
+        raise ValueError('Setup library was built from a different source revision')
+    if digest(library) != binary['sha256']:
+        raise ValueError('Setup library bytes differ from the native build report')
+    if checks.get('passed') is not True or checks.get('source_sha256_lf') != source_sha:
+        raise ValueError('Setup host checks are missing, failed, or stale')
+    if checks.get('setup_policy_cases', 0) < 7 or not all(
+            checks.get('setup_policy_checks', {}).values()):
+        raise ValueError('Setup host checks do not validate the native PurpleBuddy policy')
+    if build.get('native_setup_reason_interposed') is not False:
+        raise ValueError('Native setup reason must remain owned by the original system flow')
     return library, {
         'library':'/redwood/lib/libnabu.setup.dylib', 'process':'SpringBoard',
         'required_bootarg':'nabu-setup-compat=1', 'host_tests_passed':True,
@@ -205,6 +217,27 @@ def main():
     dest=root/'var/mobile/Library/Preferences/com.apple.purplebuddy.plist';dest.parent.mkdir(parents=True,exist_ok=True)
     prefs=plistlib.loads(dest.read_bytes()) if dest.exists() else {}
     prefs.update(plistlib.loads(own.read_bytes()));dest.write_bytes(plistlib.dumps(prefs))
+    purplebuddy_label='com.apple.purplebuddy.budd'
+    purplebuddy_path=root/'LaunchDaemons'/(purplebuddy_label+'.plist')
+    purplebuddy_job=plistlib.loads(purplebuddy_path.read_bytes()) if purplebuddy_path.exists() else {}
+    setup_assistant_policy={
+        'job_label':purplebuddy_label,
+        'job_present':purplebuddy_path.is_file(),
+        'job_enabled':purplebuddy_job.get('Disabled') is not True,
+        'mach_services':sorted(purplebuddy_job.get('MachServices',{})),
+        'on_demand':purplebuddy_label in jobs.get('on_demand_allow',[]),
+        'setup_done_seed':prefs.get('SetupDone'),
+        'force_no_buddy_seed':prefs.get('ForceNoBuddy'),
+        'native_setup_reason_interposed':False,
+        'completion_markers_seeded':False,
+    }
+    if not (setup_assistant_policy['job_present'] and setup_assistant_policy['job_enabled']
+            and setup_assistant_policy['on_demand'] and setup_assistant_policy['mach_services']
+            and setup_assistant_policy['setup_done_seed'] is False
+            and setup_assistant_policy['force_no_buddy_seed'] is False):
+        raise ValueError(f'Invalid native Setup Assistant package policy: {setup_assistant_policy}')
+    if any(key in prefs for key in ('SetupFinishedAllSteps','ActivationStateAcknowledged')):
+        raise ValueError('Setup completion must be written by the native system flow')
     for p in sorted((root/'var').rglob('*')):
         if not p.is_file():continue
         rel=p.relative_to(root/'var').as_posix();owner=501 if rel.startswith('mobile/') else 0
@@ -276,7 +309,8 @@ def main():
             'app_cryptex': ({'bootstrap_container': 2, 'mount': '/private/preboot/Cryptexes/App',
                              'source': str(a.app_cryptex)} if a.app_cryptex else None),
             'data_mode':'persistent APFS with nabu-data=1; RAM otherwise',
-            'persistent_data_supported':True,'setup_assistant_skipped_in_seed':True,
+            'persistent_data_supported':True,'setup_assistant_skipped_in_seed':False,
+            'setup_assistant_policy':setup_assistant_policy,
             'private_address_injections_enabled':setup_report is not None or input_report is not None,
             'input_bridge':input_report, 'power_trace_enabled': a.power_trace is not None,
             'capability_scan_enabled': a.capability_scan is not None,
