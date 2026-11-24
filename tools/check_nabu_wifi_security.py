@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Replay actual Apple80211 security parsing and native RSN selection on the host."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -98,7 +99,8 @@ def main():
         backend_header = backend.parents[3] / 'xnu/files/bsd/sys/hakios.sta.h'
         backend_header.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(args.reference.resolve() / 'xnu/files/bsd/sys/hakios.sta.h', backend_header)
-    for name in ('control_host.h', 'control_replay.c', 'backend_host.h', 'backend_replay.c'):
+    for name in ('control_host.h', 'control_replay.c', 'backend_host.h', 'backend_replay.c',
+                 'joint_host.h', 'joint_replay.c'):
         shutil.copy2(FIXTURES / name, out / name)
     variants = []
     control_evidence, backend_evidence = [], []
@@ -109,8 +111,8 @@ def main():
             ('CIPHER_PMK', r'^#define CIPHER_PMK[^\n]+'),
             ('CIPHER_PASSPHRASE', r'^#define CIPHER_PASSPHRASE[^\n]+'),
             ('association ABI assertions', r'^_Static_assert\(sizeof\(struct apple80211_assoc\).*?;')
-        ], ('join_security', 'set_join'))
-        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup', 'sae-selection', 'transition-selection')))
+        ], ('join_rsn_diagnostic', 'join_security', 'set_join'))
+        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup', 'sae-selection', 'transition-selection', 'request-diagnostic', 'abi-layout')))
     if backend:
         backend_unit, backend_evidence = unit(out, 'backend', backend, [
             ('ELEMENTS_MOST', r'^#define ELEMENTS_MOST[^\n]+'),
@@ -120,10 +122,32 @@ def main():
             ('backend-sae', backend_unit, ['-DLX_HAVE_SAE=1'], ('mixed-selection', 'rsn-boundaries')),
             ('backend-psk', backend_unit, [], ('mixed-selection', 'rsn-boundaries')),
         ])
+    joint_evidence = []
+    if control and backend:
+        # Reuse the unchanged control declarations/functions without its test main.
+        chunks = [control_unit.read_text().replace('#include "control_replay.c"', '#define ETH_ALEN 6')]
+        source = backend.read_text(encoding='utf-8')
+        for label, pattern in (
+            ('ELEMENTS_MOST', r'^#define ELEMENTS_MOST[^\n]+'),
+            ('lx_target', r'^struct lx_target \{.*?^\};'),
+            ('wmm', r'^static const uint8_t wmm\[4\][^\n]+')
+        ):
+            text, line = unique(source, pattern)
+            chunks.append(f'#line {line} {json.dumps(host_path(backend))}\n{text}\n')
+            joint_evidence.append({'name': label, 'line': line, 'lines': text.count('\n') + 1})
+        chunks.append('#include "joint_host.h"\n')
+        for function in ('channel_of', 'element', 'vendor_element', 'protection', 'request_elements'):
+            text, line = extract_function(source, function)
+            chunks.append(f'#line {line} {json.dumps(host_path(backend))}\n{text}\n')
+            joint_evidence.append({'name': function, 'line': line, 'lines': text.count('\n') + 1})
+        chunks.append('#include "joint_replay.c"\n')
+        joint_unit = out / 'actual-joint.c'
+        joint_unit.write_text('\n'.join(chunks), encoding='utf-8', newline='\n')
+        variants.append(('joint-sae', joint_unit, ['-DLX_HAVE_SAE=1'], ('native-backend-pmf',)))
     results = []
     for name, source, flags, cases in variants:
         binary = out / (name + '-test')
-        headers = control.parents[1] if name == 'control' else backend.parents[3] / 'xnu/files/bsd'
+        headers = control.parents[1] if name in ('control', 'joint-sae') else backend.parents[3] / 'xnu/files/bsd'
         command = ['clang' if sys.platform == 'darwin' else 'clang-18', '-std=gnu11',
                    '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                    '-fno-sanitize-recover=all', '-fno-omit-frame-pointer', '-g',
@@ -143,10 +167,14 @@ def main():
                             'log': str(log), 'summary': run.stdout.decode(errors='replace').strip()})
     report = {'hardware_tested': False, 'implementation_rewritten': False,
               'control_source': str(control) if control else None, 'backend_source': str(backend) if backend else None,
+              'source_sha256': {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                for name, path in (('control', control), ('backend', backend)) if path},
               'extracted_control': control_evidence, 'extracted_backend': backend_evidence,
+              'extracted_joint': joint_evidence,
               'sanitizers': ['address', 'undefined'] + ([] if sys.platform == 'darwin' else ['leak detection']),
               'compile_warnings': 'none (-Wall -Wextra -Werror)',
               'peers': 'Host allocation/copyin/locking/native join; full request, station join and target layouts are actual declarations',
+              'joint_peers': 'Minimal host radio/channel/rate fields for original request_elements; no firmware, RF or real authentication execution',
               'credentials': 'Synthetic bytes only; request and native buffers checked before free; no values logged',
               'results': results}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

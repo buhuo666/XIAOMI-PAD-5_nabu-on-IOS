@@ -61,31 +61,19 @@
  
  		return give(request, name, sizeof(name));
  	}
-@@ -314,17 +318,30 @@
+@@ -314,17 +318,18 @@
  		 * for a WPA2 network ("Unable to join").
  		 */
  		uint8_t bits[13] = { 0 };
 -		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
-+		/* 20F66: bit3 CCMP, bit14 RSN, bit52 management protection, bit75 SAE. */
-+		static const uint8_t has[] = { 3, 14, 52, 75 };
++		/* 20F66: bit3 CCMP, bit14 RSN. Only the supported WPA2 data path. */
++		static const uint8_t has[] = { 3, 14 };
  
  		for (unsigned i = 0; i < sizeof(has); i++) {
  			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
  		}
  		return give(request, bits, sizeof(bits));
  	}
-+	case 106: {                            /* 20F66 RSSI_BOUNDS: signed dBm, not SNR. */
-+		/* The backend exports signed 8-bit dBm. Adopt the board's -76 dBm
-+		 * poor-signal boundary as our initial automatic-join policy. This
-+		 * is a policy limit, not a measured receiver-sensitivity claim.
-+		 * Without this response wifid retains its positive SNR default. */
-+		struct {
-+			uint32_t version;
-+			int32_t minimum, maximum, threshold;
-+		} answer = { 1, -127, 0, -76 };
-+		_Static_assert(sizeof(answer) == 16, "20F66 RSSI bounds ABI");
-+		return give(request, &answer, sizeof(answer));
-+	}
 -	case 19: {                              /* the radio's power: one radio. Until the driver is up it counts as on: it */
 -		struct {                        /* is being brought up, and Darwin asks this once, early */
 +	case 19: {                              /* The backend's completed power state. */
@@ -96,10 +84,36 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +535,64 @@
+@@ -518,6 +523,91 @@
  	return error;
  }
  
++/* Non-sensitive scalar diagnostics from this request, never the scan cache. */
++static void
++join_rsn_diagnostic(const struct apple80211_assoc *asked, unsigned *akms,
++    bool *akms_valid, unsigned *caps, bool *caps_valid)
++{
++	*akms = *caps = 0;
++	*akms_valid = *caps_valid = false;
++	unsigned length = asked->rsn_length;
++	const uint8_t *r = asked->rsn;
++	if (length < 10 || length > sizeof(asked->rsn) || r[0] != 48 ||
++	    r[1] + 2u != length || r[2] != 1 || r[3]) return;
++	unsigned count = r[8] | r[9] << 8;
++	if (!count || count > (length - 10) / 4) return;
++	unsigned offset = 10 + 4 * count;
++	if (length - offset < 2) return;
++	count = r[offset] | r[offset + 1] << 8;
++	*akms = count;
++	*akms_valid = true;
++	offset += 2;
++	if (!count || count > (length - offset) / 4) return;
++	offset += 4 * count;
++	if (length - offset < 2) return;
++	*caps = r[offset] | r[offset + 1] << 8;
++	*caps_valid = true;
++}
++
 +/* Validate the mode selected by 20F66, not every mode advertised by an AP. */
 +static int
 +join_security(const struct apple80211_assoc *asked)
@@ -144,7 +158,8 @@
 +	unsigned capabilities = r[offset] | r[offset + 1] << 8;
 +	offset += 2;
 +	bool mfpc = (capabilities & 0x80) != 0, mfpr = (capabilities & 0x40) != 0;
-+	if (sae ? (!mfpc || !mfpr) : mfpr) return EOPNOTSUPP;
++	/* SAE negotiates PMF even when the AP does not require it of PSK stations. */
++	if (sae ? !mfpc : mfpr) return EOPNOTSUPP;
 +	if (offset == length) return 0;
 +	if (length - offset < 2) return offset >= 24 ? EOPNOTSUPP : EINVAL;
 +	count = r[offset] | r[offset + 1] << 8;
@@ -161,7 +176,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,12 +600,12 @@
+@@ -525,30 +615,35 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -176,7 +191,21 @@
  		error = asked == NULL || what == NULL ? ENOMEM : error;
  		goto out;
  	}
-@@ -542,13 +617,12 @@
+-	/* (lengths and kinds only: the name, the access point and the key stay out of the log) */
+-	snprintf(said, said_size, " (a join: a name of %u bytes, %s access point, authentication %#x/%#x, a key of %u bytes of kind %u)",
+-	    asked->ssid_length, asked->bssid[0] | asked->bssid[1] | asked->bssid[2] | asked->bssid[3] | asked->bssid[4] |
+-	    asked->bssid[5] ? "a given" : "any", asked->auth_lower, asked->auth_upper, asked->key_length, asked->key_cipher);
++	unsigned akms, caps;
++	bool akms_valid, caps_valid;
++	join_rsn_diagnostic(asked, &akms, &akms_valid, &caps, &caps_valid);
++	/* Scalar metadata only; credentials, identifiers and PMKIDs stay out of said. */
++	snprintf(said, said_size, " (join v=%u mode=%u auth=%#x/%#x kv=%u key=%u/%u kf=%#x ki=%u "
++	    "rsn_len=%u akms=%u akm_valid=%u caps=%#x caps_valid=%u mfpc=%u mfpr=%u)",
++	    asked->version, asked->mode, asked->auth_lower, asked->auth_upper, asked->key_version,
++	    asked->key_cipher, asked->key_length, asked->key_flags, asked->key_index, asked->rsn_length,
++	    akms, (unsigned)akms_valid, caps, (unsigned)caps_valid,
++	    (unsigned)(caps_valid && (caps & 0x80)), (unsigned)(caps_valid && (caps & 0x40)));
+ 	if (asked->ssid_length == 0 || asked->ssid_length > sizeof(what->ssid)) {
  		error = EINVAL;
  		goto out;
  	}
@@ -193,16 +222,7 @@
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
  	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
-@@ -561,7 +635,7 @@
- 	lck_mtx_lock(&apple80211_lock);
- 	join_result = 0;
- 	lck_mtx_unlock(&apple80211_lock);
--	error = hakios_sta_ask_join(what);
-+	error = hakios_sta_ask_join_standing(what);
- out:
- 	if (asked != NULL) {
- 		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +692,23 @@
+@@ -618,6 +713,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -226,7 +246,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +824,9 @@
+@@ -733,8 +845,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */

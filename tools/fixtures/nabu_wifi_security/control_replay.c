@@ -204,7 +204,11 @@ static void sae_selection(void)
     r.key_length = 0; check(&r, EINVAL);
     r.key_length = 64; check(&r, EINVAL);
     r.key_length = 63; check(&r, 0);
-    r.rsn[20] = 0x80; check(&r, EOPNOTSUPP);
+    /* MFPR describes the AP requirement, while SAE always needs MFPC. */
+    for (unsigned caps = 0; caps < 256; caps++) {
+        r.rsn[20] = (uint8_t)caps;
+        check(&r, caps & 0x80 ? 0 : EOPNOTSUPP);
+    }
     r.rsn[20] = 0xc0; r.rsn[19] = 2; check(&r, EOPNOTSUPP);
     r.rsn[19] = 8; r.auth_upper = 8; check(&r, EOPNOTSUPP);
     r.auth_upper = 4096; length_set(&r, 28);
@@ -240,8 +244,18 @@ static void transition_selection(void)
     r.rsn[31] = 11; check(&r, EOPNOTSUPP); /* Unknown management cipher remains rejected. */
 
     r = transition_request();
-    r.auth_upper = 4096; r.rsn[24] = 0xc0;
+    r.auth_upper = 4096;
+    check(&r, 0); /* SAE on an MFPC=1/MFPR=0 transition AP still requires PMF. */
+    r.rsn[24] = 0xc0;
     check(&r, 0); /* Explicit SAE selection also accepts the mixed AKM list. */
+
+    r.rsn[24] = 0; check(&r, EOPNOTSUPP);
+    r.rsn[24] = 0x40; check(&r, EOPNOTSUPP); /* MFPR cannot substitute for MFPC. */
+    r.rsn[24] = 0x80;
+
+    memcpy(r.rsn + 16, "\x00\x0f\xac\x08\x00\x0f\xac\x02", 8);
+    check(&r, 0); /* AKM order cannot turn explicit SAE into PSK. */
+    memcpy(r.rsn + 16, "\x00\x0f\xac\x02\x00\x0f\xac\x08", 8);
 
     r.rsn[23] = 2; check(&r, EOPNOTSUPP); /* SAE cannot fall back to the PSK suite. */
 
@@ -252,14 +266,135 @@ static void transition_selection(void)
     r.rsn[23] = 2; check(&r, EOPNOTSUPP); /* Duplicate AKMs are not a transition list. */
 }
 
+static void diagnostic_values(struct apple80211_assoc *r, bool akm_valid,
+                              unsigned akms, bool caps_valid, unsigned caps)
+{
+    unsigned observed_akms = UINT_MAX, observed_caps = UINT_MAX;
+    bool observed_akm_valid = true, observed_caps_valid = true;
+    join_rsn_diagnostic(r, &observed_akms, &observed_akm_valid, &observed_caps, &observed_caps_valid);
+    assert(observed_akm_valid == akm_valid && observed_caps_valid == caps_valid);
+    assert(observed_akms == akms && observed_caps == caps);
+    checks++;
+}
+
+static void diagnostic_said(struct apple80211_assoc *r)
+{
+    struct apple80211req request = {.req_type=20, .req_len=sizeof(*r), .req_data=(user_addr_t)r};
+    char full[200] = {0};
+    int expected = join_security(r);
+    reset_peers();
+    assert(set_join(&request, full, sizeof(full)) == expected);
+    assert(full[sizeof(full)-1] == 0);
+    assert(strlen(full) < sizeof(full)-1 && full[strlen(full)-1] == ')');
+    const char *secrets[] = {"SSID_PRIVATE", "KEY_PRIVATE", "REST_PRIVATE", "PMKID_PRIVATE"};
+    for (unsigned i=0; i<sizeof(secrets)/sizeof(secrets[0]); i++) assert(!strstr(full,secrets[i]));
+    for (size_t i=0; i<strlen(full); i++) assert((unsigned char)full[i]<128);
+    for (unsigned room=0; room<=200; room++) {
+        struct { unsigned char before[16]; char said[200]; unsigned char after[16]; } guarded;
+        memset(&guarded,0xa5,sizeof(guarded));
+        reset_peers();
+        assert(set_join(&request, guarded.said, room) == expected);
+        for (unsigned i=0; i<16; i++) assert(guarded.before[i]==0xa5 && guarded.after[i]==0xa5);
+        if (room) {
+            size_t used=strlen(full)<room-1 ? strlen(full) : room-1;
+            assert(!memcmp(guarded.said,full,used) && guarded.said[used]==0);
+        }
+        for (unsigned i=room; i<200; i++) assert((unsigned char)guarded.said[i]==0xa5);
+        assert(native_calls==(unsigned)(expected==0) && !locked && free_calls==2 && wipe_calls==2);
+        for (unsigned i=0; i<2; i++) assert(!allocations[i].address);
+        checks++;
+    }
+    reset_peers(); native_error=EBUSY;
+    int returned=set_join(&request,full,sizeof(full));
+    assert(returned==(expected ? expected : EBUSY));
+    assert(native_calls==(unsigned)(expected==0) && !locked);
+    memset(&captured,0,sizeof(captured));
+    checks++;
+}
+
+static void request_diagnostic(void)
+{
+    struct apple80211_assoc r;
+    for (unsigned length=0; length<=260; length++) {
+        r=valid(); length_set(&r,length);
+        bool parsed=length>=16 && length<=257;
+        diagnostic_values(&r,parsed,parsed ? 1 : 0,parsed && length>=22,0);
+    }
+    r=valid(); r.rsn_length=UINT16_MAX;
+    diagnostic_values(&r,false,0,false,0);
+    r=valid(); length_set(&r,22); r.rsn[0]=221;
+    diagnostic_values(&r,false,0,false,0);
+    r=valid(); length_set(&r,22); r.rsn[1]++;
+    diagnostic_values(&r,false,0,false,0);
+    r=valid(); length_set(&r,22); r.rsn[2]=2;
+    diagnostic_values(&r,false,0,false,0);
+    r=valid(); length_set(&r,22); r.rsn[3]=1;
+    diagnostic_values(&r,false,0,false,0);
+    for (unsigned index=0; index<2; index++) {
+        r=valid(); length_set(&r,22); r.rsn[8]=index ? 255 : 0; r.rsn[9]=index ? 255 : 0;
+        diagnostic_values(&r,false,0,false,0);
+        r=valid(); length_set(&r,22); r.rsn[14]=index ? 255 : 0; r.rsn[15]=index ? 255 : 0;
+        diagnostic_values(&r,true,index ? 65535 : 0,false,0);
+    }
+    r=transition_request(); diagnostic_values(&r,true,2,true,0x80);
+    r.rsn[24]=255; r.rsn[25]=255; diagnostic_values(&r,true,2,true,65535);
+    r=transition_request();
+    memmove(r.rsn+18,r.rsn+14,r.rsn_length-14);
+    memcpy(r.rsn+14,"\x00\x0f\xac\x04",4); r.rsn[8]=2;
+    length_set(&r,r.rsn_length+4); diagnostic_values(&r,true,2,true,0x80);
+    r=transition_request(); r.auth_upper=4096;
+    memcpy(r.ssid,"SSID_PRIVATE",12); memcpy(r.key,"KEY_PRIVATE",11);
+    memcpy(r.key_rest,"REST_PRIVATE",12);
+    r.rsn[26]=1; memcpy(r.rsn+28,"PMKID_PRIVATE",13);
+    memcpy(r.rsn+44,"\x00\x0f\xac\x06",4); length_set(&r,48);
+    diagnostic_values(&r,true,2,true,0x80);
+    diagnostic_said(&r); /* Rejected PMKID metadata never prints PMKID bytes. */
+    r=transition_request(); r.auth_upper=4096; diagnostic_said(&r);
+    r=valid(); r.version=r.key_version=r.key_length=r.key_cipher=UINT32_MAX;
+    r.mode=r.auth_lower=r.auth_upper=r.key_flags=r.key_index=r.rsn_length=UINT16_MAX;
+    diagnostic_said(&r); /* Maximum scalar values also fit the actual 200-byte buffer. */
+    r=valid(); length_set(&r,20);
+    struct apple80211req request={.req_type=20,.req_len=sizeof(r),.req_data=(user_addr_t)&r};
+    char said[200]={0}; reset_peers(); assert(set_join(&request,said,sizeof(said))==0);
+    assert(strstr(said,"akms=1 akm_valid=1 caps=0 caps_valid=0 mfpc=0 mfpr=0"));
+    r=transition_request(); r.auth_upper=4096; reset_peers();
+    assert(set_join(&request,said,sizeof(said))==0);
+    assert(strstr(said,"mode=2 auth=0x1/0x1000 kv=1 key=10/8 kf=0 ki=0"));
+    assert(strstr(said,"rsn_len=32 akms=2 akm_valid=1 caps=0x80 caps_valid=1 mfpc=1 mfpr=0"));
+    printf("SAFE_DIAGNOSTIC%s\n",said);
+    memset(&captured,0,sizeof(captured));
+    checks+=2;
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
+    if (!strcmp(argv[1], "abi-layout")) {
+        _Static_assert(sizeof(struct apple80211req) == 40, "64-bit Apple80211 ioctl request ABI");
+        printf("{\"ioctl_request_bytes\":%zu,\"req_type\":%zu,\"req_value\":%zu,"
+               "\"req_length\":%zu,\"req_data\":%zu,\"assoc_bytes\":%zu,"
+               "\"version\":%zu,\"mode\":%zu,\"auth_lower\":%zu,\"auth_upper\":%zu,"
+               "\"ssid_length\":%zu,\"key_version\":%zu,\"key_length\":%zu,"
+               "\"key_cipher\":%zu,\"key_flags\":%zu,\"key_index\":%zu,"
+               "\"rsn_length\":%zu,\"rsn\":%zu,\"rsn_capacity\":%zu}\n",
+               sizeof(struct apple80211req), offsetof(struct apple80211req,req_type),
+               offsetof(struct apple80211req,req_val), offsetof(struct apple80211req,req_len),
+               offsetof(struct apple80211req,req_data), sizeof(struct apple80211_assoc),
+               offsetof(struct apple80211_assoc,version), offsetof(struct apple80211_assoc,mode),
+               offsetof(struct apple80211_assoc,auth_lower), offsetof(struct apple80211_assoc,auth_upper),
+               offsetof(struct apple80211_assoc,ssid_length), offsetof(struct apple80211_assoc,key_version),
+               offsetof(struct apple80211_assoc,key_length), offsetof(struct apple80211_assoc,key_cipher),
+               offsetof(struct apple80211_assoc,key_flags), offsetof(struct apple80211_assoc,key_index),
+               offsetof(struct apple80211_assoc,rsn_length), offsetof(struct apple80211_assoc,rsn),
+               sizeof(((struct apple80211_assoc *)0)->rsn));
+        return 0;
+    }
     if (!strcmp(argv[1], "keys-auth")) keys_auth();
     else if (!strcmp(argv[1], "selected-rsn")) selected_rsn();
     else if (!strcmp(argv[1], "copy-cleanup")) copy_cleanup();
     else if (!strcmp(argv[1], "sae-selection")) sae_selection();
     else if (!strcmp(argv[1], "transition-selection")) transition_selection();
+    else if (!strcmp(argv[1], "request-diagnostic")) request_diagnostic();
     else return 2;
     printf("PASS case=%s checks=%u\n", argv[1], checks);
     return 0;

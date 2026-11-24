@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -92,10 +93,12 @@ static void lck_mtx_unlock(int *mutex)
     locked = false;
 }
 
-static int hakios_sta_ask_join_standing(const struct hakios_sta_join *what)
+static int hakios_sta_ask_join(const struct hakios_sta_join *what)
 {
     assert(!locked && join_result == 0 && lock_calls == 1);
     native_calls++;
     captured = *what;
     return native_error;
 }
+/* Same host station peer for the production persistent/autojoin boundary. */
+#define hakios_sta_ask_join_standing hakios_sta_ask_join
