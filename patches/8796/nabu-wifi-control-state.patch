@@ -61,13 +61,13 @@
  
  		return give(request, name, sizeof(name));
  	}
-@@ -314,17 +318,18 @@
+@@ -314,17 +318,30 @@
  		 * for a WPA2 network ("Unable to join").
  		 */
  		uint8_t bits[13] = { 0 };
 -		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
-+		/* 20F66: bit3 CCMP, bit14 RSN. Only the supported WPA2 data path. */
-+		static const uint8_t has[] = { 3, 14 };
++		/* 20F66: bit3 CCMP, bit14 RSN, bit52 management protection, bit75 SAE. */
++		static const uint8_t has[] = { 3, 14, 52, 75 };
  
  		for (unsigned i = 0; i < sizeof(has); i++) {
  			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
@@ -76,6 +76,18 @@
  	}
 -	case 19: {                              /* the radio's power: one radio. Until the driver is up it counts as on: it */
 -		struct {                        /* is being brought up, and Darwin asks this once, early */
++	case 106: {                            /* 20F66 RSSI_BOUNDS: signed dBm, not SNR. */
++		/* The backend exports signed 8-bit dBm. Adopt the board's -76 dBm
++		 * poor-signal boundary as our initial automatic-join policy. This
++		 * is a policy limit, not a measured receiver-sensitivity claim.
++		 * Without this response wifid retains its positive SNR default. */
++		struct {
++			uint32_t version;
++			int32_t minimum, maximum, threshold;
++		} answer = { 1, -127, 0, -76 };
++		_Static_assert(sizeof(answer) == 16, "20F66 RSSI bounds ABI");
++		return give(request, &answer, sizeof(answer));
++	}
 +	case 19: {                              /* The backend's completed power state. */
 +		struct {
  			uint32_t version, radios, state[4];
@@ -84,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +523,91 @@
+@@ -518,6 +535,91 @@
  	return error;
  }
  
@@ -176,7 +188,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,30 +615,35 @@
+@@ -525,30 +627,35 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -222,7 +234,16 @@
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
  	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
-@@ -618,6 +713,23 @@
+@@ -561,7 +668,7 @@
+ 	lck_mtx_lock(&apple80211_lock);
+ 	join_result = 0;
+ 	lck_mtx_unlock(&apple80211_lock);
+-	error = hakios_sta_ask_join(what);
++	error = hakios_sta_ask_join_standing(what);
+ out:
+ 	if (asked != NULL) {
+ 		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
+@@ -618,6 +725,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -246,7 +267,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +845,9 @@
+@@ -733,8 +857,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
