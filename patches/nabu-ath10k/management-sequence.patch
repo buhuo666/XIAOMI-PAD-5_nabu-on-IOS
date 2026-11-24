@@ -1,0 +1,35 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -727,6 +727,11 @@
+ frame_send(struct lx_radio *radio, struct sk_buff *skb)
+ {
+ 	struct ieee80211_tx_control control = { .sta = radio->sta };
++	/* Native management frames have no mac80211 sequence allocator here.
++	 * Ask ath10k to assign a fresh sequence to each unfragmented frame.
++	 * Ethernet frames use the firmware's encapsulation path instead. */
++	if (!(IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_HW_80211_ENCAP))
++		IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_CTL_ASSIGN_SEQ | IEEE80211_TX_CTL_FIRST_FRAGMENT;
+ 	if (radio->sae && radio->pairwise_key && ieee80211_is_robust_mgmt_frame(skb)) {
+ 		skb->data[1] |= 0x40;
+ 		IEEE80211_SKB_CB(skb)->control.hw_key = radio->pairwise_key;
+@@ -865,6 +870,9 @@
+ 	if (f[0] == 0xb0 && length >= 30) {		/* authentication: algorithm, step (2: the answer), status */
+ 		if (radio->sae) {
+ 			if (f[24] != 3 || f[25] || length - 26 > sizeof(radio->auth_frame)) return;
++			printf("lx: SAE RX auth-sequence %u status %u mac-sequence %u retry %u bytes %u\n",
++			    f[26] | f[27] << 8, f[28] | f[29] << 8,
++			    (f[22] | f[23] << 8) >> 4, !!(f[1] & 8), length - 30);
+ 			lx_os_lock();
+ 			memcpy(radio->auth_frame, f + 26, length - 26); radio->auth_length = length - 26;
+ 			lx_os_wakeup(&radio->auth_length); lx_os_unlock(); return;
+@@ -1244,7 +1252,9 @@
+ 	if (!skb) return false;
+ 	body = management(radio, body, 0xb0);
+ 	body[0] = 3; body[1] = 0; body[2] = sequence; body[3] = 0; body[4] = status; body[5] = 0;
+-	memcpy(body + 6, bytes, n); frame_send(radio, skb); return true;
++	memcpy(body + 6, bytes, n);
++	printf("lx: SAE TX auth-sequence %u status %u bytes %u\n", sequence, status, n);
++	frame_send(radio, skb); return true;
+ }
+ 
+ static int

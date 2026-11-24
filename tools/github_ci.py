@@ -10,7 +10,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY = 'buhuo666/XIAOMI-PAD-5_nabu-on-IOS'
+REPOSITORY = 'buhuo666/xiaomi-pad5-nabu-ipad-os'
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

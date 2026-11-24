@@ -1,0 +1,37 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -723,6 +723,22 @@
+ 	return (skb);
+ }
+ 
++/* ath10k requests GENERATE_IV_MGMT for CCMP keys. mac80211 normally
++ * inserts this header before handing the frame to the driver. WMI adds the
++ * MIC itself; firmware encrypts the payload using this per-key packet number. */
++static void
++management_ccmp_header(struct sk_buff *skb, struct ieee80211_key_conf *key)
++{
++	uint8_t *frame = skb_push(skb, 8);
++	memmove(frame, frame + 8, 24);
++	uint8_t *iv = frame + 24;
++	uint64_t pn = atomic64_inc_return(&key->tx_pn);
++	iv[0] = pn; iv[1] = pn >> 8; iv[2] = 0;
++	iv[3] = 0x20 | (key->keyidx << 6);
++	iv[4] = pn >> 16; iv[5] = pn >> 24;
++	iv[6] = pn >> 32; iv[7] = pn >> 40;
++}
++
+ static void
+ frame_send(struct lx_radio *radio, struct sk_buff *skb)
+ {
+@@ -735,6 +751,11 @@
+ 	if (radio->sae && radio->pairwise_key && ieee80211_is_robust_mgmt_frame(skb)) {
+ 		skb->data[1] |= 0x40;
+ 		IEEE80211_SKB_CB(skb)->control.hw_key = radio->pairwise_key;
++		if (radio->pairwise_key->flags & IEEE80211_KEY_FLAG_GENERATE_IV_MGMT)
++			management_ccmp_header(skb, radio->pairwise_key);
++		printf("lx: protected management TX subtype %u bytes %u IV-MGMT %u\n",
++		    skb->data[0] >> 4, skb->len,
++		    !!(radio->pairwise_key->flags & IEEE80211_KEY_FLAG_GENERATE_IV_MGMT));
+ 	}
+ 
+ 	radio->ops->tx(&radio->hw, &control, skb);

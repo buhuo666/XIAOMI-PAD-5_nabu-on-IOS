@@ -13,7 +13,9 @@
   "build_variant": "native-association-v134-r1",
   "reference_patches": [
     "patches/nabu-ath10k/station-start-rollback.patch",
-    "patches/nabu-ath10k/station-association.patch"
+    "patches/nabu-ath10k/station-association.patch",
+    "patches/nabu-ath10k/management-sequence.patch",
+    "patches/nabu-ath10k/management-ccmp-header.patch"
   ],
   "project_patches": {
     "linux": [

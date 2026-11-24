@@ -2,7 +2,7 @@ name: nabu16 - 8796 macOS compilation
 
 on:
   push:
-    branches: [nabu16-bootstrap, codex/int340-source]
+    branches: [nabu16-bootstrap, codex/int344-source]
     paths:
       - '.github/workflows/bootstrap.yml'
       - 'tools/**'
@@ -103,6 +103,8 @@ jobs:
         run: python3 tools/check_nabu_ath10k_handoff.py --source build/nabu-ath10k/native-association-v134-r1/linux/ath10k/qmi.c --output log/ci/nabu-ath10k-handoff
       - name: Validate selected WPA2 backend security
         run: python3 tools/check_nabu_wifi_security.py --backend-only --backend-source build/nabu-ath10k/native-association-v134-r1/reference/wifi/lx/src/lx_80211.c --output log/ci/nabu-wifi-security-backend
+      - name: Preserve SAE management sequence and PMF CCMP header
+        run: python3 tools/check_nabu_management_sequence.py --source build/nabu-ath10k/native-association-v134-r1/reference/wifi/lx/src/lx_80211.c --mac build/nabu-ath10k/native-association-v134-r1/linux/ath10k/mac.h --output log/ci/nabu-ath10k-management
       - name: Replay station startup rollback
         run: python3 tools/check_nabu_ath10k_station.py --source build/nabu-ath10k/native-association-v134-r1/reference/wifi/lx/src/lx_80211.c --output log/ci/nabu-ath10k-station
       - name: Retain the combined backend and build evidence
