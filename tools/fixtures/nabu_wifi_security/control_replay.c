@@ -85,7 +85,11 @@ static void check_set(struct apple80211_assoc *asked, unsigned size, int expecte
 
 static void check(struct apple80211_assoc *asked, int expected)
 {
-    assert(join_security(asked) == expected);
+    int actual = join_security(asked);
+    if (actual != expected)
+        fprintf(stderr, "security mismatch length=%u auth=%u expected=%d actual=%d\n",
+                asked->rsn_length, asked->auth_upper, expected, actual);
+    assert(actual == expected);
     reset_peers();
     check_set(asked, sizeof(*asked), expected, expected == 0);
 }
@@ -157,7 +161,7 @@ static void selected_rsn(void)
     }
     for (unsigned caps = 0; caps < 256; caps++) {
         request = valid(); length_set(&request, 22); request.rsn[20] = (uint8_t)caps;
-        check(&request, caps & 0xc0 ? EOPNOTSUPP : 0);
+        check(&request, caps & 0x40 ? EOPNOTSUPP : 0);
     }
     request = valid(); length_set(&request, 23); check(&request, EINVAL);
     request = valid(); length_set(&request, 24); request.rsn[22] = 1; check(&request, EINVAL);
@@ -208,6 +212,46 @@ static void sae_selection(void)
     r.rsn[27] = 11; check(&r, EOPNOTSUPP);
 }
 
+static struct apple80211_assoc transition_request(void)
+{
+    struct apple80211_assoc r = valid();
+    static const uint8_t transition[] = {
+        48, 30, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 4,
+        2, 0, 0, 15, 172, 2, 0, 15, 172, 8, 0x80, 0,
+        0, 0, 0, 15, 172, 6
+    };
+    r.key_cipher = CIPHER_PASSPHRASE;
+    r.key_length = 8;
+    r.auth_upper = 8;
+    r.rsn_length = sizeof(transition);
+    memcpy(r.rsn, transition, sizeof(transition));
+    return r;
+}
+
+static void transition_selection(void)
+{
+    struct apple80211_assoc r = transition_request();
+    check(&r, 0); /* WPA2 selection from a WPA2/WPA3 transition AP. */
+
+    r = transition_request();
+    r.rsn[24] = 0x40; check(&r, EOPNOTSUPP); /* PMF required is still unsupported. */
+
+    r = transition_request();
+    r.rsn[31] = 11; check(&r, EOPNOTSUPP); /* Unknown management cipher remains rejected. */
+
+    r = transition_request();
+    r.auth_upper = 4096; r.rsn[24] = 0xc0;
+    check(&r, 0); /* Explicit SAE selection also accepts the mixed AKM list. */
+
+    r.rsn[23] = 2; check(&r, EOPNOTSUPP); /* SAE cannot fall back to the PSK suite. */
+
+    r = transition_request();
+    r.rsn[19] = 8; check(&r, EOPNOTSUPP); /* WPA2 cannot select an SAE-only list. */
+
+    r = transition_request();
+    r.rsn[23] = 2; check(&r, EOPNOTSUPP); /* Duplicate AKMs are not a transition list. */
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
@@ -215,6 +259,7 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "selected-rsn")) selected_rsn();
     else if (!strcmp(argv[1], "copy-cleanup")) copy_cleanup();
     else if (!strcmp(argv[1], "sae-selection")) sae_selection();
+    else if (!strcmp(argv[1], "transition-selection")) transition_selection();
     else return 2;
     printf("PASS case=%s checks=%u\n", argv[1], checks);
     return 0;

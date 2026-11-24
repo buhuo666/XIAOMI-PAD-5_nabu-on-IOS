@@ -2,7 +2,7 @@ name: nabu16 - 8796 macOS compilation
 
 on:
   push:
-    branches: [nabu16-bootstrap, codex/int336-source]
+    branches: [nabu16-bootstrap, codex/int340-source]
     paths:
       - '.github/workflows/bootstrap.yml'
       - 'tools/**'
@@ -85,7 +85,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
   ath10k-backend:
-    runs-on: ${{ inputs.runner || 'macos-15' }}
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 25
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
@@ -117,7 +117,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
   xnu8796-reference:
-    runs-on: ${{ inputs.runner || 'macos-15' }}
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer

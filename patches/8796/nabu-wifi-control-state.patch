@@ -96,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +535,50 @@
+@@ -518,6 +535,64 @@
  	return error;
  }
  
@@ -124,30 +124,44 @@
 +	if (count != 1 || memcmp(r + 10, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
 +	count = r[14] | r[15] << 8;
 +	if (!count || count > (length - 16) / 4) return EINVAL;
-+	if (count != 1 || memcmp(r + 16, "\x00\x0f\xac", 3) || r[19] != (sae ? 8 : 2)) return EOPNOTSUPP;
-+	if (sae) {
-+		if (length < 22 || (r[20] & 0xc0) != 0xc0) return EOPNOTSUPP;
-+		if (length == 22) return 0;
-+		if (length < 24) return EINVAL;
-+		if (r[22] || r[23]) return EOPNOTSUPP; /* No cached association. */
-+		if (length == 24) return 0;
-+		return length == 28 && !memcmp(r + 24, "\x00\x0f\xac\x06", 4) ? 0 : EOPNOTSUPP;
++	if (count > 2) return EOPNOTSUPP;
++	bool has_psk = false, has_sae = false;
++	unsigned offset = 16;
++	for (unsigned i = 0; i < count; i++, offset += 4) {
++		if (memcmp(r + offset, "\x00\x0f\xac", 3)) return EOPNOTSUPP;
++		if (r[offset + 3] == 2) {
++			if (has_psk) return EOPNOTSUPP;
++			has_psk = true;
++		} else if (r[offset + 3] == 8) {
++			if (has_sae) return EOPNOTSUPP;
++			has_sae = true;
++		}
++		else return EOPNOTSUPP;
 +	}
-+	if (length == 20) return 0;
-+	if (length < 22) return EINVAL;
-+	if (r[20] & 0xc0) return EOPNOTSUPP; /* No management-frame protection negotiated. */
-+	if (length == 22) return 0;
-+	if (length < 24) return EINVAL;
-+	count = r[22] | r[23] << 8;
-+	if (count > (length - 24) / 16) return EINVAL;
-+	/* PMKID caching and group-management keys are outside this connection path. */
-+	return count || length != 24 ? EOPNOTSUPP : 0;
++	if (sae ? !has_sae : !has_psk) return EOPNOTSUPP;
++	if (offset == length) return sae ? EOPNOTSUPP : 0;
++	if (length - offset < 2) return EINVAL;
++	unsigned capabilities = r[offset] | r[offset + 1] << 8;
++	offset += 2;
++	bool mfpc = (capabilities & 0x80) != 0, mfpr = (capabilities & 0x40) != 0;
++	if (sae ? (!mfpc || !mfpr) : mfpr) return EOPNOTSUPP;
++	if (offset == length) return 0;
++	if (length - offset < 2) return offset >= 24 ? EOPNOTSUPP : EINVAL;
++	count = r[offset] | r[offset + 1] << 8;
++	offset += 2;
++	if (count > (length - offset) / 16) return EINVAL;
++	if (count) return EOPNOTSUPP; /* No cached association. */
++	offset += 16 * count;
++	if (offset == length) return 0;
++	if (length - offset != 4 || !mfpc || memcmp(r + offset, "\x00\x0f\xac\x06", 4))
++		return EOPNOTSUPP;
++	return 0;
 +}
 +
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,12 +586,12 @@
+@@ -525,12 +600,12 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -162,7 +176,7 @@
  		error = asked == NULL || what == NULL ? ENOMEM : error;
  		goto out;
  	}
-@@ -542,13 +603,12 @@
+@@ -542,13 +617,12 @@
  		error = EINVAL;
  		goto out;
  	}
@@ -179,7 +193,7 @@
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
  	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
-@@ -561,7 +621,7 @@
+@@ -561,7 +635,7 @@
  	lck_mtx_lock(&apple80211_lock);
  	join_result = 0;
  	lck_mtx_unlock(&apple80211_lock);
@@ -188,7 +202,7 @@
  out:
  	if (asked != NULL) {
  		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +678,23 @@
+@@ -618,6 +692,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -212,7 +226,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +810,9 @@
+@@ -733,8 +824,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -226,7 +240,7 @@
  		    EOPNOTSUPP ? "REFUSED\n" : "");
 --- a/bsd/sys/hakios.sta.h
 +++ b/bsd/sys/hakios.sta.h
-@@ -42,7 +120,7 @@
+@@ -42,7 +42,7 @@
  	uint16_t dwell_ms;                      /* on each channel; 0: the radio's own */
  };
  

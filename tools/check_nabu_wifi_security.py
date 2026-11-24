@@ -110,7 +110,7 @@ def main():
             ('CIPHER_PASSPHRASE', r'^#define CIPHER_PASSPHRASE[^\n]+'),
             ('association ABI assertions', r'^_Static_assert\(sizeof\(struct apple80211_assoc\).*?;')
         ], ('join_security', 'set_join'))
-        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup', 'sae-selection')))
+        variants.append(('control', control_unit, [], ('keys-auth', 'selected-rsn', 'copy-cleanup', 'sae-selection', 'transition-selection')))
     if backend:
         backend_unit, backend_evidence = unit(out, 'backend', backend, [
             ('ELEMENTS_MOST', r'^#define ELEMENTS_MOST[^\n]+'),
