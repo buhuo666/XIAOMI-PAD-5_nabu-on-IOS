@@ -159,6 +159,8 @@ def main():
             producer.mesa(work,pins)
             source = work/'.cache/mesa-work'
             report['recorded_patch_sequence_passed'] = True
+            run([sys.executable, ROOT/'tools/nabu_a640_late_z.py', '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc', '--output', out/'a640-late-z-check'], stream=True)
+            report['a640_late_z_candidate'] = True
             if a.vertex_state_reuse:
                 run([sys.executable, ROOT/'tools/check_nabu_vertex_state.py',
                      '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc',
