@@ -1,4 +1,4 @@
-"""A640 candidate for the reproduced discard/stencil/read-only-depth hang.
+"""Backport Mesa a70d2af: A6xx D32S8 EARLY_Z_LATE_Z + fragment-kill hang.
 
 This selects the legal late-test path for the observed state class. It does not
 drop writes, disable tests, inspect application identity, or claim validation.
@@ -6,18 +6,11 @@ drop writes, disable tests, inspect application identity, or claim validation.
 import argparse,json,subprocess,shutil
 from pathlib import Path
 
-ANCHOR='''   /* User defined early tests take precedence above all else */'''
-CHANGE='''   /* GPU359: A640 repeatedly hangs with discard + stencil writes and a
-    * read-only depth attachment while using EARLY_Z_LATE_Z. Complete the
-    * ordinary tests after shading for this state class. Explicit shader
-    * early_fragment_tests and FS bypass retain precedence below.
-    * This workaround is a hardware-validation candidate, not yet qualified.
-    */
-   if (CHIP == A6XX && cmd->device->physical_device->dev_id.gpu_id == 640 &&
-       zmode == A6XX_EARLY_Z_LATE_Z && fs_kill_fragments &&
-       stencil_test_enable && stencil_write && !depth_write) {
+ANCHOR='''   if ((stencil_test_enable && depth_format == VK_FORMAT_S8_UINT) ||'''
+CHANGE='''   /* A630/A650 hangs with this combination of states. */
+   if (CHIP == A6XX && zmode == A6XX_EARLY_Z_LATE_Z && depth_format == VK_FORMAT_D32_SFLOAT_S8_UINT &&
+       fs_kill_fragments)
       zmode = A6XX_LATE_Z;
-   }
 
 '''
 
@@ -47,7 +40,7 @@ HARNESS=r'''
 enum chip {A6XX,A7XX};
 enum a6xx_ztest_mode {A6XX_EARLY_Z,A6XX_LATE_Z,A6XX_EARLY_Z_LATE_Z};
 enum VkCompareOp {VK_COMPARE_OP_NEVER,VK_COMPARE_OP_LESS,VK_COMPARE_OP_EQUAL,VK_COMPARE_OP_LESS_OR_EQUAL,VK_COMPARE_OP_GREATER,VK_COMPARE_OP_NOT_EQUAL,VK_COMPARE_OP_GREATER_OR_EQUAL,VK_COMPARE_OP_ALWAYS};
-enum VkFormat {VK_FORMAT_UNDEFINED,VK_FORMAT_D32_SFLOAT_S8_UINT,VK_FORMAT_S8_UINT};
+enum VkFormat {VK_FORMAT_UNDEFINED,VK_FORMAT_D32_SFLOAT_S8_UINT,VK_FORMAT_S8_UINT,VK_FORMAT_D16_UNORM,VK_FORMAT_D24_UNORM_S8_UINT};
 constexpr unsigned VK_ATTACHMENT_UNUSED=~0u,VK_IMAGE_ASPECT_DEPTH_BIT=2,MESA_SHADER_FRAGMENT=0;
 struct Variant {bool has_kill,writes_smask,writes_pos;struct {bool early_fragment_tests;} fs;};
 struct tu_shader {Variant *variant;struct {bool sample_shading;struct {bool force_late_z;} lrz;} fs;};
@@ -66,7 +59,7 @@ struct tu_cs {};
 static bool tu6_writes_depth(tu_cmd_buffer *c,bool enabled){return enabled&&c->vk.dynamic_graphics_state.ds.depth.write_enable&&c->vk.dynamic_graphics_state.ds.depth.compare_op!=VK_COMPARE_OP_NEVER;}
 static bool tu6_writes_stencil(tu_cmd_buffer *c){return c->stencil_write;}
 static bool tu_fs_reads_dynamic_ds_input_attachment(tu_cmd_buffer *c,const tu_shader*){return c->reads_dynamic;}
-static bool vk_format_has_depth(VkFormat f){return f==VK_FORMAT_D32_SFLOAT_S8_UINT;}
+static bool vk_format_has_depth(VkFormat f){return f==VK_FORMAT_D32_SFLOAT_S8_UINT||f==VK_FORMAT_D16_UNORM||f==VK_FORMAT_D24_UNORM_S8_UINT;}
 #define GRAS_SU_DEPTH_PLANE_CNTL(...) 0
 #define A6XX_RB_DEPTH_PLANE_CNTL(...) 0
 static void tu_cs_emit_regs(tu_cs *,int){}
@@ -83,11 +76,11 @@ int main(){
   c.state.pipeline_feedback_loops=bit()?2:0;c.vk.dynamic_graphics_state.feedback_loops=bit()?2:0;c.reads_dynamic=bit();
   c.state.lrz.enabled=bit();v.writes_pos=bit();c.state.occlusion_query_may_be_running=bit();c.state.stencil_written_on_depth_fail=bit();
   shader.fs.sample_shading=bit();shader.fs.lrz.force_late_z=bit();c.state.lrz.force_late_z=bit();v.fs.early_fragment_tests=bit();c.state.disable_fs=bit();
-  phys.dev_id.gpu_id=bit()?640:650;pass.attachments[0].format=bit()?VK_FORMAT_D32_SFLOAT_S8_UINT:VK_FORMAT_S8_UINT;sub.depth_stencil_attachment.attachment=0;
+  phys.dev_id.gpu_id=bit()?640:650;pass.attachments[0].format=VkFormat(1+(bits&3));bits>>=2;sub.depth_stencil_attachment.attachment=0;
   ds.depth.compare_op=VkCompareOp(bits&7);
   tu6_build_depth_plane_z_mode_old<A6XX>(&c,&cs);auto before=c.darwin_gmem.zmode;
   tu6_build_depth_plane_z_mode_new<A6XX>(&c,&cs);auto after=c.darwin_gmem.zmode;
-  bool expected=phys.dev_id.gpu_id==640&&before==A6XX_EARLY_Z_LATE_Z&&(v.has_kill||v.writes_smask||c.vk.dynamic_graphics_state.ms.alpha_to_coverage_enable)&&ds.stencil.test_enable&&c.stencil_write&&!tu6_writes_depth(&c,ds.depth.test_enable);
+  bool expected=pass.attachments[0].format==VK_FORMAT_D32_SFLOAT_S8_UINT&&before==A6XX_EARLY_Z_LATE_Z&&(v.has_kill||v.writes_smask||c.vk.dynamic_graphics_state.ms.alpha_to_coverage_enable);
   assert(after==(expected?A6XX_LATE_Z:before));changed+=expected;checked++;
   tu6_build_depth_plane_z_mode_old<A7XX>(&c,&cs);before=c.darwin_gmem.zmode;tu6_build_depth_plane_z_mode_new<A7XX>(&c,&cs);assert(c.darwin_gmem.zmode==before);
  }
@@ -111,7 +104,7 @@ def check(old,new,out):
     for name,flags in [('release',['-O2']),('asan-ubsan',['-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer'])]:
         exe=out/name;subprocess.run([compiler,'-std=c++20','-Wall','-Wextra','-Werror',*flags,source,'-o',exe],check=True)
         result=subprocess.run([exe],capture_output=True,check=True);(out/(name+'.log')).write_bytes(result.stdout+result.stderr);print(result.stdout.decode().strip())
-    (out/'report.json').write_text(json.dumps(dict(passed=True,actual_depth_mode_functions=True,release=True,asan_ubsan=True,combinations=100000,explicit_early_tests_preserved=True,other_hardware_preserved=True,device_tested=False,game_hang_fixed=False),indent=2)+'\n')
+    (out/'report.json').write_text(json.dumps(dict(passed=True,actual_depth_mode_functions=True,release=True,asan_ubsan=True,combinations=100000,explicit_early_tests_preserved=True,a7xx_preserved=True,non_d32s8_preserved=True,upstream_commit='a70d2af590db192f87b3af01f83a68b450edb4c3',device_tested=False,game_hang_fixed=False),indent=2)+'\n')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--already-applied',action='store_true');a=p.parse_args()
