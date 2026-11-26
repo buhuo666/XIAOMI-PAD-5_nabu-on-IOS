@@ -12,8 +12,8 @@
 
 extern "C" int nabu_data_device_path(char *out, unsigned size)
 {
-    char wanted[37] = "168f804b-0cb5-4167-a239-c71953e36966";
-    PE_parse_boot_argn("nabu-data-uuid", wanted, sizeof(wanted));
+    char wanted[37] = {};
+    bool explicitUUID = PE_parse_boot_argn("nabu-data-uuid", wanted, sizeof(wanted));
     OSDictionary *matching = IOService::serviceMatching("IOMedia");
     if (!matching) return ENOMEM;
     OSIterator *media = IOService::getMatchingServices(matching);
@@ -23,8 +23,17 @@ extern "C" int nabu_data_device_path(char *out, unsigned size)
     int error = ENXIO;
     while (OSObject *object = media->getNextObject()) {
         IOService *volume = OSDynamicCast(IOService, object);
+        if (!volume || !volume->metaCast("AppleAPFSVolume")) continue;
         OSString *uuid = OSDynamicCast(OSString, volume->getProperty("UUID"));
-        if (!uuid || strcasecmp(uuid->getCStringNoCopy(), wanted)) continue;
+        if (!uuid || (explicitUUID && strcasecmp(uuid->getCStringNoCopy(), wanted))) continue;
+        // Find the APFS volume belonging to the actual Data block device. Its
+        // filesystem UUID is created by the installer, not fixed in this kernel.
+        bool dataDevice = false;
+        for (IORegistryEntry *parent = volume->getParentEntry(gIOServicePlane);
+             parent; parent = parent->getParentEntry(gIOServicePlane)) {
+            if (parent->metaCast("NabuDataBlock")) { dataDevice = true; break; }
+        }
+        if (!dataDevice) continue;
         OSString *name = OSDynamicCast(OSString, volume->getProperty(kIOBSDNameKey));
         if (name) {
             int length = snprintf(out, size, "/dev/%s", name->getCStringNoCopy());

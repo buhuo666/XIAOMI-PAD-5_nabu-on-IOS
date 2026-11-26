@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/storage-universal.yml'
       - 'patches/nabu-storage/**'
+      - 'patches/nabu-apfs/NabuDataLookup.cpp'
+      - 'tools/check_nabu_data_lookup.py'
       - 'tools/prepare_nabu_storage.py'
       - 'tools/check_nabu_log_writer.py'
   workflow_dispatch:
@@ -36,6 +38,8 @@ jobs:
           python3 tools/check_nabu_setup_compat.py --output log/ci/nabu-setup-compat
           python3 tools/build_nabu_setup_compat.py --output artifacts/nabu-setup-compat
           cp log/ci/nabu-setup-compat/report.json artifacts/nabu-setup-compat/host-check.json
+      - name: Check Data lookup with installation-specific UUIDs
+        run: python3 tools/check_nabu_data_lookup.py --output log/ci/nabu-data-lookup
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
       - name: Compile the APFS Data block device
