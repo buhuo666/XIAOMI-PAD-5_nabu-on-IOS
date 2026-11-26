@@ -33,6 +33,13 @@ def apply(path):
     new=old.replace(ANCHOR,CHANGE+ANCHOR)
     path.write_text(new,newline='\n');return old,new
 
+def stage(root,work):
+    recorded='patches/mesa/nabu-a640-late-z.patch'
+    shutil.copyfile(root/'patches/nabu-vulkan/nabu-a640-late-z.patch',work/recorded)
+    path=work/'scripts/data/adreno-compiler-inputs.json'
+    pins=json.loads(path.read_text());assert recorded not in pins['patches']
+    pins['patches'].append(recorded);path.write_text(json.dumps(pins,indent=2)+'\n')
+
 HARNESS=r'''
 #include <cassert>
 #include <cstdint>
@@ -107,5 +114,9 @@ def check(old,new,out):
     (out/'report.json').write_text(json.dumps(dict(passed=True,actual_depth_mode_functions=True,release=True,asan_ubsan=True,combinations=100000,explicit_early_tests_preserved=True,other_hardware_preserved=True,device_tested=False,game_hang_fixed=False),indent=2)+'\n')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-    old,new=apply(a.source);check(old,new,a.output)
+    p=argparse.ArgumentParser();p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--already-applied',action='store_true');a=p.parse_args()
+    if a.already_applied:
+        new=a.source.read_text();assert new.count(CHANGE)==1
+        old=new.replace(CHANGE,'',1)
+    else:old,new=apply(a.source)
+    check(old,new,a.output)

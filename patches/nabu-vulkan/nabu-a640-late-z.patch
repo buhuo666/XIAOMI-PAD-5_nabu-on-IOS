@@ -1,0 +1,21 @@
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -8414,6 +8414,18 @@
+         (fs->fs.lrz.force_late_z || cmd->state.lrz.force_late_z)))
+       zmode = A6XX_LATE_Z;
+ 
++   /* GPU359: A640 repeatedly hangs with discard + stencil writes and a
++    * read-only depth attachment while using EARLY_Z_LATE_Z. Complete the
++    * ordinary tests after shading for this state class. Explicit shader
++    * early_fragment_tests and FS bypass retain precedence below.
++    * This workaround is a hardware-validation candidate, not yet qualified.
++    */
++   if (CHIP == A6XX && cmd->device->physical_device->dev_id.gpu_id == 640 &&
++       zmode == A6XX_EARLY_Z_LATE_Z && fs_kill_fragments &&
++       stencil_test_enable && stencil_write && !depth_write) {
++      zmode = A6XX_LATE_Z;
++   }
++
+    /* User defined early tests take precedence above all else */
+    if (fs->variant->fs.early_fragment_tests)
+       zmode = A6XX_EARLY_Z;

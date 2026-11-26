@@ -141,6 +141,8 @@ def main():
                 raise ValueError('Vertex state reuse is staged on the retained r26 build')
             from nabu_turnip_vertex_state import stage_vertex_state
             report['vertex_state_reuse'] = stage_vertex_state(ROOT, work)
+        from nabu_a640_late_z import stage as stage_a640_late_z
+        stage_a640_late_z(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -159,7 +161,7 @@ def main():
             producer.mesa(work,pins)
             source = work/'.cache/mesa-work'
             report['recorded_patch_sequence_passed'] = True
-            run([sys.executable, ROOT/'tools/nabu_a640_late_z.py', '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc', '--output', out/'a640-late-z-check'], stream=True)
+            run([sys.executable, ROOT/'tools/nabu_a640_late_z.py', '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc', '--output', out/'a640-late-z-check', '--already-applied'], stream=True)
             report['a640_late_z_candidate'] = True
             if a.vertex_state_reuse:
                 run([sys.executable, ROOT/'tools/check_nabu_vertex_state.py',
