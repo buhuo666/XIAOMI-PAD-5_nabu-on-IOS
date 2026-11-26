@@ -56,7 +56,7 @@ def main():
         shutil.copy2(p, headers / name)
         identities.append({'path': str(p.resolve()), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
     for name in ('NabuLogFormat.h', 'NabuLogWriteCommands.h', 'NabuLogWriter.h',
-                 'NabuDataWriteCommands.h','NabuDataIdentity.h','NabuStoragePolicy.h'):
+                 'NabuDataWriteCommands.h','NabuDataIdentity.h','NabuStoragePolicy.h','NabuStorageLayout.h'):
         p = source / name if a.tree else ROOT / 'patches/nabu-storage' / name
         shutil.copy2(p, headers / name)
         identities.append({'path': str(p.resolve()), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
