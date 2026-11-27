@@ -47,6 +47,8 @@ def main():
         abi_include=a.output/'station-include'
         (abi_include/'sys').mkdir(parents=True,exist_ok=True)
         shutil.copyfile(a.station_header,abi_include/'sys/hakios.sta.h')
+        if '#include <sys/hakios.security.h>' in a.station_header.read_text():
+            shutil.copyfile(a.station_header.with_name('hakios.security.h'),abi_include/'sys/hakios.security.h')
         include.insert(0,abi_include)
         include.append(ROOT/'src/hakios-8796/xnu/files/bsd')
     flags += ['-I'+host_path(p) for p in include]
