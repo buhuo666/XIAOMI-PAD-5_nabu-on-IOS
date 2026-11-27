@@ -160,7 +160,10 @@ def worker(args, cfg):
                 for line in patch.read_text().splitlines():
                     if line.startswith('+++ b/'):
                         target = staged / line[6:]
-                        target.write_text(target.read_text(), newline='\n')
+                        if target.exists():
+                            target.write_text(target.read_text(), newline='\n')
+                        else:
+                            target.parent.mkdir(parents=True, exist_ok=True)
                 subprocess.run(['patch', '-s', '-p1', '-d', str(staged), '-i', str(patch)], check=True)
             save(marker, stamp)
         upstream.ROOT, upstream.W = staged, staged / 'wifi/lx'
@@ -208,10 +211,20 @@ def worker(args, cfg):
     remap = NABU_REMAP if args.nabu_platform else {}
     # Apple's kernel target otherwise leaves Mbed TLS's tentative cipher table
     # as COMMON even after ld -r. The prelinker needs actual section storage.
-    os.environ['CC'] = shlex.join([args.compiler, '-fno-common', *[f'-D{k}={v}' for k, v in remap.items()]])
+    os.environ['CC'] = shlex.join([args.compiler, '-fno-common',
+        '-I' + str(upstream.ROOT / 'xnu/files/bsd'), *[f'-D{k}={v}' for k, v in remap.items()]])
     driver = upstream.driver_build()
     print(f'Driver objects compiled: {len(driver)}', flush=True)
-    crypto, _ = upstream.sae_build(False)
+    crypto, crypto_flags = upstream.sae_build(False)
+    if cfg.get('legacy_personal_security'):
+        # Use the existing pinned hostap implementation for WPA1/TKIP's MIC
+        # and key wrapping; do not create a second cryptographic primitive.
+        hostap = upstream.extract('hostap')
+        extra = [(hostap / 'src/crypto' / (name + '.c'), build_root / ('legacy-' + name + '.o'), crypto_flags)
+                 for name in ('md5', 'md5-internal', 'rc4')]
+        extra.append((ROOT / 'patches/nabu-ath10k/legacy_crypto_support.c', build_root / 'legacy-support.o', crypto_flags))
+        upstream.compile_all(extra)
+        crypto += [obj for _, obj, _ in extra]
     print(f'SAE/crypto objects compiled: {len(crypto)}', flush=True)
     objects = driver + crypto
     args.output.mkdir(parents=True, exist_ok=True)
@@ -306,7 +319,7 @@ def main():
             return
     args.sdk = args.sdk.resolve()
     if sys.platform == 'win32':
-        command = ['wsl', '-d', 'Ubuntu-22.04', '--', 'python3', wsl_path(Path(__file__)), '--worker']
+        command = ['wsl', '-d', 'Ubuntu-24.04', '--', 'python3', wsl_path(Path(__file__)), '--worker']
         for name in ['inputs', 'reference', 'work', 'output', 'log', 'sdk']:
             command += ['--' + name, wsl_path(getattr(args, name))]
         command += ['--compiler', args.compiler, '--nm', args.nm]

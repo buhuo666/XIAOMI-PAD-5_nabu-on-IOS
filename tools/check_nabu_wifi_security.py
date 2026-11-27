@@ -94,11 +94,27 @@ def main():
     if args.backend_source:
         backend = args.backend_source.resolve()
     elif args.reference:
-        backend = stage(out / 'source/backend', args.reference.resolve() / 'wifi/lx/src/lx_80211.c',
-                        'wifi/lx/src/lx_80211.c', ROOT / 'patches/nabu-ath10k/station-association.patch')
-        backend_header = backend.parents[3] / 'xnu/files/bsd/sys/hakios.sta.h'
-        backend_header.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(args.reference.resolve() / 'xnu/files/bsd/sys/hakios.sta.h', backend_header)
+        base = out / 'source/backend'
+        for relative in ('wifi/lx', 'xnu/files/bsd/sys'):
+            shutil.copytree(args.reference.resolve() / relative, base / relative, dirs_exist_ok=True)
+        for source in base.rglob('*'):
+            if source.is_file() and source.suffix in ('.c', '.h'):
+                source.write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
+        config = json.loads((ROOT / 'configs/nabu-ath10k-inputs.json').read_text())
+        for i, patch in enumerate(config['reference_patches']):
+            result = subprocess.run(host_command(['patch', '--batch', '--fuzz=0', '-p1', '-d', host_path(base),
+                                                  '-i', host_path(ROOT / patch)]), capture_output=True)
+            (out / ('backend-patch-' + str(i) + '.log')).write_bytes(result.stdout + result.stderr)
+            if result.returncode:raise RuntimeError('Backend fixture patch failed: ' + patch)
+        backend = base / 'wifi/lx/src/lx_80211.c'
+    # New personal-security contract uses the shared IE parser and carries
+    # explicit selected suites through the formerly padded station ABI.
+    sample = control or backend
+    if sample and ('hakios_security_read' in sample.read_text(encoding='utf-8') or
+                   'struct hakios_security_choice' in sample.read_text(encoding='utf-8')):
+        from check_nabu_wifi_personal import replay
+        replay(out, control, backend)
+        return
     for name in ('control_host.h', 'control_replay.c', 'backend_host.h', 'backend_replay.c',
                  'joint_host.h', 'joint_replay.c'):
         shutil.copy2(FIXTURES / name, out / name)

@@ -170,7 +170,7 @@ static bool commit_join(void *context)
 static int station_join(const hakios_sta_join *what)
 {
     close_and_drain();
-    if (what->security != HAKIOS_STA_WPA2_PSK && what->security != HAKIOS_STA_WPA3_SAE) return EOPNOTSUPP;
+    if (what->security < HAKIOS_STA_OPEN || what->security > HAKIOS_STA_WPA_AUTO) return EOPNOTSUPP;
     if (what->security == HAKIOS_STA_WPA3_SAE && (!what->passphrase_length || what->passphrase_length > 63))
         return EINVAL;
     IOLockLock(gate);
@@ -244,7 +244,7 @@ extern "C" void nabu_ath10k_os_station(const hakios_sta_ops *ops)
     native_ops.join = station_join;
     native_ops.leave = station_leave;
     hakios_sta_attach(&native_ops);
-    nabu_wireless_log("NABU WLAN SERVICE: native station present=%u power=%u; WPA2-PSK/CCMP association and data path offered\n",
+    nabu_wireless_log("NABU WLAN SERVICE: native station present=%u power=%u; Open/WPA/WPA2/WPA3 personal association and data path offered\n",
         hakios_sta_present(), hakios_sta_powered());
 }
 

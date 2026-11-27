@@ -60,7 +60,7 @@ int main(void) {
     }
     for(unsigned p=0;p<2;p++) {
         present=p;r=(struct apple80211req){12,sizeof(caps),caps};
-        assert(get(&r)==0);assert(caps[0]==8 && caps[1]==64);
+        assert(get(&r)==0);assert(caps[0]==10 && caps[1]==240);
         for(unsigned i=2;i<sizeof(caps);i++)assert(caps[i]==(i==6?16:i==9?8:0));
         /* Original 20F66 __performAssociation reads handle+0x59 bit3.
          * CARD_CAPABILITIES is copied to handle+0x50 by BindToInterface. */

@@ -1,0 +1,869 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -108,6 +108,7 @@
+ 	uint8_t rsn[64];			/* our RSN and optional RSNXE elements */
+ 	unsigned rsn_length;
+ 	bool sae, h2e;
++	struct hakios_security_choice security;
+ 	uint8_t pmkid[16], auth_frame[1024];
+ 	unsigned auth_length;
+ 	struct lx_wpa wpa;
+@@ -748,7 +749,7 @@
+ 	 * Ethernet frames use the firmware's encapsulation path instead. */
+ 	if (!(IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_HW_80211_ENCAP))
+ 		IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_CTL_ASSIGN_SEQ | IEEE80211_TX_CTL_FIRST_FRAGMENT;
+-	if (radio->sae && radio->pairwise_key && ieee80211_is_robust_mgmt_frame(skb)) {
++	if (radio->security.pmf && radio->pairwise_key && ieee80211_is_robust_mgmt_frame(skb)) {
+ 		skb->data[1] |= 0x40;
+ 		IEEE80211_SKB_CB(skb)->control.hw_key = radio->pairwise_key;
+ 		if (radio->pairwise_key->flags & IEEE80211_KEY_FLAG_GENERATE_IV_MGMT)
+@@ -835,6 +836,7 @@
+ 	const char *why = "";
+ 	int said;
+ 
++	if (radio->security.open) return;
+ 	radio->eapol++;
+ 	if (radio->sta == NULL || memcmp(frame + 6, radio->target.address, ETH_ALEN) != 0) {
+ 		return;
+@@ -883,10 +885,10 @@
+ 	unsigned status = 0;
+ 
+ 	if (radio->sta == NULL || length < 26 || memcmp(f + 10, radio->target.address, ETH_ALEN) != 0 ||
+-	    (memcmp(f + 4, radio->vif->addr, ETH_ALEN) != 0 && !(radio->sae && (f[4] & 1)))) {
++	    (memcmp(f + 4, radio->vif->addr, ETH_ALEN) != 0 && !(radio->security.pmf && (f[4] & 1)))) {
+ 		return;
+ 	}
+-	if (radio->sae && ieee80211_is_robust_mgmt_frame(skb) &&
++	if (radio->security.pmf && ieee80211_is_robust_mgmt_frame(skb) &&
+ 	    lx_wpa_mgmt(&radio->wpa, f, length, !!(IEEE80211_SKB_RXCB(skb)->flag & RX_FLAG_DECRYPTED))) return;
+ 	if (f[0] == 0xb0 && length >= 30) {		/* authentication: algorithm, step (2: the answer), status */
+ 		if (radio->sae) {
+@@ -908,7 +910,7 @@
+ 		radio->answer_length = length - 30 < ELEMENTS_MOST ? length - 30 : ELEMENTS_MOST;
+ 		memcpy(radio->answer_elements, f + 30, radio->answer_length);
+ 		lx_os_unlock();
+-	} else if (radio->sae && f[0] == 0xd0 && length >= 28 && f[24] == 8 && f[25] == 0 && radio->pairwise_key) {
++	} else if (radio->security.pmf && f[0] == 0xd0 && length >= 28 && f[24] == 8 && f[25] == 0 && radio->pairwise_key) {
+ 		struct sk_buff *reply; uint8_t *body;
+ 		if ((reply = frame_new(radio, 28, &body)) != NULL) {
+ 			body = management(radio, body, 0xd0); body[0] = 8; body[1] = 1;
+@@ -971,6 +973,9 @@
+ 	const struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
+ 
+ 	radio->frames++;
++	if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_MMIC_ERROR)) {
++		dev_kfree_skb_any(skb);return;
++	}
+ 	if (status->flag & RX_FLAG_8023) {
+ 		ethernet_received(radio, skb);
+ 	} else if (skb->len >= 36 && (skb->data[0] == 0x80 || skb->data[0] == 0x50)) {	/* a beacon, an answer to a probe */
+@@ -1390,6 +1395,10 @@
+ 	if ((e = element(elements, length, 5)) != NULL && e[1] >= 2 && e[3] != 0) {	/* the TIM: every how many beacons */
+ 		conf->dtim_period = e[3];
+ 	}
++	if (radio->security.pairwise == 2) {
++		radio->sta->deflink.ht_cap.ht_supported=false;
++		radio->sta->deflink.vht_cap.vht_supported=false;
++	}
+ }
+ 
+ /*
+@@ -1430,23 +1439,29 @@
+ 		*at++ = (uint8_t)channel_of(channel->center_freq);
+ 		*at++ = 1;
+ 	}
+-	radio->rsn[0] = 48;
+-	radio->rsn[1] = 20;
+-	memcpy(radio->rsn + 2, "\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x02\x00\x00", 20);
+-	radio->rsn[7] = (uint8_t)group_cipher;
+-	radio->rsn_length = 22;
+-	if (radio->sae) {
+-		radio->rsn[1] = 42; radio->rsn[19] = 8; radio->rsn[20] = 0xc0;
+-		radio->rsn[22] = 1; radio->rsn[23] = 0;
+-		memcpy(radio->rsn + 24, radio->pmkid, 16);
+-		memcpy(radio->rsn + 40, "\x00\x0f\xac\x06", 4);
+-		radio->rsn_length = 44;
+-		if (radio->h2e) { memcpy(radio->rsn + 44, "\xf4\x01\x20", 3); radio->rsn_length += 3; }
+-	}
+-	memcpy(at, radio->rsn, radio->rsn_length);
+-	at += radio->rsn_length;
+-	radio->wpa.rsn_length = radio->rsn_length;
+-	if (element(target->elements, target->elements_length, 45) != NULL && band->ht_cap.ht_supported) {
++	radio->rsn_length=0;
++	if (radio->security.wpa1) {
++		memcpy(radio->rsn,"\xdd\x16\x00\x50\xf2\x01\x01\x00\x00\x50\xf2\x02\x01\x00\x00\x50\xf2\x02\x01\x00\x00\x50\xf2\x02",24);
++		radio->rsn[11]=(uint8_t)group_cipher;radio->rsn[17]=(uint8_t)radio->security.pairwise;
++		radio->rsn_length=24;
++	} else if (!radio->security.open) {
++		radio->rsn[0]=48;radio->rsn[1]=20;
++		memcpy(radio->rsn+2,"\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x02\x00\x00",20);
++		radio->rsn[7]=(uint8_t)group_cipher;radio->rsn[13]=(uint8_t)radio->security.pairwise;
++		radio->rsn_length=22;
++		if (radio->sae) {
++			radio->rsn[1]=42;radio->rsn[19]=8;radio->rsn[20]=0xc0;
++			radio->rsn[22]=1;radio->rsn[23]=0;memcpy(radio->rsn+24,radio->pmkid,16);
++			memcpy(radio->rsn+40,"\x00\x0f\xac\x06",4);radio->rsn_length=44;
++			if(radio->h2e){memcpy(radio->rsn+44,"\xf4\x01\x20",3);radio->rsn_length+=3;}
++		} else if (radio->security.pmf) {
++			radio->rsn[1]=26;radio->rsn[20]=0x80;radio->rsn[22]=radio->rsn[23]=0;
++			memcpy(radio->rsn+24,"\x00\x0f\xac\x06",4);radio->rsn_length=28;
++		}
++	}
++	memcpy(at,radio->rsn,radio->rsn_length);at+=radio->rsn_length;
++	radio->wpa.rsn_length=radio->rsn_length;
++	if (radio->security.pairwise != 2 && element(target->elements, target->elements_length, 45) != NULL && band->ht_cap.ht_supported) {
+ 		uint16_t cap = (uint16_t)(band->ht_cap.cap & (radio->width > 20 ? 0xffff : ~(IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
+ 		    IEEE80211_HT_CAP_SGI_40)));
+ 
+@@ -1459,7 +1474,7 @@
+ 		memcpy(at + 3, &band->ht_cap.mcs, sizeof(band->ht_cap.mcs));
+ 		at += 26;
+ 	}
+-	if (element(target->elements, target->elements_length, 191) != NULL && band->vht_cap.vht_supported) {
++	if (radio->security.pairwise != 2 && element(target->elements, target->elements_length, 191) != NULL && band->vht_cap.vht_supported) {
+ 		*at++ = 191;
+ 		*at++ = 12;
+ 		at[0] = (uint8_t)band->vht_cap.cap;
+@@ -1483,94 +1498,76 @@
+  * *group_cipher is then what it ciphers frames to everybody with; else what stands in the way.
+  */
+ static const char *
+-protection(const struct lx_target *target, unsigned *group_cipher, bool *sae, bool *h2e, bool want_sae)
+-{
+-	const uint8_t *rsn = element(target->elements, target->elements_length, 48), *at, *end;
+-	bool ccmp = false, passphrase = false, offers_sae = false;
+-	unsigned count;
+-	*sae = *h2e = false;
+-
+-	if (rsn == NULL) {
+-		return (target->capability & 0x10 ? "it is protected by something older than WPA2" : "it is not protected at all: an "
+-		       "open network is not joined by this");
+-	}
+-	at = rsn + 2;
+-	end = at + rsn[1];
+-	if (end - at < 8 || at[0] != 1 || at[1] || at[2] != 0x00 || at[3] != 0x0f || at[4] != 0xac) {
+-		return ("its RSN element is not one this reads");
+-	}
+-	*group_cipher = at[5];
+-	count = at[6] | at[7] << 8;
+-	at += 8;
+-	if (!count || count > (unsigned)(end - at) / 4) return "invalid pairwise cipher list";
+-	for (; count != 0 && end - at >= 4; count--, at += 4) {
+-		ccmp |= at[0] == 0x00 && at[1] == 0x0f && at[2] == 0xac && at[3] == 4;
+-	}
+-	if (end - at < 2) {
+-		return ("its RSN element names no kind of key management");
+-	}
+-	count = at[0] | at[1] << 8;
+-	at += 2;
+-	if (!count || count > (unsigned)(end - at) / 4) return "invalid AKM list";
+-	for (; count != 0 && end - at >= 4; count--, at += 4) {
+-		passphrase |= at[0] == 0x00 && at[1] == 0x0f && at[2] == 0xac && at[3] == 2;
+-		offers_sae |= at[0] == 0x00 && at[1] == 0x0f && at[2] == 0xac && at[3] == 8;
+-	}
+-	if (*group_cipher != 4) {
+-		return ("it ciphers frames to everybody with something other than CCMP (TKIP, for old stations), which is not done here");
+-	}
+-	if (!ccmp) {
+-		return ("it does not offer CCMP");
+-	}
+-	if (offers_sae && want_sae) {
+-#ifdef LX_HAVE_SAE
+-		if (end - at < 2 || !(at[0] & 0x80)) return "SAE requires management frame protection";
+-		at += 2;
+-		if (end - at == 1) return "truncated PMKID count";
+-		if (end - at >= 2) {
+-			count = at[0] | at[1] << 8; at += 2;
+-			if (count > (unsigned)(end - at) / 16) return "invalid PMKID list";
+-			at += 16 * count;
+-			if (end - at && (end - at != 4 || memcmp(at, "\x00\x0f\xac\x06", 4))) return "unsupported group management cipher";
+-		}
+-		const uint8_t *rsnx = element(target->elements, target->elements_length, 244);
+-		*sae = true; *h2e = rsnx && rsnx[1] >= 1 && (rsnx[2] & 0x20);
+-		return NULL;
+-#else
+-		if (!passphrase) return "SAE support is not built";
++protection(const struct lx_target *target, const struct hakios_sta_join *what,
++    struct hakios_security_choice *choice)
++{
++    *choice = (struct hakios_security_choice){false,false,false,false,false,0,0};
++    const uint8_t *rsn=element(target->elements,target->elements_length,48);
++    const uint8_t legacy_oui[4]={0,0x50,0xf2,1};
++    const uint8_t *wpa=vendor_element(target->elements,target->elements_length,legacy_oui);
++    if(what->security==HAKIOS_STA_OPEN){
++        if((target->capability&0x10)||rsn||wpa||what->passphrase_length||what->pairwise_cipher||what->group_cipher)
++            return "the selected open network advertises protection or has credentials";
++        choice->open=true;return NULL;
++    }
++    if(!(target->capability&0x10))return "a protected request cannot join an open AP";
++    bool want_sae=what->security==HAKIOS_STA_WPA3_SAE;
++    bool want_wpa1=what->security==HAKIOS_STA_WPA_PSK || (what->security==HAKIOS_STA_WPA_AUTO&&!rsn);
++    const uint8_t *ie=want_wpa1?wpa:rsn;
++    if(!ie)return "the requested security protocol is not offered";
++    struct hakios_security offered;
++    if(hakios_security_read(ie,(unsigned)ie[1]+2,&offered))return "invalid protection element";
++    if(offered.wpa1!=want_wpa1)return "protection protocol mismatch";
++    if(!(offered.akms&(1u<<(want_sae?8:2))))return "the requested AKM is not offered";
++#ifndef LX_HAVE_SAE
++    if(want_sae)return "SAE support is not built";
+ #endif
+-	}
+-	if (!passphrase) {
+-		return ("it does not take a passphrase's key of the WPA2 kind (WPA3 only, or an enterprise network)");
+-	}
+-	if (end - at >= 2 && (at[0] & 0x40)) {
+-		return ("it requires protected management frames, which are not done here");
+-	}
+-	return (NULL);
++    if(offered.group!=2&&offered.group!=4)return "unsupported group cipher";
++    if(what->group_cipher&&what->group_cipher!=offered.group)return "selected group cipher mismatch";
++    unsigned pair=what->pairwise_cipher;
++    if(!pair)pair=(offered.pairwise&(1u<<4))?4:2;
++    if((pair!=2&&pair!=4)||!(offered.pairwise&(1u<<pair)))return "selected pairwise cipher is not offered";
++    unsigned caps=want_wpa1?0:offered.capabilities;
++    bool pmf=want_sae||(what->management_protection&0x80);
++    if((caps&0x40)&&!(caps&0x80))return "invalid AP PMF requirement";
++    if((caps&0x40)&&!pmf)return "AP requires protected management frames";
++    if(pmf&&(!(caps&0x80)||pair!=4||offered.group!=4))return "PMF requires AP support and CCMP";
++    if((what->management_protection&0x40)&&!pmf)return "selected PMF requirement lacks capability";
++    if(pmf&&offered.management_cipher&&offered.management_cipher!=6)return "unsupported management cipher";
++    const uint8_t *rsnx=element(target->elements,target->elements_length,244);
++    choice->wpa1=want_wpa1;choice->sae=want_sae;choice->pmf=pmf;
++    choice->h2e=want_sae&&rsnx&&rsnx[1]>=1&&(rsnx[2]&0x20);
++    choice->pairwise=pair;choice->group=offered.group;
++    return NULL;
+ }
+ 
+ /* A key for the driver to give the firmware: CCMP, for frames between us and the access point or for the group's. */
+ static struct ieee80211_key_conf *
+ key_set(struct lx_radio *radio, const uint8_t *key, unsigned index, bool pairwise, int *error)
+ {
+-	struct ieee80211_key_conf *conf = kzalloc(sizeof(*conf) + 16, GFP_KERNEL);
+-
+-	if (conf == NULL) {
+-		*error = -ENOMEM;
+-		return (NULL);
+-	}
+-	conf->cipher = WLAN_CIPHER_SUITE_CCMP;
+-	conf->keyidx = (uint8_t)index;
+-	conf->keylen = 16;
+-	conf->iv_len = 8;
+-	conf->icv_len = 8;
+-	conf->flags = pairwise ? IEEE80211_KEY_FLAG_PAIRWISE : 0;
+-	conf->link_id = -1;
+-	memcpy(conf->key, key, 16);
+-	mutex_lock(&radio->wiphy->mtx);
+-	*error = radio->ops->set_key(&radio->hw, SET_KEY, radio->vif, pairwise ? radio->sta : NULL, conf);
+-	mutex_unlock(&radio->wiphy->mtx);
+-	return (conf);
++    unsigned cipher=pairwise?radio->security.pairwise:radio->security.group;
++    unsigned length=cipher==2?32:16;
++    struct ieee80211_key_conf *conf=kzalloc(sizeof(*conf)+length,GFP_KERNEL);
++    if(!conf){*error=-ENOMEM;return NULL;}
++    conf->cipher=cipher==2?WLAN_CIPHER_SUITE_TKIP:WLAN_CIPHER_SUITE_CCMP;
++    conf->keyidx=(uint8_t)index;conf->keylen=(uint8_t)length;
++    conf->iv_len=8;conf->icv_len=cipher==2?4:8;
++    conf->flags=pairwise?IEEE80211_KEY_FLAG_PAIRWISE:0;conf->link_id=-1;
++    memcpy(conf->key,key,16);
++    if(length==32){memcpy(conf->key+16,key+24,8);memcpy(conf->key+24,key+16,8);}
++    mutex_lock(&radio->wiphy->mtx);
++    *error=radio->ops->set_key(&radio->hw,SET_KEY,radio->vif,pairwise?radio->sta:NULL,conf);
++    mutex_unlock(&radio->wiphy->mtx);
++    return conf;
++}
++
++static bool
++group_key_matches(const struct lx_radio *radio)
++{
++    const struct ieee80211_key_conf *key=radio->group_key;
++    if(!key||key->keyidx!=radio->wpa.group_index||key->keylen!=radio->wpa.group_length||
++        memcmp(key->key,radio->wpa.group,16))return false;
++    return key->keylen==16||(!memcmp(key->key+16,radio->wpa.group+24,8)&&!memcmp(key->key+24,radio->wpa.group+16,8));
+ }
+ 
+ static void
+@@ -1580,7 +1577,7 @@
+ 		mutex_lock(&radio->wiphy->mtx);
+ 		radio->ops->set_key(&radio->hw, DISABLE_KEY, radio->vif, pairwise ? radio->sta : NULL, *conf);
+ 		mutex_unlock(&radio->wiphy->mtx);
+-		explicit_bzero((*conf)->key, 16);
++		explicit_bzero((*conf)->key, (*conf)->keylen);
+ 		kfree(*conf);
+ 		*conf = NULL;
+ 	}
+@@ -1593,8 +1590,7 @@
+ 	struct lx_radio *radio = __containerof(work, struct lx_radio, group_work);
+ 	int error = 0;
+ 
+-	if (radio->group_key && radio->group_key->keyidx == radio->wpa.group_index &&
+-	    !memcmp(radio->group_key->key, radio->wpa.group, 16)) return;
++	if (group_key_matches(radio)) return;
+ 	radio->rekeys++;
+ 	key_drop(radio, &radio->group_key, false);
+ 	radio->group_key = key_set(radio, radio->wpa.group, radio->wpa.group_index, false, &error);
+@@ -1705,6 +1701,7 @@
+ 	def->width = NL80211_CHAN_WIDTH_20;
+ 	def->center_freq1 = primary->center_freq;
+ 	radio->width = 20;
++	if (radio->security.pairwise == 2) return;
+ 	if (!lx_os_option("wifi_wide") || ht == NULL || ht[1] < 22 || !band->ht_cap.ht_supported ||
+ 	    !(band->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40) || !(ht[3] & 4)) {
+ 		return;
+@@ -1768,8 +1765,8 @@
+ 	if (name_length == 0 || name_length > sizeof(radio->want)) {
+ 		return (EINVAL);
+ 	}
+-	if (what->security != HAKIOS_STA_WPA2_PSK && what->security != HAKIOS_STA_WPA3_SAE) {
+-		lx_tell("lx: a network without WPA2 and a passphrase is asked for: that is not built\n");
++	if (what->security < HAKIOS_STA_OPEN || what->security > HAKIOS_STA_WPA_AUTO) {
++		lx_tell("lx: unsupported native security selection\n");
+ 		return (ENOTSUP);
+ 	}
+ 	if (radio->sta != NULL) {
+@@ -1818,7 +1815,8 @@
+ 		/* (a beacon can be heard on the channel next to its own: where it says it is counts) */
+ 		channel = linuxkpi_ieee80211_get_channel(hw->wiphy, linuxkpi_ieee80211_channel_to_frequency(e[2], channel->band));
+ 	}
+-	obstacle = protection(target, &group_cipher, &radio->sae, &radio->h2e, what->security == HAKIOS_STA_WPA3_SAE);
++	obstacle = protection(target, what, &radio->security);
++	group_cipher=radio->security.group;radio->sae=radio->security.sae;radio->h2e=radio->security.h2e;
+ 	if (!obstacle && what->security == HAKIOS_STA_WPA3_SAE && !radio->sae) obstacle = "the requested SAE AKM is not offered";
+ 	if (!obstacle && radio->sae && (!what->passphrase_length || what->passphrase_length > 63)) obstacle = "SAE needs the original passphrase";
+ 	lx_tell("lx: the network that is wanted: an access point on channel %u (%u MHz) at %d dBm, capabilities %#x, beacons every "
+@@ -1826,7 +1824,7 @@
+ 	    channel->center_freq : 0, target->signal, target->capability, target->interval, element(target->elements,
+ 	    target->elements_length, 45) ? "yes" : "no", element(target->elements, target->elements_length, 191) ? "yes" : "no",
+ 	    vendor_element(target->elements, target->elements_length, wmm) ? "yes" : "no", obstacle == NULL ?
+-	    (radio->sae ? "WPA3 SAE, CCMP and PMF" : "WPA2 PSK and CCMP") : "IT CANNOT BE JOINED: ", obstacle == NULL ? "" : obstacle);
++	    (radio->security.open ? "open network" : radio->sae ? "WPA3 SAE, CCMP and PMF" : radio->security.wpa1 ? "WPA1 PSK" : "WPA2 PSK") : "IT CANNOT BE JOINED: ", obstacle == NULL ? "" : obstacle);
+ 	if (obstacle != NULL || channel == NULL || (channel->flags & IEEE80211_CHAN_DISABLED)) {
+ 		return (ENOTSUP);
+ 	}
+@@ -1834,10 +1832,11 @@
+ 	/* the key of the name and the passphrase, and what the handshake needs besides */
+ 	began = lx_os_nanoseconds();
+ 	bzero(&radio->wpa, sizeof(radio->wpa));
+-	radio->wpa.sae = radio->sae;
+-	if (!radio->sae && what->passphrase_length != 0) {
++	radio->wpa.sae = radio->sae;radio->wpa.pmf=radio->security.pmf;radio->wpa.wpa1=radio->security.wpa1;
++	radio->wpa.pairwise_cipher=radio->security.pairwise;radio->wpa.group_cipher=radio->security.group;
++	if (!radio->security.open && !radio->sae && what->passphrase_length != 0) {
+ 		lx_wpa_pmk(what->passphrase, what->passphrase_length, name, name_length, radio->wpa.pmk);
+-	} else if (!radio->sae) {
++	} else if (!radio->security.open && !radio->sae) {
+ 		memcpy(radio->wpa.pmk, what->pmk, sizeof(radio->wpa.pmk));
+ 	}
+ 	memcpy(radio->wpa.own, vif->addr, ETH_ALEN);
+@@ -1889,7 +1888,7 @@
+ 	memcpy(radio->sta->deflink.addr, target->address, ETH_ALEN);
+ 	radio->sta->deflink.sta = radio->sta;
+ 	radio->sta->link[0] = &radio->sta->deflink;
+-	radio->sta->mfp = radio->sae;
++	radio->sta->mfp = radio->security.pmf;
+ 	station_abilities(radio, target->elements, target->elements_length);
+ 	ret = station_state(radio, IEEE80211_STA_NOTEXIST, IEEE80211_STA_NONE);
+ 	printf("lx: the access point is made known to the driver: %d\n", ret);
+@@ -1936,7 +1935,7 @@
+ 		}
+ 		frame = management(radio, frame, 0x00);
+ 		/* capabilities: an infrastructure network, protected, and of the access point's own what a station repeats */
+-		frame[0] = (uint8_t)(0x01 | 0x10 | (target->capability & 0x20));
++		frame[0] = (uint8_t)(0x01 | (radio->security.open ? 0 : 0x10) | (target->capability & 0x20));
+ 		frame[1] = (uint8_t)((target->capability & 0x0500) >> 8);
+ 		frame[2] = 10;				/* we listen at least every tenth beacon */
+ 		frame[3] = 0;
+@@ -1982,35 +1981,34 @@
+ 	    radio->sta->deflink.supp_rates[channel->band], radio->sta->deflink.ht_cap.ht_supported ? "yes" : "no",
+ 	    radio->sta->deflink.vht_cap.vht_supported ? "yes" : "no", radio->sta->deflink.rx_nss);
+ 
+-	/* the handshake: the access point begins it; its messages come in as frames and are answered where they come in */
+-	began = lx_os_nanoseconds();
+-	lx_os_lock();
+-	while (radio->handshake != LX_WPA_KEYS && radio->handshake != LX_WPA_BAD && radio->answer != ANSWER_GONE &&
+-	    lx_os_nanoseconds() - began < 8000000000ull) {
+-		lx_os_sleep(&radio->handshake, 20 * 1000000ull);
+-	}
+-	lx_os_unlock();
+-	if (radio->handshake != LX_WPA_KEYS) {
+-		lx_tell("lx: THE HANDSHAKE DID NOT COME THROUGH in %llu ms: %s%s (%u of its messages came)\n", (lx_os_nanoseconds() - began) /
+-		    1000000ull, radio->answer == ANSWER_GONE ? "the access point has shown us the door (a wrong passphrase gives this)" :
+-		    radio->handshake == LX_WPA_BAD ? "a message was not good: " : radio->handshake == LX_WPA_ANSWER ? "our message 2 was "
+-		    "not answered (a wrong passphrase gives this)" : "the access point did not begin it", radio->handshake == LX_WPA_BAD ?
+-		    radio->handshake_why : "", radio->eapol);
+-		error = EAUTH;
+-		goto out;
+-	}
+-	lx_pause_ms(30);			/* (for message 4 to have left unciphered, before there is a key to cipher with) */
+-	radio->pairwise_key = key_set(radio, radio->wpa.pairwise, 0, true, &ret);
+-	if (ret == 0) {
+-		radio->group_key = key_set(radio, radio->wpa.group, radio->wpa.group_index, false, &ret);
+-	}
+-	lx_tell("lx: THE KEYS ARE GIVEN TO THE DRIVER, %llu ms after the association: ours with the access point, and the group's "
+-	    "(number %u, %u bytes): %d\n", (lx_os_nanoseconds() - began) / 1000000ull, radio->wpa.group_index,
+-	    radio->wpa.group_length, ret);
+-	if (ret != 0 || (ret = station_state(radio, IEEE80211_STA_ASSOC, IEEE80211_STA_AUTHORIZED)) != 0) {
+-		error = -ret;
+-		goto out;
+-	}
++	ret=0;
++	if (!radio->security.open) {
++		/* WPA1 establishes PTK first, then sends its GTK separately. Install
++		 * PTK once before receiving that encrypted group handshake. */
++		began=lx_os_nanoseconds();
++		while (radio->handshake!=LX_WPA_KEYS && radio->handshake!=LX_WPA_BAD &&
++		    radio->answer!=ANSWER_GONE && lx_os_nanoseconds()-began<8000000000ull) {
++			if(radio->handshake==LX_WPA_PAIRWISE&&!radio->pairwise_key){
++				lx_pause_ms(30);
++				radio->pairwise_key=key_set(radio,radio->wpa.pairwise,0,true,&ret);
++				if(ret)break;
++			}
++			lx_os_lock();
++			if(radio->handshake!=LX_WPA_KEYS&&radio->handshake!=LX_WPA_BAD&&radio->answer!=ANSWER_GONE)
++				lx_os_sleep(&radio->handshake,20*1000000ull);
++			lx_os_unlock();
++		}
++		if(ret||radio->handshake!=LX_WPA_KEYS){
++			lx_tell("lx: handshake failed, status=%d messages=%u key-install=%d\n",radio->handshake,radio->eapol,ret);
++			error=ret?-ret:EAUTH;goto out;
++		}
++		lx_pause_ms(30);
++		if(!radio->pairwise_key)radio->pairwise_key=key_set(radio,radio->wpa.pairwise,0,true,&ret);
++		if(!ret)radio->group_key=key_set(radio,radio->wpa.group,radio->wpa.group_index,false,&ret);
++		lx_tell("lx: negotiated keys installed: pairwise=%u group=%u bytes=%u result=%d\n",
++		    radio->security.pairwise,radio->security.group,radio->wpa.group_length,ret);
++	}
++	if(ret || (ret=station_state(radio,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED))!=0){error=-ret;goto out;}
+ 	radio->reached = IEEE80211_STA_AUTHORIZED;
+ 	radio->sent = radio->sent_lost = radio->received = radio->received_group = radio->rekeys = 0;
+ 	radio->joined_at = lx_os_nanoseconds();
+--- a/wifi/lx/src/lx_wpa.c
++++ b/wifi/lx/src/lx_wpa.c
+@@ -19,6 +19,10 @@
+ #endif
+ 
+ #include "lx_wpa.h"
++#include <sys/hakios.security.h>
++/* Existing hostap2.11 crypto compiled beside the SAE dependencies. */
++extern int hmac_md5_vector(const uint8_t *, size_t, size_t, const uint8_t *[], const size_t *, uint8_t *);
++extern int rc4_skip(const uint8_t *, size_t, size_t, uint8_t *, size_t);
+ #ifdef LX_HAVE_SAE
+ #include "sae.h"
+ #endif
+@@ -373,6 +377,10 @@
+ 	const unsigned lengths[3] = { AT_MIC, 16, length - AT_MIC - 16 };
+ 	uint8_t digest[20];
+ 
++	if ((message[AT_INFO+1]&INFO_VERSION)==1) {
++		const size_t sizes[3]={AT_MIC,16,length-AT_MIC-16};
++		return hmac_md5_vector(wpa->kck,16,3,pieces,sizes,mic);
++	}
+ 	hmac_sha1(wpa->kck, 16, pieces, lengths, 3, digest);
+ 	memcpy(mic, digest, 16);
+ 	return 0;
+@@ -382,7 +390,8 @@
+ static int
+ derive(struct lx_wpa *wpa)
+ {
+-	uint8_t data[76], keys[48];
++	uint8_t data[76], keys[64];
++	unsigned tk_length=wpa->pairwise_cipher==2?32:16;
+ 	int own_first = memcmp(wpa->own, wpa->peer, 6) < 0, own_nonce_first = memcmp(wpa->own_nonce, wpa->peer_nonce, 32) < 0;
+ 
+ 	memcpy(data, own_first ? wpa->own : wpa->peer, 6);
+@@ -394,10 +403,10 @@
+ 		if (lx_sae_prf(wpa->pmk, data, sizeof(data), keys)) return -1;
+ 	} else
+ #endif
+-	prf(wpa->pmk, 32, "Pairwise key expansion", data, sizeof(data), keys, sizeof(keys));
++	prf(wpa->pmk, 32, "Pairwise key expansion", data, sizeof(data), keys, 32+tk_length);
+ 	memcpy(wpa->kck, keys, 16);
+ 	memcpy(wpa->kek, keys + 16, 16);
+-	memcpy(wpa->pairwise, keys + 32, 16);
++	memcpy(wpa->pairwise, keys + 32, tk_length);
+ 	memset(keys, 0, sizeof(keys));
+ 	wpa->have_keys = 1;
+ 	return 0;
+@@ -415,7 +424,8 @@
+ 	reply[1] = 3;
+ 	reply[2] = (uint8_t)((length - 4) >> 8);
+ 	reply[3] = (uint8_t)(length - 4);
+-	reply[AT_KIND] = 2;
++	reply[AT_KIND] = wpa->wpa1 ? 254 : 2;
++	if(wpa->wpa1){reply[7]=message[7];reply[8]=message[8];}
+ 	reply[AT_INFO] = (uint8_t)(info >> 8);
+ 	reply[AT_INFO + 1] = (uint8_t)info;
+ 	memcpy(reply + AT_REPLAY, message + AT_REPLAY, 8);
+@@ -445,8 +455,9 @@
+ 		}
+ 		if (length - at < 2 || e[1] > length - at - 2) return -1;
+ 		if (e[0] == 0xdd && e[1] >= 4 && e[2] == 0x00 && e[3] == 0x0f && e[4] == 0xac && e[5] == 1) {
+-			if (e[1] != 22) return -1;
+-			if (wpa->group_length != 16 || wpa->group_index != (e[6] & 3) || memcmp(wpa->group, e + 8, 16))
++			unsigned expected=wpa->group_cipher==2?32:16;
++			if (e[1] != 6+expected) return -1;
++			if (wpa->group_length != expected || wpa->group_index != (e[6] & 3) || memcmp(wpa->group, e + 8, expected))
+ 				memcpy(wpa->group_counter, counter, 8);
+ 			wpa->group_index = e[6] & 3;
+ 			wpa->group_length = e[1] - 6u;
+@@ -469,106 +480,100 @@
+ lx_wpa_message(struct lx_wpa *wpa, const unsigned char *message, unsigned length, unsigned char *reply, unsigned *reply_length,
+     const char **why)
+ {
+-	uint8_t mic[16], data[MESSAGE_MOST];
+-	unsigned info, body, data_length, difference = 0;
+-	const char *nothing;
+-
+-	why = why != NULL ? why : &nothing;
+-	*why = "";
+-	*reply_length = 0;
+-	if (length < 4 || message[1] != 3) {
+-		return (LX_WPA_NOTHING);
+-	}
+-	body = (unsigned)message[2] << 8 | message[3];
+-	if (length < AT_DATA || 4 + body > length || 4 + body < AT_DATA || 4 + body > MESSAGE_MOST) {
+-		*why = "its length is not a key message's";
+-		return (LX_WPA_BAD);
+-	}
+-	length = 4 + body;
+-	info = (unsigned)message[AT_INFO] << 8 | message[AT_INFO + 1];
+-	data_length = (unsigned)message[AT_DATA_LENGTH] << 8 | message[AT_DATA_LENGTH + 1];
+-	if (message[AT_KIND] != 2) {
+-		*why = "it is not an RSN key message (WPA of the first kind?)";
+-		return (LX_WPA_BAD);
+-	}
+-	unsigned version = wpa->sae ? 0 : 2;
++    uint8_t mic[16], data[MESSAGE_MOST];
++    const char *nothing;why=why?why:&nothing;*why="";*reply_length=0;
++    if(length<4||message[1]!=3)return LX_WPA_NOTHING;
++    unsigned body=(unsigned)message[2]<<8|message[3];
++    if(length<AT_DATA||4+body>length||4+body<AT_DATA||4+body>MESSAGE_MOST){*why="invalid key message length";return LX_WPA_BAD;}
++    length=4+body;
++    unsigned info=(unsigned)message[AT_INFO]<<8|message[AT_INFO+1];
++    unsigned data_length=(unsigned)message[AT_DATA_LENGTH]<<8|message[AT_DATA_LENGTH+1];
++    unsigned version=wpa->sae?0:wpa->pairwise_cipher==2?1:2;
++    if(wpa->wpa1&&!(info&INFO_PAIRWISE)&&wpa->group_cipher==2&&(info&INFO_VERSION)==1)version=1;
+ #ifndef LX_HAVE_SAE
+-	if (wpa->sae) { *why = "SAE support is not built"; return LX_WPA_BAD; }
++    if(wpa->sae){*why="SAE support is not built";return LX_WPA_BAD;}
+ #endif
+-	if ((info & INFO_VERSION) != version) {
+-		*why = "its key descriptor is not version 2 (the network wants another kind of key management)";
+-		return (LX_WPA_BAD);
+-	}
+-	if (AT_DATA + data_length > length) {
+-		*why = "its key data is longer than the message";
+-		return (LX_WPA_BAD);
+-	}
+-
+-	/* message 1: the access point's nonce, unsigned */
+-	if ((info & (INFO_PAIRWISE | INFO_ACK | INFO_MIC)) == (INFO_PAIRWISE | INFO_ACK)) {
+-		if (wpa->replay_known) { *why = "a new authentication is needed before replacing pairwise keys"; return LX_WPA_BAD; }
+-		memcpy(wpa->peer_nonce, message + AT_NONCE, 32);
+-		if (derive(wpa) || answer(wpa, message, version | INFO_PAIRWISE | INFO_MIC, wpa->own_nonce, wpa->rsn,
+-		    wpa->rsn_length, reply, reply_length)) { *why = "key derivation or MIC failed"; return LX_WPA_BAD; }
+-		return (LX_WPA_ANSWER);
+-	}
+-
+-	/* everything else is signed, by an access point that has shown it has the key */
+-	if (!(info & INFO_MIC) || !(info & INFO_ACK)) {
+-		return (LX_WPA_NOTHING);
+-	}
+-	if (!wpa->have_keys) {
+-		*why = "it is signed, and there has been no message 1 to make the keys from";
+-		return (LX_WPA_BAD);
+-	}
+-	if (mic_of(wpa, message, length, mic)) { *why = "MIC calculation failed"; return LX_WPA_BAD; }
+-	for (unsigned i = 0; i < 16; i++) {
+-		difference |= mic[i] ^ message[AT_MIC + i];
+-	}
+-	if (difference != 0) {
+-		*why = "its signature is not right (a wrong passphrase gives this)";
+-		return (LX_WPA_BAD);
+-	}
+-	if (wpa->replay_known && memcmp(message + AT_REPLAY, wpa->replay, 8) <= 0) {
+-		*why = "its counter is not beyond the last one's (a message played again)";
+-		return (LX_WPA_BAD);
+-	}
+-	if ((info & INFO_PAIRWISE) && memcmp(message + AT_NONCE, wpa->peer_nonce, 32) != 0) {
+-		*why = "its nonce is not message 1's";
+-		return (LX_WPA_BAD);
+-	}
+-	if (!(info & INFO_ENCRYPTED) || aes_unwrap(wpa->kek, message + AT_DATA, data_length, data) != 0) {
+-		*why = "its key data does not unwrap";
+-		return (LX_WPA_BAD);
+-	}
+-	struct lx_wpa next = *wpa;
+-	if (group_key(&next, data, data_length - 8, message + AT_RSC) != 0 ||
+-	    ((info & INFO_PAIRWISE) && !next.group_length)) {
+-		memset(data, 0, sizeof(data));
+-		*why = "there is no group key in it";
+-		return (LX_WPA_BAD);
+-	}
+-	if (wpa->sae && !next.igtk_valid) { memset(data, 0, sizeof(data)); *why = "PMF requires an IGTK"; return LX_WPA_BAD; }
+-	memset(data, 0, sizeof(data));
+-	memcpy(next.replay, message + AT_REPLAY, 8);
+-	next.replay_known = 1;
+-
+-	/* message 3 of the four, or message 1 of a new group key */
+-	if (info & INFO_PAIRWISE) {
+-		if (answer(wpa, message, version | INFO_PAIRWISE | INFO_MIC | INFO_SECURE, NULL, NULL, 0, reply, reply_length)) return LX_WPA_BAD;
+-		*wpa = next;
+-		return (LX_WPA_KEYS);
+-	}
+-	if (answer(wpa, message, version | INFO_MIC | INFO_SECURE, NULL, NULL, 0, reply, reply_length)) return LX_WPA_BAD;
+-	*wpa = next;
+-	return (LX_WPA_GROUP);
++    if(message[AT_KIND]!=(wpa->wpa1?254:2)||(info&INFO_VERSION)!=version||AT_DATA+data_length>length){
++        *why="key descriptor does not match negotiated protection";return LX_WPA_BAD;
++    }
++    if(info&0x0c00){*why="unexpected request/error key message";return LX_WPA_BAD;}
++    if((info&(INFO_PAIRWISE|INFO_ACK|INFO_MIC))==(INFO_PAIRWISE|INFO_ACK)){
++        if(wpa->replay_known){*why="new authentication required before replacing pairwise keys";return LX_WPA_BAD;}
++        memcpy(wpa->peer_nonce,message+AT_NONCE,32);
++        if(derive(wpa)||answer(wpa,message,version|INFO_PAIRWISE|INFO_MIC,wpa->own_nonce,wpa->rsn,wpa->rsn_length,reply,reply_length)){
++            *why="key derivation or MIC failed";return LX_WPA_BAD;
++        }
++        return LX_WPA_ANSWER;
++    }
++    if(!(info&INFO_MIC)||!(info&INFO_ACK))return LX_WPA_NOTHING;
++    if(!wpa->have_keys){*why="signed message before message 1";return LX_WPA_BAD;}
++    if(mic_of(wpa,message,length,mic)){*why="MIC calculation failed";return LX_WPA_BAD;}
++    unsigned difference=0;for(unsigned i=0;i<16;i++)difference|=mic[i]^message[AT_MIC+i];
++    if(difference){*why="key message MIC mismatch";return LX_WPA_BAD;}
++    if(wpa->replay_known&&memcmp(message+AT_REPLAY,wpa->replay,8)<=0){*why="key message replay";return LX_WPA_BAD;}
++    if((info&INFO_PAIRWISE)&&memcmp(message+AT_NONCE,wpa->peer_nonce,32)){*why="message 3 nonce mismatch";return LX_WPA_BAD;}
++    struct lx_wpa next=*wpa;
++    if(wpa->wpa1&&(info&INFO_PAIRWISE)){
++        /* WPA1 message 3 carries the AP's WPA IE, before a separate GTK
++         * handshake. Validate advertised suites without requiring the AP's
++         * list to equal the station's selected single suite. */
++        bool matched=false;
++        for(unsigned at=0;at<data_length;){
++            if(data_length-at<2||message[AT_DATA+at+1]>data_length-at-2){*why="truncated WPA message 3 IE";return LX_WPA_BAD;}
++            const uint8_t *ie=message+AT_DATA+at;unsigned n=(unsigned)ie[1]+2;
++            if(ie[0]==221&&n>=6&&hakios_security_oui(ie+2,true)&&ie[5]==1){
++                struct hakios_security selected;
++                if(hakios_security_read(ie,n,&selected)||selected.group!=wpa->group_cipher||
++                    !(selected.pairwise&(1u<<wpa->pairwise_cipher))||!(selected.akms&(1u<<2))){
++                    *why="authenticated WPA IE disagrees with selected protection";return LX_WPA_BAD;
++                }
++                matched=true;
++            }
++            at+=n;
++        }
++        if(!matched||!(info&INFO_INSTALL)){*why="WPA message 3 lacks negotiated IE or install bit";return LX_WPA_BAD;}
++        if(answer(wpa,message,version|INFO_PAIRWISE|INFO_MIC|(info&INFO_SECURE),NULL,NULL,0,reply,reply_length))return LX_WPA_BAD;
++        next.pairwise_established=1;memcpy(next.replay,message+AT_REPLAY,8);next.replay_known=1;*wpa=next;
++        return LX_WPA_PAIRWISE;
++    }
++    if(wpa->wpa1&&!wpa->pairwise_established){*why="WPA group handshake before message 3";return LX_WPA_BAD;}
++    if(!wpa->wpa1&&!(info&INFO_ENCRYPTED)){*why="RSN key data is not encrypted";return LX_WPA_BAD;}
++    unsigned plain_length=data_length;
++    if(version==1){
++        uint8_t key[32];memcpy(key,message+49,16);memcpy(key+16,wpa->kek,16);
++        memcpy(data,message+AT_DATA,data_length);
++        int error=rc4_skip(key,sizeof(key),256,data,data_length);memset(key,0,sizeof(key));
++        if(error){*why="RC4 key data failed";return LX_WPA_BAD;}
++    }else{
++        if(aes_unwrap(wpa->kek,message+AT_DATA,data_length,data)){*why="key data does not unwrap";return LX_WPA_BAD;}
++        plain_length-=8;
++    }
++    if(wpa->wpa1){
++        unsigned required=wpa->group_cipher==2?32:16;
++        unsigned declared=(unsigned)message[7]<<8|message[8];
++        if(declared!=required||plain_length<required||plain_length>32){memset(data,0,sizeof(data));*why="WPA group key length mismatch";return LX_WPA_BAD;}
++        unsigned index=(info>>4)&3;
++        if(next.group_length!=required||next.group_index!=index||memcmp(next.group,data,required))memcpy(next.group_counter,message+AT_RSC,8);
++        next.group_length=required;next.group_index=index;memcpy(next.group,data,required);
++    }else if(group_key(&next,data,plain_length,message+AT_RSC)||((info&INFO_PAIRWISE)&&!next.group_length)){
++        memset(data,0,sizeof(data));*why="missing or incompatible group key";return LX_WPA_BAD;
++    }
++    memset(data,0,sizeof(data));
++    if((wpa->pmf||wpa->sae)&&!next.igtk_valid){*why="PMF requires an IGTK";return LX_WPA_BAD;}
++    memcpy(next.replay,message+AT_REPLAY,8);next.replay_known=1;
++    unsigned response=version|INFO_MIC|INFO_SECURE;
++    if(info&INFO_PAIRWISE)response|=INFO_PAIRWISE;
++    else if(wpa->wpa1)response|=info&0x30;
++    if(answer(wpa,message,response,NULL,NULL,0,reply,reply_length))return LX_WPA_BAD;
++    int result=(info&INFO_PAIRWISE)||(wpa->wpa1&&!wpa->group_length)?LX_WPA_KEYS:LX_WPA_GROUP;
++    next.pairwise_established=1;*wpa=next;return result;
+ }
+ 
+ /* BIP-CMAC-128 for group robust management frames; unicast CCMP is verified by the driver. */
+ int
+ lx_wpa_mgmt(struct lx_wpa *wpa, const unsigned char *f, unsigned n, int decrypted)
+ {
+-	if (!wpa->sae) return 0;
++	if (!wpa->sae && !wpa->pmf) return 0;
+ 	if (n < 26) return -1;
+ 	if (!(f[4] & 1)) return decrypted ? 0 : -1;
+ #ifdef LX_HAVE_SAE
+--- a/wifi/lx/src/lx_wpa.h
++++ b/wifi/lx/src/lx_wpa.h
+@@ -14,6 +14,8 @@
+     unsigned char pmk[32]);
+ 
+ struct lx_wpa {
++	int wpa1, pmf, pairwise_established;
++	unsigned pairwise_cipher, group_cipher;
+ 	int sae;				/* SAE PMK: SHA256 PTK, AKM-defined AES-CMAC MIC and PMF */
+ 	unsigned char pmk[32];
+ 	unsigned char own[6], peer[6];		/* the station's address and the access point's */
+@@ -26,7 +28,7 @@
+ 	unsigned char replay[8];		/* the counter of the last message accepted */
+ 	int have_keys, replay_known;
+ 	/* what comes out of it */
+-	unsigned char pairwise[16];		/* the key for frames between the two ("TK", CCMP) */
++	unsigned char pairwise[32];		/* the key for frames between the two ("TK", CCMP) */
+ 	unsigned char group[32];		/* the key the access point sends to everybody with ("GTK") ... */
+ 	unsigned group_length, group_index;	/* ... its length, and its number (1 to 3) */
+ 	unsigned char group_counter[8];		/* ... and the packet number its frames have got to ("RSC") */
+@@ -44,6 +46,7 @@
+ 	LX_WPA_NOTHING = 0,		/* not for us to answer (not a key message) */
+ 	LX_WPA_ANSWER = 1,		/* message 1: send the reply (message 2) */
+ 	LX_WPA_KEYS = 2,		/* message 3: send the reply (message 4), then both keys are to be used */
++	LX_WPA_PAIRWISE = 4, /* WPA1 PTK established; GTK handshake follows */
+ 	LX_WPA_GROUP = 3,		/* a new group key later on: send the reply, then use the new group key */
+ };
+ int lx_wpa_message(struct lx_wpa *wpa, const unsigned char *message, unsigned length, unsigned char *reply,
+--- a/xnu/files/bsd/sys/hakios.sta.h
++++ b/xnu/files/bsd/sys/hakios.sta.h
+@@ -3,12 +3,12 @@
+  *
+  * On one side whatever does the scanning and the joining with a radio: the station logic over
+  * ath11k on the phone (wifi/lx in the repository). On the other whoever wants a network: the
+- * Apple80211 requests of iOS's Wi-Fi side, answered in bsd/dev/hakios.apple80211.c, and the
+- * kernel's own join of the network it was given in a file (bsd/dev/hakios.wifi.c). Frames do
++ * Apple80211 requests of Darwin's Wi-Fi side, answered in drivers/wifi/hakios.apple80211.c, and the
++ * kernel's own join of the network it was given in a file (drivers/wifi/hakios.wifi.c). Frames do
+  * not pass here, and neither does "the link is up": those go through bsd/sys/hakios.net.h,
+  * which the station side calls itself.
+  *
+- * Between the two stands bsd/dev/hakios.sta.c: one thread, on which every call into the station
++ * Between the two stands drivers/wifi/hakios.sta.c: one thread, on which every call into the station
+  * side is made, one at a time, and what the last scan heard, kept for whoever asks.
+  *
+  * Nothing but C's own types here: the station side is not compiled as XNU's code.
+@@ -18,6 +18,7 @@
+ 
+ #include <stdbool.h>
+ #include <stdint.h>
++#include <sys/hakios.security.h>
+ 
+ #define HAKIOS_STA_ELEMENTS_MOST       1024
+ 
+@@ -42,7 +43,7 @@
+ 	uint16_t dwell_ms;                      /* on each channel; 0: the radio's own */
+ };
+ 
+-enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE };
++enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE, HAKIOS_STA_WPA_PSK, HAKIOS_STA_WPA_AUTO };
+ 
+ struct hakios_sta_join {
+ 	uint8_t ssid[32], ssid_length;
+@@ -50,6 +51,8 @@
+ 	int security;
+ 	uint8_t pmk[32];                        /* WPA2 with a passphrase: the key made of the passphrase and the name ... */
+ 	uint8_t passphrase[64], passphrase_length;      /* ... or, if this is not empty, the passphrase itself */
++	/* Occupy the former trailing padding; the station ABI remains 144 bytes. */
++	uint8_t pairwise_cipher, group_cipher, management_protection;
+ };
+ 
+ enum hakios_sta_phase { HAKIOS_STA_OFF, HAKIOS_STA_IDLE, HAKIOS_STA_SCANNING, HAKIOS_STA_JOINING, HAKIOS_STA_JOINED };
+@@ -114,7 +117,7 @@
+ unsigned hakios_sta_channels(struct hakios_sta_channel *channels, unsigned most);
+ bool     hakios_sta_address(uint8_t *address);
+ 
+-/* ---- the listener: bsd/dev/hakios.apple80211.c ---- */
++/* ---- the listener: drivers/wifi/hakios.apple80211.c ---- */
+ void     hakios_apple80211_event(enum hakios_sta_event event, int status);
+ void     hakios_apple80211_summary(void);                              /* what was asked in this run, to the log */
+ #endif
+--- /dev/null
++++ b/xnu/files/bsd/sys/hakios.security.h
+@@ -0,0 +1,85 @@
++/* Shared WPA/RSN information-element reader. No keys, allocations or policy. */
++#ifndef _SYS_HAKIOS_SECURITY_H_
++#define _SYS_HAKIOS_SECURITY_H_
++#include <stdbool.h>
++#include <stdint.h>
++
++enum { HAKIOS_SECURITY_OK, HAKIOS_SECURITY_MALFORMED, HAKIOS_SECURITY_UNSUPPORTED };
++struct hakios_security {
++    bool wpa1, pairwise_unknown, akm_unknown, duplicate;
++    unsigned group, pairwise, akms, pairwise_count, akm_count;
++    unsigned capabilities, pmkid_count, management_cipher;
++};
++struct hakios_security_choice {
++    bool open, wpa1, sae, h2e, pmf;
++    unsigned pairwise, group;
++};
++
++static inline unsigned
++hakios_security_le16(const uint8_t *p)
++{
++    return (unsigned)p[0] | (unsigned)p[1] << 8;
++}
++
++static inline bool
++hakios_security_oui(const uint8_t *p, bool wpa1)
++{
++    return p[0] == 0 && p[1] == (wpa1 ? 0x50 : 0x0f) && p[2] == (wpa1 ? 0xf2 : 0xac);
++}
++
++static inline int
++hakios_security_read(const uint8_t *ie, unsigned length, struct hakios_security *out)
++{
++    *out = (struct hakios_security){false, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0};
++    if (length < 2 || length != (unsigned)ie[1] + 2) return HAKIOS_SECURITY_MALFORMED;
++    unsigned at = 2;
++    if (ie[0] == 221) {
++        if (length < 6 || !hakios_security_oui(ie + 2, true) || ie[5] != 1)
++            return HAKIOS_SECURITY_UNSUPPORTED;
++        out->wpa1 = true; at = 6;
++    } else if (ie[0] != 48) return HAKIOS_SECURITY_UNSUPPORTED;
++    if (length - at < 8 || hakios_security_le16(ie + at) != 1)
++        return HAKIOS_SECURITY_MALFORMED;
++    at += 2;
++    if (!hakios_security_oui(ie + at, out->wpa1)) return HAKIOS_SECURITY_UNSUPPORTED;
++    out->group = ie[at + 3]; at += 4;
++    unsigned count = hakios_security_le16(ie + at); at += 2;
++    if (!count || count > (length - at) / 4) return HAKIOS_SECURITY_MALFORMED;
++    out->pairwise_count = count;
++    for (unsigned i = 0; i < count; i++, at += 4) {
++        unsigned cipher = ie[at + 3];
++        if (!hakios_security_oui(ie + at, out->wpa1) || (cipher != 2 && cipher != 4)) {
++            out->pairwise_unknown = true; continue;
++        }
++        unsigned bit = 1u << cipher;
++        if (out->pairwise & bit) out->duplicate = true;
++        out->pairwise |= bit;
++    }
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    count = hakios_security_le16(ie + at); at += 2;
++    if (!count || count > (length - at) / 4) return HAKIOS_SECURITY_MALFORMED;
++    out->akm_count = count;
++    for (unsigned i = 0; i < count; i++, at += 4) {
++        unsigned akm = ie[at + 3];
++        if (!hakios_security_oui(ie + at, out->wpa1) || (akm != 2 && (akm != 8 || out->wpa1))) {
++            out->akm_unknown = true; continue;
++        }
++        unsigned bit = 1u << akm;
++        if (out->akms & bit) out->duplicate = true;
++        out->akms |= bit;
++    }
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    out->capabilities = hakios_security_le16(ie + at); at += 2;
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (out->wpa1) return HAKIOS_SECURITY_UNSUPPORTED;
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    out->pmkid_count = hakios_security_le16(ie + at); at += 2;
++    if (out->pmkid_count > (length - at) / 16) return HAKIOS_SECURITY_MALFORMED;
++    at += 16 * out->pmkid_count;
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (length - at != 4 || !hakios_security_oui(ie + at, false)) return HAKIOS_SECURITY_UNSUPPORTED;
++    out->management_cipher = ie[at + 3];
++    return HAKIOS_SECURITY_OK;
++}
++#endif

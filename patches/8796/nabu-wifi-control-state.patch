@@ -67,7 +67,7 @@
  		uint8_t bits[13] = { 0 };
 -		static const uint8_t has[] = { 2, 3, 6, 9, 10, 14, 17, 19 };
 +		/* 20F66: bit3 CCMP, bit14 RSN, bit52 management protection, bit75 SAE. */
-+		static const uint8_t has[] = { 3, 14, 52, 75 };
++		static const uint8_t has[] = { 1, 3, 12, 13, 14, 15, 52, 75 };
  
  		for (unsigned i = 0; i < sizeof(has); i++) {
  			bits[has[i] / 8] |= (uint8_t)(1u << (has[i] % 8));
@@ -96,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +535,91 @@
+@@ -518,6 +535,73 @@
  	return error;
  }
  
@@ -130,65 +130,47 @@
 +static int
 +join_security(const struct apple80211_assoc *asked)
 +{
-+	if (asked->version != 1 || asked->key_version != 1) return EINVAL;
-+	bool sae = asked->auth_upper == (1u << 12);
-+	if (asked->mode != 2 || asked->auth_lower != 1 || (!sae && asked->auth_upper != 8) ||
-+	    asked->key_flags || asked->key_index) return EOPNOTSUPP;
-+	if (asked->key_cipher != CIPHER_PMK && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
-+	if (sae && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
-+	if ((asked->key_cipher == CIPHER_PMK && asked->key_length != 32) ||
-+	    (asked->key_cipher == CIPHER_PASSPHRASE && (asked->key_length < (sae ? 1u : 8u) || asked->key_length > 63))) return EINVAL;
-+	unsigned length = asked->rsn_length;
-+	const uint8_t *r = asked->rsn;
-+	if (!length) return EOPNOTSUPP;
-+	if (length < 20 || length > sizeof(asked->rsn) || r[1] + 2u != length) return EINVAL;
-+	if (r[0] != 48) return EOPNOTSUPP;
-+	if (r[2] != 1 || r[3]) return EINVAL;
-+	if (memcmp(r + 4, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
-+	unsigned count = r[8] | r[9] << 8;
-+	if (!count || count > (length - 10) / 4) return EINVAL;
-+	if (count != 1 || memcmp(r + 10, "\x00\x0f\xac\x04", 4)) return EOPNOTSUPP;
-+	count = r[14] | r[15] << 8;
-+	if (!count || count > (length - 16) / 4) return EINVAL;
-+	if (count > 2) return EOPNOTSUPP;
-+	bool has_psk = false, has_sae = false;
-+	unsigned offset = 16;
-+	for (unsigned i = 0; i < count; i++, offset += 4) {
-+		if (memcmp(r + offset, "\x00\x0f\xac", 3)) return EOPNOTSUPP;
-+		if (r[offset + 3] == 2) {
-+			if (has_psk) return EOPNOTSUPP;
-+			has_psk = true;
-+		} else if (r[offset + 3] == 8) {
-+			if (has_sae) return EOPNOTSUPP;
-+			has_sae = true;
-+		}
-+		else return EOPNOTSUPP;
-+	}
-+	if (sae ? !has_sae : !has_psk) return EOPNOTSUPP;
-+	if (offset == length) return sae ? EOPNOTSUPP : 0;
-+	if (length - offset < 2) return EINVAL;
-+	unsigned capabilities = r[offset] | r[offset + 1] << 8;
-+	offset += 2;
-+	bool mfpc = (capabilities & 0x80) != 0, mfpr = (capabilities & 0x40) != 0;
-+	/* SAE negotiates PMF even when the AP does not require it of PSK stations. */
-+	if (sae ? !mfpc : mfpr) return EOPNOTSUPP;
-+	if (offset == length) return 0;
-+	if (length - offset < 2) return offset >= 24 ? EOPNOTSUPP : EINVAL;
-+	count = r[offset] | r[offset + 1] << 8;
-+	offset += 2;
-+	if (count > (length - offset) / 16) return EINVAL;
-+	if (count) return EOPNOTSUPP; /* No cached association. */
-+	offset += 16 * count;
-+	if (offset == length) return 0;
-+	if (length - offset != 4 || !mfpc || memcmp(r + offset, "\x00\x0f\xac\x06", 4))
-+		return EOPNOTSUPP;
-+	return 0;
++    if (asked->version != 1) return EINVAL;
++    if (asked->mode != 2 || asked->auth_lower != 1 || asked->key_flags || asked->key_index)
++        return EOPNOTSUPP;
++    if (!asked->auth_upper) {
++        if (asked->key_length || asked->key_cipher || asked->rsn_length) return EOPNOTSUPP;
++        return asked->key_version <= 1 ? 0 : EINVAL;
++    }
++    bool sae = asked->auth_upper == (1u << 12);
++    bool wpa1 = asked->auth_upper == 2, mixed = asked->auth_upper == (2 | 8);
++    if (!sae && !wpa1 && !mixed && asked->auth_upper != 8) return EOPNOTSUPP;
++    if (asked->key_version != 1) return EINVAL;
++    if (asked->key_cipher != CIPHER_PMK && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
++    if (sae && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
++    if ((asked->key_cipher == CIPHER_PMK && asked->key_length != 32) ||
++        (asked->key_cipher == CIPHER_PASSPHRASE && (asked->key_length < (sae ? 1u : 8u) || asked->key_length > 63)))
++        return EINVAL;
++    /* Some native PSK requests carry only the selected auth and PMK. The
++     * backend must still require that protocol on the AP; never infer open. */
++    if (!asked->rsn_length) return sae ? EOPNOTSUPP : 0;
++    if (asked->rsn_length > sizeof(asked->rsn)) return EINVAL;
++    struct hakios_security selected;
++    int error = hakios_security_read(asked->rsn, asked->rsn_length, &selected);
++    if (error) return error == HAKIOS_SECURITY_MALFORMED ? EINVAL : EOPNOTSUPP;
++    if (!mixed && selected.wpa1 != wpa1) return EOPNOTSUPP;
++    if (selected.group != 2 && selected.group != 4) return EOPNOTSUPP;
++    if (selected.pairwise_count != 1 || selected.pairwise_unknown || selected.akm_unknown || selected.duplicate ||
++        selected.akm_count > 2 || !(selected.akms & (1u << (sae ? 8 : 2)))) return EOPNOTSUPP;
++    if (selected.pmkid_count) return EOPNOTSUPP; /* No cached-association contract. */
++    unsigned caps = selected.wpa1 ? 0 : selected.capabilities;
++    bool mfpc = (caps & 0x80) != 0, mfpr = (caps & 0x40) != 0;
++    if (mfpr && !mfpc) return EOPNOTSUPP;
++    if (sae && (!mfpc || selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
++    if (mfpc && (selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
++    if (selected.management_cipher && (!mfpc || selected.management_cipher != 6)) return EOPNOTSUPP;
++    return 0;
 +}
 +
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,30 +627,35 @@
+@@ -525,34 +609,55 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -226,15 +208,35 @@
  	memcpy(what->ssid, asked->ssid, asked->ssid_length);
  	memcpy(what->bssid, asked->bssid, sizeof(what->bssid));
 -	if (asked->key_length == 0) {
--		what->security = HAKIOS_STA_OPEN;
++	if (!asked->auth_upper) {
+ 		what->security = HAKIOS_STA_OPEN;
 -	} else if (asked->key_cipher == CIPHER_PASSPHRASE && asked->key_length >= 8 && asked->key_length <= 63) {
 -		what->security = HAKIOS_STA_WPA2_PSK;
-+	if (asked->key_cipher == CIPHER_PASSPHRASE) {
-+		what->security = asked->auth_upper == (1u << 12) ? HAKIOS_STA_WPA3_SAE : HAKIOS_STA_WPA2_PSK;
++	} else {
++		what->security = asked->auth_upper == (1u << 12) ? HAKIOS_STA_WPA3_SAE :
++		    asked->auth_upper == 2 ? HAKIOS_STA_WPA_PSK :
++		    asked->auth_upper == (2 | 8) ? HAKIOS_STA_WPA_AUTO : HAKIOS_STA_WPA2_PSK;
++		if (asked->rsn_length) {
++			struct hakios_security selected;
++			(void)hakios_security_read(asked->rsn, asked->rsn_length, &selected);
++			what->pairwise_cipher = selected.pairwise == (1u << 4) ? 4 : 2;
++			what->group_cipher = (uint8_t)selected.group;
++			what->management_protection = selected.wpa1 ? 0 : (uint8_t)(selected.capabilities & 0xc0);
++			if (what->security == HAKIOS_STA_WPA_AUTO)
++				what->security = selected.wpa1 ? HAKIOS_STA_WPA_PSK : HAKIOS_STA_WPA2_PSK;
++		}
++	}
++	if (what->security == HAKIOS_STA_OPEN) {
++		/* No credential interpretation for an explicitly open network. */
++	} else if (asked->key_cipher == CIPHER_PASSPHRASE) {
  		what->passphrase_length = (uint8_t)asked->key_length;
  		memcpy(what->passphrase, asked->key, asked->key_length);
  	} else if (asked->key_cipher == CIPHER_PMK && asked->key_length == sizeof(what->pmk)) {
-@@ -561,7 +668,7 @@
+-		what->security = HAKIOS_STA_WPA2_PSK;
+ 		memcpy(what->pmk, asked->key, sizeof(what->pmk));
+ 	} else {
+ 		error = EINVAL;
+@@ -561,7 +666,7 @@
  	lck_mtx_lock(&apple80211_lock);
  	join_result = 0;
  	lck_mtx_unlock(&apple80211_lock);
@@ -243,7 +245,7 @@
  out:
  	if (asked != NULL) {
  		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +725,23 @@
+@@ -618,6 +723,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -267,7 +269,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +857,9 @@
+@@ -733,8 +855,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -281,12 +283,117 @@
  		    EOPNOTSUPP ? "REFUSED\n" : "");
 --- a/bsd/sys/hakios.sta.h
 +++ b/bsd/sys/hakios.sta.h
-@@ -42,7 +42,7 @@
+@@ -18,6 +18,7 @@
+ 
+ #include <stdbool.h>
+ #include <stdint.h>
++#include <sys/hakios.security.h>
+ 
+ #define HAKIOS_STA_ELEMENTS_MOST       1024
+ 
+@@ -42,7 +43,7 @@
  	uint16_t dwell_ms;                      /* on each channel; 0: the radio's own */
  };
  
 -enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK };
-+enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE };
++enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE, HAKIOS_STA_WPA_PSK, HAKIOS_STA_WPA_AUTO };
  
  struct hakios_sta_join {
  	uint8_t ssid[32], ssid_length;
+@@ -50,6 +51,8 @@
+ 	int security;
+ 	uint8_t pmk[32];                        /* WPA2 with a passphrase: the key made of the passphrase and the name ... */
+ 	uint8_t passphrase[64], passphrase_length;      /* ... or, if this is not empty, the passphrase itself */
++	/* Occupy the former trailing padding; the station ABI remains 144 bytes. */
++	uint8_t pairwise_cipher, group_cipher, management_protection;
+ };
+ 
+ enum hakios_sta_phase { HAKIOS_STA_OFF, HAKIOS_STA_IDLE, HAKIOS_STA_SCANNING, HAKIOS_STA_JOINING, HAKIOS_STA_JOINED };
+--- /dev/null
++++ b/bsd/sys/hakios.security.h
+@@ -0,0 +1,85 @@
++/* Shared WPA/RSN information-element reader. No keys, allocations or policy. */
++#ifndef _SYS_HAKIOS_SECURITY_H_
++#define _SYS_HAKIOS_SECURITY_H_
++#include <stdbool.h>
++#include <stdint.h>
++
++enum { HAKIOS_SECURITY_OK, HAKIOS_SECURITY_MALFORMED, HAKIOS_SECURITY_UNSUPPORTED };
++struct hakios_security {
++    bool wpa1, pairwise_unknown, akm_unknown, duplicate;
++    unsigned group, pairwise, akms, pairwise_count, akm_count;
++    unsigned capabilities, pmkid_count, management_cipher;
++};
++struct hakios_security_choice {
++    bool open, wpa1, sae, h2e, pmf;
++    unsigned pairwise, group;
++};
++
++static inline unsigned
++hakios_security_le16(const uint8_t *p)
++{
++    return (unsigned)p[0] | (unsigned)p[1] << 8;
++}
++
++static inline bool
++hakios_security_oui(const uint8_t *p, bool wpa1)
++{
++    return p[0] == 0 && p[1] == (wpa1 ? 0x50 : 0x0f) && p[2] == (wpa1 ? 0xf2 : 0xac);
++}
++
++static inline int
++hakios_security_read(const uint8_t *ie, unsigned length, struct hakios_security *out)
++{
++    *out = (struct hakios_security){false, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0};
++    if (length < 2 || length != (unsigned)ie[1] + 2) return HAKIOS_SECURITY_MALFORMED;
++    unsigned at = 2;
++    if (ie[0] == 221) {
++        if (length < 6 || !hakios_security_oui(ie + 2, true) || ie[5] != 1)
++            return HAKIOS_SECURITY_UNSUPPORTED;
++        out->wpa1 = true; at = 6;
++    } else if (ie[0] != 48) return HAKIOS_SECURITY_UNSUPPORTED;
++    if (length - at < 8 || hakios_security_le16(ie + at) != 1)
++        return HAKIOS_SECURITY_MALFORMED;
++    at += 2;
++    if (!hakios_security_oui(ie + at, out->wpa1)) return HAKIOS_SECURITY_UNSUPPORTED;
++    out->group = ie[at + 3]; at += 4;
++    unsigned count = hakios_security_le16(ie + at); at += 2;
++    if (!count || count > (length - at) / 4) return HAKIOS_SECURITY_MALFORMED;
++    out->pairwise_count = count;
++    for (unsigned i = 0; i < count; i++, at += 4) {
++        unsigned cipher = ie[at + 3];
++        if (!hakios_security_oui(ie + at, out->wpa1) || (cipher != 2 && cipher != 4)) {
++            out->pairwise_unknown = true; continue;
++        }
++        unsigned bit = 1u << cipher;
++        if (out->pairwise & bit) out->duplicate = true;
++        out->pairwise |= bit;
++    }
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    count = hakios_security_le16(ie + at); at += 2;
++    if (!count || count > (length - at) / 4) return HAKIOS_SECURITY_MALFORMED;
++    out->akm_count = count;
++    for (unsigned i = 0; i < count; i++, at += 4) {
++        unsigned akm = ie[at + 3];
++        if (!hakios_security_oui(ie + at, out->wpa1) || (akm != 2 && (akm != 8 || out->wpa1))) {
++            out->akm_unknown = true; continue;
++        }
++        unsigned bit = 1u << akm;
++        if (out->akms & bit) out->duplicate = true;
++        out->akms |= bit;
++    }
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    out->capabilities = hakios_security_le16(ie + at); at += 2;
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (out->wpa1) return HAKIOS_SECURITY_UNSUPPORTED;
++    if (length - at < 2) return HAKIOS_SECURITY_MALFORMED;
++    out->pmkid_count = hakios_security_le16(ie + at); at += 2;
++    if (out->pmkid_count > (length - at) / 16) return HAKIOS_SECURITY_MALFORMED;
++    at += 16 * out->pmkid_count;
++    if (at == length) return HAKIOS_SECURITY_OK;
++    if (length - at != 4 || !hakios_security_oui(ie + at, false)) return HAKIOS_SECURITY_UNSUPPORTED;
++    out->management_cipher = ie[at + 3];
++    return HAKIOS_SECURITY_OK;
++}
++#endif

@@ -10,12 +10,13 @@
     "xnu/files/bsd/sys/hakios.qmi.h",
     "xnu/files/bsd/sys/hakios.sta.h"
   ],
-  "build_variant": "native-association-v134-r1",
+  "build_variant": "personal-security-WIFI372",
   "reference_patches": [
     "patches/nabu-ath10k/station-start-rollback.patch",
     "patches/nabu-ath10k/station-association.patch",
     "patches/nabu-ath10k/management-sequence.patch",
-    "patches/nabu-ath10k/management-ccmp-header.patch"
+    "patches/nabu-ath10k/management-ccmp-header.patch",
+    "patches/nabu-ath10k/personal-security-modes.patch"
   ],
   "project_patches": {
     "linux": [
@@ -51,5 +52,6 @@
       "github_asset_api": "https://api.github.com/repos/Mbed-TLS/mbedtls/releases/assets/464469768",
       "sha256": "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
     }
-  }
+  },
+  "legacy_personal_security": true
 }
