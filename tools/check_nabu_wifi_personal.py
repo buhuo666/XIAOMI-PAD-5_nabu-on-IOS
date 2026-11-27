@@ -1,5 +1,5 @@
 """Actual-source personal security tests used by the common Wi-Fi checker."""
-import json,subprocess
+import json,shutil,subprocess
 from pathlib import Path
 from check_nabu_wifi_security import unit,extract_function,unique,ROOT
 from check_darwinboot_8796 import host_command,host_path
@@ -7,7 +7,11 @@ from check_darwinboot_8796 import host_command,host_path
 def replay(out,control,backend):
     fixture=ROOT/'tools/fixtures/nabu_wifi_security';variants=[]
     if control:
-        (out/'control_host.h').write_text((fixture/'control_host.h').read_text())
+        host=(fixture/'control_host.h').read_text()
+        # Keep host SDK declarations separate from named allocation peers.
+        host=host.replace('typedef uintptr_t user_addr_t;', '#define user_addr_t nabu_fixture_user_addr_t\ntypedef uintptr_t user_addr_t;')
+        host=host.replace('static int memset_s(', '#define memset_s nabu_fixture_memset_s\nstatic int memset_s(')
+        (out/'control_host.h').write_text(host)
         (out/'control_replay.c').write_text((fixture/'control_modes_replay.c').read_text())
         code,_=unit(out,'control',control,[('request',r'^struct apple80211req \{.*?^\};'),
             ('association',r'^struct apple80211_assoc \{.*?^\};'),('PMK',r'^#define CIPHER_PMK[^\n]+'),
@@ -27,10 +31,16 @@ def replay(out,control,backend):
         variants.append(('personal-backend',code,backend.parents[3]/'xnu/files/bsd'))
     results=[]
     for name,code,headers in variants:
+        # Only the two real station contract headers belong in this host
+        # replay. Adding all XNU BSD headers would shadow the macOS SDK's
+        # unrelated sys/cdefs.h and sys/types.h.
+        isolated=out/(name+'-headers');(isolated/'sys').mkdir(parents=True,exist_ok=True)
+        for header in ('hakios.sta.h','hakios.security.h'):
+            shutil.copyfile(headers/'sys'/header,isolated/'sys'/header)
         for kind,flags in [('release',['-O2']),('sanitized',['-g','-fsanitize=address,undefined','-fno-sanitize-recover=all'])]:
             exe=out/(name+'-'+kind)
             compiler='clang' if __import__('sys').platform=='darwin' else 'clang-18'
-            cmd=[compiler,'-std=gnu11','-Wall','-Wextra','-Werror','-DLX_HAVE_SAE',*flags,'-I'+host_path(out),'-I'+host_path(headers),host_path(code),'-o',host_path(exe)]
+            cmd=[compiler,'-std=gnu11','-Wall','-Wextra','-Werror','-DLX_HAVE_SAE',*flags,'-I'+host_path(out),'-I'+host_path(isolated),host_path(code),'-o',host_path(exe)]
             p=subprocess.run(host_command(cmd),capture_output=True);(out/(exe.name+'-compile.log')).write_bytes(p.stdout+p.stderr)
             if p.returncode:raise RuntimeError(p.stderr.decode(errors='replace'))
             p=subprocess.run(host_command([host_path(exe)]),capture_output=True);(out/(exe.name+'.log')).write_bytes(p.stdout+p.stderr)
