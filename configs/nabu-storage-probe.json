@@ -9,16 +9,16 @@
     {
       "name": "OS",
       "offset": 1048576,
-      "bytes": 5068816384,
-      "image_sha256": "437891d485a5812f9e4c7a5870e27b83dd54e506d18aa679f0c549902ed63c7a",
-      "superblock_sha256": "42bf932594095879869d6e01867be9c1c67894b09d96231affa534c905bd7675"
+      "bytes": 5091885056,
+      "image_sha256": "57318aff633bd363e9655ec480f7bfed0fc1865ea7d95ff73b7774608a1e51d3",
+      "superblock_sha256": "0ca40f351a5fb593aaba0723edbb6312c1193eab4cc1b6cb25f72ae740e3be20"
     },
     {
       "name": "SystemOS",
       "offset": 6442450944,
-      "bytes": 2663383040,
-      "image_sha256": "ed44dccbbe29287ad659dba892a50eb03ac1df2ec604da4256e48c741f15d626",
-      "superblock_sha256": "420704e0478020292a977253bd5e56a972e4b667a5445ba52015aa2b6a79332a"
+      "bytes": 2665480192,
+      "image_sha256": "c154d02eabfb7a24935b48d4afa847c579d0d6326e67bc90c3f185fd53f436f2",
+      "superblock_sha256": "c8f0cc17378e31a4ab2bd0003c708c9f2a51a8659ec2040a0713ad1aa6015533"
     }
   ],
   "probe_file": {
