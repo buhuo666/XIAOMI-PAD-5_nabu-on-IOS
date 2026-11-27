@@ -33,10 +33,10 @@ jobs:
           cp log/ci/nabu-setup-compat/report.json artifacts/nabu-setup-compat/host-check.json
       - name: Check Data lookup with installation-specific UUIDs
         run: python3 tools/check_nabu_data_lookup.py --output log/ci/nabu-data-lookup
-      - name: Check personal network native request selection
-        run: python3 tools/check_nabu_wifi_security.py --output log/ci/wifi-personal-control
       - name: Compile 8796 reference
         run: bash tools/build_8796_reference.sh
+      - name: Check actual compiled personal network native request selection
+        run: python3 tools/check_nabu_wifi_security.py --control-source build/xnu8796-reference/tree/bsd/dev/hakios.apple80211.c --output log/ci/wifi-personal-control
       - name: Compile the APFS Data block device
         run: python3 tools/build_nabu_data_block.py --tree build/xnu8796-reference/tree --output artifacts/nabu-data-block
       - name: Compile the Nabu ath10k native bridge and existing device services
