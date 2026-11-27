@@ -143,6 +143,8 @@ def main():
             report['vertex_state_reuse'] = stage_vertex_state(ROOT, work)
         from nabu_a640_late_z import stage as stage_a640_late_z
         stage_a640_late_z(ROOT, work)
+        from nabu_shared_shader_cache import stage as stage_shared_shader
+        report["shared_shader_patch"] = stage_shared_shader(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -163,6 +165,8 @@ def main():
             report['recorded_patch_sequence_passed'] = True
             run([sys.executable, ROOT/'tools/nabu_a640_late_z.py', '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc', '--output', out/'a640-late-z-check', '--already-applied'], stream=True)
             report['a640_late_z_candidate'] = True
+            run([sys.executable, ROOT/"tools/check_nabu_shared_shader_cache.py", "--source", source, "--output", out/"shared-shader-check"], stream=True)
+            report["shared_shader_cache_host_check"] = "pass"
             if a.vertex_state_reuse:
                 run([sys.executable, ROOT/'tools/check_nabu_vertex_state.py',
                      '--source', source/'src/freedreno/vulkan/tu_cmd_buffer.cc',
@@ -216,6 +220,12 @@ def main():
         profile = work/'build/mesa-tu-ios/builtin-build-profile.json'
         if profile.is_file():
             shutil.copyfile(profile,out/profile.name)
+        shader = work/'.cache/mesa-work/src/freedreno/vulkan/tu_pipeline.cc'
+        if shader.is_file():
+            (out/'source').mkdir(exist_ok=True)
+            shutil.copyfile(shader, out/'source/tu_pipeline.cc')
+            for name in ('vk_pipeline_cache.c', 'vk_pipeline_cache.h'):
+                shutil.copyfile(work/'.cache/mesa-work/src/vulkan/runtime'/name, out/'source'/name)
         source = work/'.cache/mesa-work'/TURNIP_SOURCE
         if source.is_file():
             (out/'source').mkdir(exist_ok=True)
