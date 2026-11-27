@@ -76,6 +76,11 @@ int main(void)
     a=request(8,4,4,0);a.rsn[8]=255;check_request(&a,EINVAL,0,0,0,0);
     for(unsigned n=1;n<20;n++){a=request(8,4,4,0);a.rsn_length=n;a.rsn[1]=n>=2?n-2:0;assert(join_security(&a)!=0);checks++;}
     a=request(8,4,4,0);a.rsn_length=65535;check_request(&a,EINVAL,0,0,0,0);
+    a=request(8,4,4,192);a.auth_upper=1024;a.rsn[19]=6;
+    check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,192);
+    a.key_cipher=CIPHER_PMK;a.key_length=32;check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,192);
+    a.rsn[19]=2;check_request(&a,EOPNOTSUPP,0,0,0,0);
+    a.rsn[19]=6;a.rsn[20]=0;check_request(&a,EOPNOTSUPP,0,0,0,0);
     printf("PASS WIFI372 actual native selection/ABI/credential cleanup checks=%u\n",checks);
     return 0;
 }

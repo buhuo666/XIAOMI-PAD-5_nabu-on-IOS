@@ -170,7 +170,7 @@ static bool commit_join(void *context)
 static int station_join(const hakios_sta_join *what)
 {
     close_and_drain();
-    if (what->security < HAKIOS_STA_OPEN || what->security > HAKIOS_STA_WPA_AUTO) return EOPNOTSUPP;
+    if (what->security < HAKIOS_STA_OPEN || what->security > HAKIOS_STA_WPA2_SHA256) return EOPNOTSUPP;
     if (what->security == HAKIOS_STA_WPA3_SAE && (!what->passphrase_length || what->passphrase_length > 63))
         return EINVAL;
     IOLockLock(gate);

@@ -96,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +535,73 @@
+@@ -518,6 +535,74 @@
  	return error;
  }
  
@@ -138,8 +138,9 @@
 +        return asked->key_version <= 1 ? 0 : EINVAL;
 +    }
 +    bool sae = asked->auth_upper == (1u << 12);
++    bool sha256 = asked->auth_upper == (1u << 10);
 +    bool wpa1 = asked->auth_upper == 2, mixed = asked->auth_upper == (2 | 8);
-+    if (!sae && !wpa1 && !mixed && asked->auth_upper != 8) return EOPNOTSUPP;
++    if (!sae && !sha256 && !wpa1 && !mixed && asked->auth_upper != 8) return EOPNOTSUPP;
 +    if (asked->key_version != 1) return EINVAL;
 +    if (asked->key_cipher != CIPHER_PMK && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
 +    if (sae && asked->key_cipher != CIPHER_PASSPHRASE) return EOPNOTSUPP;
@@ -148,7 +149,7 @@
 +        return EINVAL;
 +    /* Some native PSK requests carry only the selected auth and PMK. The
 +     * backend must still require that protocol on the AP; never infer open. */
-+    if (!asked->rsn_length) return sae ? EOPNOTSUPP : 0;
++    if (!asked->rsn_length) return (sae || sha256) ? EOPNOTSUPP : 0;
 +    if (asked->rsn_length > sizeof(asked->rsn)) return EINVAL;
 +    struct hakios_security selected;
 +    int error = hakios_security_read(asked->rsn, asked->rsn_length, &selected);
@@ -156,12 +157,12 @@
 +    if (!mixed && selected.wpa1 != wpa1) return EOPNOTSUPP;
 +    if (selected.group != 2 && selected.group != 4) return EOPNOTSUPP;
 +    if (selected.pairwise_count != 1 || selected.pairwise_unknown || selected.akm_unknown || selected.duplicate ||
-+        selected.akm_count > 2 || !(selected.akms & (1u << (sae ? 8 : 2)))) return EOPNOTSUPP;
++        selected.akm_count > 3 || !(selected.akms & (1u << (sae ? 8 : sha256 ? 6 : 2)))) return EOPNOTSUPP;
 +    if (selected.pmkid_count) return EOPNOTSUPP; /* No cached-association contract. */
 +    unsigned caps = selected.wpa1 ? 0 : selected.capabilities;
 +    bool mfpc = (caps & 0x80) != 0, mfpr = (caps & 0x40) != 0;
 +    if (mfpr && !mfpc) return EOPNOTSUPP;
-+    if (sae && (!mfpc || selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
++    if ((sae || sha256) && (!mfpc || selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
 +    if (mfpc && (selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
 +    if (selected.management_cipher && (!mfpc || selected.management_cipher != 6)) return EOPNOTSUPP;
 +    return 0;
@@ -170,7 +171,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,34 +609,55 @@
+@@ -525,34 +610,56 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -214,6 +215,7 @@
 -		what->security = HAKIOS_STA_WPA2_PSK;
 +	} else {
 +		what->security = asked->auth_upper == (1u << 12) ? HAKIOS_STA_WPA3_SAE :
++		    asked->auth_upper == (1u << 10) ? HAKIOS_STA_WPA2_SHA256 :
 +		    asked->auth_upper == 2 ? HAKIOS_STA_WPA_PSK :
 +		    asked->auth_upper == (2 | 8) ? HAKIOS_STA_WPA_AUTO : HAKIOS_STA_WPA2_PSK;
 +		if (asked->rsn_length) {
@@ -236,7 +238,7 @@
  		memcpy(what->pmk, asked->key, sizeof(what->pmk));
  	} else {
  		error = EINVAL;
-@@ -561,7 +666,7 @@
+@@ -561,7 +668,7 @@
  	lck_mtx_lock(&apple80211_lock);
  	join_result = 0;
  	lck_mtx_unlock(&apple80211_lock);
@@ -245,7 +247,7 @@
  out:
  	if (asked != NULL) {
  		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +723,23 @@
+@@ -618,6 +725,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -269,7 +271,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +855,9 @@
+@@ -733,8 +857,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -296,7 +298,7 @@
  };
  
 -enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK };
-+enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE, HAKIOS_STA_WPA_PSK, HAKIOS_STA_WPA_AUTO };
++enum { HAKIOS_STA_OPEN, HAKIOS_STA_WPA2_PSK, HAKIOS_STA_WPA3_SAE, HAKIOS_STA_WPA_PSK, HAKIOS_STA_WPA_AUTO, HAKIOS_STA_WPA2_SHA256 };
  
  struct hakios_sta_join {
  	uint8_t ssid[32], ssid_length;
@@ -325,7 +327,7 @@
 +    unsigned capabilities, pmkid_count, management_cipher;
 +};
 +struct hakios_security_choice {
-+    bool open, wpa1, sae, h2e, pmf;
++    bool open, wpa1, sae, h2e, pmf, sha256;
 +    unsigned pairwise, group;
 +};
 +
@@ -375,7 +377,7 @@
 +    out->akm_count = count;
 +    for (unsigned i = 0; i < count; i++, at += 4) {
 +        unsigned akm = ie[at + 3];
-+        if (!hakios_security_oui(ie + at, out->wpa1) || (akm != 2 && (akm != 8 || out->wpa1))) {
++        if (!hakios_security_oui(ie + at, out->wpa1) || (akm != 2 && ((akm != 6 && akm != 8) || out->wpa1))) {
 +            out->akm_unknown = true; continue;
 +        }
 +        unsigned bit = 1u << akm;

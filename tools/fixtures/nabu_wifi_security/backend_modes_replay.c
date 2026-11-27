@@ -6,9 +6,10 @@ static void add_ie(struct lx_target *t,bool wpa1,unsigned pair,unsigned group,un
     if(wpa1){memcpy(ie+n,oui,3);ie[n+3]=1;n+=4;}
     ie[n++]=1;ie[n++]=0;memcpy(ie+n,oui,3);ie[n+3]=group;n+=4;
     ie[n++]=1;ie[n++]=0;memcpy(ie+n,oui,3);ie[n+3]=pair;n+=4;
-    ie[n++]=(akms&4?1:0)+(akms&256?1:0);ie[n++]=0;
+    ie[n++]=(akms&4?1:0)+(akms&256?1:0)+(akms&64?1:0);ie[n++]=0;
     if(akms&4){memcpy(ie+n,oui,3);ie[n+3]=2;n+=4;}
     if(akms&256){memcpy(ie+n,oui,3);ie[n+3]=8;n+=4;}
+    if(akms&64){memcpy(ie+n,oui,3);ie[n+3]=6;n+=4;}
     if(!wpa1){ie[n++]=caps;ie[n++]=0;}
     ie[1]=n-2;t->elements_length+=n;t->capability=0x10;
 }
@@ -33,7 +34,7 @@ static void trial(struct lx_target t,struct hakios_sta_join wanted,bool success,
     struct hakios_security out;const uint8_t *ie=wpa1?wpa:rsn;
     assert(!hakios_security_read(ie,ie[1]+2,&out));
     assert(out.wpa1==wpa1&&out.pairwise==(1u<<pair)&&out.group==group);
-    assert(out.akms==(1u<<(radio.sae?8:2))&&radio.wpa.rsn_length==radio.rsn_length);
+    assert(out.akms==(1u<<(radio.sae?8:radio.security.sha256?6:2))&&radio.wpa.rsn_length==radio.rsn_length);
     if(pmf)assert((out.capabilities&0x80)&&out.management_cipher==6);
     if(radio.sae)assert(out.pmkid_count==1&&(out.capabilities&0x40));
     checks++;
@@ -62,6 +63,9 @@ int main(void)
     t=(struct lx_target){.found=true};add_ie(&t,false,4,4,256,192);w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_PSK};
     trial(t,w,false,false,0,0,false);
     t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4,0);w.security=HAKIOS_STA_WPA_PSK;trial(t,w,false,false,0,0,false);
+    t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4|64,192);w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_SHA256};
+    trial(t,w,true,false,4,4,true);
+    t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4,128);trial(t,w,false,false,0,0,false);
     puts("PASS actual backend six modes, explicit AKM, CCMP/TKIP, PMF and association elements");printf("checks=%u\n",checks);
     return 0;
 }
