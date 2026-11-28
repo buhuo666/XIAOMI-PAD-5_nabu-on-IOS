@@ -147,6 +147,8 @@ def main():
         report["shared_shader_patch"] = stage_shared_shader(ROOT, work)
         from nabu_cs_import_cache import stage as stage_cs_import_cache
         report["cs_import_cache_patch"] = stage_cs_import_cache(ROOT, work)
+        from nabu_attachment_pitch import stage as stage_attachment_pitch
+        report["attachment_pitch_patch"] = stage_attachment_pitch(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -189,6 +191,8 @@ def main():
             report['cs_range_host_check'] = 'pass'
             run([sys.executable, ROOT/"tools/check_nabu_cs_import_cache.py", "--source", source/"src/freedreno/vulkan", "--output", out/"cs-import-cache-check"], stream=True)
             report["cs_import_cache_host_check"] = "pass"
+            run([sys.executable, ROOT/"tools/check_nabu_attachment_pitch.py", "--source", source, "--output", out/"attachment-pitch-check"], stream=True)
+            report["attachment_pitch_host_check"] = "pass"
             if a.trace_allocation_fix:
                 run([sys.executable, ROOT/'tools/check_nabu_utrace_allocation.py',
                      '--source', source, '--output', out/'utrace-allocation-check'], stream=True)
@@ -230,6 +234,11 @@ def main():
             shutil.copyfile(shader, out/'source/tu_pipeline.cc')
             for name in ('vk_pipeline_cache.c', 'vk_pipeline_cache.h'):
                 shutil.copyfile(work/'.cache/mesa-work/src/vulkan/runtime'/name, out/'source'/name)
+        for relative in ('src/freedreno/vulkan/tu_clear_blit.cc','src/freedreno/vulkan/tu_clear_blit.h','src/freedreno/fdl/freedreno_layout.h','src/freedreno/fdl/fd6_layout.c'):
+            captured=work/'.cache/mesa-work'/relative
+            if captured.is_file():
+                (out/'source').mkdir(exist_ok=True)
+                shutil.copyfile(captured,out/'source'/captured.name)
         source = work/'.cache/mesa-work'/TURNIP_SOURCE
         if source.is_file():
             (out/'source').mkdir(exist_ok=True)

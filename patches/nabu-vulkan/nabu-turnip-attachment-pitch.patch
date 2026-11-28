@@ -1,0 +1,53 @@
+--- a/src/freedreno/vulkan/tu_clear_blit.cc
++++ b/src/freedreno/vulkan/tu_clear_blit.cc
+@@ -5656,15 +5656,45 @@
+ tu_attachment_unpadded(struct tu_cmd_buffer *cmd, const struct tu_image_view *iview)
+ {
+    const struct fd_dev_info *info = cmd->device->physical_device->info;
++   const struct fdl_layout *layout = &iview->image->layout[0];
+    const VkExternalMemoryHandleTypeFlags host_types =
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT |
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_MAPPED_FOREIGN_MEMORY_BIT_EXT;
+ 
+-   return iview->image->layout[0].tile_mode == TILE6_LINEAR &&
+-          (iview->image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT ||
+-           (iview->image->vk.external_handle_types & host_types)) &&
+-          (iview->view.width % info->gmem_align_w ||
+-           iview->view.height % info->gmem_align_h);
++   if (layout->tile_mode != TILE6_LINEAR ||
++       !(iview->image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT ||
++         (iview->image->vk.external_handle_types & host_types)))
++      return false;
++
++   /* Preserve the existing result for full blocks, including ordinary screen
++    * targets. Only a width-only edge is eligible for the row-padding proof. */
++   if (iview->view.height % info->gmem_align_h)
++      return true;
++   if (!(iview->view.width % info->gmem_align_w))
++      return false;
++
++   /* Keep depth/stencil, multi-plane, reinterpretation and MSAA on the old
++    * texel-bounded path. No image allocation or layout policy is changed. */
++   if (!iview->view.width || !iview->view.height ||
++       iview->image->vk.samples != VK_SAMPLE_COUNT_1_BIT ||
++       iview->vk.format != iview->image->vk.format ||
++       vk_format_is_depth_or_stencil(iview->image->vk.format) ||
++       tu6_plane_count(iview->image->vk.format) != 1 ||
++       !(layout->cpp == 1 || layout->cpp == 2 || layout->cpp == 4 ||
++         layout->cpp == 8 || layout->cpp == 16))
++      return true;
++
++   const uint32_t level = iview->vk.base_mip_level;
++   if (level >= layout->mip_levels)
++      return true;
++   const uint32_t pitch = fdl_pitch(layout, level);
++   if (iview->view.pitch != pitch)
++      return true;
++   /* The final row must fit its entire GMEM block in the owner's row, too.
++    * Widen before alignment/multiplication so a large row cannot wrap. */
++   const uint64_t reach =
++      ALIGN_POT((uint64_t) iview->view.width, (uint64_t) info->gmem_align_w) * layout->cpp;
++   return reach > pitch;
+ }
+ 
+ template <chip CHIP>
