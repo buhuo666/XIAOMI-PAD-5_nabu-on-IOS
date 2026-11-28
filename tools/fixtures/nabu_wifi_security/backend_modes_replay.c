@@ -35,8 +35,10 @@ static void trial(struct lx_target t,struct hakios_sta_join wanted,bool success,
     assert(!hakios_security_read(ie,ie[1]+2,&out));
     assert(out.wpa1==wpa1&&out.pairwise==(1u<<pair)&&out.group==group);
     assert(out.akms==(1u<<(radio.sae?8:radio.security.sha256?6:2))&&radio.wpa.rsn_length==radio.rsn_length);
-    if(pmf)assert((out.capabilities&0x80)&&out.management_cipher==6);
-    else assert(!(out.capabilities&0xc0)&&!out.management_cipher);
+    if(pmf){
+        assert((out.capabilities&0x80)&&out.management_cipher==6);
+        if(wanted.management_protection&0x40)assert(out.capabilities&0x40);
+    } else assert(!(out.capabilities&0xc0)&&!out.management_cipher);
     if(radio.sae)assert(out.pmkid_count==1&&(out.capabilities&0x40));
     checks++;
 }
@@ -65,7 +67,7 @@ int main(void)
     t=(struct lx_target){.found=true};add_ie(&t,false,4,4,256,192);w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_PSK};
     trial(t,w,false,false,0,0,false);
     t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4,0);w.security=HAKIOS_STA_WPA_PSK;trial(t,w,false,false,0,0,false);
-    t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4|64,192);w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_SHA256};
+    t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4|64,192);w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_SHA256,.management_protection=128};
     trial(t,w,true,false,4,4,true);
     t=(struct lx_target){.found=true};add_ie(&t,false,4,4,4,128);trial(t,w,false,false,0,0,false);
     /* WIFI372 device failure: native auth_upper=8, MFPC=1/MFPR=0;
@@ -76,6 +78,16 @@ int main(void)
     w.management_protection=192;trial(t,w,false,false,0,0,false);
     w.security=HAKIOS_STA_WPA3_SAE;w.management_protection=128;trial(t,w,false,false,0,0,false);
     w.security=HAKIOS_STA_WPA2_SHA256;trial(t,w,false,false,0,0,false);
-    puts("PASS six modes, observed optional PMF request, all AP capability bytes, required PMF and unchanged AKM/ciphers");printf("checks=%u\n",checks);
+    t=(struct lx_target){.found=true};add_ie(&t,false,4,4,64,0);
+    w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_SHA256};trial(t,w,true,false,4,4,false);
+    w.management_protection=128;trial(t,w,true,false,4,4,false);
+    w.management_protection=192;trial(t,w,false,false,0,0,false);
+    for(unsigned pair=2;pair<=4;pair+=2)for(unsigned group=2;group<=4;group+=2){
+        t=(struct lx_target){.found=true};add_ie(&t,false,pair,group,4,128);
+        w=(struct hakios_sta_join){.security=HAKIOS_STA_WPA2_PSK,.management_protection=128};
+        trial(t,w,true,false,pair,group,pair==4&&group==4);
+        w.management_protection=192;trial(t,w,pair==4&&group==4,false,pair,group,true);
+    }
+    puts("PASS WIFI374 six modes, optional TKIP/PMF, independent AKM6 and required-PMF emitted flags");printf("checks=%u\n",checks);
     return 0;
 }

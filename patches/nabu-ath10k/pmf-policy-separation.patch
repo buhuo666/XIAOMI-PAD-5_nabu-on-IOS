@@ -1,0 +1,62 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -1448,6 +1448,7 @@
+ 		radio->rsn[0]=48;radio->rsn[1]=20;
+ 		memcpy(radio->rsn+2,"\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x04\x01\x00\x00\x0f\xac\x02\x00\x00",20);
+ 		radio->rsn[7]=(uint8_t)group_cipher;radio->rsn[13]=(uint8_t)radio->security.pairwise;
++		radio->rsn[19]=radio->security.sha256?6:2;
+ 		radio->rsn_length=22;
+ 		if (radio->sae) {
+ 			radio->rsn[1]=42;radio->rsn[19]=8;radio->rsn[20]=0xc0;
+@@ -1455,8 +1456,7 @@
+ 			memcpy(radio->rsn+40,"\x00\x0f\xac\x06",4);radio->rsn_length=44;
+ 			if(radio->h2e){memcpy(radio->rsn+44,"\xf4\x01\x20",3);radio->rsn_length+=3;}
+ 		} else if (radio->security.pmf) {
+-			radio->rsn[1]=26;radio->rsn[20]=0x80;radio->rsn[22]=radio->rsn[23]=0;
+-			if(radio->security.sha256)radio->rsn[19]=6;
++			radio->rsn[1]=26;radio->rsn[20]=radio->security.pmf_required?0xc0:0x80;radio->rsn[22]=radio->rsn[23]=0;
+ 			memcpy(radio->rsn+24,"\x00\x0f\xac\x06",4);radio->rsn_length=28;
+ 		}
+ 	}
+@@ -1502,7 +1502,7 @@
+ protection(const struct lx_target *target, const struct hakios_sta_join *what,
+     struct hakios_security_choice *choice)
+ {
+-    *choice = (struct hakios_security_choice){false,false,false,false,false,false,0,0};
++    *choice = (struct hakios_security_choice){false,false,false,false,false,false,false,0,0};
+     const uint8_t *rsn=element(target->elements,target->elements_length,48);
+     const uint8_t legacy_oui[4]={0,0x50,0xf2,1};
+     const uint8_t *wpa=vendor_element(target->elements,target->elements_length,legacy_oui);
+@@ -1531,15 +1531,18 @@
+     if((pair!=2&&pair!=4)||!(offered.pairwise&(1u<<pair)))return "selected pairwise cipher is not offered";
+     unsigned caps=want_wpa1?0:offered.capabilities;
+     /* MFPC is a capability, not a requirement. Negotiate it with the AP. */
+-    bool pmf=want_sae||want_sha256||((what->management_protection&0x80)&&(caps&0x80));
++    bool required=want_sae||(what->management_protection&0x40);
++    bool ccmp=pair==4&&offered.group==4;
++    if ((want_sae||want_sha256)&&!ccmp) return "selected SHA256/SAE cipher is not supported";
++    bool pmf=want_sae||((what->management_protection&0x80)&&(caps&0x80)&&ccmp);
+     if((caps&0x40)&&!(caps&0x80))return "invalid AP PMF requirement";
+     if((caps&0x40)&&!pmf)return "AP requires protected management frames";
+     if(pmf&&(!(caps&0x80)||pair!=4||offered.group!=4))return "PMF requires AP support and CCMP";
+-    if((what->management_protection&0x40)&&!pmf)return "selected PMF requirement lacks capability";
++    if(required&&!pmf)return "selected PMF requirement lacks capability";
+     if(pmf&&offered.management_cipher&&offered.management_cipher!=6)return "unsupported management cipher";
+     const uint8_t *rsnx=element(target->elements,target->elements_length,244);
+     choice->wpa1=want_wpa1;choice->sae=want_sae;choice->pmf=pmf;
+-    choice->sha256=want_sha256;
++    choice->sha256=want_sha256;choice->pmf_required=required;
+     choice->h2e=want_sae&&rsnx&&rsnx[1]>=1&&(rsnx[2]&0x20);
+     choice->pairwise=pair;choice->group=offered.group;
+     return NULL;
+--- a/xnu/files/bsd/sys/hakios.security.h
++++ b/xnu/files/bsd/sys/hakios.security.h
+@@ -11,7 +11,7 @@
+     unsigned capabilities, pmkid_count, management_cipher;
+ };
+ struct hakios_security_choice {
+-    bool open, wpa1, sae, h2e, pmf, sha256;
++    bool open, wpa1, sae, h2e, pmf, sha256, pmf_required;
+     unsigned pairwise, group;
+ };
+ 

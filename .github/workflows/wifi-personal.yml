@@ -1,7 +1,7 @@
-name: WIFI372 personal security modes
+name: WIFI374 personal security modes
 on:
   push:
-    branches: [codex/wifi372-personal-security-20261128]
+    branches: [codex/wifi374-pmf-policy-20261128]
   workflow_dispatch:
 permissions:
   contents: read
@@ -77,7 +77,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: wifi372-core-${{ github.run_number }}
+          name: wifi374-core-${{ github.run_number }}
           path: |
             log/ci/
             artifacts/8796-reference/
@@ -105,15 +105,15 @@ jobs:
       - name: Build exact personal security backend
         run: python3 tools/build_nabu_ath10k.py --nabu-platform --proxy '' --output artifacts/nabu-ath10k --log log/ci/ath10k-personal
       - name: Replay actual backend mode selection and association IEs
-        run: python3 tools/check_nabu_wifi_security.py --backend-only --backend-source build/nabu-ath10k/personal-security-WIFI372/reference/wifi/lx/src/lx_80211.c --output log/ci/wifi-personal-backend
+        run: python3 tools/check_nabu_wifi_security.py --backend-only --backend-source build/nabu-ath10k/personal-security-WIFI374/reference/wifi/lx/src/lx_80211.c --output log/ci/wifi-personal-backend
       - name: Retain source and backend objects
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: wifi372-backend-${{ github.run_number }}
+          name: wifi374-backend-${{ github.run_number }}
           path: |
             artifacts/nabu-ath10k/
             log/ci/
-            build/nabu-ath10k/personal-security-WIFI372/reference/
+            build/nabu-ath10k/personal-security-WIFI374/reference/
           retention-days: 14
           if-no-files-found: warn

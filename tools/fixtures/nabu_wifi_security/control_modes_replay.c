@@ -68,7 +68,7 @@ int main(void)
     a.auth_upper=4096;check_request(&a,0,HAKIOS_STA_WPA3_SAE,4,4,128);
     a.rsn_length=0;check_request(&a,EOPNOTSUPP,0,0,0,0);
     a=request(4096,4,4,128);a.key_cipher=CIPHER_PMK;a.key_length=32;check_request(&a,EOPNOTSUPP,0,0,0,0);
-    a=request(8,2,4,128);check_request(&a,EOPNOTSUPP,0,0,0,0);
+    a=request(8,2,4,128);check_request(&a,0,HAKIOS_STA_WPA2_PSK,4,2,128);
     a=request(2,2,2,0);a.auth_upper=8;check_request(&a,EOPNOTSUPP,0,0,0,0);
     a=request(8,4,4,0);a.auth_upper=2;check_request(&a,EOPNOTSUPP,0,0,0,0);
     a=request(8,4,4,0);a.auth_upper=4;check_request(&a,EOPNOTSUPP,0,0,0,0);
@@ -80,7 +80,11 @@ int main(void)
     check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,192);
     a.key_cipher=CIPHER_PMK;a.key_length=32;check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,192);
     a.rsn[19]=2;check_request(&a,EOPNOTSUPP,0,0,0,0);
-    a.rsn[19]=6;a.rsn[20]=0;check_request(&a,EOPNOTSUPP,0,0,0,0);
-    printf("PASS WIFI372 actual native selection/ABI/credential cleanup checks=%u\n",checks);
+    a.rsn[19]=6;a.rsn[20]=0;check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,0);
+    a=request(8,2,2,128);check_request(&a,0,HAKIOS_STA_WPA2_PSK,2,2,128);
+    a.rsn[20]=192;check_request(&a,EOPNOTSUPP,0,0,0,0);
+    a=request(8,4,4,0);a.auth_upper=1024;a.rsn[19]=6;check_request(&a,0,HAKIOS_STA_WPA2_SHA256,4,4,0);
+    a.rsn[20]=64;check_request(&a,EOPNOTSUPP,0,0,0,0);
+    printf("PASS WIFI374 actual native selection/ABI/credential cleanup checks=%u\n",checks);
     return 0;
 }

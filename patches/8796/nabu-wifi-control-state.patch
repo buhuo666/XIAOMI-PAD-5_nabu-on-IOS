@@ -96,7 +96,7 @@
  
  		return give(request, &answer, sizeof(answer));
  	}
-@@ -518,6 +535,74 @@
+@@ -518,6 +535,77 @@
  	return error;
  }
  
@@ -162,8 +162,11 @@
 +    unsigned caps = selected.wpa1 ? 0 : selected.capabilities;
 +    bool mfpc = (caps & 0x80) != 0, mfpr = (caps & 0x40) != 0;
 +    if (mfpr && !mfpc) return EOPNOTSUPP;
-+    if ((sae || sha256) && (!mfpc || selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
-+    if (mfpc && (selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
++    if (sae && !mfpc) return EOPNOTSUPP;
++    /* AKM6 keeps SHA256/CMAC, independently of optional management protection. */
++    if ((sae || sha256) && (selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
++    /* Optional capability is negotiated by the backend with the AP. */
++    if (mfpr && (selected.group != 4 || selected.pairwise != (1u << 4))) return EOPNOTSUPP;
 +    if (selected.management_cipher && (!mfpc || selected.management_cipher != 6)) return EOPNOTSUPP;
 +    return 0;
 +}
@@ -171,7 +174,7 @@
  static int
  set_join(const struct apple80211req *request, char *said, size_t said_size)
  {
-@@ -525,34 +610,56 @@
+@@ -525,34 +613,56 @@
  	struct hakios_sta_join *what;
  	int error;
  
@@ -238,7 +241,7 @@
  		memcpy(what->pmk, asked->key, sizeof(what->pmk));
  	} else {
  		error = EINVAL;
-@@ -561,7 +668,7 @@
+@@ -561,7 +671,7 @@
  	lck_mtx_lock(&apple80211_lock);
  	join_result = 0;
  	lck_mtx_unlock(&apple80211_lock);
@@ -247,7 +250,7 @@
  out:
  	if (asked != NULL) {
  		memset_s(asked, sizeof(*asked), 0, sizeof(*asked));
-@@ -618,6 +725,23 @@
+@@ -618,6 +728,23 @@
  		message.dv[1].data_ptr = __DECONST(void *, data);
  	}
  	kev_post_msg(&message);
@@ -271,7 +274,7 @@
  }
  
  /* What the station side says has happened (drivers/wifi/hakios.sta.c calls this, on its thread or the station's). */
-@@ -733,8 +857,9 @@
+@@ -733,8 +860,9 @@
  	error = is_set ? set(request, what, sizeof(what)) : get(request);
  	note(request, is_set, error);
  	/* (a request that is repeated for ever is said a few hundred times) */
@@ -327,7 +330,7 @@
 +    unsigned capabilities, pmkid_count, management_cipher;
 +};
 +struct hakios_security_choice {
-+    bool open, wpa1, sae, h2e, pmf, sha256;
++    bool open, wpa1, sae, h2e, pmf, sha256, pmf_required;
 +    unsigned pairwise, group;
 +};
 +
