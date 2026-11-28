@@ -151,6 +151,8 @@ def main():
         report["attachment_pitch_patch"] = stage_attachment_pitch(ROOT, work)
         from nabu_gmem_load_swap import stage as stage_gmem_load_swap
         report["gmem_load_swap_patch"] = stage_gmem_load_swap(ROOT, work)
+        from nabu_trace_close import stage as stage_trace_close
+        report["trace_close_patch"] = stage_trace_close(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -206,6 +208,8 @@ def main():
                      '--source', source/'src/freedreno/vulkan/tu_darwin_trace.cc',
                      '--output', out/'trace-worker-check'], stream=True)
                 report['trace_worker_host_check'] = 'pass'
+                run([sys.executable, ROOT/"tools/check_nabu_trace_close.py", "--source", source/"src/freedreno/vulkan/tu_darwin_trace.cc", "--output", out/"trace-close-check"], stream=True)
+                report["trace_close_host_check"] = "pass"
             env = dict(os.environ,UNIXNU_RECORD_HASHES='0',PYTHONUNBUFFERED='1',
                        PATH=str(work/'.cache/mesa-tools/bin')+os.pathsep+os.environ['PATH'])
             run([sys.executable,'-u',script,'--target','ios','--abi-directory',

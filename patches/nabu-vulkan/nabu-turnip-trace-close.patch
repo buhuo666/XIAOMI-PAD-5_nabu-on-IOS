@@ -1,0 +1,39 @@
+--- a/src/freedreno/vulkan/tu_darwin_trace.cc
++++ b/src/freedreno/vulkan/tu_darwin_trace.cc
+@@ -461,18 +461,26 @@
+       state->end_records_written = true;
+    }
+    pthread_mutex_unlock(&state->mutex);
+-   trace_send(state);
+-
+-   pthread_mutex_lock(&state->mutex);
+-   NativeAdrenoTraceProducer producer = state->producer;
+-   producer.dropped = state->dropped;
+-   pthread_mutex_unlock(&state->mutex);
+-   if (!tu_darwin_trace_call(state->device, NativeAdrenoMethodEndTraceProducer,
+-                             &producer, sizeof(producer), NULL, 0)) {
++   /* Appends can finish after the last send even with no pending GPU work.
++    * Drain them before sealing. The empty check, file footer and producer
++    * removal share the append mutex, so no record can become orphaned between
++    * the last drain and removal. The file transport does not re-enter it. */
++   for (;;) {
++      trace_send(state);
+       pthread_mutex_lock(&state->mutex);
+-      state->producer = {};
+-      pthread_cond_broadcast(&state->changed);
++      if (state->queues[TRACE_GPU_QUEUE].count || state->queues[TRACE_METADATA_QUEUE].count) {
++         pthread_mutex_unlock(&state->mutex);
++         continue;
++      }
++      NativeAdrenoTraceProducer producer = state->producer;
++      producer.dropped = state->dropped;
++      if (!tu_darwin_trace_call(state->device, NativeAdrenoMethodEndTraceProducer,
++                                &producer, sizeof(producer), NULL, 0)) {
++         state->producer = {};
++         pthread_cond_broadcast(&state->changed);
++      }
+       pthread_mutex_unlock(&state->mutex);
++      return;
+    }
+ }
+ 
