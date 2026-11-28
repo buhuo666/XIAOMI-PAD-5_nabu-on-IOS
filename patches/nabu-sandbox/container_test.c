@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#define user_addr_t test_user_addr_t
+#define user_size_t test_user_size_t
 typedef uintptr_t user_addr_t,user_size_t,vm_offset_t,vm_size_t,vm_map_address_t;
 typedef void *task_t,*vm_map_t,*vm_map_copy_t;
 struct proc {user_addr_t user_stack;size_t p_argslen;};typedef struct proc*proc_t;
