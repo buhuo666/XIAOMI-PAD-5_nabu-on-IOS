@@ -149,6 +149,8 @@ def main():
         report["cs_import_cache_patch"] = stage_cs_import_cache(ROOT, work)
         from nabu_attachment_pitch import stage as stage_attachment_pitch
         report["attachment_pitch_patch"] = stage_attachment_pitch(ROOT, work)
+        from nabu_gmem_load_swap import stage as stage_gmem_load_swap
+        report["gmem_load_swap_patch"] = stage_gmem_load_swap(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -193,6 +195,8 @@ def main():
             report["cs_import_cache_host_check"] = "pass"
             run([sys.executable, ROOT/"tools/check_nabu_attachment_pitch.py", "--source", source, "--output", out/"attachment-pitch-check"], stream=True)
             report["attachment_pitch_host_check"] = "pass"
+            run([sys.executable, ROOT/"tools/check_nabu_gmem_load_swap.py", "--source", source, "--output", out/"gmem-load-swap-check"], stream=True)
+            report["gmem_load_swap_host_check"] = "pass"
             if a.trace_allocation_fix:
                 run([sys.executable, ROOT/'tools/check_nabu_utrace_allocation.py',
                      '--source', source, '--output', out/'utrace-allocation-check'], stream=True)

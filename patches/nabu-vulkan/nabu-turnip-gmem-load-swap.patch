@@ -1,0 +1,14 @@
+--- a/src/freedreno/vulkan/tu_clear_blit.cc
++++ b/src/freedreno/vulkan/tu_clear_blit.cc
+@@ -1577,7 +1577,10 @@
+     * swizzling or swapping, that's done in the draw when reading/writing
+     * GMEM, so we need to fixup the swizzle and swap.
+     */
+-   if (override_swap)
++   /* Mutable GMEM keeps the format's channel ordering, just as
++    * r3d_src_gmem() and store_cp_blit() do. Removing the swap here alone
++    * makes a shaded load exchange red/blue for a mutable BGRA attachment. */
++   if (override_swap && !iview->view.is_mutable)
+       tu_desc_set_swap<CHIP>(desc, WZYX);
+    tu_desc_set_swiz<CHIP>(desc, tu_swiz(X, Y, Z, W));
+ 
