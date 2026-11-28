@@ -1,0 +1,12 @@
+--- a/wifi/lx/src/lx_80211.c
++++ b/wifi/lx/src/lx_80211.c
+@@ -1530,7 +1530,8 @@
+     if(!pair)pair=(offered.pairwise&(1u<<4))?4:2;
+     if((pair!=2&&pair!=4)||!(offered.pairwise&(1u<<pair)))return "selected pairwise cipher is not offered";
+     unsigned caps=want_wpa1?0:offered.capabilities;
+-    bool pmf=want_sae||want_sha256||(what->management_protection&0x80);
++    /* MFPC is a capability, not a requirement. Negotiate it with the AP. */
++    bool pmf=want_sae||want_sha256||((what->management_protection&0x80)&&(caps&0x80));
+     if((caps&0x40)&&!(caps&0x80))return "invalid AP PMF requirement";
+     if((caps&0x40)&&!pmf)return "AP requires protected management frames";
+     if(pmf&&(!(caps&0x80)||pair!=4||offered.group!=4))return "PMF requires AP support and CCMP";

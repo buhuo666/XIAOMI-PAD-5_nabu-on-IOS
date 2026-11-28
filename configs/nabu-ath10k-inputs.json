@@ -10,13 +10,14 @@
     "xnu/files/bsd/sys/hakios.qmi.h",
     "xnu/files/bsd/sys/hakios.sta.h"
   ],
-  "build_variant": "personal-security-WIFI372",
+  "build_variant": "personal-security-WIFI373",
   "reference_patches": [
     "patches/nabu-ath10k/station-start-rollback.patch",
     "patches/nabu-ath10k/station-association.patch",
     "patches/nabu-ath10k/management-sequence.patch",
     "patches/nabu-ath10k/management-ccmp-header.patch",
-    "patches/nabu-ath10k/personal-security-modes.patch"
+    "patches/nabu-ath10k/personal-security-modes.patch",
+    "patches/nabu-ath10k/pmf-optional-negotiation.patch"
   ],
   "project_patches": {
     "linux": [
