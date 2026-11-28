@@ -62,6 +62,7 @@ for patch in pmap-nonmonitor-queries.patch bcm2837-apple-iommu-query-returns.pat
 done
 cd "$PROJECT_ROOT"
 python3 tools/prepare_nabu_container_path.py --tree "$XNU_SRC" --output log/ci/container-path
+python3 tools/prepare_nabu_sandbox_outputs.py --tree "$XNU_SRC" --output log/ci/sandbox-outputs
 python3 tools/check_nabu_csops_xml.py --tree "$XNU_SRC" --output log/ci/nabu-csops-xml
 python3 tools/prepare_nabu_storage.py --tree "$XNU_SRC" --work build/nabu-storage-source --output log/ci/nabu-storage/source.json
 python3 tools/prepare_nabu_input.py --tree "$XNU_SRC" --output log/ci/nabu-input/source.json
