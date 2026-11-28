@@ -12,12 +12,12 @@ def main():
     source=(a.source/'src/freedreno/vulkan/tu_clear_blit.cc').read_text(encoding='utf8');old=transform(source,True)
     assert NEW in source
     assert 'if (!iview->view.is_mutable)\n      tu_desc_set_swap<CHIP>(desc, WZYX);' in extract(source,'r3d_src_gmem')
-    for name in ['store_cp_blit','r3d_dst_gmem']:assert extract(source,name)==extract(old,name)
+    for name in ['r3d_src_load','r3d_src_sysmem_load','r3d_src_gmem','store_cp_blit','r3d_dst_gmem']:assert extract(source,name)==extract(old,name)
     text=''
     for label,s in [('baseline',old),('candidate',source)]:
         text+='namespace '+label+' {\n'+extract(s,'r3d_src_load')+'\n'+extract(s,'r3d_src_gmem_load')+'\n'+extract(s,'r3d_src_sysmem_load')+'\n}\n'
     (out/'actual.inc').write_text(text,encoding='utf8',newline='\n')
-    report={'passed':False,'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'only_function_changed':'r3d_src_load','commands':[]}
+    report={'passed':False,'source_sha256':hashlib.sha256(source.encode()).hexdigest(),'only_function_changed':'r3d_src_gmem_load','commands':[]}
     def hp(p):
         s=Path(p).resolve().as_posix();return '/mnt/'+s[0].lower()+s[2:] if sys.platform=='win32' else s
     def run(cmd,label):
