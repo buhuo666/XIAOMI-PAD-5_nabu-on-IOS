@@ -1,0 +1,13 @@
+{
+  "sha256": "7e7b0e4c435f1b78b409cfa4b1b6ebdfe29f28c5f8bc604cf410e53d276098c8",
+  "bytes": 25726952,
+  "gzip_sha256": "f458356eeea0067a0e47f13e2d8db1dd8fa0e3954934b81109f5e84a17b2cf6a",
+  "original_runtime_sha256": "0d650c9b76276063dffe2da3bc4842433a7b86711807d2a8958488bfc4df030c",
+  "file_backed_sections_identical": 29,
+  "device_data_included": false,
+  "functions": [
+    "_nmb_encoder_end",
+    "_nmb_render_encoder_new",
+    "_nmb_command_buffer_wait_scheduled"
+  ]
+}

@@ -1,0 +1,55 @@
+name: GPU382 - REA rendering path analysis
+on:
+  push:
+    branches: [nabu-gpu382-stutter-analysis]
+    paths: ['.github/workflows/gpu-stutter-analysis.yml', 'analysis/stutter-GPU382/cloud/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rea:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare verified native analysis inputs and tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/rea-analysis artifacts/rea-GPU382
+          npm install --prefix build/rea --ignore-scripts --no-audit --no-fund rea-agents@6.9.0
+          gh api repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_12.2_build > artifacts/rea-GPU382/ghidra-release.json
+          python3 - <<'PY'
+          import gzip,hashlib,json,pathlib,urllib.request,zipfile
+          h=pathlib.Path('analysis/stutter-GPU382/cloud')
+          m=json.loads((h/'input.json').read_text())
+          b=gzip.decompress((h/'frontend-symbols.dylib.gz').read_bytes())
+          assert hashlib.sha256(b).hexdigest()==m['sha256']
+          pathlib.Path('build/rea-analysis/frontend-symbols.dylib').write_bytes(b)
+          r=json.loads(pathlib.Path('artifacts/rea-GPU382/ghidra-release.json').read_text())
+          a,=[x for x in r['assets'] if x['name'].startswith('ghidra_12.2_PUBLIC_') and x['name'].endswith('.zip')]
+          archive=pathlib.Path('build/ghidra.zip');urllib.request.urlretrieve(a['browser_download_url'],archive)
+          assert 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()==a['digest']
+          with zipfile.ZipFile(archive) as z:z.extractall('build')
+          PY
+      - name: Analyze actual GPU382 code with REA and Ghidra
+        env:
+          REA_GHIDRA_STARTUP_TIMEOUT_MS: '900000'
+          REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS: '180'
+          PYTHONUNBUFFERED: '1'
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export GHIDRA_INSTALL_DIR="$PWD/build/ghidra_12.2_PUBLIC"
+          export TMPDIR="$PWD/build/rea-analysis"
+          python3 analysis/stutter-GPU382/cloud/run_rea.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: rea-GPU382-${{ github.run_number }}
+          path: artifacts/rea-GPU382/
+          retention-days: 14
