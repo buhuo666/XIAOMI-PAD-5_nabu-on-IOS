@@ -145,6 +145,8 @@ def main():
         stage_a640_late_z(ROOT, work)
         from nabu_shared_shader_cache import stage as stage_shared_shader
         report["shared_shader_patch"] = stage_shared_shader(ROOT, work)
+        from nabu_cs_import_cache import stage as stage_cs_import_cache
+        report["cs_import_cache_patch"] = stage_cs_import_cache(ROOT, work)
         pins = json.loads((work/PINS_FILE).read_text())
         report['patches'] = pins['patches']
         script = work/'scripts/build-turnip-darwin.py'
@@ -185,6 +187,8 @@ def main():
                  '--source', source/'src/freedreno/vulkan', '--driver-source', source/TURNIP_SOURCE,
                  '--output', out/'cs-range-check'], stream=True)
             report['cs_range_host_check'] = 'pass'
+            run([sys.executable, ROOT/"tools/check_nabu_cs_import_cache.py", "--source", source/"src/freedreno/vulkan", "--output", out/"cs-import-cache-check"], stream=True)
+            report["cs_import_cache_host_check"] = "pass"
             if a.trace_allocation_fix:
                 run([sys.executable, ROOT/'tools/check_nabu_utrace_allocation.py',
                      '--source', source, '--output', out/'utrace-allocation-check'], stream=True)
